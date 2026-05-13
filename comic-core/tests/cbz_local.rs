@@ -65,7 +65,7 @@ fn open_cbz_defers_local_header_reads_until_page_extraction() {
     assert_eq!(2, reader.read_count());
 
     assert_eq!(b"one".to_vec(), index.extract_page(&reader, 0).unwrap());
-    assert!(reader.read_count() > 2);
+    assert_eq!(3, reader.read_count());
 }
 
 fn make_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> NamedTempFile {

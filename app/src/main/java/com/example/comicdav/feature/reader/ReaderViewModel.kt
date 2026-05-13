@@ -8,10 +8,17 @@ import androidx.lifecycle.viewModelScope
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.ComicReaderSession
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 typealias ComicSessionFactory = (path: String) -> ComicReaderSession
 typealias SaveReadingProgress = suspend (comicKey: String, pageIndex: Int) -> Unit
@@ -37,6 +44,10 @@ class ReaderViewModel(
     private var comicKey: String? = null
     private var pageCacheKey: String? = null
     private var generation = 0
+    private var remoteOpenJob: Job? = null
+    private var prefetchJob: Job? = null
+    private val sessionMutex = Mutex()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
@@ -50,13 +61,18 @@ class ReaderViewModel(
                 withContext(ioDispatcher) {
                     val openedSession = openSession(path)
                     val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
-                    val files = loadPages(openedSession, listOf(startPage), cacheDir = cacheDir)
+                    val files = loadPages(
+                        session = openedSession,
+                        pageIndexes = listOf(startPage),
+                        cacheDir = cacheDir,
+                        expectedGeneration = openGeneration,
+                    )
                     OpenedReader(openedSession, startPage, files)
                 }
             }.fold(
                 onSuccess = { opened ->
                     if (openGeneration != generation) {
-                        opened.session.close()
+                        closeSessionAsync(opened.session)
                         return@fold
                     }
                     session = opened.session
@@ -81,22 +97,42 @@ class ReaderViewModel(
         comicKey: String,
     ) {
         closeCurrentSession()
+        startOpenedSession(
+            openedSession = openedSession,
+            cacheDir = cacheDir,
+            initialPage = initialPage,
+            comicKey = comicKey,
+            openGeneration = generation,
+        )
+    }
+
+    private fun startOpenedSession(
+        openedSession: ComicReaderSession,
+        cacheDir: File,
+        initialPage: Int,
+        comicKey: String,
+        openGeneration: Int,
+    ) {
         this.cacheDir = cacheDir
         this.comicKey = comicKey
         this.pageCacheKey = comicKey
-        val openGeneration = generation
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
                     val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
-                    val files = loadPages(openedSession, listOf(startPage), cacheDir = cacheDir)
+                    val files = loadPages(
+                        session = openedSession,
+                        pageIndexes = listOf(startPage),
+                        cacheDir = cacheDir,
+                        expectedGeneration = openGeneration,
+                    )
                     OpenedReader(openedSession, startPage, files)
                 }
             }.fold(
                 onSuccess = { opened ->
                     if (openGeneration != generation) {
-                        opened.session.close()
+                        closeSessionAsync(opened.session)
                         return@fold
                     }
                     session = opened.session
@@ -108,8 +144,42 @@ class ReaderViewModel(
                     prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
-                    openedSession.close()
+                    closeSessionAsync(openedSession)
                     uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
+                },
+            )
+        }
+    }
+
+    fun openRemote(
+        cacheDir: File,
+        openComic: suspend () -> OpenComicResult,
+    ) {
+        closeCurrentSession()
+        this.cacheDir = cacheDir
+        val openGeneration = generation
+        uiState = ReaderUiState(isLoading = true)
+        remoteOpenJob = viewModelScope.launch {
+            runCatching {
+                openComic()
+            }.fold(
+                onSuccess = { result ->
+                    if (openGeneration != generation) {
+                        closeSessionAsync(result.session)
+                        return@fold
+                    }
+                    remoteOpenJob = null
+                    startOpenedSession(
+                        openedSession = result.session,
+                        cacheDir = cacheDir,
+                        initialPage = result.initialPage,
+                        comicKey = result.comicKey,
+                        openGeneration = openGeneration,
+                    )
+                },
+                onFailure = { error ->
+                    if (openGeneration != generation || error is CancellationException) return@fold
+                    uiState = ReaderUiState(error = error.message ?: "Failed to open remote comic")
                 },
             )
         }
@@ -120,6 +190,8 @@ class ReaderViewModel(
         val activeCacheDir = cacheDir ?: return
         if (pageIndex !in 0 until activeSession.pageCount) return
 
+        prefetchJob?.cancel()
+        prefetchJob = null
         val existingFile = uiState.pageFiles[pageIndex]
         uiState = uiState.copy(
             currentPage = pageIndex,
@@ -135,7 +207,12 @@ class ReaderViewModel(
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
-                    loadPages(activeSession, listOf(pageIndex), activeCacheDir)
+                    loadPages(
+                        session = activeSession,
+                        pageIndexes = listOf(pageIndex),
+                        cacheDir = activeCacheDir,
+                        expectedGeneration = loadGeneration,
+                    )
                 }
             }.fold(
                 onSuccess = { files ->
@@ -169,8 +246,12 @@ class ReaderViewModel(
     }
 
     private fun closeCurrentSession() {
+        remoteOpenJob?.cancel()
+        remoteOpenJob = null
+        prefetchJob?.cancel()
+        prefetchJob = null
         generation++
-        session?.close()
+        session?.let(::closeSessionAsync)
         session = null
         comicKey = null
         pageCacheKey = null
@@ -179,16 +260,24 @@ class ReaderViewModel(
     private fun prefetchNeighbors(pageIndex: Int) {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val missingNeighbors = listOf(pageIndex + 1, pageIndex - 1)
+        val forwardPages = (1..PREFETCH_FORWARD_PAGES).map { pageIndex + it }
+        val missingNeighbors = (forwardPages + (pageIndex - 1))
             .filter { it in 0 until activeSession.pageCount }
             .filterNot { uiState.pageFiles.containsKey(it) }
         if (missingNeighbors.isEmpty()) return
 
+        prefetchJob?.cancel()
         val prefetchGeneration = generation
-        viewModelScope.launch {
+        prefetchJob = viewModelScope.launch {
+            delay(PREFETCH_START_DELAY_MS)
             runCatching {
                 withContext(ioDispatcher) {
-                    loadPages(activeSession, missingNeighbors, activeCacheDir)
+                    loadPages(
+                        session = activeSession,
+                        pageIndexes = missingNeighbors,
+                        cacheDir = activeCacheDir,
+                        expectedGeneration = prefetchGeneration,
+                    )
                 }
             }.onSuccess { files ->
                 if (prefetchGeneration == generation) {
@@ -206,17 +295,34 @@ class ReaderViewModel(
         }
     }
 
-    private fun loadPages(
+    private suspend fun loadPages(
         session: ComicReaderSession,
         pageIndexes: List<Int>,
         cacheDir: File,
+        expectedGeneration: Int,
     ): Map<Int, File> {
-        return pageIndexes
+        val files = linkedMapOf<Int, File>()
+        pageIndexes
             .distinct()
             .filter { it in 0 until session.pageCount }
-            .associateWith { index ->
-                session.loadPageToFile(index, pageCacheFile(cacheDir, index))
+            .forEach { index ->
+                if (expectedGeneration != generation) {
+                    throw CancellationException("reader session changed")
+                }
+                val output = sessionMutex.withLock {
+                    if (expectedGeneration != generation) {
+                        throw CancellationException("reader session changed")
+                    }
+                    val outputFile = pageCacheFile(cacheDir, index)
+                    if (outputFile.isFile && outputFile.length() > 0L) {
+                        outputFile
+                    } else {
+                        session.loadPageToFile(index, outputFile)
+                    }
+                }
+                files[index] = output
             }
+        return files
     }
 
     private fun pageCacheFile(cacheDir: File, pageIndex: Int): File {
@@ -231,4 +337,17 @@ class ReaderViewModel(
         val currentPage: Int,
         val files: Map<Int, File>,
     )
+
+    private fun closeSessionAsync(session: ComicReaderSession) {
+        cleanupScope.launch {
+            sessionMutex.withLock {
+                session.close()
+            }
+        }
+    }
+
+    private companion object {
+        const val PREFETCH_FORWARD_PAGES = 4
+        const val PREFETCH_START_DELAY_MS = 150L
+    }
 }

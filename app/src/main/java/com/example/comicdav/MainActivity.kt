@@ -31,9 +31,7 @@ import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
 import java.io.File
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -57,8 +55,6 @@ fun ComicDavApp() {
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
-    var downloadJob by remember { mutableStateOf<Job?>(null) }
-    var currentComicKey by remember { mutableStateOf<String?>(null) }
     val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
     val localFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -71,7 +67,6 @@ fun ComicDavApp() {
             }.fold(
                 onSuccess = { cachedFile ->
                     localOpenError = null
-                    currentComicKey = null
                     readerViewModel.openLocal(cachedFile.absolutePath, context.cacheDir)
                     isReaderOpen = true
                 },
@@ -87,17 +82,10 @@ fun ComicDavApp() {
             if (isReaderOpen) {
                 ReaderScreen(
                     uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
-                    onPageChanged = { page ->
-                        readerViewModel.selectPage(page)
-                        currentComicKey?.let { key ->
-                            scope.launch {
-                                progressStore.savePage(key, page)
-                            }
-                        }
-                    },
+                    onPageChanged = readerViewModel::selectPage,
                     onClose = {
                         readerViewModel.closeReader()
-                        currentComicKey = null
+                        downloadProgress = null
                         isReaderOpen = false
                     },
                 )
@@ -109,41 +97,20 @@ fun ComicDavApp() {
                             webDavViewModel.openDirectory(item)
                         } else {
                             val client = webDavViewModel.activeClient() ?: return@WebDavBrowserScreen
-                            downloadJob?.cancel()
                             downloadProgress = null
                             localOpenError = null
-                            downloadJob = scope.launch {
-                                runCatching {
-                                    val useCase = OpenComicUseCase(
-                                        accountId = webDavViewModel.accountId(),
-                                        cache = remoteCache,
-                                        progressStore = progressStore,
-                                    )
-                                    useCase.open(client, item.path) { downloaded, total ->
-                                        scope.launch {
-                                            downloadProgress = DownloadProgressUi(downloaded, total)
-                                        }
-                                    }
-                                }.fold(
-                                    onSuccess = { result ->
-                                        downloadProgress = null
-                                        localOpenError = null
-                                        currentComicKey = result.comicKey
-                                        readerViewModel.openExistingSession(
-                                            openedSession = result.session,
-                                            cacheDir = context.cacheDir,
-                                            initialPage = result.initialPage,
-                                            comicKey = result.comicKey,
-                                        )
-                                        isReaderOpen = true
-                                    },
-                                    onFailure = { error ->
-                                        downloadProgress = null
-                                        if (error !is CancellationException) {
-                                            localOpenError = error.message ?: "Failed to open remote comic"
-                                        }
-                                    },
+                            isReaderOpen = true
+                            readerViewModel.openRemote(cacheDir = context.cacheDir) {
+                                val useCase = OpenComicUseCase(
+                                    accountId = webDavViewModel.accountId(),
+                                    cache = remoteCache,
+                                    progressStore = progressStore,
                                 )
+                                useCase.open(client, item.path) { downloaded, total ->
+                                    scope.launch {
+                                        downloadProgress = DownloadProgressUi(downloaded, total)
+                                    }
+                                }
                             }
                         }
                     },
@@ -151,7 +118,6 @@ fun ComicDavApp() {
                     downloadProgress = downloadProgress,
                     downloadError = localOpenError,
                     onCancelDownload = {
-                        downloadJob?.cancel()
                         downloadProgress = null
                     },
                 )

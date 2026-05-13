@@ -8,6 +8,10 @@ import com.example.comicdav.nativebridge.RangeProviderRegistry
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavRangeProvider
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 typealias RemoteComicSessionFactory = (path: String) -> ComicReaderSession
 typealias RemoteRangeComicSessionFactory = (fileId: Long, size: Long, cacheDir: File) -> ComicReaderSession
@@ -32,6 +36,7 @@ class OpenComicUseCase(
     private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir ->
         ComicEngine().openRemote(fileId, size, cacheDir)
     },
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun open(
         client: WebDavClient,
@@ -46,9 +51,13 @@ class OpenComicUseCase(
             etag = info.etag,
             lastModified = info.lastModified,
         )
-        runCatching {
-            openRemote(client, remotePath, info.size, key)
-        }.getOrNull()?.let { return it }
+        try {
+            return openRemote(client, remotePath, info.size, key)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            // Fall back to the whole-file cache when Range open is unsupported or fails.
+        }
         return openWholeFile(client, remotePath, info.size, key, onProgress)
     }
 
@@ -61,7 +70,9 @@ class OpenComicUseCase(
         cache.cacheDir.mkdirs()
         val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, size))
         return try {
-            val session = openRemoteSession(fileId, size, cache.cacheDir)
+            val session = withContext(ioDispatcher) {
+                openRemoteSession(fileId, size, cache.cacheDir)
+            }
             val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
             OpenComicResult(
                 comicKey = key.value,
@@ -89,7 +100,9 @@ class OpenComicUseCase(
             expectedSize = size,
             onProgress = onProgress,
         )
-        val session = openSession(localFile.absolutePath)
+        val session = withContext(ioDispatcher) {
+            openSession(localFile.absolutePath)
+        }
         val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
         return OpenComicResult(
             comicKey = key.value,

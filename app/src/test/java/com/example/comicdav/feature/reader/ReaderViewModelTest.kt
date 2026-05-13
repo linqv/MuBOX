@@ -2,8 +2,12 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.nativebridge.ComicReaderSession
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -31,7 +35,7 @@ class ReaderViewModelTest {
     }
 
     @Test
-    fun openLocalLoadsCurrentAndNextPage() = runTest(dispatcher) {
+    fun openLocalLoadsCurrentPageAndPrefetchesForwardWindow() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 4)
         val viewModel = ReaderViewModel(
             openSession = { session },
@@ -43,8 +47,8 @@ class ReaderViewModelTest {
 
         assertEquals(4, viewModel.uiState.pageCount)
         assertEquals(0, viewModel.uiState.currentPage)
-        assertEquals(listOf(0, 1), session.loadedPages)
-        assertEquals(setOf(0, 1), viewModel.uiState.pageFiles.keys)
+        assertEquals(listOf(0, 1, 2, 3), session.loadedPages)
+        assertEquals(setOf(0, 1, 2, 3), viewModel.uiState.pageFiles.keys)
     }
 
     @Test
@@ -67,7 +71,7 @@ class ReaderViewModelTest {
 
     @Test
     fun selectPageLoadsCurrentPageBeforeNeighbors() = runTest(dispatcher) {
-        val session = FakeReaderSession(pageCount = 5)
+        val session = FakeReaderSession(pageCount = 7)
         val viewModel = ReaderViewModel(
             openSession = { session },
             ioDispatcher = dispatcher,
@@ -76,10 +80,10 @@ class ReaderViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         session.loadedPages.clear()
 
-        viewModel.selectPage(2)
+        viewModel.selectPage(5)
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(2, session.loadedPages.first())
+        assertEquals(5, session.loadedPages.first())
     }
 
     @Test
@@ -131,8 +135,63 @@ class ReaderViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         viewModel.closeReader()
+        dispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(session.closed)
+    }
+
+    @Test
+    fun openRemoteShowsReaderLoadingStateBeforeRemoteOpenCompletes() = runTest(dispatcher) {
+        val releaseOpen = CompletableDeferred<Unit>()
+        val session = FakeReaderSession(pageCount = 1)
+        val viewModel = ReaderViewModel(ioDispatcher = dispatcher)
+
+        viewModel.openRemote(temp.root) {
+            releaseOpen.await()
+            OpenComicResult(
+                comicKey = "remote-book",
+                localFile = temp.newFile("remote.cbz"),
+                session = session,
+                initialPage = 0,
+            )
+        }
+
+        assertTrue(viewModel.uiState.isLoading)
+        assertEquals(0, viewModel.uiState.pageCount)
+
+        releaseOpen.complete(Unit)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.pageCount)
+        assertEquals(0, viewModel.uiState.currentPage)
+    }
+
+    @Test
+    fun closeReaderDoesNotBlockCallerWhileNativeCloseRuns() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val closeStarted = CountDownLatch(1)
+        val releaseClose = CountDownLatch(1)
+        val closeFinished = CountDownLatch(1)
+        val session = BlockingCloseSession(closeStarted, releaseClose, closeFinished)
+        val viewModel = ReaderViewModel(ioDispatcher = ioDispatcher)
+
+        viewModel.openExistingSession(session, temp.root, initialPage = 0, comicKey = "slow-close")
+        waitUntil(timeoutMs = 1_000) {
+            dispatcher.scheduler.advanceUntilIdle()
+            viewModel.uiState.pageCount == 1
+        }
+        val startedAt = System.nanoTime()
+
+        viewModel.closeReader()
+        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+
+        assertTrue("closeReader blocked for ${elapsedMs}ms", elapsedMs < 100)
+        assertTrue(closeStarted.await(1, TimeUnit.SECONDS))
+        releaseClose.countDown()
+        assertTrue(closeFinished.await(1, TimeUnit.SECONDS))
+        ioDispatcher.close()
+        executor.shutdown()
     }
 
     private class FakeReaderSession(
@@ -150,5 +209,32 @@ class ReaderViewModelTest {
         override fun close() {
             closed = true
         }
+    }
+
+    private class BlockingCloseSession(
+        private val closeStarted: CountDownLatch,
+        private val releaseClose: CountDownLatch,
+        private val closeFinished: CountDownLatch,
+    ) : ComicReaderSession {
+        override val pageCount: Int = 1
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
+        }
+
+        override fun close() {
+            closeStarted.countDown()
+            releaseClose.await(2, TimeUnit.SECONDS)
+            closeFinished.countDown()
+        }
+    }
+
+    private fun waitUntil(timeoutMs: Long, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (!condition() && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+        }
+        assertTrue("condition not met within ${timeoutMs}ms", condition())
     }
 }

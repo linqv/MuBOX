@@ -8,6 +8,7 @@ const CENTRAL_DIRECTORY_SIGNATURE: u32 = 0x0201_4b50;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CentralDirectoryEntry {
     pub name: String,
+    pub filename_len: u16,
     pub flags: u16,
     pub compression_method: u16,
     pub crc32: u32,
@@ -48,6 +49,7 @@ pub fn parse_central_directory(
 
         entries.push(CentralDirectoryEntry {
             name,
+            filename_len: filename_len as u16,
             flags,
             compression_method,
             crc32,

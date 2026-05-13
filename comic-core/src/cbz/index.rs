@@ -9,6 +9,7 @@ use crate::zip::RangeReader;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CbzPageEntry {
     pub name: String,
+    pub filename_len: u16,
     pub local_header_offset: u64,
     pub data_offset: Option<u64>,
     pub compressed_size: u64,
@@ -33,6 +34,7 @@ pub fn open_cbz(reader: &impl RangeReader) -> Result<CbzIndex> {
             .filter(|entry| is_supported_image(&entry.name))
             .map(|entry| CbzPageEntry {
                 name: entry.name,
+                filename_len: entry.filename_len,
                 local_header_offset: entry.local_header_offset,
                 data_offset: None,
                 compressed_size: entry.compressed_size,

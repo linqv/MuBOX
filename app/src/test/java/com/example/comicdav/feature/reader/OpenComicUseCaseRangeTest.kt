@@ -6,6 +6,9 @@ import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavException
 import com.example.comicdav.network.WebDavItem
 import java.io.File
+import java.util.concurrent.Executors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -98,6 +101,63 @@ class OpenComicUseCaseRangeTest {
         assertEquals(2, result.session.pageCount)
         assertEquals("/books/book.cbz", client.downloadedPath)
         assertTrue(File(openedLocalPaths.single()).isFile)
+    }
+
+    @Test
+    fun remoteOpenCancellationDoesNotFallBackToWholeFileDownload() = runTest {
+        val client = FakeWebDavClient(
+            info = RemoteFileInfo("/books/book.cbz", size = 4, etag = "\"v1\"", lastModified = null, supportsRange = true),
+            bytes = byteArrayOf(1, 2, 3, 4),
+        )
+        val useCase = OpenComicUseCase(
+            accountId = "account",
+            cache = ComicDownloadCache(temp.root),
+            progressStore = FakeProgressStore(savedPage = 0),
+            openRemoteSession = { _, _, _ -> throw CancellationException("reader closed") },
+            openSession = { error("whole-file fallback should not open after cancellation") },
+        )
+
+        try {
+            useCase.open(client, "/books/book.cbz")
+        } catch (error: CancellationException) {
+            assertEquals("reader closed", error.message)
+            assertNull(client.downloadedPath)
+            return@runTest
+        }
+        error("Expected cancellation to be rethrown")
+    }
+
+    @Test
+    fun remoteNativeOpenRunsOnInjectedIoDispatcher() = runTest {
+        val client = FakeWebDavClient(
+            info = RemoteFileInfo("/books/book.cbz", size = 9, etag = "\"v1\"", lastModified = null, supportsRange = true),
+            bytes = byteArrayOf(1, 2, 3, 4),
+        )
+        val executor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "comic-open-io")
+        }
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val openThreads = mutableListOf<String>()
+        try {
+            val useCase = OpenComicUseCase(
+                accountId = "account",
+                cache = ComicDownloadCache(temp.root),
+                progressStore = FakeProgressStore(savedPage = 0),
+                ioDispatcher = ioDispatcher,
+                openRemoteSession = { _, _, _ ->
+                    openThreads += Thread.currentThread().name
+                    FakeReaderSession(pageCount = 1)
+                },
+                openSession = { error("whole-file fallback should not open") },
+            )
+
+            useCase.open(client, "/books/book.cbz")
+
+            assertEquals(listOf("comic-open-io"), openThreads)
+        } finally {
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
     }
 
     private class FakeProgressStore(private val savedPage: Int) : ReadingProgressGateway {
