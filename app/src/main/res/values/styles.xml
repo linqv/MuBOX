@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.ComicDav" parent="android:style/Theme.Material.Light.NoActionBar" />
+</resources>

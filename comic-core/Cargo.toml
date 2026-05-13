@@ -1,0 +1,12 @@
+[package]
+name = "comic-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "comic_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[dev-dependencies]
