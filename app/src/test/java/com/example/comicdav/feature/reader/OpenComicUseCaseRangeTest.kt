@@ -47,6 +47,35 @@ class OpenComicUseCaseRangeTest {
     }
 
     @Test
+    fun missingAcceptRangesStillTriesRemoteSessionBeforeWholeFileDownload() = runTest {
+        val client = FakeWebDavClient(
+            info = RemoteFileInfo("/books/book.cbz", size = 9, etag = "\"v1\"", lastModified = null, supportsRange = false),
+            bytes = byteArrayOf(1, 2, 3, 4),
+        )
+        val remoteOpens = mutableListOf<RemoteOpenCall>()
+        val progressCalls = mutableListOf<Pair<Long, Long>>()
+        val useCase = OpenComicUseCase(
+            accountId = "account",
+            cache = ComicDownloadCache(temp.root),
+            progressStore = FakeProgressStore(savedPage = 0),
+            openRemoteSession = { fileId, size, cacheDir ->
+                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath)
+                FakeReaderSession(pageCount = 3)
+            },
+            openSession = { error("whole-file fallback should not open") },
+        )
+
+        val result = useCase.open(client, "/books/book.cbz") { downloaded, total ->
+            progressCalls += downloaded to total
+        }
+
+        assertEquals(3, result.session.pageCount)
+        assertEquals(9L, remoteOpens.single().size)
+        assertNull(client.downloadedPath)
+        assertTrue(progressCalls.isEmpty())
+    }
+
+    @Test
     fun rangeFailureFallsBackToWholeFileCache() = runTest {
         val client = FakeWebDavClient(
             info = RemoteFileInfo("/books/book.cbz", size = 4, etag = "\"v1\"", lastModified = null, supportsRange = true),

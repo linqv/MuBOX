@@ -46,11 +46,9 @@ class OpenComicUseCase(
             etag = info.etag,
             lastModified = info.lastModified,
         )
-        if (info.supportsRange) {
-            runCatching {
-                openRemote(client, remotePath, info.size, key)
-            }.getOrNull()?.let { return it }
-        }
+        runCatching {
+            openRemote(client, remotePath, info.size, key)
+        }.getOrNull()?.let { return it }
         return openWholeFile(client, remotePath, info.size, key, onProgress)
     }
 

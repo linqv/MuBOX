@@ -110,7 +110,8 @@ fun ComicDavApp() {
                         } else {
                             val client = webDavViewModel.activeClient() ?: return@WebDavBrowserScreen
                             downloadJob?.cancel()
-                            downloadProgress = DownloadProgressUi(0, item.size ?: 0)
+                            downloadProgress = null
+                            localOpenError = null
                             downloadJob = scope.launch {
                                 runCatching {
                                     val useCase = OpenComicUseCase(
