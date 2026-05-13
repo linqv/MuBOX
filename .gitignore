@@ -1,0 +1,11 @@
+.gradle/
+build/
+**/build/
+.idea/
+*.iml
+local.properties
+.DS_Store
+.worktrees/
+worktrees/
+app/src/main/jniLibs/
+comic-core/target/
