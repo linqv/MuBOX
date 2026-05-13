@@ -23,7 +23,7 @@ value class ComicCacheKey(val value: String) {
 }
 
 class ComicDownloadCache(
-    private val cacheDir: File,
+    val cacheDir: File,
 ) {
     suspend fun download(
         client: WebDavClient,

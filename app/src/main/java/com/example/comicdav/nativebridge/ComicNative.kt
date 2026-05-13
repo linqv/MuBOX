@@ -2,6 +2,7 @@ package com.example.comicdav.nativebridge
 
 interface ComicNativeFacade {
     fun openLocal(path: String): Long
+    fun openRemote(fileId: Long, size: Long, cacheDir: String): Long
     fun pageCount(handle: Long): Int
     fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int
     fun close(handle: Long)
@@ -14,6 +15,8 @@ object ComicNative : ComicNativeFacade {
     }
 
     external override fun openLocal(path: String): Long
+
+    external override fun openRemote(fileId: Long, size: Long, cacheDir: String): Long
 
     external override fun pageCount(handle: Long): Int
 

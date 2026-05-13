@@ -65,6 +65,8 @@ class ComicEngineTest {
 
         override fun openLocal(path: String): Long = openHandle
 
+        override fun openRemote(fileId: Long, size: Long, cacheDir: String): Long = openHandle
+
         override fun pageCount(handle: Long): Int = pageCount
 
         override fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int {

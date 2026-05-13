@@ -3,44 +3,40 @@
 ## Current State
 
 - Repository root: `/home/lin/webcomic`
-- Active worktree: `/home/lin/webcomic/.worktrees/phase-4-whole-file-mvp`
-- Active branch: `feature/phase-4-whole-file-mvp`
+- Active worktree: `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader`
+- Active branch: `feature/phase-5-remote-range-reader`
 - Base branch: `master`
-- Base branch latest commit at handoff: `cb996c4 feat: connect rust core to android reader`
-- Phase 3 has been fast-forward merged into `master`.
-- Phase 4 is implemented on the feature branch and should remain isolated until reviewed.
+- Base branch latest commit at handoff: `24cc57f feat: add whole-file WebDAV reader MVP`
+- Phase 4 has been fast-forward merged into `master`.
+- Phase 5 is implemented on the feature branch and should remain isolated until reviewed.
 
 ## Completed Work
 
-Phase 4 adds the whole-file cached remote-reading MVP:
+Phase 5 adds the first remote Range reader path:
 
-- Added DataStore Preferences dependency.
-- Added stable SHA-256 `ComicCacheKey` from account, remote path, size, and ETag/lastModified.
-- Added `ReadingProgressStore` for saving/loading the current page by comic key.
-- Added full-file streaming download support to `WebDavClient`.
-- Implemented `OkHttpWebDavClient.download()` with streaming writes.
-- Added `ComicDownloadCache` with `.tmp` writes, cancellation cleanup, final `.cbz` rename, and reuse when final size matches.
-- Added `OpenComicUseCase` for `HEAD -> cache download -> Rust local session -> saved initial page`.
-- Updated `ReaderViewModel` to open an existing native session and support initial page.
-- Updated browser UI with download progress, cancel button, and visible remote-open errors.
-- Wired remote comic row clicks to download and open through the local Rust reader.
-- Saved remote reading progress on page changes.
+- Added Kotlin `RangeProvider` and thread-safe `RangeProviderRegistry`.
+- Added `WebDavRangeProvider` that delegates native byte-range callbacks to `WebDavClient.readRange`.
+- Added `ComicNative.openRemote(fileId, size, cacheDir)` and `ComicEngine.openRemote`.
+- Rust sessions now store either a local file reader or JNI-backed remote Range reader.
+- Added `JniRangeReader` that attaches to the JVM and calls `RangeProviderRegistry.readRange(fileId, start, end)`.
+- `OpenComicUseCase` now tries Range mode when `RemoteFileInfo.supportsRange` is true.
+- Range open failures unregister the provider and fall back to the Phase 4 whole-file cache path.
+- Remote Range provider lifetime is tied to the returned `ComicReaderSession.close()`.
+- Added unit coverage for provider registration/removal, Range-first open, fallback, and Rust callback reader behavior.
 
 ## Important Files
 
-- `app/src/main/java/com/example/comicdav/data/ComicDownloadCache.kt`
-- `app/src/main/java/com/example/comicdav/data/ReadingProgressStore.kt`
+- `app/src/main/java/com/example/comicdav/nativebridge/RangeProvider.kt`
+- `app/src/main/java/com/example/comicdav/nativebridge/RangeProviderRegistry.kt`
+- `app/src/main/java/com/example/comicdav/network/WebDavRangeProvider.kt`
+- `app/src/main/java/com/example/comicdav/nativebridge/ComicNative.kt`
+- `app/src/main/java/com/example/comicdav/nativebridge/ComicEngine.kt`
 - `app/src/main/java/com/example/comicdav/feature/reader/OpenComicUseCase.kt`
-- `app/src/main/java/com/example/comicdav/feature/reader/ReaderViewModel.kt`
-- `app/src/main/java/com/example/comicdav/feature/webdav/WebDavBrowserScreen.kt`
-- `app/src/main/java/com/example/comicdav/feature/webdav/WebDavViewModel.kt`
-- `app/src/main/java/com/example/comicdav/network/WebDavClient.kt`
-- `app/src/main/java/com/example/comicdav/network/OkHttpWebDavClient.kt`
-- `app/src/main/java/com/example/comicdav/MainActivity.kt`
-- `app/src/test/java/com/example/comicdav/data/ComicDownloadCacheTest.kt`
-- `app/src/test/java/com/example/comicdav/data/ReadingProgressStoreTest.kt`
-- `app/src/test/java/com/example/comicdav/feature/reader/OpenComicUseCaseTest.kt`
-- `app/src/test/java/com/example/comicdav/feature/reader/ReaderViewModelTest.kt`
+- `comic-core/src/ffi.rs`
+- `comic-core/src/remote/mod.rs`
+- `comic-core/src/remote/jni_range_reader.rs`
+- `app/src/test/java/com/example/comicdav/nativebridge/RangeProviderRegistryTest.kt`
+- `app/src/test/java/com/example/comicdav/feature/reader/OpenComicUseCaseRangeTest.kt`
 
 ## Environment Notes
 
@@ -64,7 +60,7 @@ Required Android NDK path:
 
 ## Verification Already Run
 
-From `/home/lin/webcomic/.worktrees/phase-4-whole-file-mvp/comic-core`:
+From `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader/comic-core`:
 
 ```bash
 PATH=/home/lin/.cargo/bin:$PATH cargo test
@@ -72,12 +68,12 @@ PATH=/home/lin/.cargo/bin:$PATH cargo test
 
 Result: passed.
 
-- 4 library tests passed
+- 5 library tests passed
 - 3 `cbz_local` integration tests passed
 - 2 `range_reader` integration tests passed
 - 0 doc tests
 
-From `/home/lin/webcomic/.worktrees/phase-4-whole-file-mvp`:
+From `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader`:
 
 ```bash
 PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:testDebugUnitTest
@@ -89,7 +85,7 @@ Result: both passed.
 APK path:
 
 ```text
-/home/lin/webcomic/.worktrees/phase-4-whole-file-mvp/app/build/outputs/apk/debug/app-debug.apk
+/home/lin/webcomic/.worktrees/phase-5-remote-range-reader/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 APK contents verified with `zipinfo`:
@@ -101,9 +97,10 @@ lib/x86_64/libcomic_core.so
 
 ## Not Done
 
-- Device install/open smoke for Phase 4 was not completed because ADB reported `no devices/emulators found` after the final APK build.
-- Manual remote WebDAV verification is still needed: connect to a real WebDAV server, tap a remote `.cbz`/`.zip`, confirm download progress, page display, cancel behavior, and resume page after reopening.
-- Remote range reader is not implemented; this belongs to Phase 5.
+- Device install/open smoke for Phase 5 was not completed in this session.
+- Manual remote WebDAV verification is still needed on a Range-capable server: open a remote `.cbz`/`.zip` and confirm first page appears before whole-file download.
+- Manual fallback verification is still needed on a non-Range or bad-Range server.
+- Range diagnostics are still minimal; richer request/byte counters belong in the next cache/prefetch/diagnostics work.
 - ZIP64 full support, data descriptors, and GBK filename fallback remain future hardening work.
 
 ## Recommended Next Steps
@@ -111,25 +108,25 @@ lib/x86_64/libcomic_core.so
 1. Reconnect/authorize an Android device and install the APK:
 
 ```bash
-cd /home/lin/webcomic/.worktrees/phase-4-whole-file-mvp
+cd /home/lin/webcomic/.worktrees/phase-5-remote-range-reader
 adb devices
 adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.example.comicdav/.MainActivity
 ```
 
-2. Manually verify remote whole-file opening against a WebDAV account:
+2. Manually verify remote Range opening against a WebDAV account:
 
 - Connect to WebDAV.
-- Tap a remote `.cbz`/`.zip`.
-- Confirm progress updates.
-- Cancel one download and confirm no broken state.
-- Reopen and confirm the cached file displays.
-- Change page, close, reopen, and confirm progress resumes.
+- Tap a remote `.cbz`/`.zip` on a server whose `HEAD` reports `Accept-Ranges: bytes`.
+- Confirm the reader opens through Range mode and does not first download the whole file.
+- Page forward/backward and confirm page extraction continues to work.
+- Close/reopen and confirm the provider/session is cleaned up and progress resumes.
+- Test a non-Range or invalid-Range server and confirm whole-file fallback still opens.
 
-3. If manual verification passes, merge Phase 4 into `master`:
+3. If manual verification passes, merge Phase 5 into `master`:
 
 ```bash
-git -C /home/lin/webcomic merge --ff-only feature/phase-4-whole-file-mvp
+git -C /home/lin/webcomic merge --ff-only feature/phase-5-remote-range-reader
 ```
 
 4. Re-run verification on `master` after merge:
@@ -143,8 +140,8 @@ PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:testDebugUnitTest
 PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:assembleDebug
 ```
 
-5. Start Phase 5 from:
+5. Start Phase 6 from:
 
 ```text
-/home/lin/webcomic/docs/superpowers/plans/2026-05-13-phase-5-remote-range-reader.md
+/home/lin/webcomic/docs/superpowers/plans/2026-05-13-phase-6-cache-prefetch-performance.md
 ```

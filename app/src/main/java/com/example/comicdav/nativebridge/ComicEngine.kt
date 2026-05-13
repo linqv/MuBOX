@@ -8,17 +8,31 @@ class ComicEngine(
 ) {
     fun openLocal(path: String): ComicReaderSession {
         val handle = native.openLocal(path)
+        return openChecked(handle)
+    }
+
+    fun openRemote(fileId: Long, size: Long, cacheDir: File): ComicReaderSession {
+        val handle = native.openRemote(fileId, size, cacheDir.absolutePath)
+        return openChecked(
+            handle = handle,
+            onClose = { RangeProviderRegistry.unregister(fileId) },
+        )
+    }
+
+    private fun openChecked(handle: Long, onClose: () -> Unit = {}) : ComicReaderSession {
         if (handle == 0L) {
+            onClose()
             throw nativeException()
         }
 
         val pageCount = native.pageCount(handle)
         if (pageCount < 0) {
             native.close(handle)
+            onClose()
             throw nativeException()
         }
 
-        return ComicSession(native, handle, pageCount)
+        return ComicSession(native, handle, pageCount, onClose)
     }
 
     private fun nativeException(): ComicNativeException {
@@ -35,6 +49,7 @@ class ComicSession internal constructor(
     private val native: ComicNativeFacade,
     private val handle: Long,
     override val pageCount: Int,
+    private val onClose: () -> Unit = {},
 ) : ComicReaderSession {
     private var isClosed = false
 
@@ -50,6 +65,7 @@ class ComicSession internal constructor(
         if (!isClosed) {
             isClosed = true
             native.close(handle)
+            onClose()
         }
     }
 }

@@ -14,13 +14,35 @@ use std::sync::Mutex;
 
 use crate::cbz::{open_cbz, CbzIndex};
 use crate::error::ComicCoreError;
-use crate::zip::FileRangeReader;
+use crate::remote::jni_range_reader::JniRangeReader;
+use crate::zip::{FileRangeReader, RangeReader};
 
 pub type ComicHandle = u64;
 
 struct CbzSession {
-    reader: FileRangeReader,
+    reader: SessionReader,
     index: CbzIndex,
+}
+
+enum SessionReader {
+    Local(FileRangeReader),
+    Remote(JniRangeReader),
+}
+
+impl RangeReader for SessionReader {
+    fn size(&self) -> Result<u64> {
+        match self {
+            SessionReader::Local(reader) => reader.size(),
+            SessionReader::Remote(reader) => reader.size(),
+        }
+    }
+
+    fn read_range(&self, start: u64, end_inclusive: u64) -> Result<Vec<u8>> {
+        match self {
+            SessionReader::Local(reader) => reader.read_range(start, end_inclusive),
+            SessionReader::Remote(reader) => reader.read_range(start, end_inclusive),
+        }
+    }
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
@@ -117,6 +139,11 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
             native_open_local as *const () as *mut c_void,
         ),
         native_method(
+            "openRemote",
+            "(JJLjava/lang/String;)J",
+            native_open_remote as *const () as *mut c_void,
+        ),
+        native_method(
             "pageCount",
             "(J)I",
             native_page_count as *const () as *mut c_void,
@@ -151,6 +178,34 @@ extern "system" fn native_open_local(
     path: JString<'_>,
 ) -> jlong {
     match jstring_to_string(&mut env, &path).and_then(|path| open_local_path(Path::new(&path))) {
+        Ok(handle) => handle as jlong,
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+extern "system" fn native_open_remote(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    file_id: jlong,
+    size: jlong,
+    cache_dir: JString<'_>,
+) -> jlong {
+    if file_id <= 0 || size <= 0 {
+        set_last_error(ComicCoreError::InvalidZip(
+            "remote file id and size must be positive".to_string(),
+        ));
+        return 0;
+    }
+
+    match jstring_to_string(&mut env, &cache_dir)
+        .and_then(|_| env.get_java_vm().map_err(Into::into))
+        .and_then(|vm| {
+            let reader = JniRangeReader::new(vm, file_id as u64, size as u64);
+            open_remote_reader(reader)
+        }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
             set_last_error(error);
@@ -208,6 +263,15 @@ extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>
 fn open_local_path(path: &Path) -> Result<ComicHandle> {
     let reader = FileRangeReader::open(path)?;
     let index = open_cbz(&reader)?;
+    insert_session(SessionReader::Local(reader), index)
+}
+
+fn open_remote_reader(reader: JniRangeReader) -> Result<ComicHandle> {
+    let index = open_cbz(&reader)?;
+    insert_session(SessionReader::Remote(reader), index)
+}
+
+fn insert_session(reader: SessionReader, index: CbzIndex) -> Result<ComicHandle> {
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     if handle == 0 {
         return Err(anyhow!("native handle counter overflowed"));

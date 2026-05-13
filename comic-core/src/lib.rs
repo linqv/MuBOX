@@ -1,6 +1,7 @@
 pub mod cbz;
 pub mod error;
 pub mod ffi;
+pub mod remote;
 pub mod sort;
 pub mod zip;
 

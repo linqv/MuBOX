@@ -4,10 +4,13 @@ import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.ComicReaderSession
+import com.example.comicdav.nativebridge.RangeProviderRegistry
 import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.network.WebDavRangeProvider
 import java.io.File
 
 typealias RemoteComicSessionFactory = (path: String) -> ComicReaderSession
+typealias RemoteRangeComicSessionFactory = (fileId: Long, size: Long, cacheDir: File) -> ComicReaderSession
 
 interface ReadingProgressGateway {
     suspend fun savePage(comicKey: String, pageIndex: Int)
@@ -26,6 +29,9 @@ class OpenComicUseCase(
     private val cache: ComicDownloadCache,
     private val progressStore: ReadingProgressGateway,
     private val openSession: RemoteComicSessionFactory = { path -> ComicEngine().openLocal(path) },
+    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir ->
+        ComicEngine().openRemote(fileId, size, cacheDir)
+    },
 ) {
     suspend fun open(
         client: WebDavClient,
@@ -40,11 +46,49 @@ class OpenComicUseCase(
             etag = info.etag,
             lastModified = info.lastModified,
         )
+        if (info.supportsRange) {
+            runCatching {
+                openRemote(client, remotePath, info.size, key)
+            }.getOrNull()?.let { return it }
+        }
+        return openWholeFile(client, remotePath, info.size, key, onProgress)
+    }
+
+    private suspend fun openRemote(
+        client: WebDavClient,
+        remotePath: String,
+        size: Long,
+        key: ComicCacheKey,
+    ): OpenComicResult {
+        cache.cacheDir.mkdirs()
+        val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, size))
+        return try {
+            val session = openRemoteSession(fileId, size, cache.cacheDir)
+            val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
+            OpenComicResult(
+                comicKey = key.value,
+                localFile = cache.cacheDir.resolve("${key.value}.remote"),
+                session = session,
+                initialPage = initialPage,
+            )
+        } catch (error: Throwable) {
+            RangeProviderRegistry.unregister(fileId)
+            throw error
+        }
+    }
+
+    private suspend fun openWholeFile(
+        client: WebDavClient,
+        remotePath: String,
+        size: Long,
+        key: ComicCacheKey,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+    ): OpenComicResult {
         val localFile = cache.download(
             client = client,
             remotePath = remotePath,
             key = key,
-            expectedSize = info.size,
+            expectedSize = size,
             onProgress = onProgress,
         )
         val session = openSession(localFile.absolutePath)
