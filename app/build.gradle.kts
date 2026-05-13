@@ -16,6 +16,7 @@ data class RustAndroidTarget(
 )
 
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
+val targetAbi = providers.gradleProperty("targetAbi").orNull
 
 android {
     namespace = "com.example.comicdav"
@@ -31,7 +32,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += targetAbi?.let(::listOf) ?: listOf("arm64-v8a", "x86_64")
         }
     }
 
@@ -68,6 +69,7 @@ tasks.named("preBuild") {
 
 tasks.register("buildRustAndroidDebug") {
     val outputRoot = generatedRustJniLibs
+    inputs.property("targetAbi", targetAbi ?: "all")
     outputs.dir(outputRoot)
 
     doLast {
@@ -91,7 +93,7 @@ tasks.register("buildRustAndroidDebug") {
                 linkerName = "x86_64-linux-android35-clang",
                 linkerEnv = "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER",
             ),
-        )
+        ).filter { targetAbi == null || it.abi == targetAbi }
 
         val outputDir = outputRoot.get().asFile
         project.delete(outputDir)
@@ -153,6 +155,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")

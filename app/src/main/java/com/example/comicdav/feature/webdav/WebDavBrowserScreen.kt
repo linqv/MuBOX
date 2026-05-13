@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +24,9 @@ fun WebDavBrowserScreen(
     uiState: WebDavUiState,
     onItemClick: (WebDavItem) -> Unit,
     onProbeTail: () -> Unit,
+    downloadProgress: DownloadProgressUi?,
+    downloadError: String?,
+    onCancelDownload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -47,12 +51,36 @@ fun WebDavBrowserScreen(
         }
         Button(
             onClick = onProbeTail,
-            enabled = uiState.selectedItem?.isDirectory == false && !uiState.isLoading,
+            enabled = uiState.selectedItem?.isDirectory == false && !uiState.isLoading && downloadProgress == null,
         ) {
             Text("Read Tail 64 KiB")
+        }
+        if (downloadProgress != null) {
+            Text(text = downloadProgress.label)
+            LinearProgressIndicator(
+                progress = { downloadProgress.fraction },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(onClick = onCancelDownload) {
+                Text("Cancel Download")
+            }
+        }
+        if (!downloadError.isNullOrBlank()) {
+            Text(text = downloadError)
         }
         if (uiState.diagnostic.isNotBlank()) {
             Text(text = uiState.diagnostic)
         }
     }
+}
+
+data class DownloadProgressUi(
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+) {
+    val fraction: Float
+        get() = if (totalBytes <= 0L) 0f else (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
+
+    val label: String
+        get() = "Downloading ${downloadedBytes / 1024} KiB / ${totalBytes / 1024} KiB"
 }

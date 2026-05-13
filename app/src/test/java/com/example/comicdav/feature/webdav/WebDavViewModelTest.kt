@@ -3,6 +3,7 @@ package com.example.comicdav.feature.webdav
 import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavItem
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -81,6 +82,12 @@ class WebDavViewModelTest {
         override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray {
             lastRange = start to endInclusive
             return rangeBytes
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long {
+            target.writeBytes(rangeBytes)
+            onBytesRead(rangeBytes.size.toLong())
+            return rangeBytes.size.toLong()
         }
     }
 }

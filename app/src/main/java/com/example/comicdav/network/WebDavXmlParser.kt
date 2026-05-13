@@ -2,15 +2,17 @@ package com.example.comicdav.network
 
 import org.w3c.dom.Element
 import java.io.InputStream
+import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.parsers.ParserConfigurationException
 
 object WebDavXmlParser {
     fun parse(input: InputStream, basePath: String): List<WebDavItem> {
         val document = documentBuilderFactory().newDocumentBuilder().parse(input)
-        val base = normalizeDirectoryPath(basePath)
+        val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/"))
         val responses = document.getElementsByTagNameNS("*", "response")
 
         return buildList {
@@ -22,19 +24,31 @@ object WebDavXmlParser {
     }
 
     private fun documentBuilderFactory(): DocumentBuilderFactory =
-        DocumentBuilderFactory.newInstance().apply {
+        configureSecurely(DocumentBuilderFactory.newInstance())
+
+    internal fun configureSecurely(factory: DocumentBuilderFactory): DocumentBuilderFactory =
+        factory.apply {
             isNamespaceAware = true
-            setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeatureIfSupported(XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            setFeatureIfSupported("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeatureIfSupported("http://xml.org/sax/features/external-general-entities", false)
+            setFeatureIfSupported("http://xml.org/sax/features/external-parameter-entities", false)
         }
 
+    private fun DocumentBuilderFactory.setFeatureIfSupported(feature: String, value: Boolean) {
+        try {
+            setFeature(feature, value)
+        } catch (_: ParserConfigurationException) {
+            // Android parser implementations vary; unsupported hardening features should not block PROPFIND parsing.
+        }
+    }
+
     private fun Element.toItem(basePath: String): WebDavItem? {
-        val path = childText("href") ?: return null
+        val href = childText("href") ?: return null
         val isDirectory = hasDescendant("collection")
+        val path = normalizeItemPath(normalizeHref(href, basePath), isDirectory)
         val comparablePath = if (isDirectory) normalizeDirectoryPath(path) else path
-        if (comparablePath == basePath) return null
+        if (isSamePath(comparablePath, basePath)) return null
 
         return WebDavItem(
             name = decodedName(path),
@@ -56,6 +70,44 @@ object WebDavXmlParser {
         getElementsByTagNameNS("*", localName).length > 0
 
     private fun normalizeDirectoryPath(path: String): String = if (path.endsWith("/")) path else "$path/"
+
+    private fun normalizeItemPath(path: String, isDirectory: Boolean): String =
+        if (isDirectory) normalizeDirectoryPath(path) else path
+
+    private fun normalizeHref(href: String, basePath: String): String {
+        val path = href.trim()
+        val absolutePath = absoluteUriPath(path)
+        if (absolutePath != null) return absolutePath
+        if (path.startsWith("/")) return path
+        if (matchesBaseRoot(path, basePath)) return "/$path"
+
+        return normalizeDirectoryPath(basePath) + path.trimStart('/')
+    }
+
+    private fun matchesBaseRoot(path: String, basePath: String): Boolean {
+        val baseRoot = normalizeDirectoryPath(basePath).trimStart('/').substringBefore('/') + "/"
+        return path.startsWith(baseRoot) || decodedPath(path).startsWith(decodedPath(baseRoot))
+    }
+
+    private fun absoluteUriPath(href: String): String? {
+        return try {
+            val uri = URI(href)
+            if (uri.scheme == null) {
+                null
+            } else {
+                val path = uri.rawPath ?: uri.path ?: return null
+                if (uri.rawQuery == null) path else "$path?${uri.rawQuery}"
+            }
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun isSamePath(left: String, right: String): Boolean =
+        decodedPath(normalizeDirectoryPath(left)) == decodedPath(normalizeDirectoryPath(right))
+
+    private fun decodedPath(path: String): String =
+        URLDecoder.decode(path, StandardCharsets.UTF_8.name())
 
     private fun decodedName(path: String): String {
         val trimmed = path.trimEnd('/')

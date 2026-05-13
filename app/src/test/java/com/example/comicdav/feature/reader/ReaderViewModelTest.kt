@@ -66,6 +66,24 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun selectPageSavesReadingProgressWhenComicKeyIsPresent() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 5)
+        val savedPages = mutableListOf<Pair<String, Int>>()
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+            savePage = { key, page -> savedPages += key to page },
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root, comicKey = "comic-key")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectPage(2)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("comic-key" to 2), savedPages)
+    }
+
+    @Test
     fun clearedClosesOpenSession() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 1)
         val viewModel = ReaderViewModel(

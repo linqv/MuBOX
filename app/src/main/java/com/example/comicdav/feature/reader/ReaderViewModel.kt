@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 typealias ComicSessionFactory = (path: String) -> ComicReaderSession
+typealias SaveReadingProgress = suspend (comicKey: String, pageIndex: Int) -> Unit
 
 data class ReaderUiState(
     val pageCount: Int = 0,
@@ -26,34 +27,72 @@ data class ReaderUiState(
 class ReaderViewModel(
     private val openSession: ComicSessionFactory = { path -> ComicEngine().openLocal(path) },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val savePage: SaveReadingProgress = { _, _ -> },
 ) : ViewModel() {
     var uiState by mutableStateOf(ReaderUiState())
         private set
 
     private var session: ComicReaderSession? = null
     private var cacheDir: File? = null
+    private var comicKey: String? = null
 
-    fun openLocal(path: String, cacheDir: File) {
+    fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
         this.cacheDir = cacheDir
+        this.comicKey = comicKey
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
                     val openedSession = openSession(path)
-                    val files = loadAround(openedSession, pageIndex = 0, cacheDir = cacheDir)
-                    openedSession to files
+                    val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
+                    val files = loadAround(openedSession, pageIndex = startPage, cacheDir = cacheDir)
+                    OpenedReader(openedSession, startPage, files)
                 }
             }.fold(
-                onSuccess = { (openedSession, files) ->
-                    session = openedSession
+                onSuccess = { opened ->
+                    session = opened.session
                     uiState = ReaderUiState(
-                        pageCount = openedSession.pageCount,
-                        currentPage = 0,
-                        pageFiles = files,
+                        pageCount = opened.session.pageCount,
+                        currentPage = opened.currentPage,
+                        pageFiles = opened.files,
                     )
                 },
                 onFailure = { error ->
+                    uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
+                },
+            )
+        }
+    }
+
+    fun openExistingSession(
+        openedSession: ComicReaderSession,
+        cacheDir: File,
+        initialPage: Int,
+        comicKey: String,
+    ) {
+        closeCurrentSession()
+        this.cacheDir = cacheDir
+        this.comicKey = comicKey
+        uiState = ReaderUiState(isLoading = true)
+        viewModelScope.launch {
+            runCatching {
+                withContext(ioDispatcher) {
+                    val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
+                    val files = loadAround(openedSession, pageIndex = startPage, cacheDir = cacheDir)
+                    OpenedReader(openedSession, startPage, files)
+                }
+            }.fold(
+                onSuccess = { opened ->
+                    session = opened.session
+                    uiState = ReaderUiState(
+                        pageCount = opened.session.pageCount,
+                        currentPage = opened.currentPage,
+                        pageFiles = opened.files,
+                    )
+                },
+                onFailure = { error ->
+                    openedSession.close()
                     uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
                 },
             )
@@ -78,6 +117,11 @@ class ReaderViewModel(
                         pageFiles = uiState.pageFiles + files,
                         isLoading = false,
                     )
+                    comicKey?.let { key ->
+                        viewModelScope.launch {
+                            savePage(key, pageIndex)
+                        }
+                    }
                 },
                 onFailure = { error ->
                     uiState = uiState.copy(
@@ -101,6 +145,7 @@ class ReaderViewModel(
     private fun closeCurrentSession() {
         session?.close()
         session = null
+        comicKey = null
     }
 
     private fun loadAround(
@@ -118,4 +163,10 @@ class ReaderViewModel(
     private fun pageCacheFile(cacheDir: File, pageIndex: Int): File {
         return File(cacheDir, "comicdav-page-$pageIndex.img")
     }
+
+    private data class OpenedReader(
+        val session: ComicReaderSession,
+        val currentPage: Int,
+        val files: Map<Int, File>,
+    )
 }

@@ -7,7 +7,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.net.URI
+import java.net.URLDecoder
 import java.util.Locale
 
 class OkHttpWebDavClient(
@@ -33,7 +35,10 @@ class OkHttpWebDavClient(
             .build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw WebDavException.HttpStatus(response.code, "PROPFIND failed with HTTP ${response.code}")
+                throw WebDavException.HttpStatus(
+                    response.code,
+                    "PROPFIND failed with HTTP ${response.code}: ${request.url}",
+                )
             }
             val responseBody = response.body ?: throw WebDavException.MissingMetadata("PROPFIND response body is empty")
             WebDavXmlParser.parse(responseBody.byteStream(), path)
@@ -44,7 +49,7 @@ class OkHttpWebDavClient(
         val request = requestBuilder(path).head().build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw WebDavException.HttpStatus(response.code, "HEAD failed with HTTP ${response.code}")
+                throw WebDavException.HttpStatus(response.code, "HEAD failed with HTTP ${response.code}: ${request.url}")
             }
             val size = response.header("Content-Length")?.toLongOrNull()
                 ?: throw WebDavException.MissingMetadata("HEAD response is missing Content-Length")
@@ -76,8 +81,37 @@ class OkHttpWebDavClient(
                             ?: throw WebDavException.MissingMetadata("Range response body is empty")
                     }
                     200 -> throw WebDavException.RangeNotSupported()
-                    else -> throw WebDavException.HttpStatus(response.code, "Range GET failed with HTTP ${response.code}")
+                    else -> throw WebDavException.HttpStatus(
+                        response.code,
+                        "Range GET failed with HTTP ${response.code}: ${request.url}",
+                    )
                 }
+            }
+        }
+
+    override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+        withContext(Dispatchers.IO) {
+            val request = requestBuilder(path).get().build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw WebDavException.HttpStatus(response.code, "GET failed with HTTP ${response.code}: ${request.url}")
+                }
+                val body = response.body ?: throw WebDavException.MissingMetadata("GET response body is empty")
+                target.parentFile?.mkdirs()
+                var total = 0L
+                body.byteStream().use { input ->
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                            total += read
+                            onBytesRead(total)
+                        }
+                    }
+                }
+                total
             }
         }
 
@@ -91,10 +125,25 @@ class OkHttpWebDavClient(
             }
 
     private fun resolveUrl(path: String): String {
+        if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
+            return path
+        }
+
         val base = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        val relative = path.trimStart('/')
-        return URI(base).resolve(relative).toString()
+        val baseUri = URI(base)
+        val basePath = baseUri.rawPath.orEmpty()
+        val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
+        val decodedMountedPrefix = decodePath(mountedPrefix)
+        val requestPath = if (path.startsWith(mountedPrefix) || path.startsWith(decodedMountedPrefix)) {
+            path
+        } else {
+            path.trimStart('/')
+        }
+        return URI(base).resolve(requestPath).toString()
     }
+
+    private fun decodePath(path: String): String =
+        URLDecoder.decode(path, Charsets.UTF_8.name())
 
     private fun validateContentRange(
         header: String?,

@@ -40,6 +40,10 @@ class WebDavViewModel(
 
     private var client: WebDavClient? = null
 
+    fun activeClient(): WebDavClient? = client
+
+    fun accountId(): String = "${uiState.baseUrl.trim()}|${uiState.username}"
+
     fun updateBaseUrl(value: String) {
         uiState = uiState.copy(baseUrl = value)
     }
