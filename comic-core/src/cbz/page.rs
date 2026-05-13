@@ -4,8 +4,12 @@ use std::io::Read;
 
 use crate::cbz::index::CbzIndex;
 use crate::error::ComicCoreError;
-use crate::zip::local_header::{relative_data_offset, LOCAL_HEADER_MIN_SIZE, MAX_LOCAL_HEADER_EXTRA_LEN};
+use crate::zip::local_header::{
+    relative_data_offset, LOCAL_HEADER_MIN_SIZE, MAX_LOCAL_HEADER_EXTRA_LEN,
+};
 use crate::zip::RangeReader;
+
+const LOCAL_HEADER_OPTIMISTIC_EXTRA_LEN: u64 = 4 * 1024;
 
 impl CbzIndex {
     pub fn extract_page(&self, reader: &impl RangeReader, page_index: usize) -> Result<Vec<u8>> {
@@ -38,9 +42,9 @@ fn read_page_with_local_header(
     reader: &impl RangeReader,
     page: &crate::cbz::index::CbzPageEntry,
 ) -> Result<Vec<u8>> {
-    let max_header_len =
-        LOCAL_HEADER_MIN_SIZE + page.filename_len as u64 + MAX_LOCAL_HEADER_EXTRA_LEN;
-    let range_len = max_header_len + page.compressed_size;
+    let optimistic_header_len =
+        LOCAL_HEADER_MIN_SIZE + page.filename_len as u64 + LOCAL_HEADER_OPTIMISTIC_EXTRA_LEN;
+    let range_len = optimistic_header_len + page.compressed_size;
     let file_size = reader.size()?;
     let end = page
         .local_header_offset
@@ -53,8 +57,19 @@ fn read_page_with_local_header(
     let data_end = data_start
         .checked_add(page.compressed_size as usize)
         .ok_or_else(|| ComicCoreError::InvalidZip("page data range overflow".to_string()))?;
-    let compressed = bytes
-        .get(data_start..data_end)
-        .ok_or_else(|| ComicCoreError::InvalidZip("page data out of bounds".to_string()))?;
-    Ok(compressed.to_vec())
+    if let Some(compressed) = bytes.get(data_start..data_end) {
+        return Ok(compressed.to_vec());
+    }
+
+    if data_start as u64
+        > LOCAL_HEADER_MIN_SIZE + page.filename_len as u64 + MAX_LOCAL_HEADER_EXTRA_LEN
+    {
+        return Err(ComicCoreError::InvalidZip("page data out of bounds".to_string()).into());
+    }
+    let data_offset = page.local_header_offset + data_start as u64;
+    let data_end = data_offset
+        .checked_add(page.compressed_size)
+        .and_then(|value| value.checked_sub(1))
+        .ok_or_else(|| ComicCoreError::InvalidZip("page data range overflow".to_string()))?;
+    reader.read_range(data_offset, data_end)
 }

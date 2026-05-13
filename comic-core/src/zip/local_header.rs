@@ -8,7 +8,10 @@ pub const LOCAL_HEADER_MIN_SIZE: u64 = 30;
 pub const MAX_LOCAL_HEADER_EXTRA_LEN: u64 = u16::MAX as u64;
 
 pub fn data_offset(reader: &impl RangeReader, local_header_offset: u64) -> Result<u64> {
-    let header = reader.read_range(local_header_offset, local_header_offset + LOCAL_HEADER_MIN_SIZE - 1)?;
+    let header = reader.read_range(
+        local_header_offset,
+        local_header_offset + LOCAL_HEADER_MIN_SIZE - 1,
+    )?;
     Ok(local_header_offset + relative_data_offset(&header)?)
 }
 

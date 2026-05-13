@@ -14,7 +14,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -270,19 +272,28 @@ class ReaderViewModel(
         val prefetchGeneration = generation
         prefetchJob = viewModelScope.launch {
             delay(PREFETCH_START_DELAY_MS)
-            runCatching {
-                withContext(ioDispatcher) {
-                    loadPages(
-                        session = activeSession,
-                        pageIndexes = missingNeighbors,
-                        cacheDir = activeCacheDir,
-                        expectedGeneration = prefetchGeneration,
-                    )
-                }
-            }.onSuccess { files ->
-                if (prefetchGeneration == generation) {
-                    uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
-                }
+            for (page in missingNeighbors) {
+                currentCoroutineContext().ensureActive()
+                runCatching {
+                    withContext(ioDispatcher) {
+                        loadPages(
+                            session = activeSession,
+                            pageIndexes = listOf(page),
+                            cacheDir = activeCacheDir,
+                            expectedGeneration = prefetchGeneration,
+                        )
+                    }
+                }.fold(
+                    onSuccess = { files ->
+                        currentCoroutineContext().ensureActive()
+                        if (prefetchGeneration == generation) {
+                            uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
+                        }
+                    },
+                    onFailure = {
+                        return@launch
+                    },
+                )
             }
         }
     }
@@ -306,10 +317,12 @@ class ReaderViewModel(
             .distinct()
             .filter { it in 0 until session.pageCount }
             .forEach { index ->
+                currentCoroutineContext().ensureActive()
                 if (expectedGeneration != generation) {
                     throw CancellationException("reader session changed")
                 }
                 val output = sessionMutex.withLock {
+                    currentCoroutineContext().ensureActive()
                     if (expectedGeneration != generation) {
                         throw CancellationException("reader session changed")
                     }

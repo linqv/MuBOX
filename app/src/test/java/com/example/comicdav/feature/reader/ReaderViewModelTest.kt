@@ -52,6 +52,24 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun prefetchPublishesEarlierPagesWhenLaterForwardPageFails() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 4, failOnPages = setOf(2))
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.currentPage)
+        assertTrue(session.loadedPages.containsAll(listOf(0, 1, 2)))
+        assertTrue(viewModel.uiState.pageFiles.keys.contains(1))
+        assertTrue(!viewModel.uiState.pageFiles.keys.contains(2))
+        assertTrue(!viewModel.uiState.pageFiles.keys.contains(3))
+    }
+
+    @Test
     fun selectPageLoadsPreviousCurrentAndNextPage() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 5)
         val viewModel = ReaderViewModel(
@@ -196,12 +214,16 @@ class ReaderViewModelTest {
 
     private class FakeReaderSession(
         override val pageCount: Int,
+        private val failOnPages: Set<Int> = emptySet(),
     ) : ComicReaderSession {
         val loadedPages = mutableListOf<Int>()
         var closed = false
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
             loadedPages += pageIndex
+            if (pageIndex in failOnPages) {
+                error("page $pageIndex failed")
+            }
             outputFile.writeText("page-$pageIndex")
             return outputFile
         }

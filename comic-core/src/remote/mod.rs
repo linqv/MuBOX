@@ -26,7 +26,8 @@ impl<C: RangeCallbacks> RangeReader for CallbackRangeReader<C> {
     }
 
     fn read_range(&self, start: u64, end_inclusive: u64) -> Result<Vec<u8>> {
-        self.callbacks.read_range(self.file_id, start, end_inclusive)
+        self.callbacks
+            .read_range(self.file_id, start, end_inclusive)
     }
 }
 

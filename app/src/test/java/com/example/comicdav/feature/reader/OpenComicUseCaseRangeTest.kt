@@ -50,6 +50,34 @@ class OpenComicUseCaseRangeTest {
     }
 
     @Test
+    fun knownRemoteFileInfoSkipsHeadRequestOnFirstOpen() = runTest {
+        val knownInfo = RemoteFileInfo(
+            "/books/book.cbz",
+            size = 9,
+            etag = "\"v1\"",
+            lastModified = 123,
+            supportsRange = true,
+        )
+        val client = FakeWebDavClient(
+            info = knownInfo,
+            bytes = byteArrayOf(1, 2, 3, 4),
+        )
+        val useCase = OpenComicUseCase(
+            accountId = "account",
+            cache = ComicDownloadCache(temp.root),
+            progressStore = FakeProgressStore(savedPage = 0),
+            openRemoteSession = { _, _, _ -> FakeReaderSession(pageCount = 3) },
+            openSession = { error("whole-file fallback should not open") },
+        )
+
+        val result = useCase.open(client, "/books/book.cbz", knownInfo = knownInfo)
+
+        assertEquals(3, result.session.pageCount)
+        assertEquals(0, client.headCalls)
+        assertNull(client.downloadedPath)
+    }
+
+    @Test
     fun missingAcceptRangesStillTriesRemoteSessionBeforeWholeFileDownload() = runTest {
         val client = FakeWebDavClient(
             info = RemoteFileInfo("/books/book.cbz", size = 9, etag = "\"v1\"", lastModified = null, supportsRange = false),
@@ -175,9 +203,13 @@ class OpenComicUseCaseRangeTest {
         private val bytes: ByteArray,
     ) : WebDavClient {
         var downloadedPath: String? = null
+        var headCalls = 0
 
         override suspend fun list(path: String): List<WebDavItem> = emptyList()
-        override suspend fun head(path: String): RemoteFileInfo = info
+        override suspend fun head(path: String): RemoteFileInfo {
+            headCalls += 1
+            return info
+        }
         override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray = bytes
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long {
             downloadedPath = path

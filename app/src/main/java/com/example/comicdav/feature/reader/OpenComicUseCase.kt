@@ -5,6 +5,7 @@ import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.RangeProviderRegistry
+import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavRangeProvider
 import java.io.File
@@ -41,9 +42,10 @@ class OpenComicUseCase(
     suspend fun open(
         client: WebDavClient,
         remotePath: String,
+        knownInfo: RemoteFileInfo? = null,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
     ): OpenComicResult {
-        val info = client.head(remotePath)
+        val info = knownInfo ?: client.head(remotePath)
         val key = ComicCacheKey.fromRemote(
             accountId = accountId,
             remotePath = remotePath,

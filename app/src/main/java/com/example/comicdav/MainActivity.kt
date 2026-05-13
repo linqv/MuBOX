@@ -30,6 +30,7 @@ import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
+import com.example.comicdav.network.RemoteFileInfo
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -106,7 +107,19 @@ fun ComicDavApp() {
                                     cache = remoteCache,
                                     progressStore = progressStore,
                                 )
-                                useCase.open(client, item.path) { downloaded, total ->
+                                useCase.open(
+                                    client = client,
+                                    remotePath = item.path,
+                                    knownInfo = item.size?.let { size ->
+                                        RemoteFileInfo(
+                                            path = item.path,
+                                            size = size,
+                                            etag = item.etag,
+                                            lastModified = item.lastModified,
+                                            supportsRange = true,
+                                        )
+                                    },
+                                ) { downloaded, total ->
                                     scope.launch {
                                         downloadProgress = DownloadProgressUi(downloaded, total)
                                     }
