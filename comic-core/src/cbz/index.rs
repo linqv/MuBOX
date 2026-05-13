@@ -4,7 +4,6 @@ use crate::error::ComicCoreError;
 use crate::sort::natural;
 use crate::zip::central_directory::parse_central_directory;
 use crate::zip::eocd::find_eocd;
-use crate::zip::local_header;
 use crate::zip::RangeReader;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,19 +31,16 @@ pub fn open_cbz(reader: &impl RangeReader) -> Result<CbzIndex> {
         parse_central_directory(&central_directory, eocd.total_entries)?
             .into_iter()
             .filter(|entry| is_supported_image(&entry.name))
-            .map(|entry| {
-                let data_offset = local_header::data_offset(reader, entry.local_header_offset)?;
-                Ok(CbzPageEntry {
-                    name: entry.name,
-                    local_header_offset: entry.local_header_offset,
-                    data_offset: Some(data_offset),
-                    compressed_size: entry.compressed_size,
-                    uncompressed_size: entry.uncompressed_size,
-                    compression_method: entry.compression_method,
-                    crc32: entry.crc32,
-                })
+            .map(|entry| CbzPageEntry {
+                name: entry.name,
+                local_header_offset: entry.local_header_offset,
+                data_offset: None,
+                compressed_size: entry.compressed_size,
+                uncompressed_size: entry.uncompressed_size,
+                compression_method: entry.compression_method,
+                crc32: entry.crc32,
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
 
     if pages.is_empty() {
         return Err(ComicCoreError::NoImages.into());

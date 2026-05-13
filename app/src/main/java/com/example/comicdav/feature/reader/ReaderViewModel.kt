@@ -35,28 +35,37 @@ class ReaderViewModel(
     private var session: ComicReaderSession? = null
     private var cacheDir: File? = null
     private var comicKey: String? = null
+    private var pageCacheKey: String? = null
+    private var generation = 0
 
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
         this.cacheDir = cacheDir
         this.comicKey = comicKey
+        this.pageCacheKey = comicKey ?: "local-${path.hashCode()}"
+        val openGeneration = generation
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
                     val openedSession = openSession(path)
                     val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
-                    val files = loadAround(openedSession, pageIndex = startPage, cacheDir = cacheDir)
+                    val files = loadPages(openedSession, listOf(startPage), cacheDir = cacheDir)
                     OpenedReader(openedSession, startPage, files)
                 }
             }.fold(
                 onSuccess = { opened ->
+                    if (openGeneration != generation) {
+                        opened.session.close()
+                        return@fold
+                    }
                     session = opened.session
                     uiState = ReaderUiState(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
+                    prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
                     uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
@@ -74,22 +83,29 @@ class ReaderViewModel(
         closeCurrentSession()
         this.cacheDir = cacheDir
         this.comicKey = comicKey
+        this.pageCacheKey = comicKey
+        val openGeneration = generation
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
                     val startPage = initialPage.coerceIn(0, (openedSession.pageCount - 1).coerceAtLeast(0))
-                    val files = loadAround(openedSession, pageIndex = startPage, cacheDir = cacheDir)
+                    val files = loadPages(openedSession, listOf(startPage), cacheDir = cacheDir)
                     OpenedReader(openedSession, startPage, files)
                 }
             }.fold(
                 onSuccess = { opened ->
+                    if (openGeneration != generation) {
+                        opened.session.close()
+                        return@fold
+                    }
                     session = opened.session
                     uiState = ReaderUiState(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
+                    prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
                     openedSession.close()
@@ -104,26 +120,36 @@ class ReaderViewModel(
         val activeCacheDir = cacheDir ?: return
         if (pageIndex !in 0 until activeSession.pageCount) return
 
-        uiState = uiState.copy(currentPage = pageIndex, isLoading = true, error = null)
+        val existingFile = uiState.pageFiles[pageIndex]
+        uiState = uiState.copy(
+            currentPage = pageIndex,
+            isLoading = existingFile == null,
+            error = null,
+        )
+        if (existingFile != null) {
+            saveProgress(pageIndex)
+            prefetchNeighbors(pageIndex)
+            return
+        }
+        val loadGeneration = generation
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
-                    loadAround(activeSession, pageIndex, activeCacheDir)
+                    loadPages(activeSession, listOf(pageIndex), activeCacheDir)
                 }
             }.fold(
                 onSuccess = { files ->
+                    if (loadGeneration != generation) return@fold
                     uiState = uiState.copy(
                         currentPage = pageIndex,
                         pageFiles = uiState.pageFiles + files,
                         isLoading = false,
                     )
-                    comicKey?.let { key ->
-                        viewModelScope.launch {
-                            savePage(key, pageIndex)
-                        }
-                    }
+                    saveProgress(pageIndex)
+                    prefetchNeighbors(pageIndex)
                 },
                 onFailure = { error ->
+                    if (loadGeneration != generation) return@fold
                     uiState = uiState.copy(
                         isLoading = false,
                         error = error.message ?: "Failed to load page",
@@ -143,17 +169,50 @@ class ReaderViewModel(
     }
 
     private fun closeCurrentSession() {
+        generation++
         session?.close()
         session = null
         comicKey = null
+        pageCacheKey = null
     }
 
-    private fun loadAround(
+    private fun prefetchNeighbors(pageIndex: Int) {
+        val activeSession = session ?: return
+        val activeCacheDir = cacheDir ?: return
+        val missingNeighbors = listOf(pageIndex + 1, pageIndex - 1)
+            .filter { it in 0 until activeSession.pageCount }
+            .filterNot { uiState.pageFiles.containsKey(it) }
+        if (missingNeighbors.isEmpty()) return
+
+        val prefetchGeneration = generation
+        viewModelScope.launch {
+            runCatching {
+                withContext(ioDispatcher) {
+                    loadPages(activeSession, missingNeighbors, activeCacheDir)
+                }
+            }.onSuccess { files ->
+                if (prefetchGeneration == generation) {
+                    uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
+                }
+            }
+        }
+    }
+
+    private fun saveProgress(pageIndex: Int) {
+        comicKey?.let { key ->
+            viewModelScope.launch {
+                savePage(key, pageIndex)
+            }
+        }
+    }
+
+    private fun loadPages(
         session: ComicReaderSession,
-        pageIndex: Int,
+        pageIndexes: List<Int>,
         cacheDir: File,
     ): Map<Int, File> {
-        return (pageIndex - 1..pageIndex + 1)
+        return pageIndexes
+            .distinct()
             .filter { it in 0 until session.pageCount }
             .associateWith { index ->
                 session.loadPageToFile(index, pageCacheFile(cacheDir, index))
@@ -161,7 +220,10 @@ class ReaderViewModel(
     }
 
     private fun pageCacheFile(cacheDir: File, pageIndex: Int): File {
-        return File(cacheDir, "comicdav-page-$pageIndex.img")
+        val safeKey = (pageCacheKey ?: "default").replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val pageDir = File(cacheDir, "comicdav-pages/$safeKey")
+        pageDir.mkdirs()
+        return File(pageDir, "page-$pageIndex.img")
     }
 
     private data class OpenedReader(

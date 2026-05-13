@@ -66,6 +66,43 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun selectPageLoadsCurrentPageBeforeNeighbors() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 5)
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.loadedPages.clear()
+
+        viewModel.selectPage(2)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(2, session.loadedPages.first())
+    }
+
+    @Test
+    fun pageCacheFilesAreScopedByComicKey() = runTest(dispatcher) {
+        val firstSession = FakeReaderSession(pageCount = 1)
+        val secondSession = FakeReaderSession(pageCount = 1)
+        val viewModel = ReaderViewModel(ioDispatcher = dispatcher)
+
+        viewModel.openExistingSession(firstSession, temp.root, initialPage = 0, comicKey = "first")
+        dispatcher.scheduler.advanceUntilIdle()
+        val firstPath = viewModel.uiState.pageFiles.getValue(0).absolutePath
+        viewModel.closeReader()
+
+        viewModel.openExistingSession(secondSession, temp.root, initialPage = 0, comicKey = "second")
+        dispatcher.scheduler.advanceUntilIdle()
+        val secondPath = viewModel.uiState.pageFiles.getValue(0).absolutePath
+
+        assertTrue(firstPath.contains("first"))
+        assertTrue(secondPath.contains("second"))
+        assertTrue(firstPath != secondPath)
+    }
+
+    @Test
     fun selectPageSavesReadingProgressWhenComicKeyIsPresent() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 5)
         val savedPages = mutableListOf<Pair<String, Int>>()

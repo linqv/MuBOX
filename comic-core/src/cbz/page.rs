@@ -4,6 +4,7 @@ use std::io::Read;
 
 use crate::cbz::index::CbzIndex;
 use crate::error::ComicCoreError;
+use crate::zip::local_header;
 use crate::zip::RangeReader;
 
 impl CbzIndex {
@@ -12,9 +13,10 @@ impl CbzIndex {
             .pages
             .get(page_index)
             .ok_or_else(|| ComicCoreError::InvalidZip("page index out of bounds".to_string()))?;
-        let start = page
-            .data_offset
-            .ok_or_else(|| ComicCoreError::InvalidZip("page data offset missing".to_string()))?;
+        let start = match page.data_offset {
+            Some(offset) => offset,
+            None => local_header::data_offset(reader, page.local_header_offset)?,
+        };
         let end = start + page.compressed_size - 1;
         let compressed = reader.read_range(start, end)?;
 
