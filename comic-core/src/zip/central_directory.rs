@@ -16,13 +16,19 @@ pub struct CentralDirectoryEntry {
     pub local_header_offset: u64,
 }
 
-pub fn parse_central_directory(bytes: &[u8], expected_entries: u64) -> Result<Vec<CentralDirectoryEntry>> {
+pub fn parse_central_directory(
+    bytes: &[u8],
+    expected_entries: u64,
+) -> Result<Vec<CentralDirectoryEntry>> {
     let mut entries = Vec::new();
     let mut offset = 0usize;
 
     while offset < bytes.len() {
         if read_u32_le(bytes, offset)? != CENTRAL_DIRECTORY_SIGNATURE {
-            return Err(ComicCoreError::InvalidZip("invalid central directory signature".to_string()).into());
+            return Err(ComicCoreError::InvalidZip(
+                "invalid central directory signature".to_string(),
+            )
+            .into());
         }
         let flags = read_u16_le(bytes, offset + 8)?;
         let compression_method = read_u16_le(bytes, offset + 10)?;
@@ -35,9 +41,9 @@ pub fn parse_central_directory(bytes: &[u8], expected_entries: u64) -> Result<Ve
         let local_header_offset = read_u32_le(bytes, offset + 42)? as u64;
         let name_start = offset + 46;
         let name_end = name_start + filename_len;
-        let name_bytes = bytes
-            .get(name_start..name_end)
-            .ok_or_else(|| ComicCoreError::InvalidZip("central directory filename out of bounds".to_string()))?;
+        let name_bytes = bytes.get(name_start..name_end).ok_or_else(|| {
+            ComicCoreError::InvalidZip("central directory filename out of bounds".to_string())
+        })?;
         let name = String::from_utf8_lossy(name_bytes).to_string();
 
         entries.push(CentralDirectoryEntry {
@@ -53,7 +59,10 @@ pub fn parse_central_directory(bytes: &[u8], expected_entries: u64) -> Result<Ve
     }
 
     if entries.len() as u64 != expected_entries {
-        return Err(ComicCoreError::InvalidZip("central directory entry count mismatch".to_string()).into());
+        return Err(ComicCoreError::InvalidZip(
+            "central directory entry count mismatch".to_string(),
+        )
+        .into());
     }
     Ok(entries)
 }

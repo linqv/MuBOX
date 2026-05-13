@@ -28,22 +28,23 @@ pub fn open_cbz(reader: &impl RangeReader) -> Result<CbzIndex> {
     let cd_start = eocd.central_directory_offset;
     let cd_end = cd_start + eocd.central_directory_size - 1;
     let central_directory = reader.read_range(cd_start, cd_end)?;
-    let mut pages: Vec<CbzPageEntry> = parse_central_directory(&central_directory, eocd.total_entries)?
-        .into_iter()
-        .filter(|entry| is_supported_image(&entry.name))
-        .map(|entry| {
-            let data_offset = local_header::data_offset(reader, entry.local_header_offset)?;
-            Ok(CbzPageEntry {
-                name: entry.name,
-                local_header_offset: entry.local_header_offset,
-                data_offset: Some(data_offset),
-                compressed_size: entry.compressed_size,
-                uncompressed_size: entry.uncompressed_size,
-                compression_method: entry.compression_method,
-                crc32: entry.crc32,
+    let mut pages: Vec<CbzPageEntry> =
+        parse_central_directory(&central_directory, eocd.total_entries)?
+            .into_iter()
+            .filter(|entry| is_supported_image(&entry.name))
+            .map(|entry| {
+                let data_offset = local_header::data_offset(reader, entry.local_header_offset)?;
+                Ok(CbzPageEntry {
+                    name: entry.name,
+                    local_header_offset: entry.local_header_offset,
+                    data_offset: Some(data_offset),
+                    compressed_size: entry.compressed_size,
+                    uncompressed_size: entry.uncompressed_size,
+                    compression_method: entry.compression_method,
+                    crc32: entry.crc32,
+                })
             })
-        })
-        .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
     if pages.is_empty() {
         return Err(ComicCoreError::NoImages.into());

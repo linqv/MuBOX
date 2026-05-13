@@ -21,6 +21,7 @@ fun WebDavAccountScreen(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTestConnection: () -> Unit,
+    onOpenLocal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -54,6 +55,9 @@ fun WebDavAccountScreen(
         )
         Button(onClick = onTestConnection, enabled = !uiState.isLoading && uiState.baseUrl.isNotBlank()) {
             Text("Test")
+        }
+        Button(onClick = onOpenLocal, enabled = !uiState.isLoading) {
+            Text("Open Local CBZ")
         }
         Text(text = uiState.status)
     }

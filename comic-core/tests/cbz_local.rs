@@ -35,7 +35,10 @@ fn extracts_store_and_deflate_pages() {
     let index = open_cbz(&reader).unwrap();
 
     assert_eq!(b"stored".to_vec(), index.extract_page(&reader, 0).unwrap());
-    assert_eq!(b"deflated".to_vec(), index.extract_page(&reader, 1).unwrap());
+    assert_eq!(
+        b"deflated".to_vec(),
+        index.extract_page(&reader, 1).unwrap()
+    );
 }
 
 #[test]

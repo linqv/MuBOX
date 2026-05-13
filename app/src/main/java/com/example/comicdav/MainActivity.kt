@@ -1,17 +1,34 @@
 package com.example.comicdav
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.comicdav.feature.reader.ReaderScreen
+import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,31 +39,87 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ComicDavApp() {
-    val viewModel: WebDavViewModel = viewModel()
-    val uiState = viewModel.uiState
+    val webDavViewModel: WebDavViewModel = viewModel()
+    val readerViewModel: ReaderViewModel = viewModel()
+    val uiState = webDavViewModel.uiState
+    val readerUiState = readerViewModel.uiState
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isReaderOpen by rememberSaveable { mutableStateOf(false) }
+    var localOpenError by remember { mutableStateOf<String?>(null) }
+    val localFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    copyUriToCache(context, uri)
+                }
+            }.fold(
+                onSuccess = { cachedFile ->
+                    localOpenError = null
+                    readerViewModel.openLocal(cachedFile.absolutePath, context.cacheDir)
+                    isReaderOpen = true
+                },
+                onFailure = { error ->
+                    localOpenError = error.message ?: "Failed to open local file"
+                },
+            )
+        }
+    }
+
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            if (uiState.status == "Connected") {
+            if (isReaderOpen) {
+                ReaderScreen(
+                    uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
+                    onPageChanged = readerViewModel::selectPage,
+                    onClose = {
+                        readerViewModel.closeReader()
+                        isReaderOpen = false
+                    },
+                )
+            } else if (uiState.status == "Connected") {
                 WebDavBrowserScreen(
                     uiState = uiState,
                     onItemClick = { item ->
                         if (item.isDirectory) {
-                            viewModel.openDirectory(item)
+                            webDavViewModel.openDirectory(item)
                         } else {
-                            viewModel.selectItem(item)
+                            webDavViewModel.selectItem(item)
                         }
                     },
-                    onProbeTail = viewModel::probeTail64KiB,
+                    onProbeTail = webDavViewModel::probeTail64KiB,
                 )
             } else {
                 WebDavAccountScreen(
                     uiState = uiState,
-                    onBaseUrlChange = viewModel::updateBaseUrl,
-                    onUsernameChange = viewModel::updateUsername,
-                    onPasswordChange = viewModel::updatePassword,
-                    onTestConnection = viewModel::testConnection,
+                    onBaseUrlChange = webDavViewModel::updateBaseUrl,
+                    onUsernameChange = webDavViewModel::updateUsername,
+                    onPasswordChange = webDavViewModel::updatePassword,
+                    onTestConnection = webDavViewModel::testConnection,
+                    onOpenLocal = {
+                        localFilePicker.launch(
+                            arrayOf(
+                                "application/zip",
+                                "application/octet-stream",
+                                "application/x-cbz",
+                                "*/*",
+                            ),
+                        )
+                    },
                 )
             }
         }
     }
+}
+
+private fun copyUriToCache(context: Context, uri: Uri): File {
+    val target = File(context.cacheDir, "local-comic-${System.currentTimeMillis()}.cbz")
+    context.contentResolver.openInputStream(uri).use { input ->
+        requireNotNull(input) { "Could not read selected file" }
+        target.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+    return target
 }
