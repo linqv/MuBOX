@@ -8,5 +8,11 @@ name = "comic_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+anyhow = "1"
+thiserror = "2"
+flate2 = "1"
 
 [dev-dependencies]
+crc32fast = "1"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }

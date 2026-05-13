@@ -1,3 +1,8 @@
+pub mod cbz;
+pub mod error;
+pub mod sort;
+pub mod zip;
+
 #[no_mangle]
 pub extern "C" fn comic_core_smoke_value() -> i32 {
     42
