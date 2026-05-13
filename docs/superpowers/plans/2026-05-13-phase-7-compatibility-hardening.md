@@ -25,7 +25,7 @@
 ## Task 1: Error Classification
 
 - [ ] Add Kotlin sealed class `ReaderError` with `Network`, `Authentication`, `UnsupportedArchive`, `DamagedPage`, `ServerUnsupported`, and `Unknown`.
-- [ ] Add Rust errors for `EncryptedZip`, `SplitZip`, `UnsupportedCompression`, `InvalidUtf8Filename`, and `NoImages`.
+- [x] Add Rust errors for `EncryptedZip`, `SplitZip`, `UnsupportedCompression`, `InvalidUtf8Filename`, and `NoImages`.
 - [ ] Write mapping tests from native error strings/codes to `ReaderError`.
 - [ ] Add `PageErrorView` with message text and Retry button for retryable errors.
 
@@ -38,9 +38,9 @@
 
 ## Task 3: ZIP and Filename Compatibility
 
-- [ ] Add tests for encrypted ZIP flag and split ZIP markers returning unsupported errors.
-- [ ] Add UTF-8 filename flag tests and GBK fallback tests.
-- [ ] Enable ZIP64 parser path when ZIP64 locator and record are both valid.
+- [x] Add tests for encrypted ZIP flag and split ZIP markers returning unsupported errors.
+- [x] Add UTF-8 filename flag tests and GBK fallback tests.
+- [x] Enable ZIP64 parser path when ZIP64 locator and record are both valid.
 - [ ] Ensure damaged entries return per-page errors without invalidating the whole index.
 
 ## Task 4: Diagnostics and Cache Management
@@ -52,8 +52,8 @@
 
 ## Verification
 
-- [ ] Run `cargo test`.
-- [ ] Run `./gradlew :app:testDebugUnitTest`.
+- [x] Run `cargo test`.
+- [x] Run `./gradlew :app:testDebugUnitTest`.
 - [ ] Run one Android instrumentation smoke test for open-reader-close.
 - [ ] Manually test at least two WebDAV services and record pass/fail notes.
-- [ ] Commit: `feat: harden webdav and archive compatibility`.
+- [x] Commit: `feat: harden webdav and archive compatibility`.

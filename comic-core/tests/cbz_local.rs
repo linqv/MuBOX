@@ -133,6 +133,52 @@ fn extracting_page_does_not_overread_full_local_header_extra_limit() {
     );
 }
 
+#[test]
+fn opens_zip64_archive_with_locator_record_and_entry_extra() {
+    let reader = RecordingBytesReader::new(make_zip64_single_page_bytes());
+
+    let index = open_cbz(&reader).unwrap();
+
+    assert_eq!(vec!["1.jpg"], page_names(&index.pages));
+    assert_eq!(b"one".to_vec(), index.extract_page(&reader, 0).unwrap());
+}
+
+#[test]
+fn extracts_page_when_local_header_uses_data_descriptor() {
+    let reader = RecordingBytesReader::new(make_data_descriptor_zip_bytes());
+
+    let index = open_cbz(&reader).unwrap();
+
+    assert_eq!(b"one".to_vec(), index.extract_page(&reader, 0).unwrap());
+}
+
+#[test]
+fn decodes_gbk_filenames_when_utf8_flag_is_not_set() {
+    let reader = RecordingBytesReader::new(make_gbk_filename_zip_bytes());
+
+    let index = open_cbz(&reader).unwrap();
+
+    assert_eq!(vec!["中文.jpg"], page_names(&index.pages));
+}
+
+#[test]
+fn encrypted_zip_returns_unsupported_error() {
+    let reader = RecordingBytesReader::new(make_encrypted_zip_bytes());
+
+    let error = open_cbz(&reader).unwrap_err().to_string();
+
+    assert_eq!("unsupported encrypted zip", error);
+}
+
+#[test]
+fn split_zip_returns_unsupported_error() {
+    let reader = RecordingBytesReader::new(make_split_zip_bytes());
+
+    let error = open_cbz(&reader).unwrap_err().to_string();
+
+    assert_eq!("unsupported split zip", error);
+}
+
 fn make_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> NamedTempFile {
     let file = NamedTempFile::new().unwrap();
     {
@@ -233,6 +279,280 @@ fn make_single_page_bytes() -> Vec<u8> {
     bytes[30..35].copy_from_slice(b"1.jpg");
     bytes[35..38].copy_from_slice(b"one");
     bytes
+}
+
+fn make_data_descriptor_zip_bytes() -> Vec<u8> {
+    let name = b"1.jpg";
+    let data = b"one";
+    let mut bytes = Vec::new();
+    write_local_header(
+        &mut bytes,
+        0x0008,
+        0,
+        name,
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    bytes.extend_from_slice(data);
+    write_u32(&mut bytes, 0x0807_4b50);
+    write_u32(&mut bytes, 0);
+    write_u32(&mut bytes, data.len() as u32);
+    write_u32(&mut bytes, data.len() as u32);
+    let cd_start = bytes.len() as u32;
+    write_central_header(
+        &mut bytes,
+        0x0008,
+        0,
+        name,
+        &[],
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    let cd_size = bytes.len() as u32 - cd_start;
+    write_eocd(&mut bytes, 1, cd_size, cd_start);
+    bytes
+}
+
+fn make_gbk_filename_zip_bytes() -> Vec<u8> {
+    let name = &[0xd6, 0xd0, 0xce, 0xc4, b'.', b'j', b'p', b'g'];
+    let data = b"one";
+    let mut bytes = Vec::new();
+    write_local_header(
+        &mut bytes,
+        0,
+        0,
+        name,
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    bytes.extend_from_slice(data);
+    let cd_start = bytes.len() as u32;
+    write_central_header(
+        &mut bytes,
+        0,
+        0,
+        name,
+        &[],
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    let cd_size = bytes.len() as u32 - cd_start;
+    write_eocd(&mut bytes, 1, cd_size, cd_start);
+    bytes
+}
+
+fn make_zip64_single_page_bytes() -> Vec<u8> {
+    let name = b"1.jpg";
+    let data = b"one";
+    let mut bytes = Vec::new();
+    write_local_header(
+        &mut bytes,
+        0,
+        0,
+        name,
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    bytes.extend_from_slice(data);
+    let cd_start = bytes.len() as u64;
+    let mut zip64_extra = Vec::new();
+    write_u16(&mut zip64_extra, 0x0001);
+    write_u16(&mut zip64_extra, 24);
+    write_u64(&mut zip64_extra, data.len() as u64);
+    write_u64(&mut zip64_extra, data.len() as u64);
+    write_u64(&mut zip64_extra, 0);
+    write_central_header(
+        &mut bytes,
+        0,
+        0,
+        name,
+        &zip64_extra,
+        u32::MAX,
+        u32::MAX,
+        u32::MAX,
+    );
+    let cd_size = bytes.len() as u64 - cd_start;
+    let zip64_eocd_offset = bytes.len() as u64;
+    write_zip64_eocd(&mut bytes, 1, cd_size, cd_start);
+    write_zip64_locator(&mut bytes, zip64_eocd_offset);
+    write_zip32_eocd_with_zip64_markers(&mut bytes);
+    bytes
+}
+
+fn make_encrypted_zip_bytes() -> Vec<u8> {
+    make_single_entry_zip_with_central_flags(0x0001, 0)
+}
+
+fn make_split_zip_bytes() -> Vec<u8> {
+    make_single_entry_zip_with_central_flags(0, 1)
+}
+
+fn make_single_entry_zip_with_central_flags(flags: u16, disk_start: u16) -> Vec<u8> {
+    let name = b"1.jpg";
+    let data = b"one";
+    let mut bytes = Vec::new();
+    write_local_header(
+        &mut bytes,
+        flags,
+        0,
+        name,
+        data.len() as u32,
+        data.len() as u32,
+        0,
+    );
+    bytes.extend_from_slice(data);
+    let cd_start = bytes.len() as u32;
+    write_central_header_with_disk(
+        &mut bytes,
+        flags,
+        0,
+        name,
+        &[],
+        data.len() as u32,
+        data.len() as u32,
+        0,
+        disk_start,
+    );
+    let cd_size = bytes.len() as u32 - cd_start;
+    write_eocd(&mut bytes, 1, cd_size, cd_start);
+    bytes
+}
+
+fn write_local_header(
+    bytes: &mut Vec<u8>,
+    flags: u16,
+    method: u16,
+    name: &[u8],
+    compressed_size: u32,
+    uncompressed_size: u32,
+    crc32: u32,
+) {
+    write_u32(bytes, 0x0403_4b50);
+    write_u16(bytes, 20);
+    write_u16(bytes, flags);
+    write_u16(bytes, method);
+    write_u16(bytes, 0);
+    write_u16(bytes, 0);
+    write_u32(bytes, crc32);
+    write_u32(bytes, compressed_size);
+    write_u32(bytes, uncompressed_size);
+    write_u16(bytes, name.len() as u16);
+    write_u16(bytes, 0);
+    bytes.extend_from_slice(name);
+}
+
+fn write_central_header(
+    bytes: &mut Vec<u8>,
+    flags: u16,
+    method: u16,
+    name: &[u8],
+    extra: &[u8],
+    compressed_size: u32,
+    uncompressed_size: u32,
+    local_header_offset: u32,
+) {
+    write_central_header_with_disk(
+        bytes,
+        flags,
+        method,
+        name,
+        extra,
+        compressed_size,
+        uncompressed_size,
+        local_header_offset,
+        0,
+    );
+}
+
+fn write_central_header_with_disk(
+    bytes: &mut Vec<u8>,
+    flags: u16,
+    method: u16,
+    name: &[u8],
+    extra: &[u8],
+    compressed_size: u32,
+    uncompressed_size: u32,
+    local_header_offset: u32,
+    disk_start: u16,
+) {
+    write_u32(bytes, 0x0201_4b50);
+    write_u16(bytes, 45);
+    write_u16(bytes, 20);
+    write_u16(bytes, flags);
+    write_u16(bytes, method);
+    write_u16(bytes, 0);
+    write_u16(bytes, 0);
+    write_u32(bytes, 0);
+    write_u32(bytes, compressed_size);
+    write_u32(bytes, uncompressed_size);
+    write_u16(bytes, name.len() as u16);
+    write_u16(bytes, extra.len() as u16);
+    write_u16(bytes, 0);
+    write_u16(bytes, disk_start);
+    write_u16(bytes, 0);
+    write_u32(bytes, 0);
+    write_u32(bytes, local_header_offset);
+    bytes.extend_from_slice(name);
+    bytes.extend_from_slice(extra);
+}
+
+fn write_zip64_eocd(bytes: &mut Vec<u8>, entries: u64, cd_size: u64, cd_offset: u64) {
+    write_u32(bytes, 0x0606_4b50);
+    write_u64(bytes, 44);
+    write_u16(bytes, 45);
+    write_u16(bytes, 45);
+    write_u32(bytes, 0);
+    write_u32(bytes, 0);
+    write_u64(bytes, entries);
+    write_u64(bytes, entries);
+    write_u64(bytes, cd_size);
+    write_u64(bytes, cd_offset);
+}
+
+fn write_zip64_locator(bytes: &mut Vec<u8>, zip64_eocd_offset: u64) {
+    write_u32(bytes, 0x0706_4b50);
+    write_u32(bytes, 0);
+    write_u64(bytes, zip64_eocd_offset);
+    write_u32(bytes, 1);
+}
+
+fn write_eocd(bytes: &mut Vec<u8>, entries: u16, cd_size: u32, cd_offset: u32) {
+    write_u32(bytes, 0x0605_4b50);
+    write_u16(bytes, 0);
+    write_u16(bytes, 0);
+    write_u16(bytes, entries);
+    write_u16(bytes, entries);
+    write_u32(bytes, cd_size);
+    write_u32(bytes, cd_offset);
+    write_u16(bytes, 0);
+}
+
+fn write_zip32_eocd_with_zip64_markers(bytes: &mut Vec<u8>) {
+    write_u32(bytes, 0x0605_4b50);
+    write_u16(bytes, 0);
+    write_u16(bytes, 0);
+    write_u16(bytes, u16::MAX);
+    write_u16(bytes, u16::MAX);
+    write_u32(bytes, u32::MAX);
+    write_u32(bytes, u32::MAX);
+    write_u16(bytes, 0);
+}
+
+fn write_u16(bytes: &mut Vec<u8>, value: u16) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u64(bytes: &mut Vec<u8>, value: u64) {
+    bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 struct RecordingBytesReader {

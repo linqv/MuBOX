@@ -29,6 +29,15 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
+fn read_u64_le(bytes: &[u8], offset: usize) -> Result<u64> {
+    let slice = bytes
+        .get(offset..offset + 8)
+        .ok_or_else(|| ComicCoreError::InvalidZip("unexpected end of data".to_string()))?;
+    Ok(u64::from_le_bytes([
+        slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
+    ]))
+}
+
 pub struct FileRangeReader {
     file: File,
     size: u64,

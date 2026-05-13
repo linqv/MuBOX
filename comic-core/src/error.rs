@@ -4,6 +4,12 @@ use thiserror::Error;
 pub enum ComicCoreError {
     #[error("invalid zip: {0}")]
     InvalidZip(String),
+    #[error("unsupported encrypted zip")]
+    EncryptedZip,
+    #[error("unsupported split zip")]
+    SplitZip,
+    #[error("invalid utf-8 filename")]
+    InvalidUtf8Filename,
     #[error("unsupported compression method: {0}")]
     UnsupportedCompression(u16),
     #[error("archive has no supported image entries")]

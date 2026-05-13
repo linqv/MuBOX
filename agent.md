@@ -3,145 +3,99 @@
 ## Current State
 
 - Repository root: `/home/lin/webcomic`
-- Active worktree: `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader`
-- Active branch: `feature/phase-5-remote-range-reader`
-- Base branch: `master`
-- Base branch latest commit at handoff: `24cc57f feat: add whole-file WebDAV reader MVP`
-- Phase 4 has been fast-forward merged into `master`.
-- Phase 5 is implemented on the feature branch and should remain isolated until reviewed.
+- Main branch: `master`
+- Latest integrated branch before Phase 6/7 merge: `feature/phase-5-remote-range-reader`
+- Active follow-up branches:
+  - `feature/phase-6-cache-prefetch-performance`
+  - `feature/phase-7-compatibility-hardening`
+- Phase 6 and Phase 7 are stacked: Phase 7 is based on Phase 6.
 
 ## Completed Work
 
-Phase 5 adds the first remote Range reader path:
+Phase 5 added remote Range reading and has been merged into `master`.
 
-- Added Kotlin `RangeProvider` and thread-safe `RangeProviderRegistry`.
-- Added `WebDavRangeProvider` that delegates native byte-range callbacks to `WebDavClient.readRange`.
-- Added `ComicNative.openRemote(fileId, size, cacheDir)` and `ComicEngine.openRemote`.
-- Rust sessions now store either a local file reader or JNI-backed remote Range reader.
-- Added `JniRangeReader` that attaches to the JVM and calls `RangeProviderRegistry.readRange(fileId, start, end)`.
-- `OpenComicUseCase` now tries Range mode when `RemoteFileInfo.supportsRange` is true.
-- Range open failures unregister the provider and fall back to the Phase 4 whole-file cache path.
-- Remote Range provider lifetime is tied to the returned `ComicReaderSession.close()`.
-- Added unit coverage for provider registration/removal, Range-first open, fallback, and Rust callback reader behavior.
+Phase 6 adds cache and scheduling foundations:
+
+- Rust index cache keyed by comic key, file size, and validator.
+- Rust page cache path helper and LRU capacity cleanup.
+- Rust range planner with 64 KiB merge gap and 8 MiB max merged range.
+- Rust prefetch scheduler for current, next, previous, forward window, and backward window pages.
+- JNI/Kotlin viewport update hook and native diagnostics string with planned request count.
+
+Phase 7 compatibility hardening completed for archive parsing:
+
+- ZIP64 EOCD locator and record parsing.
+- ZIP64 central directory entry extra-field parsing for sizes and local header offsets.
+- Data descriptor entries are covered by regression tests and extract using Central Directory sizes.
+- GBK filename fallback when the UTF-8 filename flag is not set.
+- Explicit unsupported errors for encrypted ZIP and split ZIP entries.
 
 ## Important Files
 
-- `app/src/main/java/com/example/comicdav/nativebridge/RangeProvider.kt`
-- `app/src/main/java/com/example/comicdav/nativebridge/RangeProviderRegistry.kt`
-- `app/src/main/java/com/example/comicdav/network/WebDavRangeProvider.kt`
-- `app/src/main/java/com/example/comicdav/nativebridge/ComicNative.kt`
+- `comic-core/src/zip/eocd.rs`
+- `comic-core/src/zip/central_directory.rs`
+- `comic-core/src/zip/zip64.rs`
+- `comic-core/src/cbz/page.rs`
+- `comic-core/src/cache/index_cache.rs`
+- `comic-core/src/cache/page_cache.rs`
+- `comic-core/src/scheduler/range_planner.rs`
+- `comic-core/src/scheduler/prefetch.rs`
+- `comic-core/tests/cbz_local.rs`
+- `comic-core/tests/cache_scheduler.rs`
 - `app/src/main/java/com/example/comicdav/nativebridge/ComicEngine.kt`
+- `app/src/main/java/com/example/comicdav/nativebridge/ComicNative.kt`
 - `app/src/main/java/com/example/comicdav/feature/reader/OpenComicUseCase.kt`
-- `comic-core/src/ffi.rs`
-- `comic-core/src/remote/mod.rs`
-- `comic-core/src/remote/jni_range_reader.rs`
-- `app/src/test/java/com/example/comicdav/nativebridge/RangeProviderRegistryTest.kt`
-- `app/src/test/java/com/example/comicdav/feature/reader/OpenComicUseCaseRangeTest.kt`
-
-## Environment Notes
-
-Builds use rustup and Android SDK/NDK tooling:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Required Rust targets:
-
-```bash
-rustup target add aarch64-linux-android x86_64-linux-android
-```
-
-Required Android NDK path:
-
-```text
-/home/lin/Android/Sdk/ndk/28.0.13004108
-```
+- `app/src/main/java/com/example/comicdav/feature/reader/ReaderViewModel.kt`
 
 ## Verification Already Run
 
-From `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader/comic-core`:
+From `/home/lin/webcomic/.worktrees/phase-7-compatibility-hardening/comic-core`:
 
 ```bash
-PATH=/home/lin/.cargo/bin:$PATH cargo test
+cargo test
 ```
 
 Result: passed.
 
-- 5 library tests passed
-- 3 `cbz_local` integration tests passed
-- 2 `range_reader` integration tests passed
-- 0 doc tests
-
-From `/home/lin/webcomic/.worktrees/phase-5-remote-range-reader`:
+From `/home/lin/webcomic/.worktrees/phase-7-compatibility-hardening`:
 
 ```bash
-PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:testDebugUnitTest
-PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest
 ```
 
-Result: both passed.
-
-APK path:
-
-```text
-/home/lin/webcomic/.worktrees/phase-5-remote-range-reader/app/build/outputs/apk/debug/app-debug.apk
-```
-
-APK contents verified with `zipinfo`:
-
-```text
-lib/arm64-v8a/libcomic_core.so
-lib/x86_64/libcomic_core.so
-```
+Result: passed.
 
 ## Not Done
 
-- Device install/open smoke for Phase 5 was not completed in this session.
-- Manual remote WebDAV verification is still needed on a Range-capable server: open a remote `.cbz`/`.zip` and confirm first page appears before whole-file download.
-- Manual fallback verification is still needed on a non-Range or bad-Range server.
-- Range diagnostics are still minimal; richer request/byte counters belong in the next cache/prefetch/diagnostics work.
-- ZIP64 full support, data descriptors, and GBK filename fallback remain future hardening work.
+- Manual WebDAV verification is still deferred.
+- Android instrumentation smoke test has not been run.
+- Phase 7 UI tasks are not implemented: settings screen, share/export diagnostics UI, cache management UI, and page error view.
+- WebDAV failure hardening beyond the existing tests remains future work: HEAD fallback to PROPFIND, self-signed certificate toggle, and broader server compatibility notes.
 
 ## Recommended Next Steps
 
-1. Reconnect/authorize an Android device and install the APK:
+1. Merge the stacked branches in order if final automated verification passes on `master`:
 
 ```bash
-cd /home/lin/webcomic/.worktrees/phase-5-remote-range-reader
-adb devices
-adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.example.comicdav/.MainActivity
+git -C /home/lin/webcomic merge --ff-only feature/phase-6-cache-prefetch-performance
+git -C /home/lin/webcomic merge --ff-only feature/phase-7-compatibility-hardening
 ```
 
-2. Manually verify remote Range opening against a WebDAV account:
-
-- Connect to WebDAV.
-- Tap a remote `.cbz`/`.zip` on a server whose `HEAD` reports `Accept-Ranges: bytes`.
-- Confirm the reader opens through Range mode and does not first download the whole file.
-- Page forward/backward and confirm page extraction continues to work.
-- Close/reopen and confirm the provider/session is cleaned up and progress resumes.
-- Test a non-Range or invalid-Range server and confirm whole-file fallback still opens.
-
-3. If manual verification passes, merge Phase 5 into `master`:
-
-```bash
-git -C /home/lin/webcomic merge --ff-only feature/phase-5-remote-range-reader
-```
-
-4. Re-run verification on `master` after merge:
+2. Re-run on `master` after merge:
 
 ```bash
 cd /home/lin/webcomic/comic-core
-PATH=/home/lin/.cargo/bin:$PATH cargo test
+cargo test
 
 cd /home/lin/webcomic
-PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:testDebugUnitTest
-PATH=/home/lin/.cargo/bin:$PATH ./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
 ```
 
-5. Start Phase 6 from:
+3. When device/WebDAV access is available, test:
 
-```text
-/home/lin/webcomic/docs/superpowers/plans/2026-05-13-phase-6-cache-prefetch-performance.md
-```
+- Second open of the same remote comic uses index cache.
+- ZIP64 archive opens.
+- Data descriptor archive opens.
+- GBK filename archive indexes correctly.
+- Non-Range or broken-Range server still falls back cleanly.

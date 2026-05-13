@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::error::ComicCoreError;
+use crate::zip::zip64::{find_zip64_eocd, needs_zip64, unsupported_zip64_error};
 use crate::zip::{read_u16_le, read_u32_le, RangeReader};
 
 const EOCD_SIGNATURE: u32 = 0x0605_4b50;
@@ -62,8 +63,10 @@ pub fn find_eocd_search(reader: &impl RangeReader) -> Result<EocdSearch> {
             if index + EOCD_MIN_SIZE + comment_len != bytes.len() {
                 continue;
             }
+            let eocd = parse_eocd_at(&bytes, index)?;
+            let eocd = resolve_zip64(reader, &eocd, start + index as u64)?;
             return Ok(EocdSearch {
-                eocd: parse_eocd_at(&bytes, index)?,
+                eocd,
                 record_offset: start + index as u64,
                 window_start: start,
                 window: bytes,
@@ -79,5 +82,21 @@ fn parse_eocd_at(bytes: &[u8], index: usize) -> Result<Eocd> {
         total_entries: read_u16_le(bytes, index + 10)? as u64,
         central_directory_size: read_u32_le(bytes, index + 12)? as u64,
         central_directory_offset: read_u32_le(bytes, index + 16)? as u64,
+    })
+}
+
+fn resolve_zip64(reader: &impl RangeReader, eocd: &Eocd, eocd_offset: u64) -> Result<Eocd> {
+    if !needs_zip64(
+        eocd.total_entries,
+        eocd.central_directory_size,
+        eocd.central_directory_offset,
+    ) {
+        return Ok(eocd.clone());
+    }
+    let zip64 = find_zip64_eocd(reader, eocd_offset)?.ok_or_else(unsupported_zip64_error)?;
+    Ok(Eocd {
+        total_entries: zip64.total_entries,
+        central_directory_size: zip64.central_directory_size,
+        central_directory_offset: zip64.central_directory_offset,
     })
 }
