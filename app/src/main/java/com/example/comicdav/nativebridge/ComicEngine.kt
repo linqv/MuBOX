@@ -11,8 +11,14 @@ class ComicEngine(
         return openChecked(handle)
     }
 
-    fun openRemote(fileId: Long, size: Long, cacheDir: File): ComicReaderSession {
-        val handle = native.openRemote(fileId, size, cacheDir.absolutePath)
+    fun openRemote(
+        fileId: Long,
+        size: Long,
+        cacheDir: File,
+        comicKey: String,
+        validator: String,
+    ): ComicReaderSession {
+        val handle = native.openRemote(fileId, size, cacheDir.absolutePath, comicKey, validator)
         return openChecked(
             handle = handle,
             onClose = { RangeProviderRegistry.unregister(fileId) },
@@ -43,6 +49,8 @@ class ComicEngine(
 interface ComicReaderSession : Closeable {
     val pageCount: Int
     fun loadPageToFile(pageIndex: Int, outputFile: File): File
+    fun updateViewport(pageIndex: Int, networkClass: Int) = Unit
+    fun diagnostics(): String = ""
 }
 
 class ComicSession internal constructor(
@@ -60,6 +68,15 @@ class ComicSession internal constructor(
         }
         return outputFile
     }
+
+    override fun updateViewport(pageIndex: Int, networkClass: Int) {
+        val result = native.updateViewport(handle, pageIndex, networkClass)
+        if (result < 0) {
+            throw ComicNativeException(native.lastErrorMessage().ifBlank { "Failed to update viewport" })
+        }
+    }
+
+    override fun diagnostics(): String = native.diagnostics(handle)
 
     override fun close() {
         if (!isClosed) {

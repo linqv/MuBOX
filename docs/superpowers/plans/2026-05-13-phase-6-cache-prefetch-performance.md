@@ -24,38 +24,38 @@
 
 ## Task 1: Index Cache
 
-- [ ] Add Rust dependencies `serde`, `serde_json`, and `sha2`.
-- [ ] Write test: unchanged size and validator loads index cache.
-- [ ] Write test: changed size invalidates index cache.
-- [ ] Implement index cache format with `version`, `comic_key`, `file_size`, `validator`, and `page_entries`.
-- [ ] Load index cache before EOCD and Central Directory Range reads.
+- [x] Add Rust dependencies `serde`, `serde_json`, and `sha2`.
+- [x] Write test: unchanged size and validator loads index cache.
+- [x] Write test: changed size invalidates index cache.
+- [x] Implement index cache format with `version`, `comic_key`, `file_size`, `validator`, and `page_entries`.
+- [x] Load index cache before EOCD and Central Directory Range reads.
 
 ## Task 2: Page Cache and LRU
 
-- [ ] Write test: existing page cache file path is returned without Range read.
-- [ ] Write test: LRU removes oldest files when capacity exceeds configured bytes.
-- [ ] Implement page cache directory `<cacheDir>/<comicKey>/pages/<pageIndex>.<ext>`.
-- [ ] Implement cache size scan and removal by last-modified timestamp.
+- [x] Write test: existing page cache file path is returned without Range read.
+- [x] Write test: LRU removes oldest files when capacity exceeds configured bytes.
+- [x] Implement page cache directory `<cacheDir>/<comicKey>/pages/<pageIndex>.<ext>`.
+- [x] Implement cache size scan and removal by last-modified timestamp.
 
 ## Task 3: Range Planner
 
-- [ ] Write test: ranges separated by 63 KiB merge when result is under 8 MiB.
-- [ ] Write test: ranges separated by 65 KiB do not merge.
-- [ ] Implement `range_planner.rs` with merge gap `64 * 1024` and max merged size `8 * 1024 * 1024`.
-- [ ] Expose planned request count in diagnostics.
+- [x] Write test: ranges separated by 63 KiB merge when result is under 8 MiB.
+- [x] Write test: ranges separated by 65 KiB do not merge.
+- [x] Implement `range_planner.rs` with merge gap `64 * 1024` and max merged size `8 * 1024 * 1024`.
+- [x] Expose planned request count in diagnostics.
 
 ## Task 4: Prefetch Scheduler
 
-- [ ] Write test: current page priority is higher than next and previous pages.
-- [ ] Write test: viewport jump demotes old forward-window tasks.
-- [ ] Implement priority order: current, next, previous, forward window, backward window.
-- [ ] Add Kotlin `ComicEngine.updateViewport(handle, pageIndex, networkClass)`.
-- [ ] Trigger updates from `ReaderViewModel` when pager page changes.
+- [x] Write test: current page priority is higher than next and previous pages.
+- [x] Write test: viewport jump demotes old forward-window tasks.
+- [x] Implement priority order: current, next, previous, forward window, backward window.
+- [x] Add Kotlin `ComicEngine.updateViewport(handle, pageIndex, networkClass)`.
+- [x] Trigger updates from `ReaderViewModel` when pager page changes.
 
 ## Verification
 
-- [ ] Run `cargo test` in `/home/lin/webcomic/comic-core`.
-- [ ] Run `./gradlew :app:testDebugUnitTest`.
+- [x] Run `cargo test` in `/home/lin/webcomic/comic-core`.
+- [x] Run `./gradlew :app:testDebugUnitTest`.
 - [ ] Manually verify second open uses index cache.
 - [ ] Manually verify sequential reading on Wi-Fi reaches at least 80% next-page cache hits in diagnostics.
 - [ ] Commit: `feat: add comic cache and prefetch scheduler`.

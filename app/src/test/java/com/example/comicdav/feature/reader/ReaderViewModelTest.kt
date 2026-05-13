@@ -105,6 +105,22 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun openAndSelectPageUpdateNativeViewport() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 5)
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.selectPage(2)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(0, 2), session.viewportPages)
+    }
+
+    @Test
     fun pageCacheFilesAreScopedByComicKey() = runTest(dispatcher) {
         val firstSession = FakeReaderSession(pageCount = 1)
         val secondSession = FakeReaderSession(pageCount = 1)
@@ -217,6 +233,7 @@ class ReaderViewModelTest {
         private val failOnPages: Set<Int> = emptySet(),
     ) : ComicReaderSession {
         val loadedPages = mutableListOf<Int>()
+        val viewportPages = mutableListOf<Int>()
         var closed = false
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
@@ -230,6 +247,10 @@ class ReaderViewModelTest {
 
         override fun close() {
             closed = true
+        }
+
+        override fun updateViewport(pageIndex: Int, networkClass: Int) {
+            viewportPages += pageIndex
         }
     }
 

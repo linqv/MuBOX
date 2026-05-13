@@ -83,6 +83,7 @@ class ReaderViewModel(
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
+                    updateViewport(opened.session, opened.currentPage)
                     prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
@@ -143,6 +144,7 @@ class ReaderViewModel(
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
+                    updateViewport(opened.session, opened.currentPage)
                     prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
@@ -201,6 +203,7 @@ class ReaderViewModel(
             error = null,
         )
         if (existingFile != null) {
+            updateViewport(activeSession, pageIndex)
             saveProgress(pageIndex)
             prefetchNeighbors(pageIndex)
             return
@@ -224,6 +227,7 @@ class ReaderViewModel(
                         pageFiles = uiState.pageFiles + files,
                         isLoading = false,
                     )
+                    updateViewport(activeSession, pageIndex)
                     saveProgress(pageIndex)
                     prefetchNeighbors(pageIndex)
                 },
@@ -306,6 +310,12 @@ class ReaderViewModel(
         }
     }
 
+    private fun updateViewport(session: ComicReaderSession, pageIndex: Int) {
+        runCatching {
+            session.updateViewport(pageIndex, NETWORK_WIFI)
+        }
+    }
+
     private suspend fun loadPages(
         session: ComicReaderSession,
         pageIndexes: List<Int>,
@@ -362,5 +372,6 @@ class ReaderViewModel(
     private companion object {
         const val PREFETCH_FORWARD_PAGES = 4
         const val PREFETCH_START_DELAY_MS = 150L
+        const val NETWORK_WIFI = 2
     }
 }

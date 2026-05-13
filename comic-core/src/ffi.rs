@@ -8,13 +8,16 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::{c_char, c_void};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use crate::cache::index_cache::{open_cbz_with_index_cache, IndexCacheKey};
 use crate::cbz::{open_cbz, CbzIndex};
 use crate::error::ComicCoreError;
 use crate::remote::jni_range_reader::JniRangeReader;
+use crate::scheduler::prefetch::{plan_prefetch, NetworkClass};
+use crate::scheduler::range_planner::{plan_ranges, ByteRange};
 use crate::zip::{FileRangeReader, RangeReader};
 
 pub type ComicHandle = u64;
@@ -22,6 +25,13 @@ pub type ComicHandle = u64;
 struct CbzSession {
     reader: SessionReader,
     index: CbzIndex,
+    diagnostics: SessionDiagnostics,
+}
+
+#[derive(Debug, Default, Clone)]
+struct SessionDiagnostics {
+    viewport_page: Option<usize>,
+    planned_request_count: usize,
 }
 
 enum SessionReader {
@@ -140,7 +150,7 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "openRemote",
-            "(JJLjava/lang/String;)J",
+            "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)J",
             native_open_remote as *const () as *mut c_void,
         ),
         native_method(
@@ -152,6 +162,16 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
             "loadPageToFile",
             "(JILjava/lang/String;)I",
             native_load_page_to_file as *const () as *mut c_void,
+        ),
+        native_method(
+            "updateViewport",
+            "(JII)I",
+            native_update_viewport as *const () as *mut c_void,
+        ),
+        native_method(
+            "diagnostics",
+            "(J)Ljava/lang/String;",
+            native_diagnostics as *const () as *mut c_void,
         ),
         native_method("close", "(J)V", native_close as *const () as *mut c_void),
         native_method(
@@ -192,6 +212,8 @@ extern "system" fn native_open_remote(
     file_id: jlong,
     size: jlong,
     cache_dir: JString<'_>,
+    comic_key: JString<'_>,
+    validator: JString<'_>,
 ) -> jlong {
     if file_id <= 0 || size <= 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -200,16 +222,49 @@ extern "system" fn native_open_remote(
         return 0;
     }
 
-    match jstring_to_string(&mut env, &cache_dir)
-        .and_then(|_| env.get_java_vm().map_err(Into::into))
-        .and_then(|vm| {
-            let reader = JniRangeReader::new(vm, file_id as u64, size as u64);
-            open_remote_reader(reader)
-        }) {
+    match jstring_to_string(&mut env, &cache_dir).and_then(|cache_dir| {
+        let comic_key = jstring_to_string(&mut env, &comic_key)?;
+        let validator = jstring_to_string(&mut env, &validator)?;
+        let vm = env.get_java_vm()?;
+        let reader = JniRangeReader::new(vm, file_id as u64, size as u64);
+        open_remote_reader(
+            reader,
+            PathBuf::from(cache_dir),
+            comic_key,
+            size as u64,
+            validator,
+        )
+    }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
             set_last_error(error);
             0
+        }
+    }
+}
+
+extern "system" fn native_update_viewport(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    handle: jlong,
+    page_index: jint,
+    network_class: jint,
+) -> jint {
+    if page_index < 0 {
+        set_last_error(ComicCoreError::InvalidZip(
+            "page index out of bounds".to_string(),
+        ));
+        return -1;
+    }
+    match update_viewport(
+        handle as ComicHandle,
+        page_index as usize,
+        network_class_from_i32(network_class),
+    ) {
+        Ok(()) => 0,
+        Err(error) => {
+            set_last_error(error);
+            -1
         }
     }
 }
@@ -253,6 +308,17 @@ extern "system" fn native_close(_env: JNIEnv<'_>, _class: JClass<'_>, handle: jl
     comic_close(handle as ComicHandle);
 }
 
+extern "system" fn native_diagnostics(
+    env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    handle: jlong,
+) -> jstring {
+    let message = session_diagnostics(handle as ComicHandle).unwrap_or_default();
+    env.new_string(message)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
 extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>) -> jstring {
     let message = last_error_message_string();
     env.new_string(message)
@@ -266,8 +332,19 @@ fn open_local_path(path: &Path) -> Result<ComicHandle> {
     insert_session(SessionReader::Local(reader), index)
 }
 
-fn open_remote_reader(reader: JniRangeReader) -> Result<ComicHandle> {
-    let index = open_cbz(&reader)?;
+fn open_remote_reader(
+    reader: JniRangeReader,
+    cache_dir: PathBuf,
+    comic_key: String,
+    file_size: u64,
+    validator: String,
+) -> Result<ComicHandle> {
+    let key = IndexCacheKey {
+        comic_key,
+        file_size,
+        validator,
+    };
+    let index = open_cbz_with_index_cache(&reader, &cache_dir, &key)?;
     insert_session(SessionReader::Remote(reader), index)
 }
 
@@ -279,7 +356,14 @@ fn insert_session(reader: SessionReader, index: CbzIndex) -> Result<ComicHandle>
     let mut sessions = SESSIONS
         .lock()
         .map_err(|_| anyhow!("native session table lock poisoned"))?;
-    sessions.insert(handle, CbzSession { reader, index });
+    sessions.insert(
+        handle,
+        CbzSession {
+            reader,
+            index,
+            diagnostics: SessionDiagnostics::default(),
+        },
+    );
     Ok(handle)
 }
 
@@ -294,6 +378,9 @@ fn page_count(handle: ComicHandle) -> Result<i32> {
 }
 
 fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path) -> Result<()> {
+    if output_path.is_file() && output_path.metadata()?.len() > 0 {
+        return Ok(());
+    }
     let bytes = {
         let sessions = SESSIONS
             .lock()
@@ -305,6 +392,68 @@ fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path)
     };
     fs::write(output_path, bytes)?;
     Ok(())
+}
+
+fn update_viewport(
+    handle: ComicHandle,
+    page_index: usize,
+    network_class: NetworkClass,
+) -> Result<()> {
+    let mut sessions = SESSIONS
+        .lock()
+        .map_err(|_| anyhow!("native session table lock poisoned"))?;
+    let session = sessions
+        .get_mut(&handle)
+        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+    if page_index >= session.index.pages.len() {
+        return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
+    }
+
+    let plan = plan_prefetch(session.index.pages.len(), page_index, network_class);
+    let ranges = plan
+        .tasks
+        .iter()
+        .filter_map(|task| session.index.pages.get(task.page_index))
+        .filter_map(|page| {
+            let end = page
+                .local_header_offset
+                .checked_add(page.compressed_size)?
+                .checked_add(4096)?;
+            Some(ByteRange::new(page.local_header_offset, end))
+        })
+        .collect();
+    let planned = plan_ranges(ranges);
+    session.diagnostics = SessionDiagnostics {
+        viewport_page: Some(page_index),
+        planned_request_count: planned.request_count,
+    };
+    Ok(())
+}
+
+fn session_diagnostics(handle: ComicHandle) -> Result<String> {
+    let sessions = SESSIONS
+        .lock()
+        .map_err(|_| anyhow!("native session table lock poisoned"))?;
+    let session = sessions
+        .get(&handle)
+        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+    Ok(format!(
+        "viewport_page={};planned_request_count={}",
+        session
+            .diagnostics
+            .viewport_page
+            .map(|page| page.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        session.diagnostics.planned_request_count,
+    ))
+}
+
+fn network_class_from_i32(value: jint) -> NetworkClass {
+    match value {
+        1 => NetworkClass::Mobile,
+        2 => NetworkClass::Wifi,
+        _ => NetworkClass::Unknown,
+    }
 }
 
 fn read_c_string(value: *const c_char) -> Result<String> {

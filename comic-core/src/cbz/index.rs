@@ -5,8 +5,9 @@ use crate::sort::natural;
 use crate::zip::central_directory::parse_central_directory;
 use crate::zip::eocd::{find_eocd_search, EocdSearch};
 use crate::zip::RangeReader;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CbzPageEntry {
     pub name: String,
     pub filename_len: u16,
@@ -18,7 +19,7 @@ pub struct CbzPageEntry {
     pub crc32: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CbzIndex {
     pub pages: Vec<CbzPageEntry>,
 }

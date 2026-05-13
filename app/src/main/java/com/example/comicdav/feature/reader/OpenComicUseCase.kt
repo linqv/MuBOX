@@ -15,7 +15,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 typealias RemoteComicSessionFactory = (path: String) -> ComicReaderSession
-typealias RemoteRangeComicSessionFactory = (fileId: Long, size: Long, cacheDir: File) -> ComicReaderSession
+typealias RemoteRangeComicSessionFactory = (
+    fileId: Long,
+    size: Long,
+    cacheDir: File,
+    comicKey: String,
+    validator: String,
+) -> ComicReaderSession
 
 interface ReadingProgressGateway {
     suspend fun savePage(comicKey: String, pageIndex: Int)
@@ -34,8 +40,8 @@ class OpenComicUseCase(
     private val cache: ComicDownloadCache,
     private val progressStore: ReadingProgressGateway,
     private val openSession: RemoteComicSessionFactory = { path -> ComicEngine().openLocal(path) },
-    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir ->
-        ComicEngine().openRemote(fileId, size, cacheDir)
+    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir, comicKey, validator ->
+        ComicEngine().openRemote(fileId, size, cacheDir, comicKey, validator)
     },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -54,7 +60,7 @@ class OpenComicUseCase(
             lastModified = info.lastModified,
         )
         try {
-            return openRemote(client, remotePath, info.size, key)
+            return openRemote(client, remotePath, info, key)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
@@ -66,14 +72,14 @@ class OpenComicUseCase(
     private suspend fun openRemote(
         client: WebDavClient,
         remotePath: String,
-        size: Long,
+        info: RemoteFileInfo,
         key: ComicCacheKey,
     ): OpenComicResult {
         cache.cacheDir.mkdirs()
-        val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, size))
+        val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, info.size))
         return try {
             val session = withContext(ioDispatcher) {
-                openRemoteSession(fileId, size, cache.cacheDir)
+                openRemoteSession(fileId, info.size, cache.cacheDir, key.value, info.validator())
             }
             val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
             OpenComicResult(
@@ -87,6 +93,9 @@ class OpenComicUseCase(
             throw error
         }
     }
+
+    private fun RemoteFileInfo.validator(): String =
+        etag ?: lastModified?.toString() ?: size.toString()
 
     private suspend fun openWholeFile(
         client: WebDavClient,

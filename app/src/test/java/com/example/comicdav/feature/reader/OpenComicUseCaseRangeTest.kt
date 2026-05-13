@@ -32,8 +32,8 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 1),
-            openRemoteSession = { fileId, size, cacheDir ->
-                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath)
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator ->
+                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
                 FakeReaderSession(pageCount = 3)
             },
             openSession = { error("whole-file fallback should not open") },
@@ -46,6 +46,7 @@ class OpenComicUseCaseRangeTest {
         assertEquals(9L, remoteOpens.single().size)
         assertTrue(remoteOpens.single().fileId > 0)
         assertTrue(File(remoteOpens.single().cacheDir).isDirectory)
+        assertEquals("\"v1\"", remoteOpens.single().validator)
         assertNull(client.downloadedPath)
     }
 
@@ -66,7 +67,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _ -> FakeReaderSession(pageCount = 3) },
+            openRemoteSession = { _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
             openSession = { error("whole-file fallback should not open") },
         )
 
@@ -89,8 +90,8 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { fileId, size, cacheDir ->
-                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath)
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator ->
+                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
                 FakeReaderSession(pageCount = 3)
             },
             openSession = { error("whole-file fallback should not open") },
@@ -117,7 +118,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _ -> throw WebDavException.RangeNotSupported() },
+            openRemoteSession = { _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
             openSession = { path ->
                 openedLocalPaths += path
                 FakeReaderSession(pageCount = 2)
@@ -141,7 +142,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _ -> throw CancellationException("reader closed") },
+            openRemoteSession = { _, _, _, _, _ -> throw CancellationException("reader closed") },
             openSession = { error("whole-file fallback should not open after cancellation") },
         )
 
@@ -172,7 +173,7 @@ class OpenComicUseCaseRangeTest {
                 cache = ComicDownloadCache(temp.root),
                 progressStore = FakeProgressStore(savedPage = 0),
                 ioDispatcher = ioDispatcher,
-                openRemoteSession = { _, _, _ ->
+                openRemoteSession = { _, _, _, _, _ ->
                     openThreads += Thread.currentThread().name
                     FakeReaderSession(pageCount = 1)
                 },
@@ -223,5 +224,7 @@ class OpenComicUseCaseRangeTest {
         val fileId: Long,
         val size: Long,
         val cacheDir: String,
+        val comicKey: String,
+        val validator: String,
     )
 }
