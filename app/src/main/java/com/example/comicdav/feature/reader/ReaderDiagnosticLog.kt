@@ -2,7 +2,10 @@ package com.example.comicdav.feature.reader
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +57,39 @@ class ContentUriReaderLogSink(
             }
         }
     }
+}
+
+data class ReaderLogFile(
+    val fileName: String,
+    val uri: String,
+    val sink: ReaderLogSink,
+)
+
+fun timestampedReaderLogFileName(now: ZonedDateTime): String {
+    val stamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.US))
+    return "comicdav-reader-$stamp.log"
+}
+
+fun createReaderLogFile(
+    context: Context,
+    folderTreeUri: Uri,
+    scope: CoroutineScope,
+    now: ZonedDateTime = ZonedDateTime.now(),
+): ReaderLogFile {
+    val resolver = context.applicationContext.contentResolver
+    val parentDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+        folderTreeUri,
+        DocumentsContract.getTreeDocumentId(folderTreeUri),
+    )
+    val fileName = timestampedReaderLogFileName(now)
+    val fileUri = requireNotNull(
+        DocumentsContract.createDocument(resolver, parentDocumentUri, "text/plain", fileName),
+    ) { "Could not create reader log file in selected folder" }
+    return ReaderLogFile(
+        fileName = fileName,
+        uri = fileUri.toString(),
+        sink = ContentUriReaderLogSink(context, fileUri, scope),
+    )
 }
 
 object ReaderDiagnosticLog {

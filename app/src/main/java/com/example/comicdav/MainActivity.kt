@@ -1,6 +1,7 @@
 package com.example.comicdav
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,11 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.ReadingProgressStore
-import com.example.comicdav.feature.reader.OpenComicUseCase
-import com.example.comicdav.feature.reader.ContentUriReaderLogSink
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
+import com.example.comicdav.feature.reader.OpenComicUseCase
+import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
@@ -83,18 +84,28 @@ fun ComicDavApp() {
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
+    var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
     val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
-    val logFileCreator = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+    val logFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) {
-            ReaderDiagnosticLog.event("log_file_cancelled")
+            ReaderDiagnosticLog.event("log_folder_cancelled")
             return@rememberLauncherForActivityResult
         }
-        ReaderDiagnosticLog.setSink(ContentUriReaderLogSink(context, uri, scope))
-        ReaderDiagnosticLog.event("log_file_selected uri=$uri")
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+        }.onFailure { error ->
+            ReaderDiagnosticLog.error("log_folder_permission_failed uri=$uri", error)
+        }
+        saveReaderLogFolderUri(context, uri)
+        logFolderUriText = uri.toString()
+        startReaderLogFile(context, logFolderUriText, scope)
+        ReaderDiagnosticLog.event("log_folder_selected uri=$uri")
     }
     val localFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        startReaderLogFile(context, logFolderUriText, scope)
         ReaderDiagnosticLog.event("local_file_selected uri=$uri")
         scope.launch {
             runCatching {
@@ -123,7 +134,7 @@ fun ComicDavApp() {
                     uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
                     onPageChanged = readerViewModel::selectPage,
                     onChooseLogFile = {
-                        logFileCreator.launch("comicdav-reader-log-${System.currentTimeMillis()}.txt")
+                        logFolderPicker.launch(null)
                     },
                     onClose = {
                         ReaderDiagnosticLog.event("reader_close")
@@ -143,6 +154,7 @@ fun ComicDavApp() {
                             downloadProgress = null
                             localOpenError = null
                             isReaderOpen = true
+                            startReaderLogFile(context, logFolderUriText, scope)
                             ReaderDiagnosticLog.event("open_remote_start path=${item.path} size=${item.size ?: -1}")
                             readerViewModel.openRemote(cacheDir = context.cacheDir) {
                                 val useCase = OpenComicUseCase(
@@ -210,3 +222,39 @@ private fun copyUriToCache(context: Context, uri: Uri): File {
     }
     return target
 }
+
+private fun loadReaderLogFolderUri(context: Context): String? {
+    return context
+        .getSharedPreferences(READER_DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
+        .getString(READER_LOG_FOLDER_URI_KEY, null)
+}
+
+private fun saveReaderLogFolderUri(context: Context, uri: Uri) {
+    context
+        .getSharedPreferences(READER_DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(READER_LOG_FOLDER_URI_KEY, uri.toString())
+        .apply()
+}
+
+private fun startReaderLogFile(
+    context: Context,
+    folderUriText: String?,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    if (folderUriText.isNullOrBlank()) return
+    runCatching {
+        createReaderLogFile(context, Uri.parse(folderUriText), scope)
+    }.fold(
+        onSuccess = { logFile ->
+            ReaderDiagnosticLog.setSink(logFile.sink)
+            ReaderDiagnosticLog.event("log_file_created fileName=${logFile.fileName} uri=${logFile.uri}")
+        },
+        onFailure = { error ->
+            ReaderDiagnosticLog.error("log_file_create_failed folderUri=$folderUriText", error)
+        },
+    )
+}
+
+private const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
+private const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"

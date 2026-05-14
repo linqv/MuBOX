@@ -1,5 +1,7 @@
 package com.example.comicdav.feature.reader
 
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,5 +38,42 @@ class ReaderDiagnosticLogTest {
 
         assertTrue(line.startsWith("reader_crash error=IllegalStateException: bad state\n"))
         assertTrue(line.contains("IllegalStateException"))
+    }
+
+    @Test
+    fun timestampedReaderLogFileNameUsesStableSortableFormat() {
+        val timestamp = ZonedDateTime.of(
+            2026,
+            5,
+            14,
+            9,
+            8,
+            7,
+            123_000_000,
+            ZoneOffset.UTC,
+        )
+
+        assertEquals(
+            "comicdav-reader-20260514-090807-123.log",
+            timestampedReaderLogFileName(timestamp),
+        )
+    }
+
+    @Test
+    fun readerLogFileMetadataKeepsFileNameAndUri() {
+        val sink = object : ReaderLogSink {
+            override fun log(line: String) = Unit
+            override fun logBlocking(line: String) = Unit
+        }
+
+        val file = ReaderLogFile(
+            fileName = "comicdav-reader-20260514-090807-123.log",
+            uri = "content://logs/tree/file",
+            sink = sink,
+        )
+
+        assertEquals("comicdav-reader-20260514-090807-123.log", file.fileName)
+        assertEquals("content://logs/tree/file", file.uri)
+        assertEquals(sink, file.sink)
     }
 }
