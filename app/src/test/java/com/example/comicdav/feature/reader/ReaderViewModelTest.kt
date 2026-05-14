@@ -228,6 +228,38 @@ class ReaderViewModelTest {
         executor.shutdown()
     }
 
+    @Test
+    fun selectPageDoesNotBlockCallerWhileNativeViewportUpdateRuns() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val session = BlockingViewportSession(pageCount = 3, blockingPage = 1)
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        waitUntil(timeoutMs = 1_000) {
+            dispatcher.scheduler.advanceUntilIdle()
+            viewModel.uiState.pageFiles.containsKey(1)
+        }
+        val startedAt = System.nanoTime()
+
+        viewModel.selectPage(1)
+        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+
+        assertTrue("selectPage blocked for ${elapsedMs}ms", elapsedMs < 100)
+        dispatcher.scheduler.runCurrent()
+        assertTrue(session.viewportStarted.await(1, TimeUnit.SECONDS))
+        session.releaseViewport.countDown()
+        waitUntil(timeoutMs = 1_000) {
+            dispatcher.scheduler.advanceUntilIdle()
+            session.viewportPages.contains(1)
+        }
+        assertTrue(session.viewportPages.containsAll(listOf(0, 1)))
+        ioDispatcher.close()
+        executor.shutdown()
+    }
+
     private class FakeReaderSession(
         override val pageCount: Int,
         private val failOnPages: Set<Int> = emptySet(),
@@ -271,6 +303,30 @@ class ReaderViewModelTest {
             releaseClose.await(2, TimeUnit.SECONDS)
             closeFinished.countDown()
         }
+    }
+
+    private class BlockingViewportSession(
+        override val pageCount: Int,
+        private val blockingPage: Int,
+    ) : ComicReaderSession {
+        val viewportPages = mutableListOf<Int>()
+        val viewportStarted = CountDownLatch(1)
+        val releaseViewport = CountDownLatch(1)
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
+        }
+
+        override fun updateViewport(pageIndex: Int, networkClass: Int) {
+            viewportPages += pageIndex
+            if (pageIndex == blockingPage) {
+                viewportStarted.countDown()
+                releaseViewport.await(500, TimeUnit.MILLISECONDS)
+            }
+        }
+
+        override fun close() = Unit
     }
 
     private fun waitUntil(timeoutMs: Long, condition: () -> Boolean) {

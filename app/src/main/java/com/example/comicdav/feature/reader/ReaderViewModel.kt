@@ -48,6 +48,7 @@ class ReaderViewModel(
     private var generation = 0
     private var remoteOpenJob: Job? = null
     private var prefetchJob: Job? = null
+    private var viewportJob: Job? = null
     private val sessionMutex = Mutex()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
@@ -57,6 +58,7 @@ class ReaderViewModel(
         this.comicKey = comicKey
         this.pageCacheKey = comicKey ?: "local-${path.hashCode()}"
         val openGeneration = generation
+        ReaderDiagnosticLog.event("open_local_start initialPage=$initialPage generation=$openGeneration key=${this.pageCacheKey}")
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
@@ -83,10 +85,14 @@ class ReaderViewModel(
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
-                    updateViewport(opened.session, opened.currentPage)
+                    ReaderDiagnosticLog.event(
+                        "open_local_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
+                    )
+                    scheduleViewportUpdate(opened.session, opened.currentPage, openGeneration)
                     prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
+                    ReaderDiagnosticLog.error("open_local_failed", error)
                     uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
                 },
             )
@@ -119,6 +125,7 @@ class ReaderViewModel(
         this.cacheDir = cacheDir
         this.comicKey = comicKey
         this.pageCacheKey = comicKey
+        ReaderDiagnosticLog.event("open_session_start initialPage=$initialPage generation=$openGeneration key=$comicKey")
         uiState = ReaderUiState(isLoading = true)
         viewModelScope.launch {
             runCatching {
@@ -144,11 +151,15 @@ class ReaderViewModel(
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                     )
-                    updateViewport(opened.session, opened.currentPage)
+                    ReaderDiagnosticLog.event(
+                        "open_session_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
+                    )
+                    scheduleViewportUpdate(opened.session, opened.currentPage, openGeneration)
                     prefetchNeighbors(opened.currentPage)
                 },
                 onFailure = { error ->
                     closeSessionAsync(openedSession)
+                    ReaderDiagnosticLog.error("open_session_failed", error)
                     uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
                 },
             )
@@ -162,6 +173,7 @@ class ReaderViewModel(
         closeCurrentSession()
         this.cacheDir = cacheDir
         val openGeneration = generation
+        ReaderDiagnosticLog.event("open_remote_start generation=$openGeneration")
         uiState = ReaderUiState(isLoading = true)
         remoteOpenJob = viewModelScope.launch {
             runCatching {
@@ -169,10 +181,12 @@ class ReaderViewModel(
             }.fold(
                 onSuccess = { result ->
                     if (openGeneration != generation) {
+                        ReaderDiagnosticLog.event("open_remote_stale_result generation=$openGeneration active=$generation")
                         closeSessionAsync(result.session)
                         return@fold
                     }
                     remoteOpenJob = null
+                    ReaderDiagnosticLog.event("open_remote_result key=${result.comicKey} initialPage=${result.initialPage} fileSize=${result.localFile.length()}")
                     startOpenedSession(
                         openedSession = result.session,
                         cacheDir = cacheDir,
@@ -183,6 +197,7 @@ class ReaderViewModel(
                 },
                 onFailure = { error ->
                     if (openGeneration != generation || error is CancellationException) return@fold
+                    ReaderDiagnosticLog.error("open_remote_failed", error)
                     uiState = ReaderUiState(error = error.message ?: "Failed to open remote comic")
                 },
             )
@@ -190,21 +205,36 @@ class ReaderViewModel(
     }
 
     fun selectPage(pageIndex: Int) {
-        val activeSession = session ?: return
-        val activeCacheDir = cacheDir ?: return
-        if (pageIndex !in 0 until activeSession.pageCount) return
+        val activeSession = session
+        if (activeSession == null) {
+            ReaderDiagnosticLog.event("select_page_ignored_no_session page=$pageIndex")
+            return
+        }
+        val activeCacheDir = cacheDir
+        if (activeCacheDir == null) {
+            ReaderDiagnosticLog.event("select_page_ignored_no_cache page=$pageIndex")
+            return
+        }
+        if (pageIndex !in 0 until activeSession.pageCount) {
+            ReaderDiagnosticLog.event("select_page_ignored_out_of_range page=$pageIndex pageCount=${activeSession.pageCount}")
+            return
+        }
 
         prefetchJob?.cancel()
         prefetchJob = null
         val existingFile = uiState.pageFiles[pageIndex]
+        ReaderDiagnosticLog.event(
+            "select_page page=$pageIndex previous=${uiState.currentPage} cached=${existingFile != null} pageCount=${activeSession.pageCount}",
+        )
         uiState = uiState.copy(
             currentPage = pageIndex,
             isLoading = existingFile == null,
             error = null,
         )
         if (existingFile != null) {
-            updateViewport(activeSession, pageIndex)
+            scheduleViewportUpdate(activeSession, pageIndex, generation)
             saveProgress(pageIndex)
+            ReaderDiagnosticLog.event("select_page_cached page=$pageIndex fileSize=${existingFile.length()}")
             prefetchNeighbors(pageIndex)
             return
         }
@@ -227,12 +257,14 @@ class ReaderViewModel(
                         pageFiles = uiState.pageFiles + files,
                         isLoading = false,
                     )
-                    updateViewport(activeSession, pageIndex)
+                    scheduleViewportUpdate(activeSession, pageIndex, loadGeneration)
                     saveProgress(pageIndex)
+                    ReaderDiagnosticLog.event("select_page_loaded page=$pageIndex files=${files.keys.sorted()}")
                     prefetchNeighbors(pageIndex)
                 },
                 onFailure = { error ->
                     if (loadGeneration != generation) return@fold
+                    ReaderDiagnosticLog.error("select_page_load_failed page=$pageIndex", error)
                     uiState = uiState.copy(
                         isLoading = false,
                         error = error.message ?: "Failed to load page",
@@ -243,6 +275,7 @@ class ReaderViewModel(
     }
 
     fun closeReader() {
+        ReaderDiagnosticLog.event("close_reader")
         closeCurrentSession()
         uiState = ReaderUiState()
     }
@@ -252,10 +285,13 @@ class ReaderViewModel(
     }
 
     private fun closeCurrentSession() {
+        ReaderDiagnosticLog.event("close_current_session generation=$generation hasSession=${session != null}")
         remoteOpenJob?.cancel()
         remoteOpenJob = null
         prefetchJob?.cancel()
         prefetchJob = null
+        viewportJob?.cancel()
+        viewportJob = null
         generation++
         session?.let(::closeSessionAsync)
         session = null
@@ -274,6 +310,7 @@ class ReaderViewModel(
 
         prefetchJob?.cancel()
         val prefetchGeneration = generation
+        ReaderDiagnosticLog.event("prefetch_start current=$pageIndex pages=$missingNeighbors generation=$prefetchGeneration")
         prefetchJob = viewModelScope.launch {
             delay(PREFETCH_START_DELAY_MS)
             for (page in missingNeighbors) {
@@ -292,9 +329,11 @@ class ReaderViewModel(
                         currentCoroutineContext().ensureActive()
                         if (prefetchGeneration == generation) {
                             uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
+                            ReaderDiagnosticLog.event("prefetch_loaded page=$page files=${files.keys.sorted()}")
                         }
                     },
-                    onFailure = {
+                    onFailure = { error ->
+                        ReaderDiagnosticLog.error("prefetch_failed page=$page", error)
                         return@launch
                     },
                 )
@@ -305,14 +344,32 @@ class ReaderViewModel(
     private fun saveProgress(pageIndex: Int) {
         comicKey?.let { key ->
             viewModelScope.launch {
-                savePage(key, pageIndex)
+                runCatching {
+                    savePage(key, pageIndex)
+                }.onFailure { error ->
+                    ReaderDiagnosticLog.error("save_progress_failed page=$pageIndex key=$key", error)
+                }
             }
         }
     }
 
-    private fun updateViewport(session: ComicReaderSession, pageIndex: Int) {
-        runCatching {
-            session.updateViewport(pageIndex, NETWORK_WIFI)
+    private fun scheduleViewportUpdate(session: ComicReaderSession, pageIndex: Int, expectedGeneration: Int) {
+        viewportJob?.cancel()
+        viewportJob = viewModelScope.launch {
+            runCatching {
+                withContext(ioDispatcher) {
+                    sessionMutex.withLock {
+                        if (expectedGeneration != generation) return@withLock
+                        ReaderDiagnosticLog.event("update_viewport_start page=$pageIndex generation=$expectedGeneration")
+                        session.updateViewport(pageIndex, NETWORK_WIFI)
+                        ReaderDiagnosticLog.event("update_viewport_done page=$pageIndex generation=$expectedGeneration")
+                    }
+                }
+            }.onFailure { error ->
+                if (expectedGeneration == generation && error !is CancellationException) {
+                    ReaderDiagnosticLog.error("update_viewport_failed page=$pageIndex", error)
+                }
+            }
         }
     }
 
@@ -338,9 +395,13 @@ class ReaderViewModel(
                     }
                     val outputFile = pageCacheFile(cacheDir, index)
                     if (outputFile.isFile && outputFile.length() > 0L) {
+                        ReaderDiagnosticLog.event("load_page_cache_hit page=$index fileSize=${outputFile.length()}")
                         outputFile
                     } else {
-                        session.loadPageToFile(index, outputFile)
+                        ReaderDiagnosticLog.event("load_page_extract_start page=$index")
+                        val loadedFile = session.loadPageToFile(index, outputFile)
+                        ReaderDiagnosticLog.event("load_page_extract_done page=$index fileSize=${loadedFile.length()}")
+                        loadedFile
                     }
                 }
                 files[index] = output

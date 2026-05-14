@@ -15,16 +15,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ReaderScreen(
     uiState: ReaderUiState,
     onPageChanged: (Int) -> Unit,
+    onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -47,8 +50,13 @@ fun ReaderScreen(
                 },
                 style = MaterialTheme.typography.titleMedium,
             )
-            Button(onClick = onClose) {
-                Text("Close")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onChooseLogFile) {
+                    Text("Log")
+                }
+                Button(onClick = onClose) {
+                    Text("Close")
+                }
             }
         }
 
@@ -80,8 +88,35 @@ fun ReaderScreen(
                     initialPage = uiState.currentPage,
                     pageCount = { uiState.pageCount },
                 )
-                LaunchedEffect(pagerState.currentPage) {
-                    onPageChanged(pagerState.currentPage)
+                LaunchedEffect(pagerState) {
+                    snapshotFlow {
+                        reportableSettledPage(
+                            currentPage = pagerState.currentPage,
+                            settledPage = pagerState.settledPage,
+                        )
+                    }
+                        .reportableReaderPageChanges()
+                        .collect { page ->
+                            ReaderDiagnosticLog.event("pager_report_page page=$page")
+                            onPageChanged(page)
+                        }
+                }
+                LaunchedEffect(pagerState, uiState.currentPage, uiState.pageCount) {
+                    snapshotFlow {
+                        ReaderPagerSnapshot(
+                            currentPage = pagerState.currentPage,
+                            settledPage = pagerState.settledPage,
+                            targetPage = pagerState.targetPage,
+                            offsetFraction = pagerState.currentPageOffsetFraction,
+                            isScrollInProgress = pagerState.isScrollInProgress,
+                            uiCurrentPage = uiState.currentPage,
+                            pageCount = uiState.pageCount,
+                        )
+                    }
+                        .distinctUntilChanged()
+                        .collect { snapshot ->
+                            ReaderDiagnosticLog.event(formatPagerSnapshot(snapshot))
+                        }
                 }
 
                 HorizontalPager(

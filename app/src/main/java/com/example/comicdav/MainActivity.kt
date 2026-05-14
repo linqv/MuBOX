@@ -24,6 +24,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.feature.reader.OpenComicUseCase
+import com.example.comicdav.feature.reader.ContentUriReaderLogSink
+import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.webdav.DownloadProgressUi
@@ -39,9 +41,34 @@ import kotlinx.coroutines.withContext
 private val Context.readingProgressDataStore by preferencesDataStore(name = "reading_progress")
 
 class MainActivity : ComponentActivity() {
+    private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
+    private var readerCrashHandler: Thread.UncaughtExceptionHandler? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installReaderCrashLogger()
         setContent { ComicDavApp() }
+    }
+
+    override fun onDestroy() {
+        val installedHandler = readerCrashHandler
+        if (installedHandler != null && Thread.getDefaultUncaughtExceptionHandler() === installedHandler) {
+            Thread.setDefaultUncaughtExceptionHandler(previousCrashHandler)
+        }
+        readerCrashHandler = null
+        previousCrashHandler = null
+        super.onDestroy()
+    }
+
+    private fun installReaderCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        previousCrashHandler = previous
+        val handler = Thread.UncaughtExceptionHandler { thread, throwable ->
+            ReaderDiagnosticLog.errorBlocking("uncaught thread=${thread.name}", throwable)
+            previous?.uncaughtException(thread, throwable)
+        }
+        readerCrashHandler = handler
+        Thread.setDefaultUncaughtExceptionHandler(handler)
     }
 }
 
@@ -58,8 +85,17 @@ fun ComicDavApp() {
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
     val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
+    val logFileCreator = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri == null) {
+            ReaderDiagnosticLog.event("log_file_cancelled")
+            return@rememberLauncherForActivityResult
+        }
+        ReaderDiagnosticLog.setSink(ContentUriReaderLogSink(context, uri, scope))
+        ReaderDiagnosticLog.event("log_file_selected uri=$uri")
+    }
     val localFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        ReaderDiagnosticLog.event("local_file_selected uri=$uri")
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -68,10 +104,12 @@ fun ComicDavApp() {
             }.fold(
                 onSuccess = { cachedFile ->
                     localOpenError = null
+                    ReaderDiagnosticLog.event("open_local_cache_ready path=${cachedFile.name} size=${cachedFile.length()}")
                     readerViewModel.openLocal(cachedFile.absolutePath, context.cacheDir)
                     isReaderOpen = true
                 },
                 onFailure = { error ->
+                    ReaderDiagnosticLog.error("open_local_copy_failed", error)
                     localOpenError = error.message ?: "Failed to open local file"
                 },
             )
@@ -84,7 +122,11 @@ fun ComicDavApp() {
                 ReaderScreen(
                     uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
                     onPageChanged = readerViewModel::selectPage,
+                    onChooseLogFile = {
+                        logFileCreator.launch("comicdav-reader-log-${System.currentTimeMillis()}.txt")
+                    },
                     onClose = {
+                        ReaderDiagnosticLog.event("reader_close")
                         readerViewModel.closeReader()
                         downloadProgress = null
                         isReaderOpen = false
@@ -101,6 +143,7 @@ fun ComicDavApp() {
                             downloadProgress = null
                             localOpenError = null
                             isReaderOpen = true
+                            ReaderDiagnosticLog.event("open_remote_start path=${item.path} size=${item.size ?: -1}")
                             readerViewModel.openRemote(cacheDir = context.cacheDir) {
                                 val useCase = OpenComicUseCase(
                                     accountId = webDavViewModel.accountId(),
