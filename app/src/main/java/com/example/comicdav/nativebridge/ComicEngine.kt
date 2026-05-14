@@ -21,11 +21,16 @@ class ComicEngine(
         val handle = native.openRemote(fileId, size, cacheDir.absolutePath, comicKey, validator)
         return openChecked(
             handle = handle,
+            rangeProviderFileId = fileId,
             onClose = { RangeProviderRegistry.unregister(fileId) },
         )
     }
 
-    private fun openChecked(handle: Long, onClose: () -> Unit = {}) : ComicReaderSession {
+    private fun openChecked(
+        handle: Long,
+        rangeProviderFileId: Long? = null,
+        onClose: () -> Unit = {},
+    ) : ComicReaderSession {
         if (handle == 0L) {
             onClose()
             throw nativeException()
@@ -38,7 +43,7 @@ class ComicEngine(
             throw nativeException()
         }
 
-        return ComicSession(native, handle, pageCount, onClose)
+        return ComicSession(native, handle, pageCount, rangeProviderFileId, onClose)
     }
 
     private fun nativeException(): ComicNativeException {
@@ -51,12 +56,22 @@ interface ComicReaderSession : Closeable {
     fun loadPageToFile(pageIndex: Int, outputFile: File): File
     fun updateViewport(pageIndex: Int, networkClass: Int) = Unit
     fun diagnostics(): String = ""
+    fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> = emptyList()
+    fun prefetchRange(start: Long, endInclusive: Long): Boolean = false
 }
+
+data class PlannedRemoteRange(
+    val start: Long,
+    val endInclusive: Long,
+    val pages: List<Int>,
+    val priority: Int,
+)
 
 class ComicSession internal constructor(
     private val native: ComicNativeFacade,
     private val handle: Long,
     override val pageCount: Int,
+    private val rangeProviderFileId: Long? = null,
     private val onClose: () -> Unit = {},
 ) : ComicReaderSession {
     private var isClosed = false
@@ -78,6 +93,16 @@ class ComicSession internal constructor(
 
     override fun diagnostics(): String = native.diagnostics(handle)
 
+    override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
+        val encoded = native.plannedRanges(handle, pageIndex, networkClass)
+        return decodePlannedRanges(encoded)
+    }
+
+    override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+        val fileId = rangeProviderFileId ?: return false
+        return RangeProviderRegistry.prefetchRange(fileId, start, endInclusive)
+    }
+
     override fun close() {
         if (!isClosed) {
             isClosed = true
@@ -85,6 +110,29 @@ class ComicSession internal constructor(
             onClose()
         }
     }
+}
+
+internal fun decodePlannedRanges(encoded: String): List<PlannedRemoteRange> {
+    val trimmed = encoded.trim()
+    if (trimmed.isEmpty() || trimmed == "v1") return emptyList()
+    require(trimmed.startsWith("v1;")) { "Unsupported planned range format" }
+    return trimmed
+        .removePrefix("v1;")
+        .split(';')
+        .filter { it.isNotBlank() }
+        .map { entry ->
+            val fields = entry.split(',')
+            require(fields.size == 4) { "Malformed planned range entry" }
+            PlannedRemoteRange(
+                start = fields[0].toLong(),
+                endInclusive = fields[1].toLong(),
+                priority = fields[2].toInt(),
+                pages = fields[3]
+                    .split('|')
+                    .filter { it.isNotBlank() }
+                    .map { it.toInt() },
+            )
+        }
 }
 
 class ComicNativeException(message: String) : RuntimeException(message)

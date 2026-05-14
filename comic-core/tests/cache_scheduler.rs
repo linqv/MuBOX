@@ -4,7 +4,9 @@ use comic_core::cache::index_cache::{
 use comic_core::cache::page_cache::{enforce_lru_capacity, page_cache_file};
 use comic_core::cbz::{CbzIndex, CbzPageEntry};
 use comic_core::scheduler::prefetch::{plan_prefetch, NetworkClass};
-use comic_core::scheduler::range_planner::{plan_ranges, ByteRange};
+use comic_core::scheduler::range_planner::{
+    plan_page_ranges, plan_ranges, ByteRange, PageByteRange,
+};
 use comic_core::zip::RangeReader;
 use std::cell::Cell;
 use std::fs;
@@ -115,6 +117,72 @@ fn range_planner_does_not_merge_ranges_separated_by_65_kib() {
     ]);
 
     assert_eq!(2, planned.request_count);
+}
+
+#[test]
+fn planned_page_ranges_merge_adjacent_pages_when_limits_allow() {
+    let planned = plan_page_ranges(vec![
+        PageByteRange {
+            page_index: 2,
+            priority: 1,
+            range: ByteRange::new(0, 1023),
+        },
+        PageByteRange {
+            page_index: 3,
+            priority: 4,
+            range: ByteRange::new(1024 + 63 * 1024, 1024 + 63 * 1024 + 1023),
+        },
+    ]);
+
+    assert_eq!(1, planned.len());
+    assert_eq!(ByteRange::new(0, 1024 + 63 * 1024 + 1023), planned[0].range);
+    assert_eq!(vec![2, 3], planned[0].pages);
+    assert_eq!(1, planned[0].priority);
+}
+
+#[test]
+fn planned_page_ranges_record_all_covered_page_indexes() {
+    let planned = plan_page_ranges(vec![
+        PageByteRange {
+            page_index: 4,
+            priority: 7,
+            range: ByteRange::new(20, 29),
+        },
+        PageByteRange {
+            page_index: 5,
+            priority: 8,
+            range: ByteRange::new(30, 39),
+        },
+        PageByteRange {
+            page_index: 6,
+            priority: 9,
+            range: ByteRange::new(40, 49),
+        },
+    ]);
+
+    assert_eq!(1, planned.len());
+    assert_eq!(vec![4, 5, 6], planned[0].pages);
+}
+
+#[test]
+fn planned_page_ranges_split_when_merged_size_exceeds_max() {
+    let max_merged_bytes = 8 * 1024 * 1024;
+    let planned = plan_page_ranges(vec![
+        PageByteRange {
+            page_index: 0,
+            priority: 0,
+            range: ByteRange::new(0, max_merged_bytes - 1),
+        },
+        PageByteRange {
+            page_index: 1,
+            priority: 1,
+            range: ByteRange::new(max_merged_bytes, max_merged_bytes),
+        },
+    ]);
+
+    assert_eq!(2, planned.len());
+    assert_eq!(vec![0], planned[0].pages);
+    assert_eq!(vec![1], planned[1].pages);
 }
 
 #[test]

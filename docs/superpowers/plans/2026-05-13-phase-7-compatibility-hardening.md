@@ -50,6 +50,13 @@
 - [ ] Add cache management UI showing index cache size and page cache size.
 - [ ] Add clear-cache action that removes page cache files but keeps account settings.
 
+## Task 5: Phase 6B ADB Follow-Up
+
+- [ ] Investigate remaining sequential-read misses from Phase 6B phone logs.
+- [ ] Improve next-page range cache hit rate toward the 80% stable Wi-Fi target.
+- [ ] Reduce remaining `page_not_ready` waits where logs report `likelyCause=extract_slow`.
+- [ ] Keep the Phase 6B lifecycle behavior intact: `prefetch_cancelled reason=select_page` should stay near zero and normal selections should continue using `prefetch_retained` or `prefetch_promoted`.
+
 ## Verification
 
 - [x] Run `cargo test`.

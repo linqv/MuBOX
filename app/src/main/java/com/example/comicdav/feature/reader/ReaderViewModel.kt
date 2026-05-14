@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.ComicReaderSession
+import com.example.comicdav.nativebridge.PlannedRemoteRange
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -46,10 +47,15 @@ class ReaderViewModel(
     private var cacheDir: File? = null
     private var comicKey: String? = null
     private var pageCacheKey: String? = null
+    @Volatile
     private var generation = 0
     private var remoteOpenJob: Job? = null
-    private var prefetchJob: Job? = null
     private var viewportJob: Job? = null
+    private val prefetchJobs = mutableMapOf<Int, Job>()
+    private val plannedRangeLock = Any()
+    private val plannedRangeJobs = mutableMapOf<PlannedRangeKey, PlannedRangePrefetch>()
+    private var plannedRangeSupervisor = SupervisorJob()
+    private var plannedRangeScope = CoroutineScope(plannedRangeSupervisor + ioDispatcher)
     private val sessionMutex = Mutex()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val diagnosticLock = Any()
@@ -244,9 +250,8 @@ class ReaderViewModel(
         }
 
         reportPageDemand(pageIndex, "select_page")
-        cancelActivePrefetch("select_page page=$pageIndex")
-        prefetchJob?.cancel()
-        prefetchJob = null
+        val promotedPrefetch = activePrefetchJob(pageIndex)
+        val promotedPlannedRange = activePlannedRangeJob(pageIndex)
         val existingFile = uiState.pageFiles[pageIndex]
         ReaderDiagnosticLog.event(
             "select_page page=$pageIndex previous=${uiState.currentPage} cached=${existingFile != null} pageCount=${activeSession.pageCount}",
@@ -260,10 +265,57 @@ class ReaderViewModel(
             scheduleViewportUpdate(activeSession, pageIndex, generation)
             saveProgress(pageIndex)
             ReaderDiagnosticLog.event("select_page_cached page=$pageIndex fileSize=${existingFile.length()}")
-            prefetchNeighbors(pageIndex)
+            prefetchNeighbors(pageIndex, reason = "select_page")
             return
         }
         val loadGeneration = generation
+        prefetchNeighbors(pageIndex, reason = "select_page")
+        val promotedJob = promotedPrefetch ?: promotedPlannedRange
+        if (promotedJob != null) {
+            val promotionSource = if (promotedPrefetch != null) {
+                "prefetch_to_select"
+            } else {
+                "planned_range_to_select"
+            }
+            ReaderDiagnosticLog.event("prefetch_promoted page=$pageIndex source=$promotionSource")
+            viewModelScope.launch {
+                runCatching {
+                    promotedJob.join()
+                    uiState.pageFiles[pageIndex]
+                        ?: withContext(ioDispatcher) {
+                            loadPages(
+                                session = activeSession,
+                                pageIndexes = listOf(pageIndex),
+                                cacheDir = activeCacheDir,
+                                expectedGeneration = loadGeneration,
+                                reason = LOAD_REASON_SELECT,
+                            )
+                        }[pageIndex]
+                }.fold(
+                    onSuccess = { file ->
+                        if (loadGeneration != generation || file == null) return@fold
+                        uiState = uiState.copy(
+                            currentPage = pageIndex,
+                            pageFiles = uiState.pageFiles + (pageIndex to file),
+                            isLoading = false,
+                        )
+                        scheduleViewportUpdate(activeSession, pageIndex, loadGeneration)
+                        saveProgress(pageIndex)
+                        ReaderDiagnosticLog.event("select_page_loaded page=$pageIndex files=[$pageIndex]")
+                        prefetchNeighbors(pageIndex)
+                    },
+                    onFailure = { error ->
+                        if (loadGeneration != generation) return@fold
+                        ReaderDiagnosticLog.error("select_page_load_failed page=$pageIndex", error)
+                        uiState = uiState.copy(
+                            isLoading = false,
+                            error = error.message ?: "Failed to load page",
+                        )
+                    },
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
@@ -308,14 +360,20 @@ class ReaderViewModel(
 
     override fun onCleared() {
         closeCurrentSession()
+        plannedRangeSupervisor.cancel(CancellationException("reader view model cleared"))
     }
 
     private fun closeCurrentSession() {
         ReaderDiagnosticLog.event("close_current_session generation=$generation hasSession=${session != null}")
         remoteOpenJob?.cancel()
         remoteOpenJob = null
-        prefetchJob?.cancel()
-        prefetchJob = null
+        cancelPagePrefetches(
+            reason = "stale_generation",
+            pages = prefetchJobs.keys.toList(),
+            selectedPage = uiState.currentPage,
+        )
+        cancelPlannedRangePrefetches(reason = "stale_generation", keepPages = emptySet())
+        resetPlannedRangeScope()
         viewportJob?.cancel()
         viewportJob = null
         generation++
@@ -329,6 +387,9 @@ class ReaderViewModel(
         val ready = uiState.pageFiles[pageIndex] != null
         ReaderDiagnosticLog.event("page_demand page=$pageIndex source=$source ready=$ready")
         if (ready || pageIndex !in 0 until uiState.pageCount) return
+        if (source == "pager_target") {
+            scheduleDemandPlannedRangePrefetch(pageIndex, source)
+        }
 
         val demandAtMs = elapsedRealtimeMs()
         synchronized(diagnosticLock) {
@@ -365,27 +426,30 @@ class ReaderViewModel(
         ReaderDiagnosticLog.event("image_load_failed page=$pageIndex")
     }
 
-    private fun prefetchNeighbors(pageIndex: Int) {
+    private fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val forwardPages = (1..PREFETCH_FORWARD_PAGES).map { pageIndex + it }
-        val missingNeighbors = (forwardPages + (pageIndex - 1))
-            .filter { it in 0 until activeSession.pageCount }
+        val desiredWindow = desiredPageWindow(pageIndex, activeSession.pageCount)
+        reconcilePagePrefetches(
+            selectedPage = pageIndex,
+            desiredWindow = desiredWindow,
+            reason = reason,
+        )
+        val missingNeighbors = neighborPrefetchPages(pageIndex, activeSession.pageCount)
             .filterNot { uiState.pageFiles.containsKey(it) }
+            .filterNot { prefetchJobs[it]?.isActive == true }
         if (missingNeighbors.isEmpty()) return
 
-        cancelActivePrefetch("prefetch_restart current=$pageIndex")
-        prefetchJob?.cancel()
         val prefetchGeneration = generation
         markPrefetchPlanned(missingNeighbors)
         ReaderDiagnosticLog.event("prefetch_start current=$pageIndex pages=$missingNeighbors generation=$prefetchGeneration")
-        prefetchJob = viewModelScope.launch {
-            delay(PREFETCH_START_DELAY_MS)
-            for (page in missingNeighbors) {
-                currentCoroutineContext().ensureActive()
-                markPrefetchStarted(page)
-                runCatching {
-                    withContext(ioDispatcher) {
+        missingNeighbors.forEachIndexed { order, page ->
+            val job = viewModelScope.launch {
+                try {
+                    delay(PREFETCH_START_DELAY_MS + order * PREFETCH_STAGGER_MS)
+                    currentCoroutineContext().ensureActive()
+                    markPrefetchStarted(page)
+                    val files = withContext(ioDispatcher) {
                         loadPages(
                             session = activeSession,
                             pageIndexes = listOf(page),
@@ -394,21 +458,30 @@ class ReaderViewModel(
                             reason = LOAD_REASON_PREFETCH,
                         )
                     }
-                }.fold(
-                    onSuccess = { files ->
-                        currentCoroutineContext().ensureActive()
-                        if (prefetchGeneration == generation) {
-                            uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
-                            markPrefetchCompleted(page)
-                            ReaderDiagnosticLog.event("prefetch_loaded page=$page files=${files.keys.sorted()}")
-                        }
-                    },
-                    onFailure = { error ->
-                        ReaderDiagnosticLog.error("prefetch_failed page=$page", error)
-                        return@launch
-                    },
-                )
+                    currentCoroutineContext().ensureActive()
+                    if (prefetchGeneration == generation) {
+                        uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
+                        markPrefetchCompleted(page)
+                        ReaderDiagnosticLog.event("prefetch_loaded page=$page files=${files.keys.sorted()}")
+                    }
+                } catch (error: CancellationException) {
+                    // Expected lifecycle cancellation is logged by the reconciler.
+                } catch (error: Throwable) {
+                    val laterPages = missingNeighbors.drop(order + 1)
+                    cancelPagePrefetches(
+                        reason = "dependency_failed",
+                        pages = laterPages,
+                        selectedPage = pageIndex,
+                    )
+                    ReaderDiagnosticLog.error("prefetch_failed page=$page", error)
+                } finally {
+                    val currentJob = currentCoroutineContext()[Job]
+                    if (currentJob != null && prefetchJobs[page] === currentJob) {
+                        prefetchJobs.remove(page)
+                    }
+                }
             }
+            prefetchJobs[page] = job
         }
     }
 
@@ -428,13 +501,21 @@ class ReaderViewModel(
         viewportJob?.cancel()
         viewportJob = viewModelScope.launch {
             runCatching {
-                withContext(ioDispatcher) {
+                val plannedRanges = withContext(ioDispatcher) {
                     sessionMutex.withLock {
-                        if (expectedGeneration != generation) return@withLock
+                        if (expectedGeneration != generation) return@withLock emptyList<PlannedRemoteRange>()
                         ReaderDiagnosticLog.event("update_viewport_start page=$pageIndex generation=$expectedGeneration")
                         session.updateViewport(pageIndex, NETWORK_WIFI)
-                        ReaderDiagnosticLog.event("update_viewport_done page=$pageIndex generation=$expectedGeneration")
+                        val ranges = session.plannedRanges(pageIndex, NETWORK_WIFI)
+                        ReaderDiagnosticLog.event(
+                            "update_viewport_done page=$pageIndex generation=$expectedGeneration " +
+                                "plannedRangeCount=${ranges.size} plannedBytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}",
+                        )
+                        ranges
                     }
+                }
+                if (expectedGeneration == generation) {
+                    schedulePlannedRangePrefetches(session, plannedRanges, expectedGeneration)
                 }
             }.onFailure { error ->
                 if (expectedGeneration == generation && error !is CancellationException) {
@@ -575,20 +656,201 @@ class ReaderViewModel(
         }
     }
 
-    private fun cancelActivePrefetch(reason: String) {
-        val cancelledAtMs = elapsedRealtimeMs()
-        val cancelledPages = synchronized(diagnosticLock) {
-            prefetchDiagnostics
-                .filter { (_, diagnostic) ->
-                    diagnostic.completedAtMs == null && diagnostic.cancelledAtMs == null
+    private fun activePrefetchJob(pageIndex: Int): Job? =
+        prefetchJobs[pageIndex]?.takeIf { it.isActive }
+
+    private fun activePlannedRangeJob(pageIndex: Int): Job? =
+        synchronized(plannedRangeLock) {
+            plannedRangeJobs
+                .values
+                .firstOrNull { planned ->
+                    planned.job.isActive && pageIndex in planned.range.pages
                 }
-                .map { (page, diagnostic) ->
+                ?.job
+        }
+
+    private fun neighborPrefetchPages(pageIndex: Int, pageCount: Int): List<Int> {
+        val forwardPages = (1..PREFETCH_FORWARD_PAGES).map { pageIndex + it }
+        return (forwardPages + (pageIndex - 1))
+            .filter { it in 0 until pageCount }
+            .distinct()
+    }
+
+    private fun desiredPageWindow(pageIndex: Int, pageCount: Int): Set<Int> =
+        (listOf(pageIndex) + neighborPrefetchPages(pageIndex, pageCount))
+            .filter { it in 0 until pageCount }
+            .toSet()
+
+    private fun reconcilePagePrefetches(
+        selectedPage: Int,
+        desiredWindow: Set<Int>,
+        reason: String,
+    ) {
+        val activePages = prefetchJobs
+            .filter { (_, job) -> job.isActive }
+            .keys
+            .toSet()
+        val retainedPages = activePages.intersect(desiredWindow)
+        val cancelledPages = activePages.subtract(desiredWindow)
+
+        if (retainedPages.isNotEmpty() && reason.startsWith("select_page")) {
+            ReaderDiagnosticLog.event(
+                "prefetch_retained reason=select_page page=$selectedPage pages=${retainedPages.sorted()}",
+            )
+        }
+        cancelPagePrefetches(
+            reason = "outside_window",
+            pages = cancelledPages.toList(),
+            selectedPage = selectedPage,
+        )
+    }
+
+    private fun cancelPagePrefetches(reason: String, pages: List<Int>, selectedPage: Int) {
+        val activePages = pages
+            .distinct()
+            .filter { prefetchJobs[it] != null }
+        if (activePages.isEmpty()) return
+        markPrefetchCancelled(activePages)
+        activePages.forEach { page ->
+            prefetchJobs.remove(page)?.cancel(CancellationException("prefetch $reason"))
+        }
+        ReaderDiagnosticLog.event("prefetch_cancelled reason=$reason page=$selectedPage pages=${activePages.sorted()}")
+    }
+
+    private fun markPrefetchCancelled(pages: List<Int>) {
+        val cancelledAtMs = elapsedRealtimeMs()
+        synchronized(diagnosticLock) {
+            pages.forEach { page ->
+                val diagnostic = prefetchDiagnostics[page]
+                if (diagnostic != null && diagnostic.completedAtMs == null && diagnostic.cancelledAtMs == null) {
                     prefetchDiagnostics[page] = diagnostic.copy(cancelledAtMs = cancelledAtMs)
-                    page
+                }
+            }
+        }
+    }
+
+    private fun scheduleDemandPlannedRangePrefetch(pageIndex: Int, source: String) {
+        val activeSession = session ?: return
+        val expectedGeneration = generation
+        plannedRangeScope.launch {
+            runCatching {
+                val ranges = sessionMutex.withLock {
+                    if (expectedGeneration != generation) return@withLock emptyList<PlannedRemoteRange>()
+                    activeSession.plannedRanges(pageIndex, NETWORK_WIFI)
+                }
+                if (expectedGeneration == generation) {
+                    ReaderDiagnosticLog.event(
+                        "demand_planned_range_plan page=$pageIndex source=$source " +
+                            "count=${ranges.size} bytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}",
+                    )
+                    schedulePlannedRangePrefetches(activeSession, ranges, expectedGeneration)
+                }
+            }.onFailure { error ->
+                if (expectedGeneration == generation && error !is CancellationException) {
+                    ReaderDiagnosticLog.error("demand_planned_range_failed page=$pageIndex source=$source", error)
+                }
+            }
+        }
+    }
+
+    private fun schedulePlannedRangePrefetches(
+        session: ComicReaderSession,
+        ranges: List<PlannedRemoteRange>,
+        expectedGeneration: Int,
+    ) {
+        val desiredPages = ranges.flatMap { it.pages }.toSet()
+        cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = desiredPages)
+        if (ranges.isEmpty()) return
+
+        val plannedBytes = ranges.sumOf { it.endInclusive - it.start + 1 }
+        ReaderDiagnosticLog.event(
+            "planned_range_prefetch_plan count=${ranges.size} bytes=$plannedBytes generation=$expectedGeneration",
+        )
+        ranges.sortedBy { it.priority }.forEach { range ->
+            val key = range.key()
+            if (plannedRangeJob(key)?.job?.isActive == true) return@forEach
+            val retained = activePlannedRangeForPages(range.pages)
+            if (retained != null) {
+                ReaderDiagnosticLog.event(
+                    "planned_range_prefetch_retained start=${retained.range.start} end=${retained.range.endInclusive} " +
+                        "pages=${retained.range.pages} requestedStart=${range.start} requestedEnd=${range.endInclusive}",
+                )
+                return@forEach
+            }
+            val job = plannedRangeScope.launch {
+                try {
+                    if (expectedGeneration != generation) return@launch
+                    val stored = session.prefetchRange(range.start, range.endInclusive)
+                    if (expectedGeneration == generation) {
+                        ReaderDiagnosticLog.event(
+                            "planned_range_prefetch_done start=${range.start} end=${range.endInclusive} " +
+                                "pages=${range.pages} priority=${range.priority} stored=$stored",
+                        )
+                    }
+                } catch (error: CancellationException) {
+                    // Expected stale-plan cancellation is logged by the reconciler.
+                } catch (error: Throwable) {
+                    if (expectedGeneration == generation) {
+                        ReaderDiagnosticLog.error(
+                            "planned_range_prefetch_failed start=${range.start} end=${range.endInclusive}",
+                            error,
+                        )
+                    }
+                } finally {
+                    val currentJob = currentCoroutineContext()[Job]
+                    if (currentJob != null) {
+                        synchronized(plannedRangeLock) {
+                            if (plannedRangeJobs[key]?.job === currentJob) {
+                                plannedRangeJobs.remove(key)
+                            }
+                        }
+                    }
+                }
+            }
+            synchronized(plannedRangeLock) {
+                plannedRangeJobs[key] = PlannedRangePrefetch(range = range, job = job)
+            }
+        }
+    }
+
+    private fun plannedRangeJob(key: PlannedRangeKey): PlannedRangePrefetch? =
+        synchronized(plannedRangeLock) {
+            plannedRangeJobs[key]
+        }
+
+    private fun activePlannedRangeForPages(pages: List<Int>): PlannedRangePrefetch? =
+        synchronized(plannedRangeLock) {
+            plannedRangeJobs
+                .values
+                .firstOrNull { planned ->
+                    planned.job.isActive && planned.range.pages.any { page -> page in pages }
                 }
         }
-        if (cancelledPages.isNotEmpty()) {
-            ReaderDiagnosticLog.event("prefetch_cancelled reason=$reason pages=${cancelledPages.sorted()}")
+
+    private fun cancelPlannedRangePrefetches(reason: String, keepPages: Set<Int>) {
+        val cancelled = synchronized(plannedRangeLock) {
+            plannedRangeJobs
+                .filter { (_, planned) ->
+                    planned.range.pages.none { page -> page in keepPages }
+                }
+                .map { (key, _) -> key }
+                .toList()
+        }
+        if (cancelled.isEmpty()) return
+        cancelled.forEach { key ->
+            synchronized(plannedRangeLock) {
+                plannedRangeJobs.remove(key)
+            }?.job?.cancel(CancellationException("planned range $reason"))
+        }
+        ReaderDiagnosticLog.event("planned_range_prefetch_cancelled reason=$reason count=${cancelled.size}")
+    }
+
+    private fun resetPlannedRangeScope() {
+        plannedRangeSupervisor.cancel(CancellationException("reader session changed"))
+        plannedRangeSupervisor = SupervisorJob()
+        plannedRangeScope = CoroutineScope(plannedRangeSupervisor + ioDispatcher)
+        synchronized(plannedRangeLock) {
+            plannedRangeJobs.clear()
         }
     }
 
@@ -646,6 +908,19 @@ class ReaderViewModel(
         val files: Map<Int, File>,
     )
 
+    private data class PlannedRangeKey(
+        val start: Long,
+        val endInclusive: Long,
+    )
+
+    private data class PlannedRangePrefetch(
+        val range: PlannedRemoteRange,
+        val job: Job,
+    )
+
+    private fun PlannedRemoteRange.key(): PlannedRangeKey =
+        PlannedRangeKey(start = start, endInclusive = endInclusive)
+
     private data class PageLoadDiagnostic(
         val reason: String,
         val cacheHit: Boolean,
@@ -680,6 +955,7 @@ class ReaderViewModel(
     private companion object {
         const val PREFETCH_FORWARD_PAGES = 4
         const val PREFETCH_START_DELAY_MS = 150L
+        const val PREFETCH_STAGGER_MS = 1L
         const val NETWORK_WIFI = 2
         const val LOAD_REASON_INITIAL = "initial"
         const val LOAD_REASON_SELECT = "select"

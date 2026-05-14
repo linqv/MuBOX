@@ -82,6 +82,44 @@ class ComicEngineTest {
     }
 
     @Test
+    fun plannedRangesParsesNativePlanForOpenSession() {
+        val native = FakeComicNative(
+            openHandle = 5,
+            pageCount = 6,
+            plannedRanges = "v1;10,29,1,2|3;40,49,5,4",
+        )
+        val session = ComicEngine(native).openLocal("/tmp/book.cbz")
+
+        assertEquals(
+            listOf(
+                PlannedRemoteRange(start = 10, endInclusive = 29, pages = listOf(2, 3), priority = 1),
+                PlannedRemoteRange(start = 40, endInclusive = 49, pages = listOf(4), priority = 5),
+            ),
+            session.plannedRanges(pageIndex = 2, networkClass = 2),
+        )
+        assertEquals(PlannedRangeCall(5, 2, 2), native.plannedRangeCalls.single())
+    }
+
+    @Test
+    fun remoteSessionPrefetchesRangesThroughRegisteredProvider() {
+        val native = FakeComicNative(openHandle = 9, pageCount = 1)
+        val provider = RecordingRangeProvider(size = 100)
+        val fileId = RangeProviderRegistry.register(provider)
+        val session = ComicEngine(native).openRemote(
+            fileId = fileId,
+            size = 100,
+            cacheDir = temp.newFolder("range-prefetch-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+        )
+
+        assertTrue(session.prefetchRange(start = 10, endInclusive = 19))
+
+        assertEquals(listOf(10L to 19L), provider.prefetchCalls)
+        session.close()
+    }
+
+    @Test
     fun closeReleasesNativeHandleOnce() {
         val native = FakeComicNative(openHandle = 5, pageCount = 1)
         val session = ComicEngine(native).openLocal("/tmp/book.cbz")
@@ -97,11 +135,13 @@ class ComicEngineTest {
         private val pageCount: Int = 0,
         private val lastError: String = "",
         private val diagnostics: String = "",
+        private val plannedRanges: String = "v1",
     ) : ComicNativeFacade {
         val closedHandles = mutableListOf<Long>()
         val loadCalls = mutableListOf<LoadCall>()
         val remoteOpenCalls = mutableListOf<RemoteOpenCall>()
         val viewportCalls = mutableListOf<ViewportCall>()
+        val plannedRangeCalls = mutableListOf<PlannedRangeCall>()
 
         override fun openLocal(path: String): Long = openHandle
 
@@ -134,7 +174,26 @@ class ComicEngineTest {
 
         override fun diagnostics(handle: Long): String = diagnostics
 
+        override fun plannedRanges(handle: Long, pageIndex: Int, networkClass: Int): String {
+            plannedRangeCalls += PlannedRangeCall(handle, pageIndex, networkClass)
+            return plannedRanges
+        }
+
         override fun lastErrorMessage(): String = lastError
+    }
+
+    private class RecordingRangeProvider(private val size: Long) : RangeProvider {
+        val prefetchCalls = mutableListOf<Pair<Long, Long>>()
+
+        override fun size(fileId: Long): Long = size
+
+        override fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray =
+            ByteArray((endInclusive - start + 1).toInt())
+
+        override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+            prefetchCalls += start to endInclusive
+            return true
+        }
     }
 
     private data class LoadCall(
@@ -152,6 +211,12 @@ class ComicEngineTest {
     )
 
     private data class ViewportCall(
+        val handle: Long,
+        val pageIndex: Int,
+        val networkClass: Int,
+    )
+
+    private data class PlannedRangeCall(
         val handle: Long,
         val pageIndex: Int,
         val networkClass: Int,

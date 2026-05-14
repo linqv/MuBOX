@@ -30,6 +30,13 @@ object RangeProviderRegistry {
         return provider(fileId).readRange(fileId, start, endInclusive)
     }
 
+    @JvmStatic
+    fun prefetchRange(fileId: Long, start: Long, endInclusive: Long): Boolean {
+        require(start >= 0) { "Range start must be non-negative" }
+        require(endInclusive >= start) { "Range end must be >= start" }
+        return provider(fileId).prefetchRange(start, endInclusive)
+    }
+
     private fun provider(fileId: Long): RangeProvider =
         providers[fileId] ?: throw IllegalArgumentException("Range provider not found: $fileId")
 }

@@ -4,6 +4,7 @@ use jni::strings::JNIString;
 use jni::sys::{jint, jlong, jstring, JNI_ERR, JNI_VERSION_1_6};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use once_cell::sync::Lazy;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs;
@@ -13,11 +14,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::cache::index_cache::{open_cbz_with_index_cache, IndexCacheKey};
-use crate::cbz::{open_cbz, CbzIndex};
+use crate::cbz::{open_cbz, CbzIndex, CbzPageEntry};
 use crate::error::ComicCoreError;
 use crate::remote::jni_range_reader::JniRangeReader;
 use crate::scheduler::prefetch::{plan_prefetch, NetworkClass};
-use crate::scheduler::range_planner::{plan_ranges, ByteRange};
+use crate::scheduler::range_planner::{
+    plan_page_ranges, ByteRange, PageByteRange, PlannedPageRange,
+};
+use crate::zip::local_header::LOCAL_HEADER_MIN_SIZE;
 use crate::zip::{FileRangeReader, RangeReader};
 
 pub type ComicHandle = u64;
@@ -32,6 +36,21 @@ struct CbzSession {
 struct SessionDiagnostics {
     viewport_page: Option<usize>,
     planned_request_count: usize,
+    planned_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct PlannedRangeDto {
+    start: u64,
+    end_inclusive: u64,
+    pages: Vec<usize>,
+    priority: u8,
+}
+
+impl PlannedRangeDto {
+    fn byte_len(&self) -> u64 {
+        self.end_inclusive.saturating_sub(self.start) + 1
+    }
 }
 
 enum SessionReader {
@@ -172,6 +191,11 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
             "diagnostics",
             "(J)Ljava/lang/String;",
             native_diagnostics as *const () as *mut c_void,
+        ),
+        native_method(
+            "plannedRanges",
+            "(JII)Ljava/lang/String;",
+            native_planned_ranges as *const () as *mut c_void,
         ),
         native_method("close", "(J)V", native_close as *const () as *mut c_void),
         native_method(
@@ -319,6 +343,36 @@ extern "system" fn native_diagnostics(
         .unwrap_or(std::ptr::null_mut())
 }
 
+extern "system" fn native_planned_ranges(
+    env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    handle: jlong,
+    page_index: jint,
+    network_class: jint,
+) -> jstring {
+    let message = if page_index < 0 {
+        set_last_error(ComicCoreError::InvalidZip(
+            "page index out of bounds".to_string(),
+        ));
+        "v1".to_string()
+    } else {
+        match planned_ranges_for_viewport(
+            handle as ComicHandle,
+            page_index as usize,
+            network_class_from_i32(network_class),
+        ) {
+            Ok(ranges) => encode_planned_ranges(&ranges),
+            Err(error) => {
+                set_last_error(error);
+                "v1".to_string()
+            }
+        }
+    };
+    env.new_string(message)
+        .map(|value| value.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
 extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>) -> jstring {
     let message = last_error_message_string();
     env.new_string(message)
@@ -409,25 +463,118 @@ fn update_viewport(
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
     }
 
-    let plan = plan_prefetch(session.index.pages.len(), page_index, network_class);
-    let ranges = plan
-        .tasks
-        .iter()
-        .filter_map(|task| session.index.pages.get(task.page_index))
-        .filter_map(|page| {
-            let end = page
-                .local_header_offset
-                .checked_add(page.compressed_size)?
-                .checked_add(4096)?;
-            Some(ByteRange::new(page.local_header_offset, end))
-        })
-        .collect();
-    let planned = plan_ranges(ranges);
+    let file_size = session.reader.size()?;
+    let planned = build_planned_ranges(&session.index, file_size, page_index, network_class);
     session.diagnostics = SessionDiagnostics {
         viewport_page: Some(page_index),
-        planned_request_count: planned.request_count,
+        planned_request_count: planned.len(),
+        planned_bytes: planned.iter().map(PlannedRangeDto::byte_len).sum(),
     };
     Ok(())
+}
+
+fn planned_ranges_for_viewport(
+    handle: ComicHandle,
+    page_index: usize,
+    network_class: NetworkClass,
+) -> Result<Vec<PlannedRangeDto>> {
+    let sessions = SESSIONS
+        .lock()
+        .map_err(|_| anyhow!("native session table lock poisoned"))?;
+    let session = sessions
+        .get(&handle)
+        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+    if page_index >= session.index.pages.len() {
+        return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
+    }
+    let file_size = session.reader.size()?;
+    Ok(build_planned_ranges(
+        &session.index,
+        file_size,
+        page_index,
+        network_class,
+    ))
+}
+
+fn build_planned_ranges(
+    index: &CbzIndex,
+    file_size: u64,
+    page_index: usize,
+    network_class: NetworkClass,
+) -> Vec<PlannedRangeDto> {
+    let plan = plan_prefetch(index.pages.len(), page_index, network_class);
+    let page_ranges = plan
+        .tasks
+        .iter()
+        .filter_map(|task| {
+            let page = index.pages.get(task.page_index)?;
+            let range = planned_page_byte_range(page, file_size)?;
+            Some(PageByteRange {
+                page_index: task.page_index,
+                priority: task.priority,
+                range,
+            })
+        })
+        .collect();
+    let mut planned: Vec<PlannedRangeDto> = plan_page_ranges(page_ranges)
+        .into_iter()
+        .map(planned_range_dto)
+        .collect();
+    planned.sort_by_key(|range| range.priority);
+    planned
+}
+
+fn planned_range_dto(range: PlannedPageRange) -> PlannedRangeDto {
+    PlannedRangeDto {
+        start: range.range.start,
+        end_inclusive: range.range.end_inclusive,
+        pages: range.pages,
+        priority: range.priority,
+    }
+}
+
+fn planned_page_byte_range(page: &CbzPageEntry, file_size: u64) -> Option<ByteRange> {
+    let file_end = file_size.checked_sub(1)?;
+    let (start, end) = if let Some(data_offset) = page.data_offset {
+        let end = data_offset.checked_add(page.compressed_size.checked_sub(1)?)?;
+        (data_offset, end)
+    } else {
+        let header_len = LOCAL_HEADER_MIN_SIZE
+            .checked_add(page.filename_len as u64)?
+            .checked_add(4 * 1024)?;
+        let range_len = header_len.checked_add(page.compressed_size)?;
+        let end = page
+            .local_header_offset
+            .checked_add(range_len.checked_sub(1)?)?;
+        (page.local_header_offset, end)
+    };
+    if start > file_end {
+        return None;
+    }
+    Some(ByteRange::new(start, end.min(file_end)))
+}
+
+fn encode_planned_ranges(ranges: &[PlannedRangeDto]) -> String {
+    if ranges.is_empty() {
+        return "v1".to_string();
+    }
+    let entries = ranges
+        .iter()
+        .map(|range| {
+            let pages = range
+                .pages
+                .iter()
+                .map(|page| page.to_string())
+                .collect::<Vec<_>>()
+                .join("|");
+            format!(
+                "{},{},{},{}",
+                range.start, range.end_inclusive, range.priority, pages
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    format!("v1;{entries}")
 }
 
 fn session_diagnostics(handle: ComicHandle) -> Result<String> {
@@ -438,13 +585,14 @@ fn session_diagnostics(handle: ComicHandle) -> Result<String> {
         .get(&handle)
         .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
     Ok(format!(
-        "viewport_page={};planned_request_count={}",
+        "viewport_page={};planned_request_count={};planned_bytes={}",
         session
             .diagnostics
             .viewport_page
             .map(|page| page.to_string())
             .unwrap_or_else(|| "none".to_string()),
         session.diagnostics.planned_request_count,
+        session.diagnostics.planned_bytes,
     ))
 }
 

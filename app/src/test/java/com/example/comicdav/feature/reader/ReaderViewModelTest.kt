@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.nativebridge.ComicReaderSession
+import com.example.comicdav.nativebridge.PlannedRemoteRange
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -119,6 +120,207 @@ class ReaderViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(listOf(0, 2), session.viewportPages)
+    }
+
+    @Test
+    fun viewportPlanRequestsArePrefetchedInBackground() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 5,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1, 2), priority = 1),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(100L to 199L), session.prefetchedRanges)
+    }
+
+    @Test
+    fun pagerTargetDemandRequestsPlannedRangePrefetchBeforeSelectionSettles() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5, 6), priority = 1),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.plannedRangePages.clear()
+        session.prefetchedRanges.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(5), session.plannedRangePages)
+        assertEquals(listOf(500L to 599L), session.prefetchedRanges)
+    }
+
+    @Test
+    fun stalePagerTargetPlanDoesNotPrefetchAfterSessionGenerationChanges() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchedRanges.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        viewModel.closeReader()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(session.prefetchedRanges.isEmpty())
+    }
+
+    @Test
+    fun selectPageWaitsForInFlightPlannedRangeCoveringSelectedPage() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val selectedLoadStarted = CountDownLatch(1)
+        val session = BlockingPlannedRangeSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+            ),
+            blockingRange = 500L to 599L,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+            selectedPage = 5,
+            selectedLoadStarted = selectedLoadStarted,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(4)
+            }
+            viewModel.reportPageDemand(5, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.selectPage(5)
+            dispatcher.scheduler.runCurrent()
+
+            assertTrue(!selectedLoadStarted.await(150, TimeUnit.MILLISECONDS))
+            releasePrefetch.countDown()
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(5)
+            }
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun overlappingPlannedRangeJobIsRetainedWhenNewPlanHasDifferentExactKey() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPlannedRangeSession(
+            pageCount = 8,
+            plannedRangeSequenceByPage = mapOf(
+                5 to ArrayDeque(
+                    listOf(
+                        listOf(PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5, 6), priority = 1)),
+                        listOf(PlannedRemoteRange(start = 480, endInclusive = 599, pages = listOf(5, 6), priority = 1)),
+                    ),
+                ),
+            ),
+            blockingRange = 500L to 599L,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(4)
+            }
+            viewModel.reportPageDemand(5, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.reportPageDemand(5, "pager_target")
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(500L to 599L), session.prefetchedRanges)
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun selectPagePromotesExistingPrefetchInsteadOfCancellingForSelection() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        val session = FakeReaderSession(pageCount = 6)
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(0, viewModel.uiState.currentPage)
+
+        viewModel.selectPage(1)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(sink.lines.any { it.contains("prefetch_promoted page=1 source=prefetch_to_select") })
+        assertTrue(sink.lines.none { it.contains("prefetch_cancelled reason=select_page") })
+        assertTrue(sink.lines.none { it.contains("prefetch_failed page=1") })
     }
 
     @Test
@@ -287,9 +489,12 @@ class ReaderViewModelTest {
     private class FakeReaderSession(
         override val pageCount: Int,
         private val failOnPages: Set<Int> = emptySet(),
+        private val plannedRangesByPage: Map<Int, List<PlannedRemoteRange>> = emptyMap(),
     ) : ComicReaderSession {
         val loadedPages = mutableListOf<Int>()
         val viewportPages = mutableListOf<Int>()
+        val plannedRangePages = mutableListOf<Int>()
+        val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
         var closed = false
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
@@ -308,6 +513,59 @@ class ReaderViewModelTest {
         override fun updateViewport(pageIndex: Int, networkClass: Int) {
             viewportPages += pageIndex
         }
+
+        override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> =
+            plannedRangesByPage[pageIndex].orEmpty().also {
+                plannedRangePages += pageIndex
+            }
+
+        override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+            prefetchedRanges += start to endInclusive
+            return true
+        }
+    }
+
+    private class BlockingPlannedRangeSession(
+        override val pageCount: Int,
+        private val plannedRangesByPage: Map<Int, List<PlannedRemoteRange>> = emptyMap(),
+        private val plannedRangeSequenceByPage: Map<Int, ArrayDeque<List<PlannedRemoteRange>>> = emptyMap(),
+        private val blockingRange: Pair<Long, Long>,
+        private val prefetchStarted: CountDownLatch,
+        private val prefetchFinished: CountDownLatch = CountDownLatch(0),
+        private val releasePrefetch: CountDownLatch,
+        private val selectedPage: Int? = null,
+        private val selectedLoadStarted: CountDownLatch? = null,
+    ) : ComicReaderSession {
+        val loadedPages = mutableListOf<Int>()
+        val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            loadedPages += pageIndex
+            if (pageIndex == selectedPage) {
+                selectedLoadStarted?.countDown()
+            }
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
+        }
+
+        override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
+            plannedRangeSequenceByPage[pageIndex]?.let { sequence ->
+                if (sequence.isNotEmpty()) return sequence.removeFirst()
+            }
+            return plannedRangesByPage[pageIndex].orEmpty()
+        }
+
+        override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+            prefetchedRanges += start to endInclusive
+            if (start to endInclusive == blockingRange) {
+                prefetchStarted.countDown()
+                releasePrefetch.await(2, TimeUnit.SECONDS)
+                prefetchFinished.countDown()
+            }
+            return true
+        }
+
+        override fun close() = Unit
     }
 
     private class BlockingCloseSession(

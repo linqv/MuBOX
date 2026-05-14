@@ -64,6 +64,50 @@ class WebDavRangeProvider(
         return postFetch.bytes
     }
 
+    override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+        if (start >= size) {
+            emitDiagnostic("range_prefetch_skip path=$path start=$start end=$endInclusive reason=past_eof")
+            return false
+        }
+        val clampedEnd = endInclusive.coerceAtMost(size - 1)
+        val cached = synchronized(lock) {
+            cache.find(start, clampedEnd)
+        }
+        if (cached != null) {
+            emitDiagnostic(
+                "range_prefetch_hit path=$path start=$start end=$clampedEnd " +
+                    "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive}",
+            )
+            return true
+        }
+
+        emitDiagnostic("range_prefetch_start path=$path start=$start end=$clampedEnd")
+        val bytes = runBlocking {
+            client.readRange(path, start, clampedEnd)
+        }
+        val postFetch = synchronized(lock) {
+            val storeResult = cache.store(start, clampedEnd, bytes)
+            PostFetchResult(
+                bytes = bytes,
+                storeResult = storeResult,
+                cacheBytes = cache.totalBytes(),
+                windowCount = cache.windowCount(),
+            )
+        }
+        emitDiagnostic(
+            "range_prefetch_store path=$path start=$start end=$clampedEnd bytes=${bytes.size} " +
+                "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
+                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
+        )
+        postFetch.storeResult.evicted.forEach { evicted ->
+            emitDiagnostic(
+                "range_cache_evict path=$path start=${evicted.start} end=${evicted.endInclusive} " +
+                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
+            )
+        }
+        return postFetch.storeResult.stored
+    }
+
     private fun emitDiagnostic(event: String) {
         runCatching {
             logDiagnostic(event)

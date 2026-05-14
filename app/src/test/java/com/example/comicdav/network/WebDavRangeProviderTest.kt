@@ -122,6 +122,23 @@ class WebDavRangeProviderTest {
     }
 
     @Test
+    fun prefetchedPlannedRangeServesLaterReadWithoutAnotherWebDavRequest() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val client = RecordingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 0,
+        )
+
+        assertTrue(provider.prefetchRange(start = 40, endInclusive = 79))
+        assertArrayEquals(bytes.sliceArray(50..59), provider.readRange(fileId = 1, start = 50, endInclusive = 59))
+
+        assertEquals(listOf(40L to 79L), client.rangeCalls)
+    }
+
+    @Test
     fun rangeCacheDiagnosticsIncludeHitMissStoreAndEvict() {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
