@@ -76,4 +76,48 @@ class ReaderDiagnosticLogTest {
         assertEquals("content://logs/tree/file", file.uri)
         assertEquals(sink, file.sink)
     }
+
+    @Test
+    fun firstImageAnalysisUsesLargestKnownSegment() {
+        val line = formatFirstImageAnalysis(
+            FirstImageTiming(
+                page = 0,
+                totalMs = 1_500,
+                remoteOpenMs = 300,
+                sessionInitialPageMs = 250,
+                pageExtractMs = 900,
+                imageRenderMs = 50,
+                cacheHit = false,
+            ),
+        )
+
+        assertEquals(
+            "analysis first_image page=0 totalMs=1500 likelyCause=page_extract " +
+                "remoteOpenMs=300 sessionInitialPageMs=250 pageExtractMs=900 " +
+                "imageRenderMs=50 cacheHit=false",
+            line,
+        )
+    }
+
+    @Test
+    fun pageNotReadyAnalysisPrefersMissingPrefetchEvidence() {
+        val line = formatPageNotReadyAnalysis(
+            PageNotReadyTiming(
+                page = 3,
+                waitMs = 700,
+                wasPrefetchPlanned = false,
+                wasPrefetchCancelled = false,
+                prefetchStartedBeforeDemand = false,
+                extractMs = 120,
+                imageRenderMs = 80,
+            ),
+        )
+
+        assertEquals(
+            "analysis page_not_ready page=3 waitMs=700 likelyCause=not_prefetched " +
+                "wasPrefetchPlanned=false wasPrefetchCancelled=false " +
+                "prefetchStartedBeforeDemand=false extractMs=120 imageRenderMs=80",
+            line,
+        )
+    }
 }

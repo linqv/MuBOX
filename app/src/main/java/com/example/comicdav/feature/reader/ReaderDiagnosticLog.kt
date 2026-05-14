@@ -140,3 +140,77 @@ fun formatReaderLogLine(event: String, now: () -> String = { Instant.now().toStr
 fun formatThrowable(event: String, error: Throwable): String {
     return "$event error=${error.javaClass.simpleName}: ${error.message}\n${error.stackTraceToString()}"
 }
+
+data class FirstImageTiming(
+    val page: Int,
+    val totalMs: Long,
+    val remoteOpenMs: Long? = null,
+    val sessionInitialPageMs: Long? = null,
+    val pageExtractMs: Long? = null,
+    val imageRenderMs: Long? = null,
+    val cacheHit: Boolean,
+)
+
+data class PageNotReadyTiming(
+    val page: Int,
+    val waitMs: Long,
+    val wasPrefetchPlanned: Boolean,
+    val wasPrefetchCancelled: Boolean,
+    val prefetchStartedBeforeDemand: Boolean,
+    val extractMs: Long? = null,
+    val imageRenderMs: Long? = null,
+)
+
+fun formatFirstImageAnalysis(timing: FirstImageTiming): String {
+    return "analysis first_image page=${timing.page} " +
+        "totalMs=${timing.totalMs} " +
+        "likelyCause=${firstImageLikelyCause(timing)} " +
+        "remoteOpenMs=${timing.remoteOpenMs.formatDiagnosticMs()} " +
+        "sessionInitialPageMs=${timing.sessionInitialPageMs.formatDiagnosticMs()} " +
+        "pageExtractMs=${timing.pageExtractMs.formatDiagnosticMs()} " +
+        "imageRenderMs=${timing.imageRenderMs.formatDiagnosticMs()} " +
+        "cacheHit=${timing.cacheHit}"
+}
+
+fun formatPageNotReadyAnalysis(timing: PageNotReadyTiming): String {
+    return "analysis page_not_ready page=${timing.page} " +
+        "waitMs=${timing.waitMs} " +
+        "likelyCause=${pageNotReadyLikelyCause(timing)} " +
+        "wasPrefetchPlanned=${timing.wasPrefetchPlanned} " +
+        "wasPrefetchCancelled=${timing.wasPrefetchCancelled} " +
+        "prefetchStartedBeforeDemand=${timing.prefetchStartedBeforeDemand} " +
+        "extractMs=${timing.extractMs.formatDiagnosticMs()} " +
+        "imageRenderMs=${timing.imageRenderMs.formatDiagnosticMs()}"
+}
+
+private fun firstImageLikelyCause(timing: FirstImageTiming): String {
+    return listOf(
+        "remote_open" to timing.remoteOpenMs,
+        "session_initial_page" to timing.sessionInitialPageMs,
+        "page_extract" to timing.pageExtractMs,
+        "image_decode" to timing.imageRenderMs,
+    )
+        .mapNotNull { (cause, duration) -> duration?.let { cause to it } }
+        .maxByOrNull { (_, duration) -> duration }
+        ?.takeIf { (_, duration) -> duration > 0L }
+        ?.first
+        ?: "unknown"
+}
+
+private fun pageNotReadyLikelyCause(timing: PageNotReadyTiming): String {
+    if (!timing.wasPrefetchPlanned) return "not_prefetched"
+    if (timing.wasPrefetchCancelled) return "prefetch_cancelled"
+    if (!timing.prefetchStartedBeforeDemand) return "prefetch_too_late"
+
+    val extractMs = timing.extractMs ?: 0L
+    val imageRenderMs = timing.imageRenderMs ?: 0L
+    return when {
+        extractMs <= 0L && imageRenderMs <= 0L -> "unknown"
+        extractMs >= imageRenderMs -> "extract_slow"
+        else -> "image_decode_slow"
+    }
+}
+
+private fun Long?.formatDiagnosticMs(): String {
+    return this?.toString() ?: "unknown"
+}
