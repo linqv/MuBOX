@@ -22,4 +22,43 @@ class ReaderPagerReportingTest {
 
         assertEquals(listOf(0, 1), emitted)
     }
+
+    @Test
+    fun reportablePagerDemandPagesIncludesCurrentAndTargetOnce() {
+        val snapshot = ReaderPagerSnapshot(
+            currentPage = 2,
+            settledPage = 2,
+            targetPage = 3,
+            offsetFraction = 0.2f,
+            isScrollInProgress = true,
+            uiCurrentPage = 2,
+            pageCount = 10,
+        )
+
+        assertEquals(
+            listOf(
+                ReaderPageDemand(page = 2, source = "pager_current"),
+                ReaderPageDemand(page = 3, source = "pager_target"),
+            ),
+            reportablePagerDemandPages(snapshot),
+        )
+    }
+
+    @Test
+    fun reportablePagerDemandPagesDoesNotDuplicateCurrentPage() {
+        val snapshot = ReaderPagerSnapshot(
+            currentPage = 2,
+            settledPage = 2,
+            targetPage = 2,
+            offsetFraction = 0f,
+            isScrollInProgress = false,
+            uiCurrentPage = 2,
+            pageCount = 10,
+        )
+
+        assertEquals(
+            listOf(ReaderPageDemand(page = 2, source = "pager_current")),
+            reportablePagerDemandPages(snapshot),
+        )
+    }
 }

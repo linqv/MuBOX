@@ -133,6 +133,10 @@ fun ComicDavApp() {
                 ReaderScreen(
                     uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
                     onPageChanged = readerViewModel::selectPage,
+                    onPageDemanded = readerViewModel::reportPageDemand,
+                    onImageLoadStarted = readerViewModel::reportImageLoadStarted,
+                    onImageLoadSucceeded = readerViewModel::reportImageLoadSucceeded,
+                    onImageLoadFailed = readerViewModel::reportImageLoadFailed,
                     onChooseLogFile = {
                         logFolderPicker.launch(null)
                     },

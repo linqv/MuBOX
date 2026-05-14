@@ -27,6 +27,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun ReaderScreen(
     uiState: ReaderUiState,
     onPageChanged: (Int) -> Unit,
+    onPageDemanded: (Int, String) -> Unit,
+    onImageLoadStarted: (Int) -> Unit,
+    onImageLoadSucceeded: (Int) -> Unit,
+    onImageLoadFailed: (Int) -> Unit,
     onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -116,6 +120,9 @@ fun ReaderScreen(
                         .distinctUntilChanged()
                         .collect { snapshot ->
                             ReaderDiagnosticLog.event(formatPagerSnapshot(snapshot))
+                            reportablePagerDemandPages(snapshot).forEach { demand ->
+                                onPageDemanded(demand.page, demand.source)
+                            }
                         }
                 }
 
@@ -137,6 +144,9 @@ fun ReaderScreen(
                                 contentDescription = "Page ${page + 1}",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Fit,
+                                onLoading = { onImageLoadStarted(page) },
+                                onSuccess = { onImageLoadSucceeded(page) },
+                                onError = { onImageLoadFailed(page) },
                             )
                         }
                     }
