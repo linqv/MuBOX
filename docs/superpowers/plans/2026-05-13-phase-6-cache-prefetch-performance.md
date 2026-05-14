@@ -147,6 +147,30 @@ The reader diagnostics from `/home/lin/logs/comicdav` show that later-page jank 
 - `WebDavRangeProvider` stores planned merged ranges into the same `RangeWindowCache` from Phase 6A.
 - Later `loadPageToFile(page)` calls still use the current Rust `read_range()` path, but those reads hit `RangeWindowCache` when the planned range is already present.
 
+**Log-driven correction from Phase 6A adb validation:**
+
+- Phone logs pulled from `/sdcard/comicdav_log` on 2026-05-14 show Phase 6A range reuse is working, but sequential reading is still interrupted because selection cancels useful prefetch work.
+- Evidence from `/home/lin/logs/comicdav/phone-logs-20260514-1339`:
+  - `range_cache_hit=39`, `range_cache_miss=162`, `range_cache_store=161`, `range_cache_evict=116`;
+  - `analysis page_not_ready=66`;
+  - `likelyCause=prefetch_cancelled=48`, `likelyCause=prefetch_too_late=3`, `likelyCause=extract_slow=5`, `likelyCause=image_decode_slow=10`;
+  - `prefetch_cancelled=202`, mostly `reason=select_page`;
+  - cached range hits can reduce extraction to single-digit milliseconds, for example page 29 and page 31 in `comicdav-reader-20260514-133715-129.log.txt` both extract in `7-8ms` after `range_cache_hit`.
+- Phase 6B must therefore fix the prefetch lifecycle, not only add larger planned ranges.
+- `selectPage(page)` must not blanket-cancel prefetch jobs for the selected page's forward window when those jobs are still useful for the same session generation.
+- Keep or promote in-flight jobs whose pages overlap the new desired window: selected page, next pages, and Rust planned merged ranges that cover those pages.
+- Cancel only:
+  - jobs from an older session generation;
+  - jobs outside the new desired window;
+  - jobs whose planned range no longer overlaps the selected page's forward reading direction;
+  - jobs that exceed the current memory/network budget.
+- When the selected page is already being prefetched, the selection path should await or join that existing job instead of starting a duplicate extract and cancelling the prefetch job. This prevents the observed `prefetch_failed ... JobCancellationException` immediately followed by `select_page_loaded`.
+- Diagnostics must distinguish expected lifecycle changes from real failures:
+  - `prefetch_retained reason=select_page page=<selected> pages=[...]`;
+  - `prefetch_promoted page=<selected> source=prefetch_to_select`;
+  - `prefetch_cancelled reason=stale_generation|outside_window|memory_budget|direction_change`;
+  - do not log normal retained-job cancellation as `prefetch_failed`.
+
 **Tests:**
 
 - [ ] Rust test: adjacent page compressed ranges merge into one planned range when gap and size limits allow.
@@ -154,6 +178,9 @@ The reader diagnostics from `/home/lin/logs/comicdav` show that later-page jank 
 - [ ] Rust test: ranges exceeding `MAX_MERGED_BYTES` remain split.
 - [ ] Kotlin test: viewport plan requests are passed to `WebDavRangeProvider` as background prefetch ranges.
 - [ ] Kotlin test: a later `readRange()` fully covered by a prefetched planned range returns from cache without a new WebDAV call.
+- [ ] Kotlin test: selecting a page retains in-flight prefetch jobs that overlap the new forward window.
+- [ ] Kotlin test: selecting a page already being prefetched joins or promotes the existing job instead of starting duplicate extraction.
+- [ ] Kotlin test: prefetch cancellation caused by normal selection retention is logged as `prefetch_retained` or `prefetch_promoted`, not `prefetch_failed`.
 - [ ] Kotlin test: a stale viewport plan is ignored after session generation changes.
 
 **Implementation steps:**
@@ -163,8 +190,14 @@ The reader diagnostics from `/home/lin/logs/comicdav` show that later-page jank 
 - [ ] Add Kotlin native facade methods to retrieve planned ranges for a session.
 - [ ] Add a Kotlin model `PlannedRemoteRange`.
 - [ ] Add `WebDavRangeProvider.prefetchRange(start, endInclusive)` that fills `RangeWindowCache` without returning page bytes.
+- [ ] Replace the current `selectPage()` blanket prefetch cancellation with a reconciliation step:
+  - compute the desired page window from selected page, network class, reading direction, and Rust planned ranges;
+  - retain in-flight jobs whose page set intersects that desired window;
+  - promote an in-flight job for the selected page to satisfy the selection request;
+  - cancel only stale generation, outside-window, direction-change, or memory-budget jobs.
 - [ ] Add a ViewModel-side scheduler that cancels stale plan jobs by generation but keeps current and next-page planned ranges alive.
-- [ ] Log planned range count, planned bytes, cache hit count, and stale-plan cancellation.
+- [ ] Treat `CancellationException` from intentionally cancelled outside-window jobs as lifecycle telemetry, not `prefetch_failed`.
+- [ ] Log planned range count, planned bytes, cache hit count, retained prefetch count, promoted prefetch count, and stale-plan cancellation.
 - [ ] Run `cargo test` in `/home/lin/webcomic/comic-core`.
 - [ ] Run `./gradlew :app:testDebugUnitTest`.
 
@@ -176,6 +209,8 @@ The reader diagnostics from `/home/lin/logs/comicdav` show that later-page jank 
 - Success target:
   - next-page range cache hit rate at least 80% on stable Wi-Fi;
   - `page_not_ready` wait is rare for sequential reading;
+  - `prefetch_cancelled reason=select_page` is near zero during normal sequential swipes;
+  - selected-page loads often show `prefetch_promoted` or `select_page_cached` instead of duplicate prefetch cancellation;
   - when `page_not_ready` remains, likely cause is network throughput rather than duplicate or missed range reuse.
 
 **Risks and limits:**
@@ -184,6 +219,7 @@ The reader diagnostics from `/home/lin/logs/comicdav` show that later-page jank 
 - Prefetching large merged ranges can waste bandwidth if the user jumps around.
 - Background merged range prefetch must be generation-aware to avoid filling cache for a closed or replaced session.
 - Memory pressure still needs the LRU limit from Phase 6A.
+- Retaining too much prefetch after rapid jumps can waste bandwidth, so retention must be bounded by the desired window and memory/network budget.
 
 ## Verification
 
