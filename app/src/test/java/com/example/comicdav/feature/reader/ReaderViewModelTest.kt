@@ -144,6 +144,100 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun lowPriorityPlannedRangesAreSerialized() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(4)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val firstLowPriorityStarted = CountDownLatch(1)
+        val releaseLowPriority = CountDownLatch(1)
+        val session = ConcurrencyTrackingPlannedRangeSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1), priority = 5),
+                    PlannedRemoteRange(start = 200, endInclusive = 299, pages = listOf(2), priority = 6),
+                    PlannedRemoteRange(start = 300, endInclusive = 399, pages = listOf(3), priority = 7),
+                ),
+            ),
+            blockingRange = 100L to 199L,
+            firstBlockedRangeStarted = firstLowPriorityStarted,
+            releaseBlockedRange = releaseLowPriority,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                firstLowPriorityStarted.count == 0L
+            }
+
+            Thread.sleep(150)
+            assertEquals(1, session.maxConcurrentPrefetches)
+            assertEquals(listOf(100L to 199L), session.prefetchedRanges)
+
+            releaseLowPriority.countDown()
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                session.prefetchedRanges.containsAll(
+                    listOf(100L to 199L, 200L to 299L, 300L to 399L),
+                )
+            }
+
+            assertEquals(1, session.maxConcurrentPrefetches)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun plannedRangePrefetchesRespectTotalConcurrencyLimit() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(4)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val firstStarted = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val session = ConcurrencyTrackingPlannedRangeSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1), priority = 0),
+                    PlannedRemoteRange(start = 200, endInclusive = 299, pages = listOf(2), priority = 1),
+                    PlannedRemoteRange(start = 300, endInclusive = 399, pages = listOf(3), priority = 2),
+                ),
+            ),
+            blockingRange = 100L to 199L,
+            firstBlockedRangeStarted = firstStarted,
+            releaseBlockedRange = releaseFirst,
+            blockingRanges = setOf(100L to 199L, 200L to 299L, 300L to 399L),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                firstStarted.count == 0L && session.maxConcurrentPrefetches == 2
+            }
+
+            Thread.sleep(150)
+            assertEquals(2, session.maxConcurrentPrefetches)
+            assertEquals(2, session.prefetchedRanges.size)
+
+            releaseFirst.countDown()
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                session.prefetchedRanges.contains(300L to 399L)
+            }
+            assertEquals(2, session.maxConcurrentPrefetches)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun pagerTargetDemandRequestsPlannedRangePrefetchBeforeSelectionSettles() = runTest(dispatcher) {
         val session = FakeReaderSession(
             pageCount = 8,
@@ -523,6 +617,57 @@ class ReaderViewModelTest {
             prefetchedRanges += start to endInclusive
             return true
         }
+    }
+
+    private class ConcurrencyTrackingPlannedRangeSession(
+        override val pageCount: Int,
+        private val plannedRangesByPage: Map<Int, List<PlannedRemoteRange>>,
+        private val blockingRange: Pair<Long, Long>,
+        private val firstBlockedRangeStarted: CountDownLatch,
+        private val releaseBlockedRange: CountDownLatch,
+        private val blockingRanges: Set<Pair<Long, Long>> = setOf(blockingRange),
+    ) : ComicReaderSession {
+        private val lock = Any()
+        private var activePrefetches = 0
+        var maxConcurrentPrefetches = 0
+            private set
+        private val recordedPrefetchedRanges = mutableListOf<Pair<Long, Long>>()
+        val prefetchedRanges: List<Pair<Long, Long>>
+            get() = synchronized(lock) { recordedPrefetchedRanges.toList() }
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
+        }
+
+        override fun updateViewport(pageIndex: Int, networkClass: Int) = Unit
+
+        override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> =
+            plannedRangesByPage[pageIndex].orEmpty()
+
+        override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+            synchronized(lock) {
+                activePrefetches += 1
+                maxConcurrentPrefetches = maxOf(maxConcurrentPrefetches, activePrefetches)
+                recordedPrefetchedRanges += start to endInclusive
+            }
+            try {
+                val range = start to endInclusive
+                if (range in blockingRanges) {
+                    firstBlockedRangeStarted.countDown()
+                    releaseBlockedRange.await(2, TimeUnit.SECONDS)
+                }
+                return true
+            } finally {
+                synchronized(lock) {
+                    activePrefetches -= 1
+                }
+            }
+        }
+
+        override fun diagnostics(): String = ""
+
+        override fun close() = Unit
     }
 
     private class BlockingPlannedRangeSession(

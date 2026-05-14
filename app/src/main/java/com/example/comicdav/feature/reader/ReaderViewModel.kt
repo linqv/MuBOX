@@ -21,6 +21,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 
 typealias ComicSessionFactory = (path: String) -> ComicReaderSession
@@ -56,6 +58,8 @@ class ReaderViewModel(
     private val plannedRangeJobs = mutableMapOf<PlannedRangeKey, PlannedRangePrefetch>()
     private var plannedRangeSupervisor = SupervisorJob()
     private var plannedRangeScope = CoroutineScope(plannedRangeSupervisor + ioDispatcher)
+    private val plannedRangeSemaphore = Semaphore(MAX_PLANNED_RANGE_CONCURRENCY)
+    private val lowPriorityPlannedRangeSemaphore = Semaphore(MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY)
     private val sessionMutex = Mutex()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val diagnosticLock = Any()
@@ -780,7 +784,11 @@ class ReaderViewModel(
             val job = plannedRangeScope.launch {
                 try {
                     if (expectedGeneration != generation) return@launch
-                    val stored = session.prefetchRange(range.start, range.endInclusive)
+                    ReaderDiagnosticLog.event(
+                        "planned_range_prefetch_start start=${range.start} end=${range.endInclusive} " +
+                            "pages=${range.pages} priority=${range.priority}",
+                    )
+                    val stored = prefetchPlannedRangeWithLimits(session, range)
                     if (expectedGeneration == generation) {
                         ReaderDiagnosticLog.event(
                             "planned_range_prefetch_done start=${range.start} end=${range.endInclusive} " +
@@ -812,6 +820,20 @@ class ReaderViewModel(
             }
         }
     }
+
+    private suspend fun prefetchPlannedRangeWithLimits(
+        session: ComicReaderSession,
+        range: PlannedRemoteRange,
+    ): Boolean =
+        plannedRangeSemaphore.withPermit {
+            if (range.priority > HIGH_PRIORITY_PLANNED_RANGE_MAX) {
+                lowPriorityPlannedRangeSemaphore.withPermit {
+                    session.prefetchRange(range.start, range.endInclusive)
+                }
+            } else {
+                session.prefetchRange(range.start, range.endInclusive)
+            }
+        }
 
     private fun plannedRangeJob(key: PlannedRangeKey): PlannedRangePrefetch? =
         synchronized(plannedRangeLock) {
@@ -957,6 +979,9 @@ class ReaderViewModel(
         const val PREFETCH_START_DELAY_MS = 150L
         const val PREFETCH_STAGGER_MS = 1L
         const val NETWORK_WIFI = 2
+        const val HIGH_PRIORITY_PLANNED_RANGE_MAX = 2
+        const val MAX_PLANNED_RANGE_CONCURRENCY = 2
+        const val MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY = 1
         const val LOAD_REASON_INITIAL = "initial"
         const val LOAD_REASON_SELECT = "select"
         const val LOAD_REASON_PREFETCH = "prefetch"
