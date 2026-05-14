@@ -31,6 +31,7 @@ class ReaderViewModelTest {
 
     @After
     fun tearDown() {
+        ReaderDiagnosticLog.clearSink()
         Dispatchers.resetMain()
     }
 
@@ -201,6 +202,29 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun selectingUnreadyPageEmitsPageNotReadyAnalysisAfterImageSuccess() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        val session = FakeReaderSession(pageCount = 6)
+        val clockValues = ArrayDeque(listOf(0L, 10L, 20L, 30L, 100L, 160L, 220L, 280L, 360L))
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+            elapsedRealtimeMs = { clockValues.removeFirstOrNull() ?: 360L },
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.reportPageDemand(5, "test")
+        viewModel.selectPage(5)
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.reportImageLoadStarted(5)
+        viewModel.reportImageLoadSucceeded(5)
+
+        assertTrue(sink.lines.any { it.contains("analysis page_not_ready page=5") })
+    }
+
+    @Test
     fun closeReaderDoesNotBlockCallerWhileNativeCloseRuns() = runTest(dispatcher) {
         val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
         val ioDispatcher = executor.asCoroutineDispatcher()
@@ -327,6 +351,18 @@ class ReaderViewModelTest {
         }
 
         override fun close() = Unit
+    }
+
+    private class CollectingReaderLogSink : ReaderLogSink {
+        val lines = mutableListOf<String>()
+
+        override fun log(line: String) {
+            lines += line
+        }
+
+        override fun logBlocking(line: String) {
+            lines += line
+        }
     }
 
     private fun waitUntil(timeoutMs: Long, condition: () -> Boolean) {
