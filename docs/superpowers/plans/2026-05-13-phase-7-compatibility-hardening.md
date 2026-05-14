@@ -52,6 +52,7 @@
 
 ## Task 5: Phase 6B ADB Follow-Up
 
+- [ ] Execute `docs/superpowers/plans/2026-05-14-phase-7-range-prefetch-follow-up.md`.
 - [ ] Investigate remaining sequential-read misses from Phase 6B phone logs.
 - [ ] Improve next-page range cache hit rate toward the 80% stable Wi-Fi target.
 - [ ] Reduce remaining `page_not_ready` waits where logs report `likelyCause=extract_slow`.
