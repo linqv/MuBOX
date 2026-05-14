@@ -3,6 +3,9 @@ package com.example.comicdav.network
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLogSink
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -139,6 +142,93 @@ class WebDavRangeProviderTest {
     }
 
     @Test
+    fun readRangeJoinsCoveringInFlightPrefetchWithoutSecondWebDavRequest() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        try {
+            val bytes = ByteArray(128) { it.toByte() }
+            val release = CompletableDeferred<Unit>()
+            val firstReadStarted = CountDownLatch(1)
+            val client = BlockingWebDavClient(
+                bytes = bytes,
+                release = release,
+                firstReadStarted = firstReadStarted,
+            )
+            val provider = WebDavRangeProvider(
+                client = client,
+                path = "/books/book.cbz",
+                size = bytes.size.toLong(),
+                readAheadBytes = 0,
+            )
+
+            val prefetchThread = Thread {
+                provider.prefetchRange(start = 40, endInclusive = 79)
+            }
+            prefetchThread.start()
+            assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
+
+            val readThreadResult = mutableListOf<ByteArray>()
+            val readThread = Thread {
+                readThreadResult += provider.readRange(fileId = 1, start = 50, endInclusive = 59)
+            }
+            readThread.start()
+            Thread.sleep(100)
+
+            assertEquals(listOf(40L to 79L), client.rangeCalls)
+            release.complete(Unit)
+            prefetchThread.join(1_000)
+            readThread.join(1_000)
+
+            assertArrayEquals(bytes.sliceArray(50..59), readThreadResult.single())
+            assertEquals(listOf(40L to 79L), client.rangeCalls)
+            assertTrue(sink.lines.any { it.contains("range_inflight_join") && it.contains("start=50") && it.contains("end=59") })
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+        }
+    }
+
+    @Test
+    fun concurrentReadRangesJoinTheFirstCoveringFetch() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val release = CompletableDeferred<Unit>()
+        val firstReadStarted = CountDownLatch(1)
+        val client = BlockingWebDavClient(
+            bytes = bytes,
+            release = release,
+            firstReadStarted = firstReadStarted,
+        )
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 32,
+        )
+
+        val firstResult = mutableListOf<ByteArray>()
+        val secondResult = mutableListOf<ByteArray>()
+        val firstThread = Thread {
+            firstResult += provider.readRange(fileId = 1, start = 10, endInclusive = 19)
+        }
+        val secondThread = Thread {
+            secondResult += provider.readRange(fileId = 1, start = 30, endInclusive = 40)
+        }
+
+        firstThread.start()
+        assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
+        secondThread.start()
+        Thread.sleep(100)
+
+        assertEquals(listOf(10L to 51L), client.rangeCalls)
+        release.complete(Unit)
+        firstThread.join(1_000)
+        secondThread.join(1_000)
+
+        assertArrayEquals(bytes.sliceArray(10..19), firstResult.single())
+        assertArrayEquals(bytes.sliceArray(30..40), secondResult.single())
+        assertEquals(listOf(10L to 51L), client.rangeCalls)
+    }
+
+    @Test
     fun rangeCacheDiagnosticsIncludeHitMissStoreAndEvict() {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
@@ -179,6 +269,30 @@ class WebDavRangeProviderTest {
 
         override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray {
             rangeCalls += start to endInclusive
+            return bytes.sliceArray(start.toInt()..endInclusive.toInt())
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long {
+            error("unused")
+        }
+    }
+
+    private class BlockingWebDavClient(
+        private val bytes: ByteArray,
+        private val release: CompletableDeferred<Unit>,
+        private val firstReadStarted: CountDownLatch,
+    ) : WebDavClient {
+        val rangeCalls = mutableListOf<Pair<Long, Long>>()
+
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray {
+            rangeCalls += start to endInclusive
+            firstReadStarted.countDown()
+            release.await()
             return bytes.sliceArray(start.toInt()..endInclusive.toInt())
         }
 
