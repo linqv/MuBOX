@@ -11,6 +11,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,8 @@ fun ReaderScreen(
     onImageLoadSucceeded: (Int) -> Unit,
     onImageLoadFailed: (Int) -> Unit,
     onChooseLogFile: () -> Unit,
+    loadingProgress: ReaderLoadingProgress? = null,
+    onCancelLoading: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,7 +83,25 @@ fun ReaderScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (uiState.isLoading) {
-                        CircularProgressIndicator()
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            if (loadingProgress == null) {
+                                CircularProgressIndicator()
+                            } else {
+                                Text(text = loadingProgress.label)
+                                LinearProgressIndicator(
+                                    progress = { loadingProgress.fraction },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            if (onCancelLoading != null) {
+                                Button(onClick = onCancelLoading) {
+                                    Text("Cancel")
+                                }
+                            }
+                        }
                     } else {
                         Text(text = "Open a CBZ file")
                     }

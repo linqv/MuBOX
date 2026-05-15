@@ -24,6 +24,7 @@ value class ComicCacheKey(val value: String) {
 
 class ComicDownloadCache(
     val cacheDir: File,
+    private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
 ) {
     suspend fun download(
         client: WebDavClient,
@@ -35,6 +36,8 @@ class ComicDownloadCache(
         cacheDir.mkdirs()
         val finalFile = cacheDir.resolve("${key.value}.cbz")
         if (finalFile.isFile && finalFile.length() == expectedSize) {
+            finalFile.setLastModified(System.currentTimeMillis())
+            prune(protectedFile = finalFile)
             onProgress(expectedSize, expectedSize)
             return finalFile
         }
@@ -52,6 +55,8 @@ class ComicDownloadCache(
                 finalFile.delete()
             }
             check(tmpFile.renameTo(finalFile)) { "Could not rename download into cache" }
+            finalFile.setLastModified(System.currentTimeMillis())
+            prune(protectedFile = finalFile)
             return finalFile
         } catch (error: CancellationException) {
             tmpFile.delete()
@@ -60,6 +65,15 @@ class ComicDownloadCache(
             tmpFile.delete()
             throw error
         }
+    }
+
+    fun prune(protectedFile: File? = null): Int {
+        val protectedFiles = protectedFile?.let { setOf(it) }.orEmpty()
+        return FileLruPruner.prune(cacheDir, maxCacheBytes, protectedFiles)
+    }
+
+    private companion object {
+        const val DEFAULT_MAX_CACHE_BYTES = 512L * 1024L * 1024L
     }
 }
 

@@ -23,8 +23,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.comicdav.data.ComicDownloadCache
+import com.example.comicdav.data.LocalComicImportCache
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.reader.OpenComicUseCase
@@ -140,6 +142,13 @@ fun ComicDavApp() {
                     onChooseLogFile = {
                         logFolderPicker.launch(null)
                     },
+                    loadingProgress = downloadProgress?.toReaderLoadingProgress(),
+                    onCancelLoading = {
+                        ReaderDiagnosticLog.event("reader_open_cancel")
+                        readerViewModel.closeReader()
+                        downloadProgress = null
+                        isReaderOpen = false
+                    },
                     onClose = {
                         ReaderDiagnosticLog.event("reader_close")
                         readerViewModel.closeReader()
@@ -217,13 +226,16 @@ fun ComicDavApp() {
 }
 
 private fun copyUriToCache(context: Context, uri: Uri): File {
-    val target = File(context.cacheDir, "local-comic-${System.currentTimeMillis()}.cbz")
+    LocalComicImportCache.prune(context.cacheDir)
+    val target = LocalComicImportCache.targetFile(context.cacheDir)
+    target.parentFile?.mkdirs()
     context.contentResolver.openInputStream(uri).use { input ->
         requireNotNull(input) { "Could not read selected file" }
         target.outputStream().use { output ->
             input.copyTo(output)
         }
     }
+    LocalComicImportCache.prune(context.cacheDir, protectedFile = target)
     return target
 }
 
@@ -259,6 +271,9 @@ private fun startReaderLogFile(
         },
     )
 }
+
+private fun DownloadProgressUi.toReaderLoadingProgress(): ReaderLoadingProgress =
+    ReaderLoadingProgress(downloadedBytes = downloadedBytes, totalBytes = totalBytes)
 
 private const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
 private const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"
