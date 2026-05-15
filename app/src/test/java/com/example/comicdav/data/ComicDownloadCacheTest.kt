@@ -100,6 +100,27 @@ class ComicDownloadCacheTest {
     }
 
     @Test
+    fun downloadPrunesOldestFilesWhenCapacityIsExceeded() = runTest {
+        val oldFile = temp.root.resolve("old.cbz")
+        oldFile.writeBytes(ByteArray(8) { 1 })
+        oldFile.setLastModified(1_000L)
+        val newBytes = ByteArray(8) { 2 }
+        val client = StaticDownloadClient(newBytes)
+        val cache = ComicDownloadCache(temp.root, maxCacheBytes = 10)
+
+        val result = cache.download(
+            client = client,
+            remotePath = "/books/new.cbz",
+            key = ComicCacheKey("new"),
+            expectedSize = newBytes.size.toLong(),
+        )
+
+        assertTrue(result.exists())
+        assertEquals(newBytes.size.toLong(), result.length())
+        assertFalse(oldFile.exists())
+    }
+
+    @Test
     fun cancellationDeletesTmpFile() = runTest {
         val client = SuspendingDownloadClient()
         val cache = ComicDownloadCache(temp.root)
@@ -142,6 +163,17 @@ class ComicDownloadCacheTest {
             target.writeBytes(byteArrayOf(1, 2))
             started.complete(Unit)
             throw CancellationException("cancelled")
+        }
+    }
+
+    private class StaticDownloadClient(private val bytes: ByteArray) : com.example.comicdav.network.WebDavClient {
+        override suspend fun list(path: String) = error("unused")
+        override suspend fun head(path: String) = error("unused")
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray = error("unused")
+        override suspend fun download(path: String, target: java.io.File, onBytesRead: (Long) -> Unit): Long {
+            target.writeBytes(bytes)
+            onBytesRead(bytes.size.toLong())
+            return bytes.size.toLong()
         }
     }
 }

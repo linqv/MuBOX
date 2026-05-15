@@ -765,6 +765,22 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun pageLoadPrunesPageCacheAfterExtraction() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 1)
+        val protectedFiles = mutableListOf<File>()
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+            prunePageCache = { _, protectedFile -> protectedFiles += protectedFile },
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root, comicKey = "cache-prune")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(viewModel.uiState.pageFiles.getValue(0)), protectedFiles)
+    }
+
+    @Test
     fun selectPageSavesReadingProgressWhenComicKeyIsPresent() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 5)
         val savedPages = mutableListOf<Pair<String, Int>>()
@@ -822,6 +838,27 @@ class ReaderViewModelTest {
 
         assertEquals(1, viewModel.uiState.pageCount)
         assertEquals(0, viewModel.uiState.currentPage)
+    }
+
+    @Test
+    fun closeReaderCancelsPendingRemoteOpen() = runTest(dispatcher) {
+        val cancelled = CompletableDeferred<Unit>()
+        val viewModel = ReaderViewModel(ioDispatcher = dispatcher)
+
+        viewModel.openRemote(temp.root) {
+            try {
+                CompletableDeferred<OpenComicResult>().await()
+            } finally {
+                cancelled.complete(Unit)
+            }
+        }
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.closeReader()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(cancelled.isCompleted)
+        assertEquals(ReaderUiState(), viewModel.uiState)
     }
 
     @Test

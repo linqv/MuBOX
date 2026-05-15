@@ -42,6 +42,9 @@ class ReaderViewModel(
     private val openSession: ComicSessionFactory = { path -> ComicEngine().openLocal(path) },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val savePage: SaveReadingProgress = { _, _ -> },
+    private val prunePageCache: (cacheDir: File, protectedFile: File) -> Unit = { cacheDir, protectedFile ->
+        ReaderPageCache.prune(cacheDir, protectedFile)
+    },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ViewModel() {
     var uiState by mutableStateOf(ReaderUiState())
@@ -65,15 +68,7 @@ class ReaderViewModel(
     private val lowPriorityPlannedRangeSemaphore = Semaphore(MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY)
     private val sessionMutex = Mutex()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
-    private val diagnosticLock = Any()
-    private val pageLoadTimings = mutableMapOf<Int, PageLoadDiagnostic>()
-    private val prefetchDiagnostics = mutableMapOf<Int, PrefetchDiagnostic>()
-    private val pageWaits = mutableMapOf<Int, PageWaitDiagnostic>()
-    private val imageLoadStarts = mutableMapOf<Int, Long>()
-    private var readerOpenStartedAtMs: Long? = null
-    private var remoteOpenDurationMs: Long? = null
-    private var sessionInitialPageMs: Long? = null
-    private var firstImageAnalysisLogged = false
+    private val diagnostics = ReaderDiagnosticsTracker(elapsedRealtimeMs)
 
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
@@ -216,9 +211,7 @@ class ReaderViewModel(
                     }
                     remoteOpenJob = null
                     val remoteDurationMs = (elapsedRealtimeMs() - remoteOpenStartedAtMs).coerceAtLeast(0L)
-                    synchronized(diagnosticLock) {
-                        remoteOpenDurationMs = remoteDurationMs
-                    }
+                    diagnostics.recordRemoteOpenDuration(remoteDurationMs)
                     ReaderDiagnosticLog.event(
                         "open_remote_result key=${result.comicKey} initialPage=${result.initialPage} " +
                             "fileSize=${result.localFile.length()} durationMs=$remoteDurationMs",
@@ -398,32 +391,17 @@ class ReaderViewModel(
             scheduleDemandPlannedRangePrefetch(pageIndex, source)
         }
 
-        val demandAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            if (pageWaits.containsKey(pageIndex)) return
-            val prefetch = prefetchDiagnostics[pageIndex]
-            pageWaits[pageIndex] = PageWaitDiagnostic(
-                startedAtMs = demandAtMs,
-                source = source,
-                wasPrefetchPlanned = prefetch?.plannedAtMs != null && prefetch.plannedAtMs <= demandAtMs,
-                prefetchStartedBeforeDemand = prefetch?.startedAtMs != null && prefetch.startedAtMs <= demandAtMs,
-            )
-        }
+        diagnostics.recordPageDemand(pageIndex, source)
     }
 
     fun reportImageLoadStarted(pageIndex: Int) {
-        val startedAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            imageLoadStarts[pageIndex] = startedAtMs
-        }
+        diagnostics.recordImageLoadStarted(pageIndex)
         ReaderDiagnosticLog.event("image_load_start page=$pageIndex")
     }
 
     fun reportImageLoadSucceeded(pageIndex: Int) {
         val completedAtMs = elapsedRealtimeMs()
-        val imageRenderMs = synchronized(diagnosticLock) {
-            imageLoadStarts[pageIndex]?.let { (completedAtMs - it).coerceAtLeast(0L) }
-        }
+        val imageRenderMs = diagnostics.imageRenderDuration(pageIndex, completedAtMs)
         ReaderDiagnosticLog.event("image_load_success page=$pageIndex durationMs=${imageRenderMs ?: "unknown"}")
         emitFirstImageAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
         emitPageNotReadyAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
@@ -436,13 +414,13 @@ class ReaderViewModel(
     private fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val desiredWindow = desiredPageWindow(pageIndex, activeSession.pageCount)
+        val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(pageIndex, activeSession.pageCount)
         reconcilePagePrefetches(
             selectedPage = pageIndex,
             desiredWindow = desiredWindow,
             reason = reason,
         )
-        val missingNeighbors = neighborPrefetchPages(pageIndex, activeSession.pageCount)
+        val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(pageIndex, activeSession.pageCount)
             .filterNot { uiState.pageFiles.containsKey(it) }
             .filterNot { prefetchJobs[it]?.isActive == true }
         if (missingNeighbors.isEmpty()) return
@@ -549,13 +527,15 @@ class ReaderViewModel(
                     throw CancellationException("reader session changed")
                 }
                 val loadStartedAtMs = elapsedRealtimeMs()
+                var pageCacheFileToPrune: File? = null
                 val output = sessionMutex.withLock {
                     currentCoroutineContext().ensureActive()
                     if (expectedGeneration != generation) {
                         throw CancellationException("reader session changed")
                     }
-                    val outputFile = pageCacheFile(cacheDir, index)
+                    val outputFile = ReaderPageCache.pageFile(cacheDir, pageCacheKey, index)
                     if (outputFile.isFile && outputFile.length() > 0L) {
+                        outputFile.setLastModified(System.currentTimeMillis())
                         val durationMs = (elapsedRealtimeMs() - loadStartedAtMs).coerceAtLeast(0L)
                         ReaderDiagnosticLog.event(
                             "load_page_cache_hit page=$index reason=$reason " +
@@ -575,6 +555,7 @@ class ReaderViewModel(
                         val extractStartedAtMs = elapsedRealtimeMs()
                         ReaderDiagnosticLog.event("load_page_extract_start page=$index reason=$reason")
                         val loadedFile = session.loadPageToFile(index, outputFile)
+                        loadedFile.setLastModified(System.currentTimeMillis())
                         val readyAtMs = elapsedRealtimeMs()
                         val extractMs = (readyAtMs - extractStartedAtMs).coerceAtLeast(0L)
                         val durationMs = (readyAtMs - loadStartedAtMs).coerceAtLeast(0L)
@@ -591,25 +572,18 @@ class ReaderViewModel(
                             extractMs = extractMs,
                             fileSize = loadedFile.length(),
                         )
+                        pageCacheFileToPrune = loadedFile
                         loadedFile
                     }
                 }
+                pageCacheFileToPrune?.let { prunePageCache(cacheDir, it) }
                 files[index] = output
         }
         return files
     }
 
     private fun resetReaderDiagnostics() {
-        synchronized(diagnosticLock) {
-            pageLoadTimings.clear()
-            prefetchDiagnostics.clear()
-            pageWaits.clear()
-            imageLoadStarts.clear()
-            readerOpenStartedAtMs = elapsedRealtimeMs()
-            remoteOpenDurationMs = null
-            sessionInitialPageMs = null
-            firstImageAnalysisLogged = false
-        }
+        diagnostics.reset()
     }
 
     private fun recordPageLoadTiming(
@@ -621,46 +595,28 @@ class ReaderViewModel(
         extractMs: Long,
         fileSize: Long,
     ) {
-        synchronized(diagnosticLock) {
-            pageLoadTimings[pageIndex] = PageLoadDiagnostic(
-                reason = reason,
-                cacheHit = cacheHit,
-                loadStartedAtMs = loadStartedAtMs,
-                fileReadyAtMs = fileReadyAtMs,
-                extractMs = extractMs,
-                fileSize = fileSize,
-            )
-            if (reason == LOAD_REASON_INITIAL && sessionInitialPageMs == null) {
-                val openStartedAtMs = readerOpenStartedAtMs ?: loadStartedAtMs
-                sessionInitialPageMs = (fileReadyAtMs - openStartedAtMs).coerceAtLeast(0L)
-            }
-        }
+        diagnostics.recordPageLoadTiming(
+            pageIndex = pageIndex,
+            reason = reason,
+            cacheHit = cacheHit,
+            loadStartedAtMs = loadStartedAtMs,
+            fileReadyAtMs = fileReadyAtMs,
+            extractMs = extractMs,
+            fileSize = fileSize,
+        )
     }
 
     private fun markPrefetchPlanned(pages: List<Int>) {
-        val plannedAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            pages.forEach { page ->
-                prefetchDiagnostics[page] = PrefetchDiagnostic(plannedAtMs = plannedAtMs)
-            }
-        }
+        diagnostics.markPrefetchPlanned(pages)
     }
 
     private fun markPrefetchStarted(pageIndex: Int) {
-        val startedAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            val current = prefetchDiagnostics[pageIndex] ?: PrefetchDiagnostic(plannedAtMs = startedAtMs)
-            prefetchDiagnostics[pageIndex] = current.copy(startedAtMs = startedAtMs)
-        }
+        diagnostics.markPrefetchStarted(pageIndex)
         ReaderDiagnosticLog.event("prefetch_page_start page=$pageIndex")
     }
 
     private fun markPrefetchCompleted(pageIndex: Int) {
-        val completedAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            val current = prefetchDiagnostics[pageIndex] ?: PrefetchDiagnostic(plannedAtMs = completedAtMs)
-            prefetchDiagnostics[pageIndex] = current.copy(completedAtMs = completedAtMs)
-        }
+        diagnostics.markPrefetchCompleted(pageIndex)
     }
 
     private fun activePrefetchJob(pageIndex: Int): Job? =
@@ -675,18 +631,6 @@ class ReaderViewModel(
                 }
                 ?.job
         }
-
-    private fun neighborPrefetchPages(pageIndex: Int, pageCount: Int): List<Int> {
-        val forwardPages = (1..PREFETCH_FORWARD_PAGES).map { pageIndex + it }
-        return (forwardPages + (pageIndex - 1))
-            .filter { it in 0 until pageCount }
-            .distinct()
-    }
-
-    private fun desiredPageWindow(pageIndex: Int, pageCount: Int): Set<Int> =
-        (listOf(pageIndex) + neighborPrefetchPages(pageIndex, pageCount))
-            .filter { it in 0 until pageCount }
-            .toSet()
 
     private fun reconcilePagePrefetches(
         selectedPage: Int,
@@ -725,15 +669,7 @@ class ReaderViewModel(
     }
 
     private fun markPrefetchCancelled(pages: List<Int>) {
-        val cancelledAtMs = elapsedRealtimeMs()
-        synchronized(diagnosticLock) {
-            pages.forEach { page ->
-                val diagnostic = prefetchDiagnostics[page]
-                if (diagnostic != null && diagnostic.completedAtMs == null && diagnostic.cancelledAtMs == null) {
-                    prefetchDiagnostics[page] = diagnostic.copy(cancelledAtMs = cancelledAtMs)
-                }
-            }
-        }
+        diagnostics.markPrefetchCancelled(pages)
     }
 
     private fun scheduleDemandPlannedRangePrefetch(pageIndex: Int, source: String) {
@@ -938,8 +874,8 @@ class ReaderViewModel(
     private fun plannedRangeProtectionPages(ranges: List<PlannedRemoteRange>): Set<Int> {
         val pages = ranges.flatMap { it.pages }
         if (pages.isEmpty()) return emptySet()
-        val firstPage = (pages.min() - PREFETCH_FORWARD_PAGES).coerceAtLeast(0)
-        val lastPage = pages.max() + PREFETCH_FORWARD_PAGES
+        val firstPage = (pages.min() - ReaderPrefetchPlanner.FORWARD_PAGES).coerceAtLeast(0)
+        val lastPage = pages.max() + ReaderPrefetchPlanner.FORWARD_PAGES
         return (firstPage..lastPage).toSet()
     }
 
@@ -1005,51 +941,13 @@ class ReaderViewModel(
     }
 
     private fun emitFirstImageAnalysisIfNeeded(pageIndex: Int, completedAtMs: Long, imageRenderMs: Long?) {
-        val analysis = synchronized(diagnosticLock) {
-            if (firstImageAnalysisLogged) return
-            firstImageAnalysisLogged = true
-            val openStartedAtMs = readerOpenStartedAtMs ?: completedAtMs
-            val pageLoad = pageLoadTimings[pageIndex]
-            formatFirstImageAnalysis(
-                FirstImageTiming(
-                    page = pageIndex,
-                    totalMs = (completedAtMs - openStartedAtMs).coerceAtLeast(0L),
-                    remoteOpenMs = remoteOpenDurationMs,
-                    sessionInitialPageMs = sessionInitialPageMs,
-                    pageExtractMs = pageLoad?.extractMs,
-                    imageRenderMs = imageRenderMs,
-                    cacheHit = pageLoad?.cacheHit ?: false,
-                ),
-            )
-        }
-        ReaderDiagnosticLog.event(analysis)
+        diagnostics.firstImageAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
+            ?.let(ReaderDiagnosticLog::event)
     }
 
     private fun emitPageNotReadyAnalysisIfNeeded(pageIndex: Int, completedAtMs: Long, imageRenderMs: Long?) {
-        val analysis = synchronized(diagnosticLock) {
-            val wait = pageWaits.remove(pageIndex) ?: return
-            val prefetch = prefetchDiagnostics[pageIndex]
-            val pageLoad = pageLoadTimings[pageIndex]
-            formatPageNotReadyAnalysis(
-                PageNotReadyTiming(
-                    page = pageIndex,
-                    waitMs = (completedAtMs - wait.startedAtMs).coerceAtLeast(0L),
-                    wasPrefetchPlanned = wait.wasPrefetchPlanned,
-                    wasPrefetchCancelled = prefetch?.cancelledAtMs != null && prefetch.completedAtMs == null,
-                    prefetchStartedBeforeDemand = wait.prefetchStartedBeforeDemand,
-                    extractMs = pageLoad?.extractMs,
-                    imageRenderMs = imageRenderMs,
-                ),
-            )
-        }
-        ReaderDiagnosticLog.event(analysis)
-    }
-
-    private fun pageCacheFile(cacheDir: File, pageIndex: Int): File {
-        val safeKey = (pageCacheKey ?: "default").replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val pageDir = File(cacheDir, "comicdav-pages/$safeKey")
-        pageDir.mkdirs()
-        return File(pageDir, "page-$pageIndex.img")
+        diagnostics.pageNotReadyAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
+            ?.let(ReaderDiagnosticLog::event)
     }
 
     private data class OpenedReader(
@@ -1086,29 +984,6 @@ class ReaderViewModel(
     private fun PlannedRemoteRange.key(): PlannedRangeKey =
         PlannedRangeKey(start = start, endInclusive = endInclusive)
 
-    private data class PageLoadDiagnostic(
-        val reason: String,
-        val cacheHit: Boolean,
-        val loadStartedAtMs: Long,
-        val fileReadyAtMs: Long,
-        val extractMs: Long,
-        val fileSize: Long,
-    )
-
-    private data class PrefetchDiagnostic(
-        val plannedAtMs: Long,
-        val startedAtMs: Long? = null,
-        val completedAtMs: Long? = null,
-        val cancelledAtMs: Long? = null,
-    )
-
-    private data class PageWaitDiagnostic(
-        val startedAtMs: Long,
-        val source: String,
-        val wasPrefetchPlanned: Boolean,
-        val prefetchStartedBeforeDemand: Boolean,
-    )
-
     private fun closeSessionAsync(session: ComicReaderSession) {
         cleanupScope.launch {
             sessionMutex.withLock {
@@ -1118,7 +993,6 @@ class ReaderViewModel(
     }
 
     private companion object {
-        const val PREFETCH_FORWARD_PAGES = 4
         const val PREFETCH_START_DELAY_MS = 150L
         const val PREFETCH_STAGGER_MS = 1L
         const val NETWORK_WIFI = 2
