@@ -100,6 +100,82 @@ class WebDavRangeProviderTest {
     }
 
     @Test
+    fun highPriorityPrefetchEvictsUnprotectedWindowBeforeProtectedWindow() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        try {
+            val bytes = ByteArray(128) { it.toByte() }
+            val client = RecordingWebDavClient(bytes)
+            val provider = WebDavRangeProvider(
+                client = client,
+                path = "/books/book.cbz",
+                size = bytes.size.toLong(),
+                readAheadBytes = 0,
+                maxCacheBytes = 20,
+            )
+
+            assertTrue(provider.prefetchRange(start = 20, endInclusive = 29))
+            assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
+
+            assertTrue(
+                provider.prefetchRange(start = 40, endInclusive = 49, priority = 1, protectedRanges = listOf(0L..9L)),
+            )
+            assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
+            assertArrayEquals(bytes.sliceArray(20..29), provider.readRange(fileId = 1, start = 20, endInclusive = 29))
+
+            assertEquals(listOf(20L to 29L, 0L to 9L, 40L to 49L, 20L to 29L), client.rangeCalls)
+            val prefetchLine = sink.lines.lastOrNull {
+                it.contains("range_prefetch_store") && it.contains("start=40") && it.contains("end=49")
+            }.orEmpty()
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("priority=1"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("evictionMode=protected"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedCount=1"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedBytes=10"))
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+        }
+    }
+
+    @Test
+    fun highPriorityPrefetchFallbackDiagnosticReportsProtectedCapacityFallback() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        try {
+            val bytes = ByteArray(128) { it.toByte() }
+            val client = RecordingWebDavClient(bytes)
+            val provider = WebDavRangeProvider(
+                client = client,
+                path = "/books/book.cbz",
+                size = bytes.size.toLong(),
+                readAheadBytes = 0,
+                maxCacheBytes = 20,
+            )
+
+            assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
+            assertTrue(provider.prefetchRange(start = 20, endInclusive = 29))
+
+            assertTrue(
+                provider.prefetchRange(
+                    start = 40,
+                    endInclusive = 49,
+                    priority = 1,
+                    protectedRanges = listOf(0L..9L, 20L..29L),
+                ),
+            )
+
+            val prefetchLine = sink.lines.lastOrNull {
+                it.contains("range_prefetch_store") && it.contains("start=40") && it.contains("end=49")
+            }.orEmpty()
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("evictionMode=lru"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("fallbackReason=protected_capacity"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedCount=2"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedBytes=20"))
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+        }
+    }
+
+    @Test
     fun readRangeReadAheadTrimsInsteadOfEvictingProtectedWindow() {
         val bytes = ByteArray(128) { it.toByte() }
         val client = RecordingWebDavClient(bytes)

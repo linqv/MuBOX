@@ -25,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.abs
 
 typealias ComicSessionFactory = (path: String) -> ComicReaderSession
 typealias SaveReadingProgress = suspend (comicKey: String, pageIndex: Int) -> Unit
@@ -764,17 +765,18 @@ class ReaderViewModel(
         ranges: List<PlannedRemoteRange>,
         expectedGeneration: Int,
     ) {
-        val desiredPages = ranges.flatMap { it.pages }.toSet()
+        val mergedRanges = mergeSameStartPlannedRanges(ranges)
+        val desiredPages = mergedRanges.flatMap { it.pages }.toSet()
         cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = desiredPages)
-        if (ranges.isEmpty()) return
+        if (mergedRanges.isEmpty()) return
 
-        val plannedBytes = ranges.sumOf { it.endInclusive - it.start + 1 }
+        val plannedBytes = mergedRanges.sumOf { it.endInclusive - it.start + 1 }
         ReaderDiagnosticLog.event(
-            "planned_range_prefetch_plan count=${ranges.size} bytes=$plannedBytes generation=$expectedGeneration",
+            "planned_range_prefetch_plan count=${mergedRanges.size} bytes=$plannedBytes generation=$expectedGeneration",
         )
-        val protectedRanges = protectedPlannedByteRanges(ranges)
-        ranges.sortedBy { it.priority }.forEach { range ->
+        mergedRanges.sortedBy { it.priority }.forEach { range ->
             val key = range.key()
+            val protectedRanges = protectedPlannedByteRanges(mergedRanges, excludedKey = key)
             val job = plannedRangeScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     if (expectedGeneration != generation) return@launch
@@ -841,6 +843,18 @@ class ReaderViewModel(
         }
     }
 
+    private fun mergeSameStartPlannedRanges(ranges: List<PlannedRemoteRange>): List<PlannedRemoteRange> =
+        ranges
+            .groupBy { it.start }
+            .map { (start, group) ->
+                PlannedRemoteRange(
+                    start = start,
+                    endInclusive = group.maxOf { it.endInclusive },
+                    pages = group.flatMap { it.pages }.distinct().sorted(),
+                    priority = group.minOf { it.priority },
+                )
+            }
+
     private suspend fun prefetchPlannedRangeWithLimits(
         session: ComicReaderSession,
         range: PlannedRemoteRange,
@@ -856,29 +870,69 @@ class ReaderViewModel(
             }
         }
 
-    private fun protectedPlannedByteRanges(ranges: List<PlannedRemoteRange>): List<LongRange> {
+    private fun protectedPlannedByteRanges(
+        ranges: List<PlannedRemoteRange>,
+        excludedKey: PlannedRangeKey,
+    ): List<LongRange> {
         val protectionPages = plannedRangeProtectionPages(ranges)
-        return LinkedHashSet<PlannedRangeKey>().apply {
-            ranges
-                .filter { it.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX }
-                .forEach { add(it.key()) }
-            synchronized(plannedRangeLock) {
-                plannedRangeJobs
-                    .values
-                    .filter {
-                        it.job.isPendingOrActive() &&
-                            it.range.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX &&
-                            it.range.pages.any { page -> page in protectionPages }
-                    }
-                    .forEach { add(it.range.key()) }
-                completedPlannedRanges
-                    .filter { (_, completed) ->
-                        completed.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX &&
-                            completed.pages.any { page -> page in protectionPages }
-                    }
-                    .forEach { (key, _) -> add(key) }
-            }
-        }.map { it.start..it.endInclusive }
+        val currentPages = ranges.flatMap { it.pages }.toSet()
+        val candidates = mutableListOf<PlannedRangeProtectionCandidate>()
+        ranges.forEach { range ->
+            candidates += PlannedRangeProtectionCandidate(
+                key = range.key(),
+                sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_CURRENT,
+                pages = range.pages.toSet(),
+                priority = range.priority,
+            )
+        }
+        synchronized(plannedRangeLock) {
+            plannedRangeJobs
+                .values
+                .filter {
+                    it.job.isPendingOrActive() &&
+                        it.range.pages.any { page -> page in protectionPages }
+                }
+                .forEach { planned ->
+                    candidates += PlannedRangeProtectionCandidate(
+                        key = planned.range.key(),
+                        sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_ACTIVE,
+                        pages = planned.range.pages.toSet(),
+                        priority = planned.range.priority,
+                    )
+                }
+            completedPlannedRanges
+                .filter { (_, completed) ->
+                    completed.pages.any { page -> page in protectionPages }
+                }
+                .forEach { (key, completed) ->
+                    candidates += PlannedRangeProtectionCandidate(
+                        key = key,
+                        sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_COMPLETED,
+                        pages = completed.pages,
+                        priority = completed.priority,
+                    )
+                }
+        }
+
+        val selected = mutableListOf<LongRange>()
+        val seen = mutableSetOf<PlannedRangeKey>()
+        var selectedBytes = 0L
+        val budgetBytes = plannedRangeProtectedBudgetBytes()
+        val sortedCandidates = candidates.sortedWith(
+            compareBy<PlannedRangeProtectionCandidate> { it.sourceRank }
+                .thenBy { pageDistance(it.pages, currentPages) }
+                .thenBy { it.priority }
+                .thenBy { it.byteLength },
+        )
+        for (candidate in sortedCandidates) {
+            if (candidate.key == excludedKey) continue
+            if (!seen.add(candidate.key)) continue
+            val byteLength = candidate.byteLength
+            if (selectedBytes + byteLength > budgetBytes) continue
+            selected += candidate.key.start..candidate.key.endInclusive
+            selectedBytes += byteLength
+        }
+        return selected
     }
 
     private fun plannedRangeProtectionPages(ranges: List<PlannedRemoteRange>): Set<Int> {
@@ -887,6 +941,16 @@ class ReaderViewModel(
         val firstPage = (pages.min() - PREFETCH_FORWARD_PAGES).coerceAtLeast(0)
         val lastPage = pages.max() + PREFETCH_FORWARD_PAGES
         return (firstPage..lastPage).toSet()
+    }
+
+    private fun plannedRangeProtectedBudgetBytes(): Long =
+        MAX_PLANNED_RANGE_PROTECTED_BYTES
+
+    private fun pageDistance(candidatePages: Set<Int>, currentPages: Set<Int>): Int {
+        if (candidatePages.isEmpty() || currentPages.isEmpty()) return Int.MAX_VALUE
+        return candidatePages.minOf { candidate ->
+            currentPages.minOf { current -> abs(candidate - current) }
+        }
     }
 
     private fun markPlannedRangeCompleted(range: PlannedRemoteRange) {
@@ -1009,6 +1073,16 @@ class ReaderViewModel(
         val pages: Set<Int>,
     )
 
+    private data class PlannedRangeProtectionCandidate(
+        val key: PlannedRangeKey,
+        val sourceRank: Int,
+        val pages: Set<Int>,
+        val priority: Int,
+    ) {
+        val byteLength: Long
+            get() = key.endInclusive - key.start + 1
+    }
+
     private fun PlannedRemoteRange.key(): PlannedRangeKey =
         PlannedRangeKey(start = start, endInclusive = endInclusive)
 
@@ -1051,6 +1125,11 @@ class ReaderViewModel(
         const val HIGH_PRIORITY_PLANNED_RANGE_MAX = 2
         const val MAX_PLANNED_RANGE_CONCURRENCY = 2
         const val MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY = 1
+        const val PLANNED_RANGE_PROTECTED_CACHE_FRACTION = 0.5
+        const val MAX_PLANNED_RANGE_PROTECTED_BYTES = 32L * 1024L * 1024L
+        const val PLANNED_RANGE_PROTECTION_SOURCE_CURRENT = 0
+        const val PLANNED_RANGE_PROTECTION_SOURCE_ACTIVE = 1
+        const val PLANNED_RANGE_PROTECTION_SOURCE_COMPLETED = 2
         const val LOAD_REASON_INITIAL = "initial"
         const val LOAD_REASON_SELECT = "select"
         const val LOAD_REASON_PREFETCH = "prefetch"

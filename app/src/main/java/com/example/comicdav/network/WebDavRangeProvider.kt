@@ -109,12 +109,7 @@ class WebDavRangeProvider(
         }
         val clampedEnd = endInclusive.coerceAtMost(size - 1)
         val rememberedProtectedRanges = normalizeProtectedRanges(protectedRanges)
-        val effectiveProtectedRanges = if (priority > LOW_PRIORITY_PREFETCH_PRIORITY) {
-            rememberedProtectedRanges
-        } else {
-            emptyList()
-        }
-        val protectedStats = protectedStats(effectiveProtectedRanges)
+        val protectedStats = protectedStats(rememberedProtectedRanges)
         val cached = synchronized(lock) {
             if (rememberedProtectedRanges.isNotEmpty()) {
                 latestProtectedRanges = rememberedProtectedRanges
@@ -152,14 +147,10 @@ class WebDavRangeProvider(
             throw error
         }
         val postFetch = synchronized(lock) {
-            val storeResult = if (priority > LOW_PRIORITY_PREFETCH_PRIORITY) {
-                cache.store(fetch.start, fetch.endInclusive, bytes, effectiveProtectedRanges)
-            } else {
-                cache.store(fetch.start, fetch.endInclusive, bytes)
-            }
+            val storeDecision = storePrefetchRange(fetch, bytes, priority, rememberedProtectedRanges)
             PostFetchResult(
                 bytes = bytes,
-                storeResult = storeResult,
+                storeResult = storeDecision.storeResult,
                 storeDiagnostic = StoreDiagnostic(
                     protectedStats = protectedStats,
                     readAheadStore = READ_AHEAD_STORE_NONE,
@@ -167,6 +158,7 @@ class WebDavRangeProvider(
                     storeStart = fetch.start,
                     storeEndInclusive = fetch.endInclusive,
                     storeBytes = bytes.size,
+                    fallbackReason = storeDecision.fallbackReason,
                 ),
                 cacheBytes = cache.totalBytes(),
                 windowCount = cache.windowCount(),
@@ -178,6 +170,7 @@ class WebDavRangeProvider(
                 "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
                 "priority=$priority evictionMode=${postFetch.storeResult.evictionMode} " +
                 "protectedCount=${protectedStats.count} protectedBytes=${protectedStats.bytes} " +
+                "fallbackReason=${postFetch.storeDiagnostic.fallbackReason ?: "none"} " +
                 "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
         )
         postFetch.storeResult.evicted.forEach { evicted ->
@@ -187,6 +180,25 @@ class WebDavRangeProvider(
             )
         }
         return postFetch.storeResult.stored
+    }
+
+    private fun storePrefetchRange(
+        fetch: RegisteredFetch,
+        bytes: ByteArray,
+        priority: Int,
+        protectedRanges: List<LongRange>,
+    ): PrefetchStoreDecision {
+        val protectedResult = cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
+        if (
+            priority <= LOW_PRIORITY_PREFETCH_PRIORITY &&
+            protectedResult.skippedReason == "protected_capacity"
+        ) {
+            return PrefetchStoreDecision(
+                storeResult = cache.store(fetch.start, fetch.endInclusive, bytes),
+                fallbackReason = protectedResult.skippedReason,
+            )
+        }
+        return PrefetchStoreDecision(storeResult = protectedResult)
     }
 
     private fun coveringInFlight(start: Long, endInclusive: Long): InFlightRange? =
@@ -499,6 +511,11 @@ class WebDavRangeProvider(
         val diagnostic: StoreDiagnostic,
     )
 
+    private data class PrefetchStoreDecision(
+        val storeResult: RangeWindowCache.StoreResult,
+        val fallbackReason: String? = null,
+    )
+
     private data class StoreDiagnostic(
         val protectedStats: ProtectedStats,
         val readAheadStore: String,
@@ -506,6 +523,7 @@ class WebDavRangeProvider(
         val storeStart: Long,
         val storeEndInclusive: Long,
         val storeBytes: Int,
+        val fallbackReason: String? = null,
     )
 
     private data class ProtectedStats(

@@ -196,6 +196,147 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun sameStartPlannedRangesAreMergedBeforeScheduling() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        val session = FakeReaderSession(
+            pageCount = 5,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1, 2), priority = 1),
+                    PlannedRemoteRange(start = 100, endInclusive = 299, pages = listOf(2, 3), priority = 4),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            listOf(RangePrefetchCall(start = 100, endInclusive = 299, priority = 1, protectedRanges = emptyList())),
+            session.prefetchCalls,
+        )
+        assertTrue(
+            sink.lines.any {
+                it.contains("planned_range_prefetch_start start=100 end=299 pages=[1, 2, 3] priority=1")
+            },
+        )
+    }
+
+    @Test
+    fun protectedPlannedRangesAreCappedByBudget() = runTest(dispatcher) {
+        val twentyMiB = 20L * 1024L * 1024L
+        val completedStart = 0L
+        val currentHighStart = 50_000_000L
+        val currentLowStart = 100_000_000L
+        val session = FakeReaderSession(
+            pageCount = 20,
+            plannedRangesByPage = mapOf(
+                9 to listOf(
+                    PlannedRemoteRange(
+                        start = completedStart,
+                        endInclusive = completedStart + twentyMiB - 1,
+                        pages = listOf(9),
+                        priority = 0,
+                    ),
+                ),
+                5 to listOf(
+                    PlannedRemoteRange(
+                        start = currentHighStart,
+                        endInclusive = currentHighStart + twentyMiB - 1,
+                        pages = listOf(4),
+                        priority = 0,
+                    ),
+                    PlannedRemoteRange(
+                        start = currentLowStart,
+                        endInclusive = currentLowStart + twentyMiB - 1,
+                        pages = listOf(6),
+                        priority = 5,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.reportPageDemand(9, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchCalls.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val lowPriorityCall = session.prefetchCalls.single { it.start == currentLowStart }
+        assertTrue(
+            "protectedRanges=${lowPriorityCall.protectedRanges}",
+            lowPriorityCall.protectedRanges.sumOf { it.last - it.first + 1 } <= 32L * 1024L * 1024L,
+        )
+        assertEquals(
+            listOf(currentHighStart..(currentHighStart + twentyMiB - 1)),
+            lowPriorityCall.protectedRanges,
+        )
+    }
+
+    @Test
+    fun protectedPlannedRangeBudgetSkipsOversizedCandidateAndKeepsSmallerCandidate() = runTest(dispatcher) {
+        val oversizedBytes = 40L * 1024L * 1024L
+        val smallBytes = 1L * 1024L * 1024L
+        val oversizedStart = 0L
+        val smallStart = 50_000_000L
+        val lowPriorityStart = 100_000_000L
+        val session = FakeReaderSession(
+            pageCount = 12,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(
+                        start = oversizedStart,
+                        endInclusive = oversizedStart + oversizedBytes - 1,
+                        pages = listOf(4),
+                        priority = 0,
+                    ),
+                    PlannedRemoteRange(
+                        start = smallStart,
+                        endInclusive = smallStart + smallBytes - 1,
+                        pages = listOf(6),
+                        priority = 1,
+                    ),
+                    PlannedRemoteRange(
+                        start = lowPriorityStart,
+                        endInclusive = lowPriorityStart + smallBytes - 1,
+                        pages = listOf(8),
+                        priority = 5,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchCalls.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val lowPriorityCall = session.prefetchCalls.single { it.start == lowPriorityStart }
+        assertEquals(
+            listOf(smallStart..(smallStart + smallBytes - 1)),
+            lowPriorityCall.protectedRanges,
+        )
+    }
+
+    @Test
     fun lowPriorityPlannedRangesAreSerialized() = runTest(dispatcher) {
         val executor = java.util.concurrent.Executors.newFixedThreadPool(4)
         val ioDispatcher = executor.asCoroutineDispatcher()
