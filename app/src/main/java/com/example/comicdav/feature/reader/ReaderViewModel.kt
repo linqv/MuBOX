@@ -10,8 +10,9 @@ import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.PlannedRemoteRange
 import java.io.File
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -56,6 +57,7 @@ class ReaderViewModel(
     private val prefetchJobs = mutableMapOf<Int, Job>()
     private val plannedRangeLock = Any()
     private val plannedRangeJobs = mutableMapOf<PlannedRangeKey, PlannedRangePrefetch>()
+    private val completedPlannedRanges = mutableMapOf<PlannedRangeKey, CompletedPlannedRange>()
     private var plannedRangeSupervisor = SupervisorJob()
     private var plannedRangeScope = CoroutineScope(plannedRangeSupervisor + ioDispatcher)
     private val plannedRangeSemaphore = Semaphore(MAX_PLANNED_RANGE_CONCURRENCY)
@@ -668,7 +670,7 @@ class ReaderViewModel(
             plannedRangeJobs
                 .values
                 .firstOrNull { planned ->
-                    planned.job.isActive && pageIndex in planned.range.pages
+                    planned.job.isPendingOrActive() && pageIndex in planned.range.pages
                 }
                 ?.job
         }
@@ -770,26 +772,19 @@ class ReaderViewModel(
         ReaderDiagnosticLog.event(
             "planned_range_prefetch_plan count=${ranges.size} bytes=$plannedBytes generation=$expectedGeneration",
         )
+        val protectedRanges = protectedPlannedByteRanges(ranges)
         ranges.sortedBy { it.priority }.forEach { range ->
             val key = range.key()
-            if (plannedRangeJob(key)?.job?.isActive == true) return@forEach
-            val retained = activePlannedRangeForPages(range.pages)
-            if (retained != null) {
-                ReaderDiagnosticLog.event(
-                    "planned_range_prefetch_retained start=${retained.range.start} end=${retained.range.endInclusive} " +
-                        "pages=${retained.range.pages} requestedStart=${range.start} requestedEnd=${range.endInclusive}",
-                )
-                return@forEach
-            }
-            val job = plannedRangeScope.launch {
+            val job = plannedRangeScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     if (expectedGeneration != generation) return@launch
                     ReaderDiagnosticLog.event(
                         "planned_range_prefetch_start start=${range.start} end=${range.endInclusive} " +
                             "pages=${range.pages} priority=${range.priority}",
                     )
-                    val stored = prefetchPlannedRangeWithLimits(session, range)
+                    val stored = prefetchPlannedRangeWithLimits(session, range, protectedRanges)
                     if (expectedGeneration == generation) {
+                        markPlannedRangeCompleted(range)
                         ReaderDiagnosticLog.event(
                             "planned_range_prefetch_done start=${range.start} end=${range.endInclusive} " +
                                 "pages=${range.pages} priority=${range.priority} stored=$stored",
@@ -815,39 +810,107 @@ class ReaderViewModel(
                     }
                 }
             }
-            synchronized(plannedRangeLock) {
-                plannedRangeJobs[key] = PlannedRangePrefetch(range = range, job = job)
+            var retained: PlannedRangePrefetch? = null
+            val shouldStart = synchronized(plannedRangeLock) {
+                when {
+                    plannedRangeJobs[key]?.job?.isPendingOrActive() == true -> false
+                    completedPlannedRanges[key] != null -> false
+                    else -> {
+                        retained = activePlannedRangeForPagesLocked(range.pages)
+                        if (retained != null) {
+                            false
+                        } else {
+                            plannedRangeJobs[key] = PlannedRangePrefetch(range = range, job = job)
+                            true
+                        }
+                    }
+                }
             }
+            if (!shouldStart) {
+                job.cancel()
+                retained?.let { retainedRange ->
+                    ReaderDiagnosticLog.event(
+                        "planned_range_prefetch_retained start=${retainedRange.range.start} " +
+                            "end=${retainedRange.range.endInclusive} pages=${retainedRange.range.pages} " +
+                            "requestedStart=${range.start} requestedEnd=${range.endInclusive}",
+                    )
+                }
+                return@forEach
+            }
+            job.start()
         }
     }
 
     private suspend fun prefetchPlannedRangeWithLimits(
         session: ComicReaderSession,
         range: PlannedRemoteRange,
+        protectedRanges: List<LongRange>,
     ): Boolean =
         plannedRangeSemaphore.withPermit {
             if (range.priority > HIGH_PRIORITY_PLANNED_RANGE_MAX) {
                 lowPriorityPlannedRangeSemaphore.withPermit {
-                    session.prefetchRange(range.start, range.endInclusive)
+                    session.prefetchRange(range.start, range.endInclusive, range.priority, protectedRanges)
                 }
             } else {
-                session.prefetchRange(range.start, range.endInclusive)
+                session.prefetchRange(range.start, range.endInclusive, range.priority, protectedRanges)
             }
         }
 
-    private fun plannedRangeJob(key: PlannedRangeKey): PlannedRangePrefetch? =
+    private fun protectedPlannedByteRanges(ranges: List<PlannedRemoteRange>): List<LongRange> {
+        val protectionPages = plannedRangeProtectionPages(ranges)
+        return LinkedHashSet<PlannedRangeKey>().apply {
+            ranges
+                .filter { it.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX }
+                .forEach { add(it.key()) }
+            synchronized(plannedRangeLock) {
+                plannedRangeJobs
+                    .values
+                    .filter {
+                        it.job.isPendingOrActive() &&
+                            it.range.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX &&
+                            it.range.pages.any { page -> page in protectionPages }
+                    }
+                    .forEach { add(it.range.key()) }
+                completedPlannedRanges
+                    .filter { (_, completed) ->
+                        completed.priority <= HIGH_PRIORITY_PLANNED_RANGE_MAX &&
+                            completed.pages.any { page -> page in protectionPages }
+                    }
+                    .forEach { (key, _) -> add(key) }
+            }
+        }.map { it.start..it.endInclusive }
+    }
+
+    private fun plannedRangeProtectionPages(ranges: List<PlannedRemoteRange>): Set<Int> {
+        val pages = ranges.flatMap { it.pages }
+        if (pages.isEmpty()) return emptySet()
+        val firstPage = (pages.min() - PREFETCH_FORWARD_PAGES).coerceAtLeast(0)
+        val lastPage = pages.max() + PREFETCH_FORWARD_PAGES
+        return (firstPage..lastPage).toSet()
+    }
+
+    private fun markPlannedRangeCompleted(range: PlannedRemoteRange) {
         synchronized(plannedRangeLock) {
-            plannedRangeJobs[key]
+            completedPlannedRanges[range.key()] = CompletedPlannedRange(
+                priority = range.priority,
+                pages = range.pages.toSet(),
+            )
         }
+    }
 
     private fun activePlannedRangeForPages(pages: List<Int>): PlannedRangePrefetch? =
         synchronized(plannedRangeLock) {
-            plannedRangeJobs
-                .values
-                .firstOrNull { planned ->
-                    planned.job.isActive && planned.range.pages.any { page -> page in pages }
-                }
+            activePlannedRangeForPagesLocked(pages)
         }
+
+    private fun activePlannedRangeForPagesLocked(pages: List<Int>): PlannedRangePrefetch? =
+        plannedRangeJobs
+            .values
+            .firstOrNull { planned ->
+                planned.job.isPendingOrActive() && planned.range.pages.any { page -> page in pages }
+            }
+
+    private fun Job.isPendingOrActive(): Boolean = !isCompleted && !isCancelled
 
     private fun cancelPlannedRangePrefetches(reason: String, keepPages: Set<Int>) {
         val cancelled = synchronized(plannedRangeLock) {
@@ -873,6 +936,7 @@ class ReaderViewModel(
         plannedRangeScope = CoroutineScope(plannedRangeSupervisor + ioDispatcher)
         synchronized(plannedRangeLock) {
             plannedRangeJobs.clear()
+            completedPlannedRanges.clear()
         }
     }
 
@@ -938,6 +1002,11 @@ class ReaderViewModel(
     private data class PlannedRangePrefetch(
         val range: PlannedRemoteRange,
         val job: Job,
+    )
+
+    private data class CompletedPlannedRange(
+        val priority: Int,
+        val pages: Set<Int>,
     )
 
     private fun PlannedRemoteRange.key(): PlannedRangeKey =

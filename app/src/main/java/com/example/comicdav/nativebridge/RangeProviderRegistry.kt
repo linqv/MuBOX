@@ -25,16 +25,32 @@ object RangeProviderRegistry {
 
     @JvmStatic
     fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray {
-        require(start >= 0) { "Range start must be non-negative" }
-        require(endInclusive >= start) { "Range end must be >= start" }
+        requireValidRange(start, endInclusive)
         return provider(fileId).readRange(fileId, start, endInclusive)
     }
 
     @JvmStatic
     fun prefetchRange(fileId: Long, start: Long, endInclusive: Long): Boolean {
+        requireValidRange(start, endInclusive)
+        return provider(fileId).prefetchRange(start, endInclusive)
+    }
+
+    @JvmStatic
+    fun prefetchRange(
+        fileId: Long,
+        start: Long,
+        endInclusive: Long,
+        priority: Int,
+        protectedRanges: List<LongRange>,
+    ): Boolean {
+        requireValidRange(start, endInclusive)
+        protectedRanges.forEach { range -> requireValidRange(range.first, range.last) }
+        return provider(fileId).prefetchRange(start, endInclusive, priority, protectedRanges)
+    }
+
+    private fun requireValidRange(start: Long, endInclusive: Long) {
         require(start >= 0) { "Range start must be non-negative" }
         require(endInclusive >= start) { "Range end must be >= start" }
-        return provider(fileId).prefetchRange(start, endInclusive)
     }
 
     private fun provider(fileId: Long): RangeProvider =

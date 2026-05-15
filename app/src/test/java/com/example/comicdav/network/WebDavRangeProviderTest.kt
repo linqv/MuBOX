@@ -77,6 +77,76 @@ class WebDavRangeProviderTest {
     }
 
     @Test
+    fun lowPriorityPrefetchDoesNotEvictWindowIntersectingProtectedRange() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val client = RecordingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 0,
+            maxCacheBytes = 20,
+        )
+
+        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
+        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
+
+        assertTrue(
+            provider.prefetchRange(start = 40, endInclusive = 49, priority = 3, protectedRanges = listOf(5L..6L)),
+        )
+        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
+
+        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L), client.rangeCalls)
+    }
+
+    @Test
+    fun readRangeReadAheadTrimsInsteadOfEvictingProtectedWindow() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val client = RecordingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 20,
+            maxCacheBytes = 30,
+        )
+
+        assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
+        assertTrue(
+            provider.prefetchRange(start = 20, endInclusive = 29, priority = 3, protectedRanges = listOf(0L..9L)),
+        )
+
+        assertArrayEquals(bytes.sliceArray(40..49), provider.readRange(fileId = 1, start = 40, endInclusive = 49))
+        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
+
+        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 69L), client.rangeCalls)
+    }
+
+    @Test
+    fun readRangeCanEvictOlderWindowIntersectingProtectedRangeWhenCapacityRequiresIt() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val client = RecordingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 0,
+            maxCacheBytes = 20,
+        )
+
+        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
+        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
+        assertTrue(
+            provider.prefetchRange(start = 40, endInclusive = 49, priority = 3, protectedRanges = listOf(5L..6L)),
+        )
+
+        provider.readRange(fileId = 1, start = 60, endInclusive = 69)
+        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
+
+        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L, 60L to 69L, 0L to 9L), client.rangeCalls)
+    }
+
+    @Test
     fun oversizedResponseIsNotCachedPastHardCapacityLimit() {
         val bytes = ByteArray(128) { it.toByte() }
         val client = RecordingWebDavClient(bytes)
@@ -252,6 +322,50 @@ class WebDavRangeProviderTest {
             assertTrue(sink.lines.any { it.contains("range_cache_store") })
             assertTrue(sink.lines.any { it.contains("range_cache_hit") })
             assertTrue(sink.lines.any { it.contains("range_cache_evict") })
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+        }
+    }
+
+    @Test
+    fun diagnosticsDescribeProtectedReadAheadTrimAndPrefetchContext() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        try {
+            val bytes = ByteArray(128) { it.toByte() }
+            val client = RecordingWebDavClient(bytes)
+            val provider = WebDavRangeProvider(
+                client = client,
+                path = "/books/book.cbz",
+                size = bytes.size.toLong(),
+                readAheadBytes = 20,
+                maxCacheBytes = 30,
+            )
+
+            assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
+            assertTrue(
+                provider.prefetchRange(start = 20, endInclusive = 29, priority = 3, protectedRanges = listOf(0L..9L)),
+            )
+            provider.readRange(fileId = 1, start = 40, endInclusive = 49)
+
+            val prefetchLine = sink.lines.lastOrNull {
+                it.contains("range_prefetch_store") && it.contains("start=20") && it.contains("end=29")
+            }.orEmpty()
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("priority=3"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("evictionMode=protected"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedCount=1"))
+            assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedBytes=10"))
+
+            val readStoreLine = sink.lines.lastOrNull {
+                it.contains("range_cache_store") && it.contains("start=40") && it.contains("end=69")
+            }.orEmpty()
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("readAheadStore=trimmed_to_request"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("readAheadReason=protected_capacity"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("evictionMode=protected"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("protectedCount=1"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("protectedBytes=10"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("storeStart=40"))
+            assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("storeEnd=49"))
         } finally {
             ReaderDiagnosticLog.clearSink()
         }

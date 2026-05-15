@@ -120,6 +120,35 @@ class ComicEngineTest {
     }
 
     @Test
+    fun remoteSessionPrefetchPassesPriorityAndProtectedRangesThroughRegisteredProvider() {
+        val native = FakeComicNative(openHandle = 9, pageCount = 1)
+        val provider = RecordingRangeProvider(size = 100)
+        val fileId = RangeProviderRegistry.register(provider)
+        val session = ComicEngine(native).openRemote(
+            fileId = fileId,
+            size = 100,
+            cacheDir = temp.newFolder("range-prefetch-priority-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+        )
+
+        assertTrue(
+            session.prefetchRange(
+                start = 10,
+                endInclusive = 19,
+                priority = 7,
+                protectedRanges = listOf(0L..9L, 20L..29L),
+            ),
+        )
+
+        assertEquals(
+            listOf(PriorityPrefetchCall(10, 19, 7, listOf(0L..9L, 20L..29L))),
+            provider.priorityPrefetchCalls,
+        )
+        session.close()
+    }
+
+    @Test
     fun closeReleasesNativeHandleOnce() {
         val native = FakeComicNative(openHandle = 5, pageCount = 1)
         val session = ComicEngine(native).openLocal("/tmp/book.cbz")
@@ -184,6 +213,7 @@ class ComicEngineTest {
 
     private class RecordingRangeProvider(private val size: Long) : RangeProvider {
         val prefetchCalls = mutableListOf<Pair<Long, Long>>()
+        val priorityPrefetchCalls = mutableListOf<PriorityPrefetchCall>()
 
         override fun size(fileId: Long): Long = size
 
@@ -192,6 +222,16 @@ class ComicEngineTest {
 
         override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
             prefetchCalls += start to endInclusive
+            return true
+        }
+
+        override fun prefetchRange(
+            start: Long,
+            endInclusive: Long,
+            priority: Int,
+            protectedRanges: List<LongRange>,
+        ): Boolean {
+            priorityPrefetchCalls += PriorityPrefetchCall(start, endInclusive, priority, protectedRanges)
             return true
         }
     }
@@ -220,5 +260,12 @@ class ComicEngineTest {
         val handle: Long,
         val pageIndex: Int,
         val networkClass: Int,
+    )
+
+    private data class PriorityPrefetchCall(
+        val start: Long,
+        val endInclusive: Long,
+        val priority: Int,
+        val protectedRanges: List<LongRange>,
     )
 }

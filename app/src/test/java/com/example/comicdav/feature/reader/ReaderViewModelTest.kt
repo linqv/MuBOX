@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -144,6 +145,57 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun plannedRangePrefetchPassesPriorityToSession() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 5,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1), priority = 4),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            listOf(RangePrefetchCall(start = 100, endInclusive = 199, priority = 4, protectedRanges = emptyList())),
+            session.prefetchCalls,
+        )
+    }
+
+    @Test
+    fun lowPriorityPlannedRangePrefetchReceivesHighPriorityProtectedRangesFromSamePlan() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 5,
+            plannedRangesByPage = mapOf(
+                0 to listOf(
+                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1), priority = 0),
+                    PlannedRemoteRange(start = 300, endInclusive = 349, pages = listOf(2), priority = 2),
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(3), priority = 5),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val lowPriorityCall = session.prefetchCalls.single { it.start == 500L }
+        assertEquals(
+            listOf(100L..199L, 300L..349L),
+            lowPriorityCall.protectedRanges,
+        )
+    }
+
+    @Test
     fun lowPriorityPlannedRangesAreSerialized() = runTest(dispatcher) {
         val executor = java.util.concurrent.Executors.newFixedThreadPool(4)
         val ioDispatcher = executor.asCoroutineDispatcher()
@@ -161,6 +213,7 @@ class ReaderViewModelTest {
             blockingRange = 100L to 199L,
             firstBlockedRangeStarted = firstLowPriorityStarted,
             releaseBlockedRange = releaseLowPriority,
+            blockingRanges = setOf(100L to 199L, 200L to 299L, 300L to 399L),
         )
         val viewModel = ReaderViewModel(
             openSession = { session },
@@ -175,7 +228,7 @@ class ReaderViewModelTest {
 
             Thread.sleep(150)
             assertEquals(1, session.maxConcurrentPrefetches)
-            assertEquals(listOf(100L to 199L), session.prefetchedRanges)
+            assertEquals(1, session.prefetchedRanges.size)
 
             releaseLowPriority.countDown()
             waitUntil(timeoutMs = 1_000) {
@@ -264,6 +317,133 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun repeatedIdenticalCompletedPlannedRangePlanDoesNotPrefetchAgainInSameGeneration() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchedRanges.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(500L to 599L), session.prefetchedRanges)
+    }
+
+    @Test
+    fun duplicateDemandPlannedRangePlansShareInFlightRangeBeforeRegistration() = runTest(dispatcher) {
+        val prefetchStarted = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPlannedRangeSession(
+            pageCount = 8,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+            ),
+            blockingRange = 500L to 599L,
+            prefetchStarted = prefetchStarted,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = DirectDispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val firstDemand = Thread {
+            viewModel.reportPageDemand(5, "pager_target")
+        }
+        firstDemand.start()
+        assertTrue(prefetchStarted.await(1, TimeUnit.SECONDS))
+
+        val secondDemand = Thread {
+            viewModel.reportPageDemand(5, "pager_target")
+        }
+        secondDemand.start()
+        Thread.sleep(100)
+
+        assertEquals(listOf(500L to 599L), session.prefetchedRanges)
+        releasePrefetch.countDown()
+        firstDemand.join(1_000)
+        secondDemand.join(1_000)
+        assertEquals(listOf(500L to 599L), session.prefetchedRanges)
+    }
+
+    @Test
+    fun lowPriorityPlannedRangePrefetchProtectsCompletedHighPriorityRangesFromSameGeneration() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 10,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+                6 to listOf(
+                    PlannedRemoteRange(start = 900, endInclusive = 999, pages = listOf(6), priority = 5),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchCalls.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.reportPageDemand(6, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val lowPriorityCall = session.prefetchCalls.single { it.start == 900L }
+        assertEquals(listOf(500L..599L), lowPriorityCall.protectedRanges)
+    }
+
+    @Test
+    fun lowPriorityPlannedRangePrefetchDoesNotProtectFarCompletedHighPriorityRanges() = runTest(dispatcher) {
+        val session = FakeReaderSession(
+            pageCount = 20,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+                12 to listOf(
+                    PlannedRemoteRange(start = 1200, endInclusive = 1299, pages = listOf(12), priority = 5),
+                ),
+            ),
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.cbz", temp.root)
+        dispatcher.scheduler.advanceUntilIdle()
+        session.prefetchCalls.clear()
+
+        viewModel.reportPageDemand(5, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.reportPageDemand(12, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val lowPriorityCall = session.prefetchCalls.single { it.start == 1200L }
+        assertEquals(emptyList<LongRange>(), lowPriorityCall.protectedRanges)
+    }
+
+    @Test
     fun stalePagerTargetPlanDoesNotPrefetchAfterSessionGenerationChanges() = runTest(dispatcher) {
         val session = FakeReaderSession(
             pageCount = 8,
@@ -290,6 +470,8 @@ class ReaderViewModelTest {
 
     @Test
     fun selectPageWaitsForInFlightPlannedRangeCoveringSelectedPage() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
         val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
         val ioDispatcher = executor.asCoroutineDispatcher()
         val prefetchStarted = CountDownLatch(1)
@@ -325,6 +507,9 @@ class ReaderViewModelTest {
                 dispatcher.scheduler.advanceUntilIdle()
                 prefetchStarted.count == 0L
             }
+            viewModel.reportPageDemand(5, "pager_target")
+            dispatcher.scheduler.advanceUntilIdle()
+            assertEquals(listOf(500L to 599L), session.prefetchedRanges)
 
             viewModel.selectPage(5)
             dispatcher.scheduler.runCurrent()
@@ -335,6 +520,7 @@ class ReaderViewModelTest {
                 dispatcher.scheduler.advanceUntilIdle()
                 viewModel.uiState.pageFiles.containsKey(5)
             }
+            assertTrue(sink.lines.any { it.contains("prefetch_promoted page=5 source=planned_range_to_select") })
         } finally {
             releasePrefetch.countDown()
             prefetchFinished.await(1, TimeUnit.SECONDS)
@@ -589,6 +775,7 @@ class ReaderViewModelTest {
         val viewportPages = mutableListOf<Int>()
         val plannedRangePages = mutableListOf<Int>()
         val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
+        val prefetchCalls = mutableListOf<RangePrefetchCall>()
         var closed = false
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
@@ -614,6 +801,17 @@ class ReaderViewModelTest {
             }
 
         override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+            prefetchedRanges += start to endInclusive
+            return true
+        }
+
+        override fun prefetchRange(
+            start: Long,
+            endInclusive: Long,
+            priority: Int,
+            protectedRanges: List<LongRange>,
+        ): Boolean {
+            prefetchCalls += RangePrefetchCall(start, endInclusive, priority, protectedRanges)
             prefetchedRanges += start to endInclusive
             return true
         }
@@ -681,8 +879,11 @@ class ReaderViewModelTest {
         private val selectedPage: Int? = null,
         private val selectedLoadStarted: CountDownLatch? = null,
     ) : ComicReaderSession {
+        private val lock = Any()
         val loadedPages = mutableListOf<Int>()
-        val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
+        private val recordedPrefetchedRanges = mutableListOf<Pair<Long, Long>>()
+        val prefetchedRanges: List<Pair<Long, Long>>
+            get() = synchronized(lock) { recordedPrefetchedRanges.toList() }
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
             loadedPages += pageIndex
@@ -701,7 +902,9 @@ class ReaderViewModelTest {
         }
 
         override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
-            prefetchedRanges += start to endInclusive
+            synchronized(lock) {
+                recordedPrefetchedRanges += start to endInclusive
+            }
             if (start to endInclusive == blockingRange) {
                 prefetchStarted.countDown()
                 releasePrefetch.await(2, TimeUnit.SECONDS)
@@ -757,14 +960,34 @@ class ReaderViewModelTest {
     }
 
     private class CollectingReaderLogSink : ReaderLogSink {
-        val lines = mutableListOf<String>()
+        private val lock = Any()
+        private val recordedLines = mutableListOf<String>()
+        val lines: List<String>
+            get() = synchronized(lock) { recordedLines.toList() }
 
         override fun log(line: String) {
-            lines += line
+            synchronized(lock) {
+                recordedLines += line
+            }
         }
 
         override fun logBlocking(line: String) {
-            lines += line
+            synchronized(lock) {
+                recordedLines += line
+            }
+        }
+    }
+
+    private data class RangePrefetchCall(
+        val start: Long,
+        val endInclusive: Long,
+        val priority: Int,
+        val protectedRanges: List<LongRange>,
+    )
+
+    private object DirectDispatcher : CoroutineDispatcher() {
+        override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+            block.run()
         }
     }
 

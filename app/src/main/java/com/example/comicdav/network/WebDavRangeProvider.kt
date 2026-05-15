@@ -16,6 +16,7 @@ class WebDavRangeProvider(
     private val lock = Any()
     private val cache = RangeWindowCache(maxCacheBytes)
     private val inFlightRanges = mutableListOf<InFlightRange>()
+    private var latestProtectedRanges: List<LongRange> = emptyList()
 
     override fun size(fileId: Long): Long = size
 
@@ -58,20 +59,29 @@ class WebDavRangeProvider(
             throw error
         }
         val postFetch = synchronized(lock) {
-            val storeResult = cache.store(fetch.start, fetch.endInclusive, bytes)
+            val storeDecision = storeReadRange(fetch, start, endInclusive, bytes)
             val result = cache.find(start, endInclusive)?.bytes
                 ?: bytes.copyOfRange(0, (endInclusive - start + 1).toInt())
             PostFetchResult(
                 bytes = result,
-                storeResult = storeResult,
+                storeResult = storeDecision.storeResult,
+                storeDiagnostic = storeDecision.diagnostic,
                 cacheBytes = cache.totalBytes(),
                 windowCount = cache.windowCount(),
             )
         }
         completeInFlight(fetch, bytes)
+        val storeDiagnostic = postFetch.storeDiagnostic
         emitDiagnostic(
             "range_cache_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
                 "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
+                "evictionMode=${postFetch.storeResult.evictionMode} " +
+                "protectedCount=${storeDiagnostic.protectedStats.count} " +
+                "protectedBytes=${storeDiagnostic.protectedStats.bytes} " +
+                "readAheadStore=${storeDiagnostic.readAheadStore} " +
+                "readAheadReason=${storeDiagnostic.readAheadReason ?: "none"} " +
+                "storeStart=${storeDiagnostic.storeStart} storeEnd=${storeDiagnostic.storeEndInclusive} " +
+                "storeBytes=${storeDiagnostic.storeBytes} " +
                 "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
         )
         postFetch.storeResult.evicted.forEach { evicted ->
@@ -84,12 +94,31 @@ class WebDavRangeProvider(
     }
 
     override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
+        return prefetchRange(start, endInclusive, priority = 0, protectedRanges = emptyList())
+    }
+
+    override fun prefetchRange(
+        start: Long,
+        endInclusive: Long,
+        priority: Int,
+        protectedRanges: List<LongRange>,
+    ): Boolean {
         if (start >= size) {
             emitDiagnostic("range_prefetch_skip path=$path start=$start end=$endInclusive reason=past_eof")
             return false
         }
         val clampedEnd = endInclusive.coerceAtMost(size - 1)
+        val rememberedProtectedRanges = normalizeProtectedRanges(protectedRanges)
+        val effectiveProtectedRanges = if (priority > LOW_PRIORITY_PREFETCH_PRIORITY) {
+            rememberedProtectedRanges
+        } else {
+            emptyList()
+        }
+        val protectedStats = protectedStats(effectiveProtectedRanges)
         val cached = synchronized(lock) {
+            if (rememberedProtectedRanges.isNotEmpty()) {
+                latestProtectedRanges = rememberedProtectedRanges
+            }
             cache.find(start, clampedEnd)
         }
         if (cached != null) {
@@ -123,10 +152,22 @@ class WebDavRangeProvider(
             throw error
         }
         val postFetch = synchronized(lock) {
-            val storeResult = cache.store(fetch.start, fetch.endInclusive, bytes)
+            val storeResult = if (priority > LOW_PRIORITY_PREFETCH_PRIORITY) {
+                cache.store(fetch.start, fetch.endInclusive, bytes, effectiveProtectedRanges)
+            } else {
+                cache.store(fetch.start, fetch.endInclusive, bytes)
+            }
             PostFetchResult(
                 bytes = bytes,
                 storeResult = storeResult,
+                storeDiagnostic = StoreDiagnostic(
+                    protectedStats = protectedStats,
+                    readAheadStore = READ_AHEAD_STORE_NONE,
+                    readAheadReason = null,
+                    storeStart = fetch.start,
+                    storeEndInclusive = fetch.endInclusive,
+                    storeBytes = bytes.size,
+                ),
                 cacheBytes = cache.totalBytes(),
                 windowCount = cache.windowCount(),
             )
@@ -135,6 +176,8 @@ class WebDavRangeProvider(
         emitDiagnostic(
             "range_prefetch_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
                 "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
+                "priority=$priority evictionMode=${postFetch.storeResult.evictionMode} " +
+                "protectedCount=${protectedStats.count} protectedBytes=${protectedStats.bytes} " +
                 "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
         )
         postFetch.storeResult.evicted.forEach { evicted ->
@@ -178,6 +221,120 @@ class WebDavRangeProvider(
         return inFlight.slice(bytes, start, endInclusive)
     }
 
+    private fun storeReadRange(
+        fetch: RegisteredFetch,
+        requestStart: Long,
+        requestEndInclusive: Long,
+        bytes: ByteArray,
+    ): StoreDecision {
+        val hasReadAhead = fetch.endInclusive > requestEndInclusive
+        val protectedRanges = if (hasReadAhead) latestProtectedRanges else emptyList()
+        val protectedStats = protectedStats(protectedRanges)
+        val expandedResult = if (protectedRanges.isNotEmpty()) {
+            cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
+        } else {
+            cache.store(fetch.start, fetch.endInclusive, bytes)
+        }
+        if (!hasReadAhead || expandedResult.stored) {
+            return StoreDecision(
+                storeResult = expandedResult,
+                diagnostic = StoreDiagnostic(
+                    protectedStats = protectedStats,
+                    readAheadStore = if (hasReadAhead && expandedResult.stored) {
+                        READ_AHEAD_STORE_EXPANDED
+                    } else {
+                        READ_AHEAD_STORE_NONE
+                    },
+                    readAheadReason = null,
+                    storeStart = fetch.start,
+                    storeEndInclusive = fetch.endInclusive,
+                    storeBytes = bytes.size,
+                ),
+            )
+        }
+
+        val requestedByteCount = (requestEndInclusive - requestStart + 1).toInt()
+        val requestedBytes = bytes.copyOfRange(0, requestedByteCount)
+        val requestedResult = if (protectedRanges.isNotEmpty()) {
+            cache.store(fetch.start, requestEndInclusive, requestedBytes, protectedRanges)
+        } else {
+            cache.store(fetch.start, requestEndInclusive, requestedBytes)
+        }
+        if (requestedResult.stored) {
+            return StoreDecision(
+                storeResult = requestedResult,
+                diagnostic = StoreDiagnostic(
+                    protectedStats = protectedStats,
+                    readAheadStore = READ_AHEAD_STORE_TRIMMED_TO_REQUEST,
+                    readAheadReason = expandedResult.skippedReason,
+                    storeStart = fetch.start,
+                    storeEndInclusive = requestEndInclusive,
+                    storeBytes = requestedBytes.size,
+                ),
+            )
+        }
+
+        if (requestedResult.skippedReason == "protected_capacity") {
+            val priorityResult = cache.store(fetch.start, requestEndInclusive, requestedBytes)
+            if (priorityResult.stored) {
+                return StoreDecision(
+                    storeResult = priorityResult,
+                    diagnostic = StoreDiagnostic(
+                        protectedStats = protectedStats,
+                        readAheadStore = READ_AHEAD_STORE_TRIMMED_TO_REQUEST,
+                        readAheadReason = requestedResult.skippedReason,
+                        storeStart = fetch.start,
+                        storeEndInclusive = requestEndInclusive,
+                        storeBytes = requestedBytes.size,
+                    ),
+                )
+            }
+        }
+
+        return StoreDecision(
+            storeResult = requestedResult,
+            diagnostic = StoreDiagnostic(
+                protectedStats = protectedStats,
+                readAheadStore = READ_AHEAD_STORE_SKIPPED,
+                readAheadReason = requestedResult.skippedReason ?: expandedResult.skippedReason,
+                storeStart = fetch.start,
+                storeEndInclusive = requestEndInclusive,
+                storeBytes = requestedBytes.size,
+            ),
+        )
+    }
+
+    private fun normalizeProtectedRanges(ranges: List<LongRange>): List<LongRange> {
+        val sortedRanges = ranges
+            .filterNot { it.isEmpty() }
+            .sortedBy { it.first }
+        if (sortedRanges.isEmpty()) {
+            return emptyList()
+        }
+
+        val merged = mutableListOf<LongRange>()
+        var currentStart = sortedRanges.first().first
+        var currentEnd = sortedRanges.first().last
+        sortedRanges.drop(1).forEach { range ->
+            val adjacent = currentEnd != Long.MAX_VALUE && range.first == currentEnd + 1
+            if (range.first <= currentEnd || adjacent) {
+                currentEnd = maxOf(currentEnd, range.last)
+            } else {
+                merged += currentStart..currentEnd
+                currentStart = range.first
+                currentEnd = range.last
+            }
+        }
+        merged += currentStart..currentEnd
+        return merged
+    }
+
+    private fun protectedStats(ranges: List<LongRange>): ProtectedStats =
+        ProtectedStats(
+            count = ranges.size,
+            bytes = ranges.sumOf { range -> range.last - range.first + 1 },
+        )
+
     private fun emitDiagnostic(event: String) {
         runCatching {
             logDiagnostic(event)
@@ -198,12 +355,20 @@ class WebDavRangeProvider(
             )
         }
 
-        fun store(start: Long, endInclusive: Long, bytes: ByteArray): StoreResult {
+        fun store(
+            start: Long,
+            endInclusive: Long,
+            bytes: ByteArray,
+            protectedRanges: List<LongRange> = emptyList(),
+        ): StoreResult {
             if (bytes.size.toLong() > maxBytes) {
-                return StoreResult(stored = false, skippedReason = "oversized")
+                return StoreResult(stored = false, skippedReason = "oversized", evictionMode = "none")
+            }
+            if (protectedRanges.isNotEmpty()) {
+                return storeWithoutEvictingProtected(start, endInclusive, bytes, protectedRanges)
             }
             windows.add(Window(start, endInclusive, bytes, ++sequence))
-            return StoreResult(stored = true, evicted = evict())
+            return StoreResult(stored = true, evicted = evict(), evictionMode = "lru")
         }
 
         fun windowCount(): Int = windows.size
@@ -220,6 +385,37 @@ class WebDavRangeProvider(
             return evicted
         }
 
+        private fun storeWithoutEvictingProtected(
+            start: Long,
+            endInclusive: Long,
+            bytes: ByteArray,
+            protectedRanges: List<LongRange>,
+        ): StoreResult {
+            var projectedBytes = totalBytes() + bytes.size.toLong()
+            val windowsToEvict = mutableListOf<Window>()
+            val candidates = windows
+                .filterNot { it.intersectsAny(protectedRanges) }
+                .sortedBy { it.lastAccess }
+            for (window in candidates) {
+                if (projectedBytes <= maxBytes) {
+                    break
+                }
+                projectedBytes -= window.bytes.size.toLong()
+                windowsToEvict += window
+            }
+            if (projectedBytes > maxBytes) {
+                return StoreResult(
+                    stored = false,
+                    skippedReason = "protected_capacity",
+                    evictionMode = "protected",
+                )
+            }
+            val evicted = windowsToEvict.map { it.snapshot() }
+            windows.removeAll(windowsToEvict.toSet())
+            windows.add(Window(start, endInclusive, bytes, ++sequence))
+            return StoreResult(stored = true, evicted = evicted, evictionMode = "protected")
+        }
+
         internal data class LookupResult(
             val bytes: ByteArray,
             val windowStart: Long,
@@ -230,6 +426,7 @@ class WebDavRangeProvider(
             val stored: Boolean,
             val skippedReason: String? = null,
             val evicted: List<WindowSnapshot> = emptyList(),
+            val evictionMode: String = "lru",
         )
 
         internal data class WindowSnapshot(
@@ -246,6 +443,11 @@ class WebDavRangeProvider(
         ) {
             fun covers(reqStart: Long, reqEnd: Long): Boolean =
                 reqStart >= start && reqEnd <= endInclusive
+
+            fun intersectsAny(ranges: List<LongRange>): Boolean =
+                ranges.any { range ->
+                    !range.isEmpty() && start <= range.last && endInclusive >= range.first
+                }
 
             fun slice(reqStart: Long, reqEnd: Long): ByteArray {
                 val from = (reqStart - start).toInt()
@@ -287,12 +489,37 @@ class WebDavRangeProvider(
     private data class PostFetchResult(
         val bytes: ByteArray,
         val storeResult: RangeWindowCache.StoreResult,
+        val storeDiagnostic: StoreDiagnostic,
         val cacheBytes: Long,
         val windowCount: Int,
+    )
+
+    private data class StoreDecision(
+        val storeResult: RangeWindowCache.StoreResult,
+        val diagnostic: StoreDiagnostic,
+    )
+
+    private data class StoreDiagnostic(
+        val protectedStats: ProtectedStats,
+        val readAheadStore: String,
+        val readAheadReason: String?,
+        val storeStart: Long,
+        val storeEndInclusive: Long,
+        val storeBytes: Int,
+    )
+
+    private data class ProtectedStats(
+        val count: Int,
+        val bytes: Long,
     )
 
     private companion object {
         const val DEFAULT_READ_AHEAD_BYTES = 4L * 1024L * 1024L
         const val DEFAULT_MAX_CACHE_BYTES = 64L * 1024L * 1024L
+        const val LOW_PRIORITY_PREFETCH_PRIORITY = 2
+        const val READ_AHEAD_STORE_NONE = "none"
+        const val READ_AHEAD_STORE_EXPANDED = "expanded"
+        const val READ_AHEAD_STORE_TRIMMED_TO_REQUEST = "trimmed_to_request"
+        const val READ_AHEAD_STORE_SKIPPED = "skipped"
     }
 }
