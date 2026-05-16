@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -104,16 +105,21 @@ fun ReaderScreen(
             }
 
             else -> {
+                val readerStateKey = readerScrollStateKey(uiState)
                 var controlsVisible by remember { mutableStateOf(true) }
                 val scope = rememberCoroutineScope()
                 val focusRequester = remember { FocusRequester() }
-                val pagerState = rememberPagerState(
-                    initialPage = uiState.currentPage,
-                    pageCount = { uiState.pageCount },
-                )
-                val continuousListState = rememberLazyListState(
-                    initialFirstVisibleItemIndex = uiState.currentPage,
-                )
+                val pagerState = key(readerStateKey) {
+                    rememberPagerState(
+                        initialPage = uiState.currentPage,
+                        pageCount = { uiState.pageCount },
+                    )
+                }
+                val continuousListState = key(readerStateKey) {
+                    rememberLazyListState(
+                        initialFirstVisibleItemIndex = uiState.currentPage,
+                    )
+                }
                 val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
@@ -121,7 +127,8 @@ fun ReaderScreen(
                         ReaderDiagnosticLog.event("reader_volume_key_turn_pages_enabled")
                     }
                 }
-                LaunchedEffect(pagerState) {
+                LaunchedEffect(pagerState, isContinuousVertical) {
+                    if (isContinuousVertical) return@LaunchedEffect
                     snapshotFlow {
                         reportableSettledPage(
                             currentPage = pagerState.currentPage,
@@ -134,7 +141,8 @@ fun ReaderScreen(
                             onPageChanged(page)
                         }
                 }
-                LaunchedEffect(pagerState, uiState.currentPage, uiState.pageCount) {
+                LaunchedEffect(pagerState, uiState.currentPage, uiState.pageCount, isContinuousVertical) {
+                    if (isContinuousVertical) return@LaunchedEffect
                     snapshotFlow {
                         ReaderPagerSnapshot(
                             currentPage = pagerState.currentPage,
@@ -156,9 +164,16 @@ fun ReaderScreen(
                 }
                 LaunchedEffect(continuousListState, isContinuousVertical) {
                     if (!isContinuousVertical) return@LaunchedEffect
-                    snapshotFlow { continuousListState.firstVisibleItemIndex }
+                    snapshotFlow {
+                        reportableContinuousPageChange(
+                            firstVisiblePage = continuousListState.firstVisibleItemIndex,
+                            isScrollInProgress = continuousListState.isScrollInProgress,
+                            pageCount = uiState.pageCount,
+                        )
+                    }
                         .distinctUntilChanged()
                         .collect { page ->
+                            if (page == null) return@collect
                             ReaderDiagnosticLog.event("continuous_scroll_report_page page=$page")
                             onPageChanged(page)
                         }
@@ -335,6 +350,18 @@ internal fun volumeKeyTargetPage(
     }.coerceIn(0, pageCount - 1)
 }
 
+internal fun readerScrollStateKey(uiState: ReaderUiState): String =
+    uiState.readerKey ?: "unkeyed-${uiState.pageCount}"
+
+internal fun reportableContinuousPageChange(
+    firstVisiblePage: Int,
+    isScrollInProgress: Boolean,
+    pageCount: Int,
+): Int? {
+    if (!isScrollInProgress) return null
+    return firstVisiblePage.takeIf { it in 0 until pageCount }
+}
+
 @Composable
 private fun ReaderImagePage(
     page: Int,
@@ -345,6 +372,9 @@ private fun ReaderImagePage(
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
 ) {
+    var continuousImageReady by remember(pageFile?.absolutePath, fillWidth) {
+        mutableStateOf(!fillWidth || pageFile == null)
+    }
     Box(
         modifier = if (fillWidth) {
             modifier
@@ -372,16 +402,32 @@ private fun ReaderImagePage(
             AsyncImage(
                 model = pageFile,
                 contentDescription = "第 ${page + 1} 页",
-                modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier.fillMaxSize(),
+                modifier = if (fillWidth) {
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (continuousImageReady) Modifier else Modifier.height(ContinuousPageLoadingHeight))
+                } else {
+                    Modifier.fillMaxSize()
+                },
                 contentScale = if (fillWidth) ContentScale.FillWidth else ContentScale.Fit,
-                onLoading = { onImageLoadStarted(page) },
-                onSuccess = { onImageLoadSucceeded(page) },
-                onError = { onImageLoadFailed(page) },
+                onLoading = {
+                    continuousImageReady = false
+                    onImageLoadStarted(page)
+                },
+                onSuccess = {
+                    continuousImageReady = true
+                    onImageLoadSucceeded(page)
+                },
+                onError = {
+                    continuousImageReady = false
+                    onImageLoadFailed(page)
+                },
             )
         }
     }
 }
 
+private val ContinuousPageLoadingHeight = 320.dp
 private val ReaderOnDark = Color.White
 private val ReaderMutedOnDark = Color.White.copy(alpha = 0.74f)
 private val ReaderDividerOnDark = Color.White.copy(alpha = 0.18f)

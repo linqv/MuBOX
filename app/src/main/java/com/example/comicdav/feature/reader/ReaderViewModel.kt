@@ -36,6 +36,7 @@ data class ReaderUiState(
     val pageFiles: Map<Int, File> = emptyMap(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    val readerKey: String? = null,
 )
 
 class ReaderViewModel(
@@ -77,8 +78,9 @@ class ReaderViewModel(
         this.comicKey = comicKey
         this.pageCacheKey = comicKey ?: "local-${path.hashCode()}"
         val openGeneration = generation
-        ReaderDiagnosticLog.event("open_local_start initialPage=$initialPage generation=$openGeneration key=${this.pageCacheKey}")
-        uiState = ReaderUiState(isLoading = true)
+        val activeReaderKey = readerInstanceKey(requireNotNull(this.pageCacheKey), openGeneration)
+        ReaderDiagnosticLog.event("open_local_start initialPage=$initialPage generation=$openGeneration key=$activeReaderKey")
+        uiState = ReaderUiState(isLoading = true, readerKey = activeReaderKey)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
@@ -104,6 +106,7 @@ class ReaderViewModel(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
+                        readerKey = activeReaderKey,
                     )
                     ReaderDiagnosticLog.event(
                         "open_local_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
@@ -147,7 +150,8 @@ class ReaderViewModel(
         this.comicKey = comicKey
         this.pageCacheKey = comicKey
         ReaderDiagnosticLog.event("open_session_start initialPage=$initialPage generation=$openGeneration key=$comicKey")
-        uiState = ReaderUiState(isLoading = true)
+        val activeReaderKey = readerInstanceKey(comicKey, openGeneration)
+        uiState = ReaderUiState(isLoading = true, readerKey = activeReaderKey)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
@@ -172,6 +176,7 @@ class ReaderViewModel(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
+                        readerKey = activeReaderKey,
                     )
                     ReaderDiagnosticLog.event(
                         "open_session_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
@@ -664,8 +669,11 @@ class ReaderViewModel(
         expectedGeneration: Int,
     ) {
         val mergedRanges = mergeSameStartPlannedRanges(ranges)
-        val desiredPages = mergedRanges.flatMap { it.pages }.toSet()
-        cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = desiredPages)
+        // Continuous vertical scrolling advances the viewport through nearby pages while
+        // previous planned ranges are still useful. Keep active nearby work instead of
+        // cancelling it just because the exact plan pages changed.
+        val retainedPages = plannedRangeProtectionPages(mergedRanges)
+        cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = retainedPages)
         if (mergedRanges.isEmpty()) return
 
         val plannedBytes = mergedRanges.sumOf { it.endInclusive - it.start + 1 }
@@ -926,6 +934,9 @@ class ReaderViewModel(
 
     private fun PlannedRemoteRange.key(): PlannedRangeKey =
         PlannedRangeKey(start = start, endInclusive = endInclusive)
+
+    private fun readerInstanceKey(baseKey: String, openGeneration: Int): String =
+        "$baseKey#$openGeneration"
 
     private fun closeSessionAsync(session: ComicReaderSession) {
         cleanupScope.launch {

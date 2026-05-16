@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -723,6 +724,64 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun nearbyPlannedRangeJobIsRetainedWhenViewportMovesWithinPrefetchWindow() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPlannedRangeSession(
+            pageCount = 12,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5), priority = 1),
+                ),
+                6 to listOf(
+                    PlannedRemoteRange(start = 600, endInclusive = 699, pages = listOf(6), priority = 1),
+                ),
+            ),
+            blockingRange = 500L to 599L,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(4)
+            }
+            viewModel.reportPageDemand(5, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.reportPageDemand(6, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                session.prefetchedRanges.contains(600L to 699L)
+            }
+
+            assertTrue(
+                sink.lines.none { it.contains("planned_range_prefetch_cancelled reason=stale_plan") },
+            )
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun selectPagePromotesExistingPrefetchInsteadOfCancellingForSelection() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
@@ -762,6 +821,49 @@ class ReaderViewModelTest {
         assertTrue(firstPath.contains("first"))
         assertTrue(secondPath.contains("second"))
         assertTrue(firstPath != secondPath)
+    }
+
+    @Test
+    fun openExistingSessionPublishesReaderKeyForScrollStateReset() = runTest(dispatcher) {
+        val firstSession = FakeReaderSession(pageCount = 5)
+        val secondSession = FakeReaderSession(pageCount = 5)
+        val viewModel = ReaderViewModel(ioDispatcher = dispatcher)
+
+        viewModel.openExistingSession(firstSession, temp.root, initialPage = 0, comicKey = "first")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.selectPage(3)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.readerKey.orEmpty().startsWith("first#"))
+        assertEquals(3, viewModel.uiState.currentPage)
+
+        viewModel.closeReader()
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.openExistingSession(secondSession, temp.root, initialPage = 0, comicKey = "second")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.readerKey.orEmpty().startsWith("second#"))
+        assertEquals(0, viewModel.uiState.currentPage)
+    }
+
+    @Test
+    fun reopeningSameComicPublishesNewReaderKeyForScrollStateReset() = runTest(dispatcher) {
+        val firstSession = FakeReaderSession(pageCount = 5)
+        val secondSession = FakeReaderSession(pageCount = 5)
+        val viewModel = ReaderViewModel(ioDispatcher = dispatcher)
+
+        viewModel.openExistingSession(firstSession, temp.root, initialPage = 0, comicKey = "same")
+        dispatcher.scheduler.advanceUntilIdle()
+        val firstReaderKey = viewModel.uiState.readerKey
+
+        viewModel.selectPage(3)
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.closeReader()
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.openExistingSession(secondSession, temp.root, initialPage = 0, comicKey = "same")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNotEquals(firstReaderKey, viewModel.uiState.readerKey)
+        assertEquals(0, viewModel.uiState.currentPage)
     }
 
     @Test
