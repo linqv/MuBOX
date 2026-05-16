@@ -3,11 +3,9 @@ package com.example.comicdav.ui
 object ComicDavCopy {
     const val sourcesTab = "来源"
     const val libraryTab = "书架"
-    const val offlineTab = "离线"
     const val settingsTab = "设置"
     const val sourcesTitle = "来源"
     const val libraryTitle = "书架"
-    const val continueReading = "继续阅读"
     const val savedSources = "已保存来源"
     const val addLocalFolder = "添加本地文件夹"
     const val addWebDav = "添加 WebDAV"

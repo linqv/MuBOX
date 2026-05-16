@@ -63,7 +63,6 @@ fun FileDirectoryScreen(
     ) {
         if (uiState.currentTitle == null) {
             FileDirectoryHomeHeader(
-                sourceCount = uiState.sources.size,
                 onAddLocalDirectory = onAddLocalDirectory,
                 onOpenWebDav = onOpenWebDav,
                 onOpenLibrary = onOpenLibrary,
@@ -140,7 +139,6 @@ fun FileDirectoryScreen(
 
 @Composable
 private fun FileDirectoryHomeHeader(
-    sourceCount: Int,
     onAddLocalDirectory: () -> Unit,
     onOpenWebDav: () -> Unit,
     onOpenLibrary: () -> Unit,
@@ -209,40 +207,6 @@ private fun FileDirectoryHomeHeader(
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                         )
                     }
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SourceBadge(text = "$sourceCount 个来源")
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = ComicDavCopy.continueReading,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = "从书架继续，或从下方来源打开新漫画。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TextButton(
-                    onClick = onOpenLibrary,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(ComicDavCopy.open)
                 }
             }
         }

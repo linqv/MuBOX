@@ -111,8 +111,6 @@ class LibraryViewModelTest {
         }
 
         override suspend fun markOpened(libraryItemId: Long) = Unit
-
-        override suspend fun updatePresentationMetadata(libraryItemId: Long, coverPath: String?, pageCount: Int?) = Unit
     }
 
     private data class LocalAdd(

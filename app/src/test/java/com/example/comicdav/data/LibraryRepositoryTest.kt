@@ -108,23 +108,4 @@ class LibraryRepositoryTest {
         assertEquals("primary-webdav:/library/series/Chapter 01.zip", webDavSource.cacheKey)
     }
 
-    @Test
-    fun updatesCoverPathAndPageCountAfterCoverIsCached() = runTest {
-        val libraryItemId = repository.addLocalComic(
-            uri = "content://documents/tree/comics/document/manga.cbz",
-            fileName = "manga.cbz",
-            size = 42_000L,
-            lastModified = 1_600_000_000_000L,
-        )
-
-        repository.updatePresentationMetadata(
-            libraryItemId = libraryItemId,
-            coverPath = "/covers/$libraryItemId.img",
-            pageCount = 12,
-        )
-
-        val item = repository.observeLibrary().first().single().item
-        assertEquals("/covers/$libraryItemId.img", item.coverPath)
-        assertEquals(12, item.pageCount)
-    }
 }

@@ -47,7 +47,4 @@ abstract class LibraryDao {
 
     @Query("UPDATE library_items SET lastOpenedAt = :openedAt WHERE id = :libraryItemId")
     abstract suspend fun updateLastOpened(libraryItemId: Long, openedAt: Long)
-
-    @Query("UPDATE library_items SET coverPath = :coverPath, pageCount = :pageCount WHERE id = :libraryItemId")
-    abstract suspend fun updatePresentationMetadata(libraryItemId: Long, coverPath: String?, pageCount: Int?)
 }

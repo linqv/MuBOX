@@ -17,10 +17,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
@@ -66,9 +63,6 @@ import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.data.library.createLibraryDatabase
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryViewModel
-import com.example.comicdav.nativebridge.ComicEngine
-import com.example.comicdav.nativebridge.ComicReaderSession
-import com.example.comicdav.nativebridge.RangeProviderRegistry
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.reader.ReaderScreen
@@ -82,9 +76,6 @@ import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
 import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
-import com.example.comicdav.network.WebDavItem
-import com.example.comicdav.network.WebDavRangeProvider
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
 import java.io.File
@@ -262,77 +253,73 @@ fun ComicDavApp() {
         }
     }
 
+    fun openCachedLocalComic(
+        uri: Uri,
+        comicKey: String,
+        readyEvent: String,
+        failureEvent: String,
+        onOpened: (File) -> Unit = {},
+        onFailure: (Throwable) -> Unit,
+    ) {
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    copyUriToCache(context, uri)
+                }
+            }.fold(
+                onSuccess = { cachedFile ->
+                    localOpenError = null
+                    onOpened(cachedFile)
+                    ReaderDiagnosticLog.event("$readyEvent path=${cachedFile.name} size=${cachedFile.length()}")
+                    readerViewModel.openLocal(
+                        path = cachedFile.absolutePath,
+                        cacheDir = context.cacheDir,
+                        comicKey = comicKey,
+                    )
+                    isReaderOpen = true
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error(failureEvent, error)
+                    onFailure(error)
+                },
+            )
+        }
+    }
+
     fun openLocalLibraryComic(item: LibraryItemWithSources) {
         val source = item.localSource ?: run {
             localOpenError = "缺少本地来源"
             return
         }
-        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    copyUriToCache(context, Uri.parse(source.uri))
-                }
-            }.fold(
-                onSuccess = { cachedFile ->
-                    localOpenError = null
-                    libraryViewModel.markOpened(item.item.id)
-                    ReaderDiagnosticLog.event("open_library_local_cache_ready path=${cachedFile.name} size=${cachedFile.length()}")
-                    readerViewModel.openLocal(
-                        path = cachedFile.absolutePath,
-                        cacheDir = context.cacheDir,
-                        comicKey = "library-${item.item.id}",
-                    )
-                    isReaderOpen = true
-                },
-                onFailure = { error ->
-                    ReaderDiagnosticLog.error("open_library_local_copy_failed", error)
-                    localOpenError = error.message ?: "打开本地文件失败"
-                },
-            )
-        }
+        openCachedLocalComic(
+            uri = Uri.parse(source.uri),
+            comicKey = "library-${item.item.id}",
+            readyEvent = "open_library_local_cache_ready",
+            failureEvent = "open_library_local_copy_failed",
+            onOpened = { libraryViewModel.markOpened(item.item.id) },
+            onFailure = { error -> localOpenError = error.message ?: "打开本地文件失败" },
+        )
     }
 
     fun openLocalDirectoryComic(item: FileDirectoryBrowserItem) {
-        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    copyUriToCache(context, Uri.parse(item.uri))
-                }
-            }.fold(
-                onSuccess = { cachedFile ->
-                    localOpenError = null
-                    ReaderDiagnosticLog.event("open_directory_local_cache_ready path=${cachedFile.name} size=${cachedFile.length()}")
-                    readerViewModel.openLocal(
-                        path = cachedFile.absolutePath,
-                        cacheDir = context.cacheDir,
-                        comicKey = "directory-${item.uri.hashCode()}",
-                    )
-                    isReaderOpen = true
-                },
-                onFailure = { error ->
-                    ReaderDiagnosticLog.error("open_directory_local_copy_failed uri=${item.uri}", error)
-                    fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败")
-                },
-            )
-        }
+        openCachedLocalComic(
+            uri = Uri.parse(item.uri),
+            comicKey = "directory-${item.uri.hashCode()}",
+            readyEvent = "open_directory_local_cache_ready",
+            failureEvent = "open_directory_local_copy_failed uri=${item.uri}",
+            onFailure = { error -> fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败") },
+        )
     }
 
     fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
         scope.launch {
             runCatching {
-                val libraryItemId = libraryRepository.addLocalComic(
+                libraryRepository.addLocalComic(
                     uri = item.uri,
                     fileName = item.name,
                     size = item.size,
                     lastModified = item.lastModified,
-                )
-                cacheLocalCover(
-                    context = context,
-                    repository = libraryRepository,
-                    libraryItemId = libraryItemId,
-                    uri = Uri.parse(item.uri),
                 )
             }.fold(
                 onSuccess = {
@@ -554,21 +541,13 @@ fun ComicDavApp() {
                                                 } else {
                                                     scope.launch {
                                                         runCatching {
-                                                            val libraryItemId = libraryRepository.addWebDavComic(
+                                                            libraryRepository.addWebDavComic(
                                                                 accountId = accountId,
                                                                 remotePath = item.path,
                                                                 fileName = item.name,
                                                                 size = item.size,
                                                                 etag = item.etag,
                                                                 lastModified = item.lastModified,
-                                                            )
-                                                            cacheWebDavCover(
-                                                                context = context,
-                                                                repository = libraryRepository,
-                                                                accountId = accountId,
-                                                                client = client,
-                                                                item = item,
-                                                                libraryItemId = libraryItemId,
                                                             )
                                                         }.fold(
                                                             onSuccess = {
@@ -730,13 +709,6 @@ fun ComicDavApp() {
                                     modifier = contentModifier,
                                 )
                             }
-                            AppTab.OFFLINE -> {
-                                PlaceholderTabScreen(
-                                    title = ComicDavCopy.offlineTab,
-                                    body = "离线下载和缓存管理会显示在这里。",
-                                    modifier = contentModifier,
-                                )
-                            }
                             AppTab.SETTINGS -> {
                                 SettingsScreen(
                                     settings = appSettings,
@@ -775,14 +747,12 @@ fun ComicDavApp() {
 private enum class AppTab {
     SOURCES,
     LIBRARY,
-    OFFLINE,
     SETTINGS;
 
     val label: String
         get() = when (this) {
             SOURCES -> ComicDavCopy.sourcesTab
             LIBRARY -> ComicDavCopy.libraryTab
-            OFFLINE -> ComicDavCopy.offlineTab
             SETTINGS -> ComicDavCopy.settingsTab
         }
 
@@ -790,7 +760,6 @@ private enum class AppTab {
         get() = when (this) {
             SOURCES -> "源"
             LIBRARY -> "书"
-            OFFLINE -> "离"
             SETTINGS -> "设"
         }
 }
@@ -833,30 +802,6 @@ private fun ComicDavAppShell(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun PlaceholderTabScreen(
-    title: String,
-    body: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -931,88 +876,6 @@ private fun deleteLocalSourceTree(context: Context, treeUri: Uri) {
     )
     val deleted = DocumentsContract.deleteDocument(context.contentResolver, rootDocumentUri)
     check(deleted) { "系统未允许删除这个本地文件夹" }
-}
-
-private suspend fun cacheLocalCover(
-    context: Context,
-    repository: LibraryRepository,
-    libraryItemId: Long,
-    uri: Uri,
-) {
-    runCatching {
-        withContext(Dispatchers.IO) {
-            val cachedFile = copyUriToCache(context, uri)
-            ComicEngine().openLocal(cachedFile.absolutePath).use { session ->
-                writeCoverFromSession(context, repository, libraryItemId, session)
-            }
-        }
-    }.onFailure { error ->
-        ReaderDiagnosticLog.error("cache_local_cover_failed item=$libraryItemId uri=$uri", error)
-    }
-}
-
-private suspend fun cacheWebDavCover(
-    context: Context,
-    repository: LibraryRepository,
-    accountId: String,
-    client: WebDavClient,
-    item: WebDavItem,
-    libraryItemId: Long,
-) {
-    runCatching {
-        withContext(Dispatchers.IO) {
-            val info = item.size?.let { size ->
-                RemoteFileInfo(
-                    path = item.path,
-                    size = size,
-                    etag = item.etag,
-                    lastModified = item.lastModified,
-                    supportsRange = true,
-                )
-            } ?: client.head(item.path)
-            val key = ComicCacheKey.fromRemote(
-                accountId = accountId,
-                remotePath = item.path,
-                size = info.size,
-                etag = info.etag,
-                lastModified = info.lastModified,
-            )
-            val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, item.path, info.size))
-            var session: ComicReaderSession? = null
-            try {
-                session = ComicEngine().openRemote(
-                    fileId = fileId,
-                    size = info.size,
-                    cacheDir = context.cacheDir,
-                    comicKey = key.value,
-                    validator = info.etag ?: info.lastModified?.toString() ?: info.size.toString(),
-                )
-                writeCoverFromSession(context, repository, libraryItemId, session)
-            } finally {
-                session?.close() ?: RangeProviderRegistry.unregister(fileId)
-            }
-        }
-    }.onFailure { error ->
-        ReaderDiagnosticLog.error("cache_webdav_cover_failed item=$libraryItemId path=${item.path}", error)
-    }
-}
-
-private suspend fun writeCoverFromSession(
-    context: Context,
-    repository: LibraryRepository,
-    libraryItemId: Long,
-    session: ComicReaderSession,
-) {
-    if (session.pageCount <= 0) return
-    val coverDir = File(context.filesDir, "library-covers")
-    coverDir.mkdirs()
-    val coverFile = File(coverDir, "$libraryItemId-page-0.img")
-    session.loadPageToFile(0, coverFile)
-    repository.updatePresentationMetadata(
-        libraryItemId = libraryItemId,
-        coverPath = coverFile.absolutePath,
-        pageCount = session.pageCount,
-    )
 }
 
 private fun loadReaderLogFolderUri(context: Context): String? {

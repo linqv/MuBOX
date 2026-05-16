@@ -246,25 +246,26 @@ fun ReaderScreen(
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             items(uiState.pageCount) { page ->
-                                ContinuousReaderPage(
+                                ReaderImagePage(
                                     page = page,
                                     pageFile = uiState.pageFiles[page],
                                     onImageLoadStarted = onImageLoadStarted,
                                     onImageLoadSucceeded = onImageLoadSucceeded,
                                     onImageLoadFailed = onImageLoadFailed,
+                                    fillWidth = true,
                                 )
                             }
                         }
                     } else if (readingDirection == ReadingDirection.VERTICAL) {
                         VerticalPager(
                             state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            beyondViewportPageCount = 1,
-                        ) { page ->
-                            ReaderPage(
-                                page = page,
-                                pageFile = uiState.pageFiles[page],
-                                onImageLoadStarted = onImageLoadStarted,
+                        modifier = Modifier.fillMaxSize(),
+                        beyondViewportPageCount = 1,
+                    ) { page ->
+                        ReaderImagePage(
+                            page = page,
+                            pageFile = uiState.pageFiles[page],
+                            onImageLoadStarted = onImageLoadStarted,
                                 onImageLoadSucceeded = onImageLoadSucceeded,
                                 onImageLoadFailed = onImageLoadFailed,
                             )
@@ -276,7 +277,7 @@ fun ReaderScreen(
                             beyondViewportPageCount = 1,
                             reverseLayout = readingDirection == ReadingDirection.RIGHT_TO_LEFT,
                         ) { page ->
-                            ReaderPage(
+                            ReaderImagePage(
                                 page = page,
                                 pageFile = uiState.pageFiles[page],
                                 onImageLoadStarted = onImageLoadStarted,
@@ -293,8 +294,9 @@ fun ReaderScreen(
                     } else {
                         pagerState.currentPage + 1
                     }.coerceIn(1, uiState.pageCount)
-                    ReaderTopOverlay(
-                        pageCount = uiState.pageCount,
+                    ReaderTopBar(
+                        title = "正在阅读",
+                        subtitle = "共 ${uiState.pageCount} 页",
                         onChooseLogFile = onChooseLogFile,
                         onClose = onClose,
                         modifier = Modifier.align(Alignment.TopCenter),
@@ -334,54 +336,34 @@ internal fun volumeKeyTargetPage(
 }
 
 @Composable
-private fun ReaderPage(
+private fun ReaderImagePage(
     page: Int,
     pageFile: java.io.File?,
     onImageLoadStarted: (Int) -> Unit,
     onImageLoadSucceeded: (Int) -> Unit,
     onImageLoadFailed: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    fillWidth: Boolean = false,
 ) {
     Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (pageFile == null) {
-            CircularProgressIndicator(color = ReaderOnDark)
+        modifier = if (fillWidth) {
+            modifier
+                .fillMaxWidth()
+                .background(Color.Black)
         } else {
-            AsyncImage(
-                model = pageFile,
-                contentDescription = "第 ${page + 1} 页",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                onLoading = { onImageLoadStarted(page) },
-                onSuccess = { onImageLoadSucceeded(page) },
-                onError = { onImageLoadFailed(page) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ContinuousReaderPage(
-    page: Int,
-    pageFile: java.io.File?,
-    onImageLoadStarted: (Int) -> Unit,
-    onImageLoadSucceeded: (Int) -> Unit,
-    onImageLoadFailed: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.Black),
+            modifier.fillMaxSize()
+        },
         contentAlignment = Alignment.Center,
     ) {
         if (pageFile == null) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp),
+                modifier = if (fillWidth) {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                } else {
+                    Modifier.fillMaxSize()
+                },
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(color = ReaderOnDark)
@@ -390,8 +372,8 @@ private fun ContinuousReaderPage(
             AsyncImage(
                 model = pageFile,
                 contentDescription = "第 ${page + 1} 页",
-                modifier = Modifier.fillMaxWidth(),
-                contentScale = ContentScale.FillWidth,
+                modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier.fillMaxSize(),
+                contentScale = if (fillWidth) ContentScale.FillWidth else ContentScale.Fit,
                 onLoading = { onImageLoadStarted(page) },
                 onSuccess = { onImageLoadSucceeded(page) },
                 onError = { onImageLoadFailed(page) },
@@ -404,22 +386,6 @@ private val ReaderOnDark = Color.White
 private val ReaderMutedOnDark = Color.White.copy(alpha = 0.74f)
 private val ReaderDividerOnDark = Color.White.copy(alpha = 0.18f)
 private val ReaderPanelOnDark = Color.Black.copy(alpha = 0.62f)
-
-@Composable
-private fun ReaderTopOverlay(
-    pageCount: Int,
-    onChooseLogFile: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    ReaderTopBar(
-        title = "正在阅读",
-        subtitle = formatPageCount(pageCount),
-        onChooseLogFile = onChooseLogFile,
-        onClose = onClose,
-        modifier = modifier,
-    )
-}
 
 @Composable
 private fun ReaderTopBar(
@@ -684,6 +650,3 @@ private fun ReaderErrorState(
         }
     }
 }
-
-private fun formatPageCount(pageCount: Int): String =
-    "共 $pageCount 页"

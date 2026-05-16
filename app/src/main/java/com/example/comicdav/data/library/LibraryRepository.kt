@@ -24,8 +24,6 @@ interface LibraryCatalog {
     ): Long
 
     suspend fun markOpened(libraryItemId: Long)
-
-    suspend fun updatePresentationMetadata(libraryItemId: Long, coverPath: String?, pageCount: Int?)
 }
 
 class LibraryRepository(
@@ -92,10 +90,6 @@ class LibraryRepository(
 
     override suspend fun markOpened(libraryItemId: Long) {
         dao.updateLastOpened(libraryItemId, clock())
-    }
-
-    override suspend fun updatePresentationMetadata(libraryItemId: Long, coverPath: String?, pageCount: Int?) {
-        dao.updatePresentationMetadata(libraryItemId, coverPath, pageCount)
     }
 
     private fun titleFrom(fileName: String): String {

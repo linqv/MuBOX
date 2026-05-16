@@ -8,7 +8,6 @@ class ComicDavCopyTest {
     fun primaryNavigationUsesChineseReaderTerms() {
         assertEquals("来源", ComicDavCopy.sourcesTab)
         assertEquals("书架", ComicDavCopy.libraryTab)
-        assertEquals("离线", ComicDavCopy.offlineTab)
         assertEquals("设置", ComicDavCopy.settingsTab)
     }
 
