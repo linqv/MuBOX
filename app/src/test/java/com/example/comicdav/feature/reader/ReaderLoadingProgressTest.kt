@@ -9,6 +9,6 @@ class ReaderLoadingProgressTest {
         val progress = ReaderLoadingProgress(downloadedBytes = 3 * 1024L, totalBytes = 2 * 1024L)
 
         assertEquals(1f, progress.fraction)
-        assertEquals("Downloading 3 KiB / 2 KiB", progress.label)
+        assertEquals("正在下载 3 KiB / 2 KiB", progress.label)
     }
 }

@@ -113,7 +113,7 @@ class ReaderViewModel(
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("open_local_failed", error)
-                    uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
+                    uiState = ReaderUiState(error = error.message ?: "打开漫画失败")
                 },
             )
         }
@@ -182,7 +182,7 @@ class ReaderViewModel(
                 onFailure = { error ->
                     closeSessionAsync(openedSession)
                     ReaderDiagnosticLog.error("open_session_failed", error)
-                    uiState = ReaderUiState(error = error.message ?: "Failed to open comic")
+                    uiState = ReaderUiState(error = error.message ?: "打开漫画失败")
                 },
             )
         }
@@ -227,7 +227,7 @@ class ReaderViewModel(
                 onFailure = { error ->
                     if (openGeneration != generation || error is CancellationException) return@fold
                     ReaderDiagnosticLog.error("open_remote_failed", error)
-                    uiState = ReaderUiState(error = error.message ?: "Failed to open remote comic")
+                    uiState = ReaderUiState(error = error.message ?: "打开远程漫画失败")
                 },
             )
         }
@@ -309,7 +309,7 @@ class ReaderViewModel(
                         ReaderDiagnosticLog.error("select_page_load_failed page=$pageIndex", error)
                         uiState = uiState.copy(
                             isLoading = false,
-                            error = error.message ?: "Failed to load page",
+                            error = error.message ?: "加载页面失败",
                         )
                     },
                 )
@@ -345,7 +345,7 @@ class ReaderViewModel(
                     ReaderDiagnosticLog.error("select_page_load_failed page=$pageIndex", error)
                     uiState = uiState.copy(
                         isLoading = false,
-                        error = error.message ?: "Failed to load page",
+                        error = error.message ?: "加载页面失败",
                     )
                 },
             )

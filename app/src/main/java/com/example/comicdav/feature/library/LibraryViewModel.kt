@@ -50,10 +50,10 @@ class LibraryViewModel(
                 )
             }.fold(
                 onSuccess = {
-                    uiState = uiState.copy(message = "$fileName added to library", error = null)
+                    uiState = uiState.copy(message = "已将 $fileName 加入书架", error = null)
                 },
                 onFailure = { error ->
-                    uiState = uiState.copy(error = error.message ?: "Failed to add local comic")
+                    uiState = uiState.copy(error = error.message ?: "添加本地漫画失败")
                 },
             )
         }
@@ -81,10 +81,10 @@ class LibraryViewModel(
                 )
             }.fold(
                 onSuccess = {
-                    uiState = uiState.copy(message = "$fileName added to library", error = null)
+                    uiState = uiState.copy(message = "已将 $fileName 加入书架", error = null)
                 },
                 onFailure = { error ->
-                    uiState = uiState.copy(error = error.message ?: "Failed to add WebDAV comic")
+                    uiState = uiState.copy(error = error.message ?: "添加 WebDAV 漫画失败")
                 },
             )
         }

@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.comicdav.ui.ComicDavCopy
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -147,7 +148,7 @@ fun ReaderScreen(
                             } else {
                                 AsyncImage(
                                     model = pageFile,
-                                    contentDescription = "Page ${page + 1}",
+                                    contentDescription = "第 ${page + 1} 页",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Fit,
                                     onLoading = { onImageLoadStarted(page) },
@@ -181,6 +182,7 @@ fun ReaderScreen(
 private val ReaderOnDark = Color.White
 private val ReaderMutedOnDark = Color.White.copy(alpha = 0.74f)
 private val ReaderDividerOnDark = Color.White.copy(alpha = 0.18f)
+private val ReaderPanelOnDark = Color.Black.copy(alpha = 0.62f)
 
 @Composable
 private fun ReaderTopOverlay(
@@ -190,8 +192,8 @@ private fun ReaderTopOverlay(
     modifier: Modifier = Modifier,
 ) {
     ReaderTopBar(
-        title = formatPageCount(pageCount),
-        subtitle = "Reader",
+        title = "正在阅读",
+        subtitle = formatPageCount(pageCount),
         onChooseLogFile = onChooseLogFile,
         onClose = onClose,
         modifier = modifier,
@@ -212,14 +214,14 @@ private fun ReaderTopBar(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color.Black.copy(alpha = 0.86f),
-                        Color.Black.copy(alpha = 0.54f),
+                        Color.Black.copy(alpha = 0.92f),
+                        Color.Black.copy(alpha = 0.68f),
                         Color.Transparent,
                     ),
                 ),
             )
             .statusBarsPadding()
-            .padding(start = 16.dp, top = 8.dp, end = 12.dp, bottom = 28.dp),
+            .padding(start = 18.dp, top = 10.dp, end = 12.dp, bottom = 30.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -239,14 +241,14 @@ private fun ReaderTopBar(
                 Text(
                     text = subtitle,
                     color = ReaderMutedOnDark,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        ReaderChromeButton(text = "Log", onClick = onChooseLogFile)
-        ReaderChromeButton(text = "Close", onClick = onClose)
+        ReaderChromeButton(text = ComicDavCopy.readerLog, onClick = onChooseLogFile)
+        ReaderChromeButton(text = ComicDavCopy.readerClose, onClick = onClose)
     }
 }
 
@@ -259,7 +261,10 @@ private fun ReaderChromeButton(
     TextButton(
         onClick = onClick,
         modifier = modifier.heightIn(min = 48.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = ReaderOnDark),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = ReaderOnDark,
+            containerColor = ReaderPanelOnDark,
+        ),
     ) {
         Text(
             text = text,
@@ -289,8 +294,8 @@ private fun ReaderBottomOverlay(
                 ),
             )
             .navigationBarsPadding()
-            .padding(start = 20.dp, top = 32.dp, end = 20.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(start = 20.dp, top = 34.dp, end = 20.dp, bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
             modifier = Modifier
@@ -300,7 +305,7 @@ private fun ReaderBottomOverlay(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$currentPage / $pageCount",
+                text = "第 $currentPage 页",
                 color = ReaderOnDark,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -308,9 +313,9 @@ private fun ReaderBottomOverlay(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${(progress * 100f).toInt()}%",
+                text = "共 $pageCount 页 · ${(progress * 100f).toInt()}%",
                 color = ReaderMutedOnDark,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -337,7 +342,7 @@ private fun ReaderEmptyOrLoadingState(
 ) {
     Box(modifier = modifier) {
         ReaderTopBar(
-            title = if (isLoading) "Loading comic" else "No comic open",
+            title = if (isLoading) ComicDavCopy.readerLoading else "未打开漫画",
             subtitle = null,
             onChooseLogFile = onChooseLogFile,
             onClose = onClose,
@@ -356,15 +361,16 @@ private fun ReaderEmptyOrLoadingState(
                 if (loadingProgress == null) {
                     CircularProgressIndicator(color = ReaderOnDark)
                     Text(
-                        text = "Preparing comic",
+                        text = ComicDavCopy.readerLoading,
                         color = ReaderOnDark,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     )
                 } else {
                     val percent = (loadingProgress.fraction * 100f).toInt()
                     Text(
-                        text = "Downloading comic",
+                        text = ComicDavCopy.readerDownloading,
                         color = ReaderOnDark,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -398,13 +404,13 @@ private fun ReaderEmptyOrLoadingState(
                             contentColor = Color.Black,
                         ),
                     ) {
-                        Text("Cancel")
+                        Text("取消")
                     }
                 }
             }
         } else {
             Text(
-                text = "Open a CBZ file",
+                text = "从来源或书架打开漫画",
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(horizontal = 32.dp),
@@ -425,7 +431,7 @@ private fun ReaderErrorState(
 ) {
     Box(modifier = modifier) {
         ReaderTopBar(
-            title = "Reader error",
+            title = ComicDavCopy.readerError,
             subtitle = null,
             onChooseLogFile = onChooseLogFile,
             onClose = onClose,
@@ -440,7 +446,7 @@ private fun ReaderErrorState(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "Could not open comic",
+                text = ComicDavCopy.readerError,
                 color = ReaderOnDark,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -459,8 +465,4 @@ private fun ReaderErrorState(
 }
 
 private fun formatPageCount(pageCount: Int): String =
-    if (pageCount == 1) {
-        "1 page"
-    } else {
-        "$pageCount pages"
-    }
+    "共 $pageCount 页"

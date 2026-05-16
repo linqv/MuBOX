@@ -58,25 +58,39 @@ class FileDirectoryViewModel(
                 catalog.addLocalDirectory(displayName, treeUri)
             }.fold(
                 onSuccess = {
-                    uiState = uiState.copy(message = "$displayName added to file directories", error = null)
+                    uiState = uiState.copy(message = "已保存来源：$displayName", error = null)
                 },
                 onFailure = { error ->
-                    uiState = uiState.copy(error = error.message ?: "Failed to add local directory")
+                    uiState = uiState.copy(error = error.message ?: "添加本地来源失败")
                 },
             )
         }
     }
 
-    fun addWebDavDirectory(displayName: String, accountId: String, path: String) {
+    fun addWebDavDirectory(
+        displayName: String,
+        accountId: String,
+        path: String,
+        baseUrl: String = "",
+        username: String = "",
+        password: String = "",
+    ) {
         viewModelScope.launch {
             runCatching {
-                catalog.addWebDavDirectory(displayName, accountId, path)
+                catalog.addWebDavDirectory(
+                    displayName = displayName,
+                    accountId = accountId,
+                    path = path,
+                    baseUrl = baseUrl,
+                    username = username,
+                    password = password,
+                )
             }.fold(
                 onSuccess = {
-                    uiState = uiState.copy(message = "$displayName added to file directories", error = null)
+                    uiState = uiState.copy(message = "已保存来源：$displayName", error = null)
                 },
                 onFailure = { error ->
-                    uiState = uiState.copy(error = error.message ?: "Failed to add WebDAV directory")
+                    uiState = uiState.copy(error = error.message ?: "添加 WebDAV 来源失败")
                 },
             )
         }
@@ -104,9 +118,30 @@ class FileDirectoryViewModel(
         }
     }
 
+    fun handleBack(): Boolean {
+        if (navigationStack.isEmpty()) return false
+        goUp()
+        return true
+    }
+
     fun closeLocalBrowser() {
         navigationStack = emptyList()
         uiState = uiState.copy(entries = emptyList(), currentTitle = null, error = null)
+    }
+
+    fun deleteSource(id: Long) {
+        viewModelScope.launch {
+            runCatching {
+                catalog.deleteSource(id)
+            }.fold(
+                onSuccess = {
+                    uiState = uiState.copy(message = "已删除来源", error = null)
+                },
+                onFailure = { error ->
+                    uiState = uiState.copy(error = error.message ?: "删除来源失败")
+                },
+            )
+        }
     }
 
     fun clearMessage() {
@@ -138,7 +173,7 @@ class FileDirectoryViewModel(
                 onFailure = { error ->
                     uiState = uiState.copy(
                         isLoading = false,
-                        error = error.message ?: "Failed to read directory",
+                        error = error.message ?: "读取目录失败",
                     )
                 },
             )

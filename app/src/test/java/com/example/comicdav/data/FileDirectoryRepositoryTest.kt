@@ -76,4 +76,37 @@ class FileDirectoryRepositoryTest {
         assertEquals("https://example.test/dav|lin", source.webDavAccountId)
         assertEquals("/manga", source.webDavPath)
     }
+
+    @Test
+    fun addWebDavDirectoryStoresConnectionDetails() = runTest {
+        val id = repository.addWebDavDirectory(
+            displayName = "/manga",
+            accountId = "https://example.test/dav|lin",
+            path = "/manga",
+            baseUrl = "https://example.test/dav",
+            username = "lin",
+            password = "secret",
+        )
+
+        val source = repository.observeSources().first().single()
+
+        assertEquals(id, source.id)
+        assertEquals("https://example.test/dav", source.webDavBaseUrl)
+        assertEquals("lin", source.webDavUsername)
+        assertEquals("secret", source.webDavPassword)
+        assertEquals("/manga", source.webDavPath)
+        assertEquals("https://example.test/dav|lin", source.webDavAccountId)
+    }
+
+    @Test
+    fun deleteSourceRemovesSavedSource() = runTest {
+        val id = repository.addLocalDirectory(
+            displayName = "Comics",
+            treeUri = "content://tree/comics",
+        )
+
+        repository.deleteSource(id)
+
+        assertTrue(repository.observeSources().first().isEmpty())
+    }
 }

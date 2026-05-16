@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.comicdav.ui.ComicDavCopy
 
 @Composable
 fun WebDavAccountScreen(
@@ -24,7 +25,6 @@ fun WebDavAccountScreen(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTestConnection: () -> Unit,
-    onOpenLocal: () -> Unit,
     onBackToLibrary: () -> Unit,
     message: String? = null,
     modifier: Modifier = Modifier,
@@ -40,9 +40,9 @@ fun WebDavAccountScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = "ComicDav", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "WebDAV", style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = onBackToLibrary) {
-                Text("Directories")
+                Text(ComicDavCopy.sourcesTitle)
             }
         }
         OutlinedTextField(
@@ -56,22 +56,19 @@ fun WebDavAccountScreen(
             value = uiState.username,
             onValueChange = onUsernameChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Username") },
+            label = { Text("用户名") },
             singleLine = true,
         )
         OutlinedTextField(
             value = uiState.password,
             onValueChange = onPasswordChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Password") },
+            label = { Text("密码") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
         )
         Button(onClick = onTestConnection, enabled = !uiState.isLoading && uiState.baseUrl.isNotBlank()) {
-            Text("Test")
-        }
-        Button(onClick = onOpenLocal, enabled = !uiState.isLoading) {
-            Text("Add Local Folder")
+            Text("连接")
         }
         if (!message.isNullOrBlank()) {
             Text(

@@ -5,20 +5,26 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.room.Room
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.ComicDownloadCache
@@ -47,11 +52,12 @@ import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
+import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
-import com.example.comicdav.data.library.LibraryDatabase
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.LibraryRepository
 import com.example.comicdav.data.library.SourceType
+import com.example.comicdav.data.library.createLibraryDatabase
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryViewModel
 import com.example.comicdav.nativebridge.ComicEngine
@@ -64,6 +70,7 @@ import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.webdav.DownloadProgressUi
+import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
@@ -71,6 +78,7 @@ import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.network.WebDavRangeProvider
+import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -118,11 +126,7 @@ fun ComicDavApp() {
     val readerViewModel: ReaderViewModel = viewModel()
     val context = LocalContext.current
     val libraryDatabase = remember(context) {
-        Room.databaseBuilder(
-            context.applicationContext,
-            LibraryDatabase::class.java,
-            "comicdav-library.db",
-        ).build()
+        createLibraryDatabase(context)
     }
     val libraryRepository = remember(libraryDatabase) {
         LibraryRepository(libraryDatabase.libraryDao())
@@ -156,7 +160,10 @@ fun ComicDavApp() {
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
-    var isLibraryOpen by rememberSaveable { mutableStateOf(false) }
+    var selectedTabName by rememberSaveable { mutableStateOf(AppTab.SOURCES.name) }
+    val selectedTab = remember(selectedTabName) {
+        runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
+    }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
     var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
@@ -221,7 +228,7 @@ fun ComicDavApp() {
 
     fun openLocalLibraryComic(item: LibraryItemWithSources) {
         val source = item.localSource ?: run {
-            localOpenError = "Local source is missing"
+            localOpenError = "缺少本地来源"
             return
         }
         startReaderLogFile(context, logFolderUriText, scope)
@@ -244,7 +251,7 @@ fun ComicDavApp() {
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("open_library_local_copy_failed", error)
-                    localOpenError = error.message ?: "Failed to open local file"
+                    localOpenError = error.message ?: "打开本地文件失败"
                 },
             )
         }
@@ -270,7 +277,7 @@ fun ComicDavApp() {
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("open_directory_local_copy_failed uri=${item.uri}", error)
-                    fileDirectoryViewModel.showError(error.message ?: "Failed to open local file")
+                    fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败")
                 },
             )
         }
@@ -293,11 +300,42 @@ fun ComicDavApp() {
                 )
             }.fold(
                 onSuccess = {
-                    fileDirectoryViewModel.showMessage("${item.name} added to library")
+                    fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("favorite_local_directory_comic_failed uri=${item.uri}", error)
-                    fileDirectoryViewModel.showError(error.message ?: "Failed to favorite local comic")
+                    fileDirectoryViewModel.showError(error.message ?: "加入书架失败")
+                },
+            )
+        }
+    }
+
+    fun closeReaderFromNavigation() {
+        ReaderDiagnosticLog.event("reader_navigation_close")
+        readerViewModel.closeReader()
+        downloadProgress = null
+        isReaderOpen = false
+    }
+
+    fun deleteLocalSourceWithFiles(source: FileDirectorySourceEntity) {
+        val treeUriText = source.localTreeUri
+        if (treeUriText.isNullOrBlank()) {
+            fileDirectoryViewModel.deleteSource(source.id)
+            return
+        }
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    deleteLocalSourceTree(context, Uri.parse(treeUriText))
+                }
+            }.fold(
+                onSuccess = {
+                    fileDirectoryViewModel.deleteSource(source.id)
+                    fileDirectoryViewModel.showMessage("已删除来源和源文件")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("delete_local_source_files_failed uri=$treeUriText", error)
+                    fileDirectoryViewModel.showError(error.message ?: "删除源文件失败")
                 },
             )
         }
@@ -314,7 +352,7 @@ fun ComicDavApp() {
         val client = webDavViewModel.activeClient()
         val activeAccountId = webDavViewModel.activeAccountId()
         if (client == null || activeAccountId != accountId) {
-            localOpenError = "Connect to $accountId before opening this WebDAV comic"
+            localOpenError = "请先连接 $accountId，再打开这个 WebDAV 漫画"
             isWebDavOpen = true
             return
         }
@@ -348,6 +386,28 @@ fun ComicDavApp() {
             }
             onOpenSucceeded?.invoke()
             result
+        }
+    }
+
+    BackHandler(
+        enabled = isReaderOpen ||
+            isWebDavOpen ||
+            fileDirectoryUiState.currentTitle != null ||
+            selectedTab != AppTab.SOURCES,
+    ) {
+        when {
+            isReaderOpen -> closeReaderFromNavigation()
+            isWebDavOpen -> {
+                if (!webDavViewModel.handleBack()) {
+                    isWebDavOpen = false
+                    localOpenError = null
+                }
+            }
+            selectedTab == AppTab.SOURCES && fileDirectoryViewModel.handleBack() -> Unit
+            selectedTab != AppTab.SOURCES -> {
+                selectedTabName = AppTab.SOURCES.name
+                localOpenError = null
+            }
         }
     }
 
@@ -394,181 +454,312 @@ fun ComicDavApp() {
                     )
                 }
 
-                isWebDavOpen -> {
-                    if (uiState.status == "Connected") {
-                        WebDavBrowserScreen(
-                            uiState = uiState,
-                            onItemClick = { item ->
-                                if (item.isDirectory) {
-                                    webDavViewModel.openDirectory(item)
+                else -> {
+                    ComicDavAppShell(
+                        selectedTab = selectedTab,
+                        onTabSelected = { tab ->
+                            selectedTabName = tab.name
+                            localOpenError = null
+                        },
+                    ) { contentModifier ->
+                        when (selectedTab) {
+                            AppTab.SOURCES -> {
+                                if (isWebDavOpen) {
+                                    if (uiState.status == WEB_DAV_STATUS_CONNECTED) {
+                                        WebDavBrowserScreen(
+                                            uiState = uiState,
+                                            onItemClick = { item ->
+                                                if (item.isDirectory) {
+                                                    webDavViewModel.openDirectory(item)
+                                                } else {
+                                                    openRemoteComic(
+                                                        accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId(),
+                                                        remotePath = item.path,
+                                                        size = item.size,
+                                                        etag = item.etag,
+                                                        lastModified = item.lastModified,
+                                                    )
+                                                }
+                                            },
+                                            onSelectItem = webDavViewModel::selectItem,
+                                            onAddToLibrary = { item ->
+                                                webDavViewModel.selectItem(item)
+                                                val client = webDavViewModel.activeClient()
+                                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+                                                if (client == null) {
+                                                    libraryViewModel.showError("请先连接 WebDAV，再加入书架")
+                                                } else {
+                                                    scope.launch {
+                                                        runCatching {
+                                                            val libraryItemId = libraryRepository.addWebDavComic(
+                                                                accountId = accountId,
+                                                                remotePath = item.path,
+                                                                fileName = item.name,
+                                                                size = item.size,
+                                                                etag = item.etag,
+                                                                lastModified = item.lastModified,
+                                                            )
+                                                            cacheWebDavCover(
+                                                                context = context,
+                                                                repository = libraryRepository,
+                                                                accountId = accountId,
+                                                                client = client,
+                                                                item = item,
+                                                                libraryItemId = libraryItemId,
+                                                            )
+                                                        }.fold(
+                                                            onSuccess = {
+                                                                libraryViewModel.showMessage("已将 ${item.name} 加入书架")
+                                                                fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
+                                                            },
+                                                            onFailure = { error ->
+                                                                ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
+                                                                libraryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
+                                                                fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            onSaveDirectory = {
+                                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+                                                fileDirectoryViewModel.addWebDavDirectory(
+                                                    displayName = uiState.currentPath,
+                                                    accountId = accountId,
+                                                    path = uiState.currentPath,
+                                                    baseUrl = uiState.baseUrl,
+                                                    username = uiState.username,
+                                                    password = uiState.password,
+                                                )
+                                            },
+                                            onBackToDirectories = {
+                                                isWebDavOpen = false
+                                                localOpenError = null
+                                            },
+                                            onProbeTail = webDavViewModel::probeTail64KiB,
+                                            downloadProgress = downloadProgress,
+                                            downloadError = localOpenError,
+                                            onCancelDownload = {
+                                                downloadProgress = null
+                                            },
+                                            modifier = contentModifier,
+                                        )
+                                    } else {
+                                        WebDavAccountScreen(
+                                            uiState = uiState,
+                                            onBaseUrlChange = webDavViewModel::updateBaseUrl,
+                                            onUsernameChange = webDavViewModel::updateUsername,
+                                            onPasswordChange = webDavViewModel::updatePassword,
+                                            onTestConnection = webDavViewModel::testConnection,
+                                            onBackToLibrary = {
+                                                isWebDavOpen = false
+                                                localOpenError = null
+                                            },
+                                            message = localOpenError,
+                                            modifier = contentModifier,
+                                        )
+                                    }
                                 } else {
-                                    openRemoteComic(
-                                        accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId(),
-                                        remotePath = item.path,
-                                        size = item.size,
-                                        etag = item.etag,
-                                        lastModified = item.lastModified,
+                                    FileDirectoryScreen(
+                                        uiState = fileDirectoryUiState.copy(error = fileDirectoryUiState.error ?: localOpenError),
+                                        onAddLocalDirectory = {
+                                            localDirectoryPicker.launch(null)
+                                        },
+                                        onOpenWebDav = {
+                                            localOpenError = null
+                                            webDavViewModel.startNewConnection()
+                                            isWebDavOpen = true
+                                        },
+                                        onOpenLibrary = {
+                                            localOpenError = null
+                                            selectedTabName = AppTab.LIBRARY.name
+                                        },
+                                        onOpenSource = { source ->
+                                            when (source.sourceType) {
+                                                FileDirectorySourceType.LOCAL -> {
+                                                    fileDirectoryViewModel.openLocalSource(source)
+                                                }
+                                                FileDirectorySourceType.WEBDAV -> {
+                                                    val expectedAccountId = source.webDavAccountId
+                                                    val path = source.webDavPath ?: "/"
+                                                    val baseUrl = source.webDavBaseUrl
+                                                    if (!baseUrl.isNullOrBlank()) {
+                                                        localOpenError = null
+                                                        webDavViewModel.connectToSavedSource(
+                                                            baseUrl = baseUrl,
+                                                            username = source.webDavUsername,
+                                                            password = source.webDavPassword,
+                                                            path = path,
+                                                        )
+                                                    } else if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
+                                                        webDavViewModel.openPath(path)
+                                                    } else {
+                                                        localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
+                                                    }
+                                                    isWebDavOpen = true
+                                                }
+                                            }
+                                        },
+                                        onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
+                                        onOpenComic = ::openLocalDirectoryComic,
+                                        onFavoriteComic = ::favoriteLocalDirectoryComic,
+                                        onGoUp = fileDirectoryViewModel::goUp,
+                                        onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
+                                        onDismissMessage = {
+                                            localOpenError = null
+                                            fileDirectoryViewModel.clearMessage()
+                                        },
+                                        onDeleteSource = { source ->
+                                            fileDirectoryViewModel.deleteSource(source.id)
+                                        },
+                                        onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
+                                        modifier = contentModifier,
                                     )
                                 }
-                            },
-                            onSelectItem = webDavViewModel::selectItem,
-                            onAddToLibrary = { item ->
-                                webDavViewModel.selectItem(item)
-                                val client = webDavViewModel.activeClient()
-                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-                                if (client == null) {
-                                    libraryViewModel.showError("Connect to WebDAV before adding this comic")
-                                } else {
-                                    scope.launch {
-                                        runCatching {
-                                            val libraryItemId = libraryRepository.addWebDavComic(
-                                                accountId = accountId,
-                                                remotePath = item.path,
-                                                fileName = item.name,
-                                                size = item.size,
-                                                etag = item.etag,
-                                                lastModified = item.lastModified,
-                                            )
-                                            cacheWebDavCover(
-                                                context = context,
-                                                repository = libraryRepository,
-                                                accountId = accountId,
-                                                client = client,
-                                                item = item,
-                                                libraryItemId = libraryItemId,
-                                            )
-                                        }.fold(
-                                            onSuccess = {
-                                                libraryViewModel.showMessage("${item.name} added to library")
-                                                fileDirectoryViewModel.showMessage("${item.name} added to library")
-                                            },
-                                            onFailure = { error ->
-                                                ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
-                                                libraryViewModel.showError(error.message ?: "Failed to add WebDAV comic")
-                                                fileDirectoryViewModel.showError(error.message ?: "Failed to add WebDAV comic")
-                                            },
-                                        )
-                                    }
-                                }
-                            },
-                            onSaveDirectory = {
-                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-                                fileDirectoryViewModel.addWebDavDirectory(
-                                    displayName = uiState.currentPath,
-                                    accountId = accountId,
-                                    path = uiState.currentPath,
+                            }
+                            AppTab.LIBRARY -> {
+                                LibraryScreen(
+                                    uiState = libraryUiState.copy(error = libraryUiState.error ?: localOpenError),
+                                    onOpenItem = { item ->
+                                        when (item.item.sourceType) {
+                                            SourceType.LOCAL -> openLocalLibraryComic(item)
+                                            SourceType.WEBDAV -> {
+                                                val source = item.webDavSource
+                                                if (source == null) {
+                                                    localOpenError = "缺少 WebDAV 来源"
+                                                } else {
+                                                    openRemoteComic(
+                                                        accountId = source.accountId,
+                                                        remotePath = source.remotePath,
+                                                        size = source.size,
+                                                        etag = source.etag,
+                                                        lastModified = source.lastModified,
+                                                        onOpenSucceeded = {
+                                                            libraryViewModel.markOpened(item.item.id)
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onOpenDirectories = {
+                                        localOpenError = null
+                                        selectedTabName = AppTab.SOURCES.name
+                                    },
+                                    onDismissMessage = {
+                                        localOpenError = null
+                                        libraryViewModel.clearMessage()
+                                    },
+                                    modifier = contentModifier,
                                 )
-                            },
-                            onBackToDirectories = {
-                                isWebDavOpen = false
-                                localOpenError = null
-                            },
-                            onProbeTail = webDavViewModel::probeTail64KiB,
-                            downloadProgress = downloadProgress,
-                            downloadError = localOpenError,
-                            onCancelDownload = {
-                                downloadProgress = null
-                            },
-                        )
-                    } else {
-                        WebDavAccountScreen(
-                            uiState = uiState,
-                            onBaseUrlChange = webDavViewModel::updateBaseUrl,
-                            onUsernameChange = webDavViewModel::updateUsername,
-                            onPasswordChange = webDavViewModel::updatePassword,
-                            onTestConnection = webDavViewModel::testConnection,
-                            onOpenLocal = {
-                                localDirectoryPicker.launch(null)
-                            },
-                            onBackToLibrary = {
-                                isWebDavOpen = false
-                                localOpenError = null
-                            },
-                            message = localOpenError,
-                        )
+                            }
+                            AppTab.OFFLINE -> {
+                                PlaceholderTabScreen(
+                                    title = ComicDavCopy.offlineTab,
+                                    body = "离线下载和缓存管理会显示在这里。",
+                                    modifier = contentModifier,
+                                )
+                            }
+                            AppTab.SETTINGS -> {
+                                PlaceholderTabScreen(
+                                    title = ComicDavCopy.settingsTab,
+                                    body = "阅读方向、缓存和诊断设置会显示在这里。",
+                                    modifier = contentModifier,
+                                )
+                            }
+                        }
                     }
-                }
-
-                isLibraryOpen -> {
-                    LibraryScreen(
-                        uiState = libraryUiState.copy(error = libraryUiState.error ?: localOpenError),
-                        onOpenItem = { item ->
-                            when (item.item.sourceType) {
-                                SourceType.LOCAL -> openLocalLibraryComic(item)
-                                SourceType.WEBDAV -> {
-                                    val source = item.webDavSource
-                                    if (source == null) {
-                                        localOpenError = "WebDAV source is missing"
-                                    } else {
-                                        openRemoteComic(
-                                            accountId = source.accountId,
-                                            remotePath = source.remotePath,
-                                            size = source.size,
-                                            etag = source.etag,
-                                            lastModified = source.lastModified,
-                                            onOpenSucceeded = {
-                                                libraryViewModel.markOpened(item.item.id)
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        onOpenDirectories = {
-                            localOpenError = null
-                            isLibraryOpen = false
-                        },
-                        onDismissMessage = {
-                            localOpenError = null
-                            libraryViewModel.clearMessage()
-                        },
-                    )
-                }
-
-                else -> {
-                    FileDirectoryScreen(
-                        uiState = fileDirectoryUiState.copy(error = fileDirectoryUiState.error ?: localOpenError),
-                        onAddLocalDirectory = {
-                            localDirectoryPicker.launch(null)
-                        },
-                        onOpenWebDav = {
-                            localOpenError = null
-                            isWebDavOpen = true
-                        },
-                        onOpenLibrary = {
-                            localOpenError = null
-                            isLibraryOpen = true
-                        },
-                        onOpenSource = { source ->
-                            when (source.sourceType) {
-                                FileDirectorySourceType.LOCAL -> {
-                                    fileDirectoryViewModel.openLocalSource(source)
-                                }
-                                FileDirectorySourceType.WEBDAV -> {
-                                    val expectedAccountId = source.webDavAccountId
-                                    val path = source.webDavPath ?: "/"
-                                    if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
-                                        webDavViewModel.openPath(path)
-                                    } else {
-                                        localOpenError = "Connect to ${expectedAccountId.orEmpty()} before opening this WebDAV directory"
-                                    }
-                                    isWebDavOpen = true
-                                }
-                            }
-                        },
-                        onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
-                        onOpenComic = ::openLocalDirectoryComic,
-                        onFavoriteComic = ::favoriteLocalDirectoryComic,
-                        onGoUp = fileDirectoryViewModel::goUp,
-                        onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
-                        onDismissMessage = {
-                            localOpenError = null
-                            fileDirectoryViewModel.clearMessage()
-                        },
-                    )
                 }
             }
         }
+    }
+}
+
+private enum class AppTab {
+    SOURCES,
+    LIBRARY,
+    OFFLINE,
+    SETTINGS;
+
+    val label: String
+        get() = when (this) {
+            SOURCES -> ComicDavCopy.sourcesTab
+            LIBRARY -> ComicDavCopy.libraryTab
+            OFFLINE -> ComicDavCopy.offlineTab
+            SETTINGS -> ComicDavCopy.settingsTab
+        }
+
+    val compactIcon: String
+        get() = when (this) {
+            SOURCES -> "源"
+            LIBRARY -> "书"
+            OFFLINE -> "离"
+            SETTINGS -> "设"
+        }
+}
+
+@Composable
+private fun ComicDavAppShell(
+    selectedTab: AppTab,
+    onTabSelected: (AppTab) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            content(Modifier.fillMaxSize())
+        }
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp,
+        ) {
+            AppTab.values().forEach { tab ->
+                NavigationBarItem(
+                    selected = selectedTab == tab,
+                    onClick = { onTabSelected(tab) },
+                    icon = {
+                        Text(
+                            text = tab.compactIcon,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = tab.label,
+                            maxLines = 1,
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderTabScreen(
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -583,11 +774,11 @@ private fun DataFolderGateScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Choose a ComicDav data folder",
+            text = ComicDavCopy.chooseDataFolderTitle,
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "ComicDav stores covers, offline comics, diagnostics, and future exports in a folder you control.",
+            text = ComicDavCopy.chooseDataFolderBody,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 10.dp, bottom = 20.dp),
@@ -595,7 +786,7 @@ private fun DataFolderGateScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = onChooseFolder) {
-            Text("Choose Folder")
+            Text(ComicDavCopy.chooseFolder)
         }
     }
 }
@@ -605,7 +796,7 @@ private fun copyUriToCache(context: Context, uri: Uri): File {
     val target = LocalComicImportCache.targetFile(context.cacheDir)
     target.parentFile?.mkdirs()
     context.contentResolver.openInputStream(uri).use { input ->
-        requireNotNull(input) { "Could not read selected file" }
+        requireNotNull(input) { "无法读取所选文件" }
         target.outputStream().use { output ->
             input.copyTo(output)
         }
@@ -633,7 +824,16 @@ private fun queryDirectoryDisplayName(context: Context, treeUri: Uri): String {
             }
         }
     }
-    return treeUri.lastPathSegment?.substringAfterLast(':')?.ifBlank { null } ?: "Local Folder"
+    return treeUri.lastPathSegment?.substringAfterLast(':')?.ifBlank { null } ?: "本地文件夹"
+}
+
+private fun deleteLocalSourceTree(context: Context, treeUri: Uri) {
+    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+        treeUri,
+        DocumentsContract.getTreeDocumentId(treeUri),
+    )
+    val deleted = DocumentsContract.deleteDocument(context.contentResolver, rootDocumentUri)
+    check(deleted) { "系统未允许删除这个本地文件夹" }
 }
 
 private suspend fun cacheLocalCover(

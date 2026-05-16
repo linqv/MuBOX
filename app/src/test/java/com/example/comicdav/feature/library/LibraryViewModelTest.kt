@@ -56,7 +56,7 @@ class LibraryViewModelTest {
         advanceUntilIdle()
 
         assertEquals("content://local/book.cbz", catalog.localAdds.single().uri)
-        assertEquals("book.cbz added to library", viewModel.uiState.message)
+        assertEquals("已将 book.cbz 加入书架", viewModel.uiState.message)
     }
 
     @Test
@@ -77,7 +77,7 @@ class LibraryViewModelTest {
         val add = catalog.webDavAdds.single()
         assertEquals("/books/book.cbz", add.remotePath)
         assertEquals("\"abc\"", add.etag)
-        assertEquals("book.cbz added to library", viewModel.uiState.message)
+        assertEquals("已将 book.cbz 加入书架", viewModel.uiState.message)
     }
 
     private class FakeLibraryCatalog : LibraryCatalog {
