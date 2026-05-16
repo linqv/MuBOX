@@ -1,0 +1,28 @@
+package com.example.comicdav.ui
+
+object ComicDavCopy {
+    const val sourcesTab = "来源"
+    const val libraryTab = "书架"
+    const val offlineTab = "离线"
+    const val settingsTab = "设置"
+    const val sourcesTitle = "来源"
+    const val libraryTitle = "书架"
+    const val continueReading = "继续阅读"
+    const val savedSources = "已保存来源"
+    const val addLocalFolder = "添加本地文件夹"
+    const val addWebDav = "添加 WebDAV"
+    const val open = "打开"
+    const val read = "阅读"
+    const val addToLibrary = "加入书架"
+    const val saveCurrentDirectory = "保存当前目录"
+    const val emptyLibraryTitle = "书架还是空的"
+    const val emptyLibraryBody = "从来源中浏览漫画，并把想长期阅读的作品加入书架。"
+    const val chooseDataFolderTitle = "选择 ComicDav 数据文件夹"
+    const val chooseDataFolderBody = "ComicDav 会把封面、离线漫画、诊断日志和后续导出的文件保存在你选择的文件夹中。"
+    const val chooseFolder = "选择文件夹"
+    const val readerLoading = "正在打开漫画"
+    const val readerDownloading = "正在下载漫画"
+    const val readerError = "无法打开漫画"
+    const val readerClose = "关闭"
+    const val readerLog = "日志"
+}
