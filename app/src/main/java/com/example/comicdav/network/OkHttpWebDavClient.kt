@@ -134,16 +134,32 @@ class OkHttpWebDavClient(
         val basePath = baseUri.rawPath.orEmpty()
         val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
         val decodedMountedPrefix = decodePath(mountedPrefix)
-        val requestPath = if (path.startsWith(mountedPrefix) || path.startsWith(decodedMountedPrefix)) {
-            path
-        } else {
-            path.trimStart('/')
-        }
+        val encodedMountedPrefix = encodePath(decodedMountedPrefix)
+        val requestPath = normalizeRequestPath(
+            path = path,
+            mountedPrefixes = listOf(mountedPrefix, decodedMountedPrefix, encodedMountedPrefix),
+        )
         return URI(base).resolve(requestPath).toString()
+    }
+
+    private fun normalizeRequestPath(
+        path: String,
+        mountedPrefixes: List<String>,
+    ): String {
+        if (mountedPrefixes.any { path.startsWith(it) }) {
+            return path
+        }
+        if (mountedPrefixes.any { path.startsWith(it.trimStart('/')) }) {
+            return "/$path"
+        }
+        return path.trimStart('/')
     }
 
     private fun decodePath(path: String): String =
         URLDecoder.decode(path, Charsets.UTF_8.name())
+
+    private fun encodePath(path: String): String =
+        URI(null, null, path, null).toASCIIString()
 
     private fun validateContentRange(
         header: String?,
