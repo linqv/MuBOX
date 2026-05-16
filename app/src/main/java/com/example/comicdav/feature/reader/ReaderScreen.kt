@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +15,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,12 +32,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -41,7 +53,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.ui.ComicDavCopy
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -57,6 +72,10 @@ fun ReaderScreen(
     onCancelLoading: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
+    autoPageEnabled: Boolean = false,
+    autoPageIntervalMillis: Long = 0L,
+    volumeKeysTurnPages: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -86,10 +105,22 @@ fun ReaderScreen(
 
             else -> {
                 var controlsVisible by remember { mutableStateOf(true) }
+                val scope = rememberCoroutineScope()
+                val focusRequester = remember { FocusRequester() }
                 val pagerState = rememberPagerState(
                     initialPage = uiState.currentPage,
                     pageCount = { uiState.pageCount },
                 )
+                val continuousListState = rememberLazyListState(
+                    initialFirstVisibleItemIndex = uiState.currentPage,
+                )
+                val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
+                LaunchedEffect(volumeKeysTurnPages) {
+                    if (volumeKeysTurnPages) {
+                        runCatching { focusRequester.requestFocus() }
+                        ReaderDiagnosticLog.event("reader_volume_key_turn_pages_enabled")
+                    }
+                }
                 LaunchedEffect(pagerState) {
                     snapshotFlow {
                         reportableSettledPage(
@@ -123,45 +154,145 @@ fun ReaderScreen(
                             }
                         }
                 }
-
+                LaunchedEffect(continuousListState, isContinuousVertical) {
+                    if (!isContinuousVertical) return@LaunchedEffect
+                    snapshotFlow { continuousListState.firstVisibleItemIndex }
+                        .distinctUntilChanged()
+                        .collect { page ->
+                            ReaderDiagnosticLog.event("continuous_scroll_report_page page=$page")
+                            onPageChanged(page)
+                        }
+                }
+                LaunchedEffect(continuousListState, isContinuousVertical) {
+                    if (!isContinuousVertical) return@LaunchedEffect
+                    snapshotFlow {
+                        continuousListState.layoutInfo.visibleItemsInfo.map { it.index }.distinct()
+                    }
+                        .distinctUntilChanged()
+                        .collect { visiblePages ->
+                            visiblePages.forEach { page ->
+                                onPageDemanded(page, "continuous_visible")
+                            }
+                        }
+                }
+                LaunchedEffect(autoPageEnabled, autoPageIntervalMillis, pagerState, uiState.pageCount) {
+                    while (autoPageEnabled && autoPageIntervalMillis > 0L && uiState.pageCount > 1) {
+                        delay(autoPageIntervalMillis.coerceAtLeast(1_000L))
+                        val targetPage = autoPageTargetPage(
+                            currentPage = if (isContinuousVertical) {
+                                continuousListState.firstVisibleItemIndex
+                            } else {
+                                pagerState.currentPage
+                            },
+                            pageCount = uiState.pageCount,
+                            isScrollInProgress = if (isContinuousVertical) {
+                                continuousListState.isScrollInProgress
+                            } else {
+                                pagerState.isScrollInProgress
+                            },
+                        )
+                        if (targetPage != null) {
+                            if (isContinuousVertical) {
+                                continuousListState.animateScrollToItem(targetPage)
+                            } else {
+                                pagerState.animateScrollToPage(targetPage)
+                            }
+                        }
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .focusRequester(focusRequester)
+                        .focusable(enabled = volumeKeysTurnPages)
+                        .onPreviewKeyEvent { event ->
+                            if (!volumeKeysTurnPages || event.type != KeyEventType.KeyDown) {
+                                return@onPreviewKeyEvent false
+                            }
+                            val targetPage = volumeKeyTargetPage(
+                                currentPage = if (isContinuousVertical) {
+                                    continuousListState.firstVisibleItemIndex
+                                } else {
+                                    pagerState.currentPage
+                                },
+                                pageCount = uiState.pageCount,
+                                key = event.key,
+                            ) ?: return@onPreviewKeyEvent false
+                            val currentPage = if (isContinuousVertical) {
+                                continuousListState.firstVisibleItemIndex
+                            } else {
+                                pagerState.currentPage
+                            }
+                            if (targetPage == currentPage) return@onPreviewKeyEvent true
+                            scope.launch {
+                                if (isContinuousVertical) {
+                                    continuousListState.animateScrollToItem(targetPage)
+                                } else {
+                                    pagerState.animateScrollToPage(targetPage)
+                                }
+                            }
+                            true
+                        }
                         .pointerInput(uiState.pageCount) {
                             detectTapGestures(
                                 onTap = { controlsVisible = !controlsVisible },
                             )
                         },
                 ) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        beyondViewportPageCount = 1,
-                    ) { page ->
-                        val pageFile = uiState.pageFiles[page]
-                        Box(
+                    if (isContinuousVertical) {
+                        LazyColumn(
+                            state = continuousListState,
                             modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
-                            if (pageFile == null) {
-                                CircularProgressIndicator(color = ReaderOnDark)
-                            } else {
-                                AsyncImage(
-                                    model = pageFile,
-                                    contentDescription = "第 ${page + 1} 页",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit,
-                                    onLoading = { onImageLoadStarted(page) },
-                                    onSuccess = { onImageLoadSucceeded(page) },
-                                    onError = { onImageLoadFailed(page) },
+                            items(uiState.pageCount) { page ->
+                                ContinuousReaderPage(
+                                    page = page,
+                                    pageFile = uiState.pageFiles[page],
+                                    onImageLoadStarted = onImageLoadStarted,
+                                    onImageLoadSucceeded = onImageLoadSucceeded,
+                                    onImageLoadFailed = onImageLoadFailed,
                                 )
                             }
+                        }
+                    } else if (readingDirection == ReadingDirection.VERTICAL) {
+                        VerticalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            beyondViewportPageCount = 1,
+                        ) { page ->
+                            ReaderPage(
+                                page = page,
+                                pageFile = uiState.pageFiles[page],
+                                onImageLoadStarted = onImageLoadStarted,
+                                onImageLoadSucceeded = onImageLoadSucceeded,
+                                onImageLoadFailed = onImageLoadFailed,
+                            )
+                        }
+                    } else {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            beyondViewportPageCount = 1,
+                            reverseLayout = readingDirection == ReadingDirection.RIGHT_TO_LEFT,
+                        ) { page ->
+                            ReaderPage(
+                                page = page,
+                                pageFile = uiState.pageFiles[page],
+                                onImageLoadStarted = onImageLoadStarted,
+                                onImageLoadSucceeded = onImageLoadSucceeded,
+                                onImageLoadFailed = onImageLoadFailed,
+                            )
                         }
                     }
                 }
 
                 if (controlsVisible) {
-                    val displayPage = (pagerState.currentPage + 1).coerceIn(1, uiState.pageCount)
+                    val displayPage = if (isContinuousVertical) {
+                        continuousListState.firstVisibleItemIndex + 1
+                    } else {
+                        pagerState.currentPage + 1
+                    }.coerceIn(1, uiState.pageCount)
                     ReaderTopOverlay(
                         pageCount = uiState.pageCount,
                         onChooseLogFile = onChooseLogFile,
@@ -175,6 +306,96 @@ fun ReaderScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+internal fun autoPageTargetPage(
+    currentPage: Int,
+    pageCount: Int,
+    isScrollInProgress: Boolean,
+): Int? {
+    if (isScrollInProgress || pageCount <= 1) return null
+    val nextPage = currentPage + 1
+    return nextPage.takeIf { it < pageCount }
+}
+
+internal fun volumeKeyTargetPage(
+    currentPage: Int,
+    pageCount: Int,
+    key: Key,
+): Int? {
+    if (pageCount <= 0) return null
+    return when (key) {
+        Key.VolumeDown -> currentPage + 1
+        Key.VolumeUp -> currentPage - 1
+        else -> return null
+    }.coerceIn(0, pageCount - 1)
+}
+
+@Composable
+private fun ReaderPage(
+    page: Int,
+    pageFile: java.io.File?,
+    onImageLoadStarted: (Int) -> Unit,
+    onImageLoadSucceeded: (Int) -> Unit,
+    onImageLoadFailed: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (pageFile == null) {
+            CircularProgressIndicator(color = ReaderOnDark)
+        } else {
+            AsyncImage(
+                model = pageFile,
+                contentDescription = "第 ${page + 1} 页",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                onLoading = { onImageLoadStarted(page) },
+                onSuccess = { onImageLoadSucceeded(page) },
+                onError = { onImageLoadFailed(page) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContinuousReaderPage(
+    page: Int,
+    pageFile: java.io.File?,
+    onImageLoadStarted: (Int) -> Unit,
+    onImageLoadSucceeded: (Int) -> Unit,
+    onImageLoadFailed: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (pageFile == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = ReaderOnDark)
+            }
+        } else {
+            AsyncImage(
+                model = pageFile,
+                contentDescription = "第 ${page + 1} 页",
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.FillWidth,
+                onLoading = { onImageLoadStarted(page) },
+                onSuccess = { onImageLoadSucceeded(page) },
+                onError = { onImageLoadFailed(page) },
+            )
         }
     }
 }

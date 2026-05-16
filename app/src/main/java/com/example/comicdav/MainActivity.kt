@@ -1,7 +1,9 @@
 package com.example.comicdav
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -27,6 +29,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,11 +47,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.AppDataFolderStore
+import com.example.comicdav.data.AppSettings
+import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.LocalComicImportCache
 import com.example.comicdav.data.ReadingProgressStore
+import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
@@ -69,6 +75,7 @@ import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.createReaderLogFile
+import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
@@ -87,6 +94,8 @@ import kotlinx.coroutines.withContext
 
 private val Context.readingProgressDataStore by preferencesDataStore(name = "reading_progress")
 private val Context.appDataFolderDataStore by preferencesDataStore(name = "app_data_folder")
+private val Context.appSettingsDataStore by preferencesDataStore(name = "app_settings")
+private val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
 
 class MainActivity : ComponentActivity() {
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
@@ -172,6 +181,9 @@ fun ComicDavApp() {
     val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
     val dataFolderStore = remember(context) { AppDataFolderStore(context.appDataFolderDataStore) }
+    val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
+    val webDavAccountStore = remember(context) { WebDavAccountStore(context.webDavAccountDataStore) }
+    val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings())
     LaunchedEffect(dataFolderStore) {
         dataFolderUriText = dataFolderStore.loadFolderUri()
         if (logFolderUriText.isNullOrBlank()) {
@@ -208,7 +220,7 @@ fun ComicDavApp() {
         }
         saveReaderLogFolderUri(context, uri)
         logFolderUriText = uri.toString()
-        startReaderLogFile(context, logFolderUriText, scope)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         ReaderDiagnosticLog.event("log_folder_selected uri=$uri")
     }
     val localDirectoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -226,12 +238,36 @@ fun ComicDavApp() {
         )
     }
 
+    LaunchedEffect(appSettings.screenRotationLockEnabled) {
+        (context as? Activity)?.requestedOrientation = if (appSettings.screenRotationLockEnabled) {
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    LaunchedEffect(appSettings.loggingEnabled) {
+        if (!appSettings.loggingEnabled) {
+            ReaderDiagnosticLog.clearSink()
+        }
+    }
+
+    LaunchedEffect(uiState.status, uiState.baseUrl, uiState.username, uiState.password) {
+        if (uiState.status == WEB_DAV_STATUS_CONNECTED && uiState.baseUrl.isNotBlank()) {
+            webDavAccountStore.saveAccount(
+                baseUrl = uiState.baseUrl,
+                username = uiState.username,
+                password = uiState.password,
+            )
+        }
+    }
+
     fun openLocalLibraryComic(item: LibraryItemWithSources) {
         val source = item.localSource ?: run {
             localOpenError = "缺少本地来源"
             return
         }
-        startReaderLogFile(context, logFolderUriText, scope)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -258,7 +294,7 @@ fun ComicDavApp() {
     }
 
     fun openLocalDirectoryComic(item: FileDirectoryBrowserItem) {
-        startReaderLogFile(context, logFolderUriText, scope)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -352,14 +388,35 @@ fun ComicDavApp() {
         val client = webDavViewModel.activeClient()
         val activeAccountId = webDavViewModel.activeAccountId()
         if (client == null || activeAccountId != accountId) {
-            localOpenError = "请先连接 $accountId，再打开这个 WebDAV 漫画"
-            isWebDavOpen = true
+            scope.launch {
+                val savedAccount = webDavAccountStore.loadAccount(accountId)
+                if (savedAccount == null) {
+                    localOpenError = "请先连接 $accountId，再打开这个 WebDAV 漫画"
+                    isWebDavOpen = true
+                    return@launch
+                }
+                localOpenError = null
+                webDavViewModel.connectToSavedSource(
+                    baseUrl = savedAccount.baseUrl,
+                    username = savedAccount.username,
+                    password = savedAccount.password,
+                    path = "/",
+                )
+                openRemoteComic(
+                    accountId = accountId,
+                    remotePath = remotePath,
+                    size = size,
+                    etag = etag,
+                    lastModified = lastModified,
+                    onOpenSucceeded = onOpenSucceeded,
+                )
+            }
             return
         }
         downloadProgress = null
         localOpenError = null
         isReaderOpen = true
-        startReaderLogFile(context, logFolderUriText, scope)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
         readerViewModel.openRemote(cacheDir = context.cacheDir) {
             val useCase = OpenComicUseCase(
@@ -411,7 +468,7 @@ fun ComicDavApp() {
         }
     }
 
-    ComicDavTheme {
+    ComicDavTheme(palette = appSettings.colorPalette) {
         Surface(modifier = Modifier.fillMaxSize()) {
             when {
                 isDataFolderLoading -> {
@@ -436,7 +493,9 @@ fun ComicDavApp() {
                         onImageLoadSucceeded = readerViewModel::reportImageLoadSucceeded,
                         onImageLoadFailed = readerViewModel::reportImageLoadFailed,
                         onChooseLogFile = {
-                            logFolderPicker.launch(null)
+                            if (appSettings.loggingEnabled) {
+                                logFolderPicker.launch(null)
+                            }
                         },
                         loadingProgress = downloadProgress?.toReaderLoadingProgress(),
                         onCancelLoading = {
@@ -451,6 +510,10 @@ fun ComicDavApp() {
                             downloadProgress = null
                             isReaderOpen = false
                         },
+                        readingDirection = appSettings.readingDirection,
+                        autoPageEnabled = appSettings.autoPageEnabled,
+                        autoPageIntervalMillis = appSettings.autoPageSpeedMillis.toLong(),
+                        volumeKeysTurnPages = appSettings.volumeKeysTurnPagesEnabled,
                     )
                 }
 
@@ -582,21 +645,35 @@ fun ComicDavApp() {
                                                 FileDirectorySourceType.WEBDAV -> {
                                                     val expectedAccountId = source.webDavAccountId
                                                     val path = source.webDavPath ?: "/"
-                                                    val baseUrl = source.webDavBaseUrl
-                                                    if (!baseUrl.isNullOrBlank()) {
+                                                    isWebDavOpen = true
+                                                    scope.launch {
+                                                        if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
+                                                            localOpenError = null
+                                                            webDavViewModel.openPath(path)
+                                                            return@launch
+                                                        }
+                                                        val savedAccount = expectedAccountId?.let { accountId ->
+                                                            webDavAccountStore.loadAccount(accountId)
+                                                        }
+                                                        val baseUrl = source.webDavBaseUrl
+                                                            ?.takeIf { it.isNotBlank() }
+                                                            ?: savedAccount?.baseUrl
+                                                        if (baseUrl.isNullOrBlank()) {
+                                                            localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
+                                                            return@launch
+                                                        }
                                                         localOpenError = null
                                                         webDavViewModel.connectToSavedSource(
                                                             baseUrl = baseUrl,
-                                                            username = source.webDavUsername,
-                                                            password = source.webDavPassword,
+                                                            username = source.webDavUsername
+                                                                ?.takeIf { it.isNotBlank() }
+                                                                ?: savedAccount?.username,
+                                                            password = source.webDavPassword
+                                                                ?.takeIf { it.isNotBlank() }
+                                                                ?: savedAccount?.password,
                                                             path = path,
                                                         )
-                                                    } else if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
-                                                        webDavViewModel.openPath(path)
-                                                    } else {
-                                                        localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
                                                     }
-                                                    isWebDavOpen = true
                                                 }
                                             }
                                         },
@@ -661,9 +738,29 @@ fun ComicDavApp() {
                                 )
                             }
                             AppTab.SETTINGS -> {
-                                PlaceholderTabScreen(
-                                    title = ComicDavCopy.settingsTab,
-                                    body = "阅读方向、缓存和诊断设置会显示在这里。",
+                                SettingsScreen(
+                                    settings = appSettings,
+                                    onReadingDirectionChange = { value ->
+                                        scope.launch { appSettingsStore.updateReadingDirection(value) }
+                                    },
+                                    onLoggingEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateLoggingEnabled(value) }
+                                    },
+                                    onColorPaletteChange = { value ->
+                                        scope.launch { appSettingsStore.updateColorPalette(value) }
+                                    },
+                                    onAutoPageEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
+                                    },
+                                    onAutoPageSpeedChange = { value ->
+                                        scope.launch { appSettingsStore.updateAutoPageSpeedMillis(value) }
+                                    },
+                                    onScreenRotationLockChange = { value ->
+                                        scope.launch { appSettingsStore.updateScreenRotationLockEnabled(value) }
+                                    },
+                                    onVolumeKeysTurnPagesChange = { value ->
+                                        scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
+                                    },
                                     modifier = contentModifier,
                                 )
                             }
@@ -936,7 +1033,12 @@ private fun startReaderLogFile(
     context: Context,
     folderUriText: String?,
     scope: kotlinx.coroutines.CoroutineScope,
+    loggingEnabled: Boolean = true,
 ) {
+    if (!loggingEnabled) {
+        ReaderDiagnosticLog.clearSink()
+        return
+    }
     if (folderUriText.isNullOrBlank()) return
     runCatching {
         createReaderLogFile(context, Uri.parse(folderUriText), scope)
