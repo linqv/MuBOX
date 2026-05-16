@@ -5,6 +5,7 @@ build/
 *.iml
 local.properties
 .DS_Store
+.superpowers/
 .worktrees/
 worktrees/
 app/src/main/jniLibs/
