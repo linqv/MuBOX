@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -505,6 +506,7 @@ private fun FileDirectoryEntryRow(
     var isActionDialogOpen by remember { mutableStateOf(false) }
     val longPressActions = fileDirectoryEntryLongPressActions(entry)
     val clickAction = fileDirectoryEntryClickAction(entry)
+    val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
 
     if (isActionDialogOpen) {
         FileDirectoryEntryActionDialog(
@@ -550,21 +552,22 @@ private fun FileDirectoryEntryRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = if (entry.isDirectory) {
-                        "打开后继续浏览"
-                    } else {
-                        entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (supportingLabel.isNotBlank()) {
+                    Text(
+                        text = supportingLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+internal fun fileDirectoryEntrySupportingLabel(entry: FileDirectoryBrowserItem): String =
+    if (entry.isDirectory) "" else entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
 
 @Composable
 private fun FileDirectoryEntryActionDialog(
@@ -613,29 +616,16 @@ private fun FileDirectoryEntryActionDialog(
 
 @Composable
 private fun EntryTypeIcon(isDirectory: Boolean) {
-    val containerColor = if (isDirectory) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
-    }
-    val contentColor = if (isDirectory) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
-    Surface(
+    Box(
         modifier = Modifier.size(44.dp),
-        shape = MaterialTheme.shapes.small,
-        color = containerColor,
-        contentColor = contentColor,
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
-                contentDescription = if (isDirectory) "文件夹" else "漫画文件",
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        Icon(
+            imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+            contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+            modifier = Modifier.size(38.dp),
+            tint = Color.Unspecified,
+        )
     }
 }
 

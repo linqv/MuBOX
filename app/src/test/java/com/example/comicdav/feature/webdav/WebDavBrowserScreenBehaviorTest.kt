@@ -44,4 +44,36 @@ class WebDavBrowserScreenBehaviorTest {
             ).isEmpty(),
         )
     }
+
+    @Test
+    fun directoryRowsDoNotShowContinueBrowsingHint() {
+        assertEquals(
+            "",
+            webDavItemSupportingLabel(
+                WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null),
+            ),
+        )
+    }
+
+    @Test
+    fun comicRowsOnlyShowSizeWithoutValidators() {
+        assertEquals(
+            "12 B",
+            webDavItemSupportingLabel(
+                WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = 12L, etag = "abc", lastModified = 123L),
+            ),
+        )
+        assertEquals(
+            "大小未知",
+            webDavItemSupportingLabel(
+                WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = null, etag = "abc", lastModified = 123L),
+            ),
+        )
+    }
+
+    @Test
+    fun saveDirectoryActionOnlyShowsInAddPathFlow() {
+        assertTrue(shouldShowSaveDirectoryAction(isAddingPath = true))
+        assertFalse(shouldShowSaveDirectoryAction(isAddingPath = false))
+    }
 }

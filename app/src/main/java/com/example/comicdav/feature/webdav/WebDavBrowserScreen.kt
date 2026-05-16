@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,7 @@ fun WebDavBrowserScreen(
     onDownloadToLocal: (WebDavItem) -> Unit,
     onSaveDirectory: () -> Unit,
     onBackToDirectories: () -> Unit,
+    showSaveDirectoryAction: Boolean,
     downloadProgress: DownloadProgressUi?,
     downloadError: String?,
     actionMessage: String?,
@@ -78,6 +80,7 @@ fun WebDavBrowserScreen(
             isLoading = uiState.isLoading,
             onBackToDirectories = onBackToDirectories,
             onSaveDirectory = onSaveDirectory,
+            showSaveDirectoryAction = showSaveDirectoryAction,
         )
 
         if (uiState.isLoading) {
@@ -116,6 +119,7 @@ private fun WebDavBrowserAppBar(
     isLoading: Boolean,
     onBackToDirectories: () -> Unit,
     onSaveDirectory: () -> Unit,
+    showSaveDirectoryAction: Boolean,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -177,12 +181,14 @@ private fun WebDavBrowserAppBar(
                     )
                 }
             }
-            OutlinedButton(
-                onClick = onSaveDirectory,
-                enabled = !isLoading,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-            ) {
-                Text(ComicDavCopy.saveCurrentDirectory)
+            if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
+                OutlinedButton(
+                    onClick = onSaveDirectory,
+                    enabled = !isLoading,
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text(ComicDavCopy.saveCurrentDirectory)
+                }
             }
         }
     }
@@ -199,6 +205,7 @@ private fun WebDavItemRow(
     var isActionDialogOpen by remember { mutableStateOf(false) }
     val clickAction = webDavItemClickAction(item)
     val longPressActions = webDavItemLongPressActions(item)
+    val supportingLabel = webDavItemSupportingLabel(item)
 
     if (isActionDialogOpen) {
         WebDavFileActionDialog(
@@ -254,13 +261,15 @@ private fun WebDavItemRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = if (item.isDirectory) "打开后继续浏览" else fileMetaLabel(item),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (supportingLabel.isNotBlank()) {
+                    Text(
+                        text = supportingLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -324,29 +333,16 @@ private fun WebDavFileActionDialog(
 
 @Composable
 private fun WebDavItemTypeIcon(isDirectory: Boolean) {
-    val color = if (isDirectory) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
-    }
-    val iconColor = if (isDirectory) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
-    Surface(
+    Box(
         modifier = Modifier.size(44.dp),
-        shape = MaterialTheme.shapes.small,
-        color = color,
-        contentColor = iconColor,
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
-                contentDescription = if (isDirectory) "文件夹" else "漫画文件",
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        Icon(
+            imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+            contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+            modifier = Modifier.size(38.dp),
+            tint = Color.Unspecified,
+        )
     }
 }
 
@@ -407,17 +403,14 @@ private fun WebDavTransferPanel(
     }
 }
 
-private fun fileMetaLabel(item: WebDavItem): String {
-    val size = item.size?.let(::formatByteSize) ?: "大小未知"
-    val validator = item.etag?.takeIf { it.isNotBlank() }?.let { "ETag $it" }
-        ?: item.lastModified?.let { "修改于 $it" }
-        ?: "无校验信息"
-    return "$size · $validator"
-}
+internal fun webDavItemSupportingLabel(item: WebDavItem): String =
+    if (item.isDirectory) "" else item.size?.let(::formatByteSize) ?: "大小未知"
+
+internal fun shouldShowSaveDirectoryAction(isAddingPath: Boolean): Boolean = isAddingPath
 
 private fun pathLabel(path: String): String = "路径 ${path.ifBlank { "/" }}"
 
-private fun formatByteSize(bytes: Long): String {
+internal fun formatByteSize(bytes: Long): String {
     val kib = 1024L
     val mib = kib * 1024L
     val gib = mib * 1024L

@@ -35,4 +35,30 @@ class FileDirectoryScreenBehaviorTest {
             ),
         )
     }
+
+    @Test
+    fun directoryEntriesDoNotShowContinueBrowsingHint() {
+        assertEquals(
+            "",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("Series", "content://tree/comics/series", isDirectory = true),
+            ),
+        )
+    }
+
+    @Test
+    fun comicEntriesOnlyShowSizeMetadata() {
+        assertEquals(
+            "4 KiB",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false, size = 4096L),
+            ),
+        )
+        assertEquals(
+            "大小未知",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false),
+            ),
+        )
+    }
 }

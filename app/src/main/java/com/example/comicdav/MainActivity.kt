@@ -162,6 +162,7 @@ fun ComicDavApp() {
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
+    var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.SOURCES.name) }
     val selectedTab = remember(selectedTabName) {
         runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
@@ -540,6 +541,7 @@ fun ComicDavApp() {
             isWebDavOpen -> {
                 if (!webDavViewModel.handleBack()) {
                     isWebDavOpen = false
+                    isAddingWebDavPath = false
                     localOpenError = null
                     webDavActionMessage = null
                 }
@@ -642,12 +644,15 @@ fun ComicDavApp() {
                                                     username = uiState.username,
                                                     password = uiState.password,
                                                 )
+                                                isAddingWebDavPath = false
                                             },
                                             onBackToDirectories = {
                                                 isWebDavOpen = false
+                                                isAddingWebDavPath = false
                                                 localOpenError = null
                                                 webDavActionMessage = null
                                             },
+                                            showSaveDirectoryAction = isAddingWebDavPath,
                                             downloadProgress = downloadProgress,
                                             downloadError = localOpenError,
                                             actionMessage = webDavActionMessage,
@@ -665,6 +670,7 @@ fun ComicDavApp() {
                                             onTestConnection = webDavViewModel::testConnection,
                                             onBackToLibrary = {
                                                 isWebDavOpen = false
+                                                isAddingWebDavPath = false
                                                 localOpenError = null
                                                 webDavActionMessage = null
                                             },
@@ -683,6 +689,7 @@ fun ComicDavApp() {
                                             webDavActionMessage = null
                                             webDavViewModel.startNewConnection()
                                             isWebDavOpen = true
+                                            isAddingWebDavPath = true
                                         },
                                         onOpenLibrary = {
                                             localOpenError = null
@@ -700,6 +707,7 @@ fun ComicDavApp() {
                                                     val path = source.webDavPath ?: "/"
                                                     webDavActionMessage = null
                                                     isWebDavOpen = true
+                                                    isAddingWebDavPath = false
                                                     scope.launch {
                                                         if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
                                                             localOpenError = null
