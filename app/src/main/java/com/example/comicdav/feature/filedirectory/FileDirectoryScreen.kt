@@ -10,17 +10,16 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +36,22 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.ComicDavIcons
+
+internal enum class FileDirectoryEntryClickAction {
+    OpenDirectory,
+    OpenComic,
+}
+
+internal enum class FileDirectoryEntryMenuAction {
+    AddToLibrary,
+}
+
+internal fun fileDirectoryEntryClickAction(entry: FileDirectoryBrowserItem): FileDirectoryEntryClickAction =
+    if (entry.isDirectory) FileDirectoryEntryClickAction.OpenDirectory else FileDirectoryEntryClickAction.OpenComic
+
+internal fun fileDirectoryEntryLongPressActions(entry: FileDirectoryBrowserItem): List<FileDirectoryEntryMenuAction> =
+    if (entry.isDirectory) emptyList() else listOf(FileDirectoryEntryMenuAction.AddToLibrary)
 
 @Composable
 fun FileDirectoryScreen(
@@ -479,6 +494,7 @@ private fun EntryList(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileDirectoryEntryRow(
     entry: FileDirectoryBrowserItem,
@@ -486,8 +502,37 @@ private fun FileDirectoryEntryRow(
     onOpenComic: () -> Unit,
     onFavoriteComic: () -> Unit,
 ) {
+    var isActionDialogOpen by remember { mutableStateOf(false) }
+    val longPressActions = fileDirectoryEntryLongPressActions(entry)
+    val clickAction = fileDirectoryEntryClickAction(entry)
+
+    if (isActionDialogOpen) {
+        FileDirectoryEntryActionDialog(
+            entry = entry,
+            actions = longPressActions,
+            onDismiss = { isActionDialogOpen = false },
+            onFavoriteComic = {
+                isActionDialogOpen = false
+                onFavoriteComic()
+            },
+        )
+    }
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {
+                    when (clickAction) {
+                        FileDirectoryEntryClickAction.OpenDirectory -> onOpenDirectory()
+                        FileDirectoryEntryClickAction.OpenComic -> onOpenComic()
+                    }
+                },
+                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
+                    { isActionDialogOpen = true }
+                },
+                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+            ),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -496,7 +541,7 @@ private fun FileDirectoryEntryRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SourceBadge(text = if (entry.isDirectory) "文件夹" else "漫画")
+            EntryTypeIcon(isDirectory = entry.isDirectory)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entry.name,
@@ -509,7 +554,7 @@ private fun FileDirectoryEntryRow(
                     text = if (entry.isDirectory) {
                         "打开后继续浏览"
                     } else {
-                        entry.size?.let { "${it / 1024} KiB" } ?: "CBZ / ZIP 文件"
+                        entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -517,29 +562,79 @@ private fun FileDirectoryEntryRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (entry.isDirectory) {
-                Button(
-                    onClick = onOpenDirectory,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(ComicDavCopy.open)
-                }
-            } else {
-                OutlinedButton(
-                    onClick = onFavoriteComic,
-                    modifier = Modifier
-                        .defaultMinSize(minHeight = 48.dp)
-                        .widthIn(min = 96.dp, max = 116.dp),
-                ) {
-                    Text(ComicDavCopy.addToLibrary)
-                }
-                Button(
-                    onClick = onOpenComic,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(ComicDavCopy.read)
+        }
+    }
+}
+
+@Composable
+private fun FileDirectoryEntryActionDialog(
+    entry: FileDirectoryBrowserItem,
+    actions: List<FileDirectoryEntryMenuAction>,
+    onDismiss: () -> Unit,
+    onFavoriteComic: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("文件操作") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = entry.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                actions.forEach { action ->
+                    when (action) {
+                        FileDirectoryEntryMenuAction.AddToLibrary -> {
+                            TextButton(
+                                onClick = onFavoriteComic,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text(ComicDavCopy.addToLibrary)
+                            }
+                        }
+                    }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+private fun EntryTypeIcon(isDirectory: Boolean) {
+    val containerColor = if (isDirectory) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val contentColor = if (isDirectory) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Surface(
+        modifier = Modifier.size(44.dp),
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+                contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }

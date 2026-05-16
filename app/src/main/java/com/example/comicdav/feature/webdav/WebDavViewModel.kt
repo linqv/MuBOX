@@ -10,7 +10,6 @@ import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavException
 import com.example.comicdav.network.WebDavItem
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 typealias WebDavClientFactory = (baseUrl: String, username: String?, password: String?) -> WebDavClient
 
@@ -20,9 +19,8 @@ data class WebDavUiState(
     val password: String = "",
     val currentPath: String = "/",
     val items: List<WebDavItem> = emptyList(),
-    val selectedItem: WebDavItem? = null,
     val status: String = WEB_DAV_STATUS_NOT_CONNECTED,
-    val diagnostic: String = "",
+    val message: String = "",
     val isLoading: Boolean = false,
 )
 
@@ -119,34 +117,6 @@ class WebDavViewModel(
         return true
     }
 
-    fun selectItem(item: WebDavItem) {
-        if (item.isDirectory) return
-        uiState = uiState.copy(selectedItem = item, diagnostic = "")
-    }
-
-    fun probeTail64KiB() {
-        val item = uiState.selectedItem ?: return
-        val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
-        client = activeClient
-        uiState = uiState.copy(isLoading = true, diagnostic = "正在读取文件尾部...")
-        viewModelScope.launch {
-            runCatching {
-                val info = activeClient.head(item.path)
-                val start = max(0L, info.size - TAIL_READ_SIZE)
-                val end = info.size - 1
-                val bytes = activeClient.readRange(item.path, start, end)
-                "读取 ${bytes.size} 字节，范围 $start-$end"
-            }.fold(
-                onSuccess = { message ->
-                    uiState = uiState.copy(isLoading = false, diagnostic = message)
-                },
-                onFailure = { error ->
-                    uiState = uiState.copy(isLoading = false, diagnostic = error.userMessage())
-                },
-            )
-        }
-    }
-
     private fun loadPath(path: String, keepConnectedStatus: Boolean = false) {
         val hadConnectedSession = client != null && connectedAccountId != null
         val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
@@ -160,7 +130,7 @@ class WebDavViewModel(
         } else {
             WEB_DAV_STATUS_CONNECTING
         }
-        uiState = uiState.copy(isLoading = true, status = loadingStatus, diagnostic = "")
+        uiState = uiState.copy(isLoading = true, status = loadingStatus, message = "")
         viewModelScope.launch {
             runCatching {
                 activeClient.list(path)
@@ -171,7 +141,6 @@ class WebDavViewModel(
                     uiState = uiState.copy(
                         currentPath = path,
                         items = items,
-                        selectedItem = null,
                         status = WEB_DAV_STATUS_CONNECTED,
                         isLoading = false,
                     )
@@ -181,7 +150,7 @@ class WebDavViewModel(
                     uiState = if (keepBrowserState) {
                         uiState.copy(
                             status = WEB_DAV_STATUS_CONNECTED,
-                            diagnostic = message,
+                            message = message,
                             isLoading = false,
                         )
                     } else {
@@ -209,10 +178,6 @@ class WebDavViewModel(
         } else {
             withoutTrailingSlash.substring(0, lastSlashIndex + 1)
         }
-    }
-
-    companion object {
-        private const val TAIL_READ_SIZE = 64L * 1024L
     }
 
     private data class WebDavConnectionCredentials(

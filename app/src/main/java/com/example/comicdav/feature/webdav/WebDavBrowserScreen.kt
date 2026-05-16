@@ -1,22 +1,22 @@
 package com.example.comicdav.feature.webdav
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,6 +24,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -31,18 +35,35 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.ComicDavIcons
+
+internal enum class WebDavItemClickAction {
+    OpenDirectory,
+    OpenComic,
+}
+
+internal enum class WebDavFileMenuAction {
+    AddToLibrary,
+    DownloadToLocal,
+}
+
+internal fun webDavItemClickAction(item: WebDavItem): WebDavItemClickAction =
+    if (item.isDirectory) WebDavItemClickAction.OpenDirectory else WebDavItemClickAction.OpenComic
+
+internal fun webDavItemLongPressActions(item: WebDavItem): List<WebDavFileMenuAction> =
+    if (item.isDirectory) emptyList() else listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal)
 
 @Composable
 fun WebDavBrowserScreen(
     uiState: WebDavUiState,
     onItemClick: (WebDavItem) -> Unit,
-    onSelectItem: (WebDavItem) -> Unit,
     onAddToLibrary: (WebDavItem) -> Unit,
+    onDownloadToLocal: (WebDavItem) -> Unit,
     onSaveDirectory: () -> Unit,
     onBackToDirectories: () -> Unit,
-    onProbeTail: () -> Unit,
     downloadProgress: DownloadProgressUi?,
     downloadError: String?,
+    actionMessage: String?,
     onCancelDownload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -70,23 +91,22 @@ fun WebDavBrowserScreen(
             items(uiState.items) { item ->
                 WebDavItemRow(
                     item = item,
-                    selected = uiState.selectedItem == item,
                     onOpen = { onItemClick(item) },
-                    onSelect = { onSelectItem(item) },
                     onAddToLibrary = { onAddToLibrary(item) },
+                    onDownloadToLocal = { onDownloadToLocal(item) },
                 )
             }
         }
 
-        WebDavDiagnosticsPanel(
-            selectedItem = uiState.selectedItem,
-            isLoading = uiState.isLoading,
-            diagnostic = uiState.diagnostic,
-            downloadProgress = downloadProgress,
-            downloadError = downloadError,
-            onProbeTail = onProbeTail,
-            onCancelDownload = onCancelDownload,
-        )
+        val panelMessage = uiState.message.ifBlank { actionMessage.orEmpty() }
+        if (downloadProgress != null || !downloadError.isNullOrBlank() || panelMessage.isNotBlank()) {
+            WebDavTransferPanel(
+                message = panelMessage,
+                downloadProgress = downloadProgress,
+                downloadError = downloadError,
+                onCancelDownload = onCancelDownload,
+            )
+        }
     }
 }
 
@@ -168,32 +188,52 @@ private fun WebDavBrowserAppBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WebDavItemRow(
     item: WebDavItem,
-    selected: Boolean,
     onOpen: () -> Unit,
-    onSelect: () -> Unit,
     onAddToLibrary: () -> Unit,
+    onDownloadToLocal: () -> Unit,
 ) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surface
+    var isActionDialogOpen by remember { mutableStateOf(false) }
+    val clickAction = webDavItemClickAction(item)
+    val longPressActions = webDavItemLongPressActions(item)
+
+    if (isActionDialogOpen) {
+        WebDavFileActionDialog(
+            item = item,
+            actions = longPressActions,
+            onDismiss = { isActionDialogOpen = false },
+            onAddToLibrary = {
+                isActionDialogOpen = false
+                onAddToLibrary()
+            },
+            onDownloadToLocal = {
+                isActionDialogOpen = false
+                onDownloadToLocal()
+            },
+        )
     }
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { if (item.isDirectory) onOpen() else onSelect() },
+            .combinedClickable(
+                onClick = {
+                    when (clickAction) {
+                        WebDavItemClickAction.OpenDirectory -> onOpen()
+                        WebDavItemClickAction.OpenComic -> onOpen()
+                    }
+                },
+                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
+                    { isActionDialogOpen = true }
+                },
+                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+            ),
         shape = MaterialTheme.shapes.medium,
-        color = containerColor,
-        border = BorderStroke(1.dp, borderColor),
-        tonalElevation = if (selected) 2.dp else 0.dp,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier
@@ -202,7 +242,7 @@ private fun WebDavItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SourceBadge(item = item)
+            WebDavItemTypeIcon(isDirectory = item.isDirectory)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -215,76 +255,106 @@ private fun WebDavItemRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (item.isDirectory) "文件夹" else fileMetaLabel(item),
+                    text = if (item.isDirectory) "打开后继续浏览" else fileMetaLabel(item),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (item.isDirectory) {
-                TextButton(
-                    onClick = onOpen,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text(ComicDavCopy.open)
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onAddToLibrary,
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    ) {
-                        Text(ComicDavCopy.addToLibrary)
-                    }
-                    Button(
-                        onClick = onOpen,
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    ) {
-                        Text(ComicDavCopy.read)
-                    }
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun SourceBadge(item: WebDavItem) {
-    val color = if (item.isDirectory) {
+private fun WebDavFileActionDialog(
+    item: WebDavItem,
+    actions: List<WebDavFileMenuAction>,
+    onDismiss: () -> Unit,
+    onAddToLibrary: () -> Unit,
+    onDownloadToLocal: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("文件操作") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                actions.forEach { action ->
+                    when (action) {
+                        WebDavFileMenuAction.AddToLibrary -> {
+                            TextButton(
+                                onClick = onAddToLibrary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text(ComicDavCopy.addToLibrary)
+                            }
+                        }
+                        WebDavFileMenuAction.DownloadToLocal -> {
+                            TextButton(
+                                onClick = onDownloadToLocal,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("下载到本地")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+private fun WebDavItemTypeIcon(isDirectory: Boolean) {
+    val color = if (isDirectory) {
         MaterialTheme.colorScheme.tertiaryContainer
     } else {
         MaterialTheme.colorScheme.secondaryContainer
     }
-    val textColor = if (item.isDirectory) {
+    val iconColor = if (isDirectory) {
         MaterialTheme.colorScheme.onTertiaryContainer
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
     Surface(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(44.dp),
         shape = MaterialTheme.shapes.small,
         color = color,
+        contentColor = iconColor,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = if (item.isDirectory) "目录" else item.extensionBadge(),
-                style = MaterialTheme.typography.labelSmall,
-                color = textColor,
-                fontWeight = FontWeight.Bold,
+            Icon(
+                imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+                contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+                modifier = Modifier.size(24.dp),
             )
         }
     }
 }
 
 @Composable
-private fun WebDavDiagnosticsPanel(
-    selectedItem: WebDavItem?,
-    isLoading: Boolean,
-    diagnostic: String,
+private fun WebDavTransferPanel(
+    message: String,
     downloadProgress: DownloadProgressUi?,
     downloadError: String?,
-    onProbeTail: () -> Unit,
     onCancelDownload: () -> Unit,
 ) {
     Surface(
@@ -297,40 +367,7 @@ private fun WebDavDiagnosticsPanel(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = selectedItem?.name ?: "未选择漫画",
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = selectedItem?.let {
-                            if (it.isDirectory) "目录可直接打开" else fileMetaLabel(it)
-                        } ?: "选择漫画后可阅读、加入书架或检查远程读取能力",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                OutlinedButton(
-                    onClick = onProbeTail,
-                    enabled = selectedItem?.isDirectory == false && !isLoading && downloadProgress == null,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text("诊断")
-                }
-            }
-
             if (downloadProgress != null) {
-                HorizontalDivider()
                 Text(
                     text = downloadProgress.label,
                     style = MaterialTheme.typography.bodySmall,
@@ -347,16 +384,21 @@ private fun WebDavDiagnosticsPanel(
                 }
             }
             if (!downloadError.isNullOrBlank()) {
+                if (downloadProgress != null) {
+                    HorizontalDivider()
+                }
                 Text(
                     text = downloadError,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            if (diagnostic.isNotBlank()) {
-                HorizontalDivider()
+            if (message.isNotBlank()) {
+                if (downloadProgress != null || !downloadError.isNullOrBlank()) {
+                    HorizontalDivider()
+                }
                 Text(
-                    text = diagnostic,
+                    text = message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -374,11 +416,6 @@ private fun fileMetaLabel(item: WebDavItem): String {
 }
 
 private fun pathLabel(path: String): String = "路径 ${path.ifBlank { "/" }}"
-
-private fun WebDavItem.extensionBadge(): String {
-    val extension = name.substringAfterLast('.', missingDelimiterValue = "")
-    return extension.takeIf { it.length in 2..4 }?.uppercase() ?: "漫画"
-}
 
 private fun formatByteSize(bytes: Long): String {
     val kib = 1024L

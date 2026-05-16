@@ -46,6 +46,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
+import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
@@ -76,6 +77,7 @@ import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
 import com.example.comicdav.network.RemoteFileInfo
+import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
 import java.io.File
@@ -165,6 +167,7 @@ fun ComicDavApp() {
         runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
     }
     var localOpenError by remember { mutableStateOf<String?>(null) }
+    var webDavActionMessage by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
     var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
     var dataFolderUriText by rememberSaveable { mutableStateOf<String?>(null) }
@@ -333,10 +336,102 @@ fun ComicDavApp() {
         }
     }
 
+    fun favoriteWebDavComic(item: WebDavItem) {
+        val client = webDavViewModel.activeClient()
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        if (client == null) {
+            localOpenError = "请先连接 WebDAV，再加入书架"
+            webDavActionMessage = null
+            return
+        }
+        localOpenError = null
+        webDavActionMessage = null
+        scope.launch {
+            runCatching {
+                libraryRepository.addWebDavComic(
+                    accountId = accountId,
+                    remotePath = item.path,
+                    fileName = item.name,
+                    size = item.size,
+                    etag = item.etag,
+                    lastModified = item.lastModified,
+                )
+            }.fold(
+                onSuccess = {
+                    webDavActionMessage = "已将 ${item.name} 加入书架"
+                    libraryViewModel.showMessage("已将 ${item.name} 加入书架")
+                    fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
+                },
+                onFailure = { error ->
+                    localOpenError = error.message ?: "添加 WebDAV 漫画失败"
+                    ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
+                    libraryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
+                    fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
+                },
+            )
+        }
+    }
+
+    fun downloadWebDavComicToLocal(item: WebDavItem) {
+        val client = webDavViewModel.activeClient()
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        if (client == null) {
+            localOpenError = "请先连接 WebDAV，再下载漫画"
+            webDavActionMessage = null
+            return
+        }
+        downloadProgress = null
+        localOpenError = null
+        webDavActionMessage = null
+        scope.launch {
+            runCatching {
+                val info = item.size?.let { knownSize ->
+                    RemoteFileInfo(
+                        path = item.path,
+                        size = knownSize,
+                        etag = item.etag,
+                        lastModified = item.lastModified,
+                        supportsRange = true,
+                    )
+                } ?: client.head(item.path)
+                val key = ComicCacheKey.fromRemote(
+                    accountId = accountId,
+                    remotePath = item.path,
+                    size = info.size,
+                    etag = info.etag,
+                    lastModified = info.lastModified,
+                )
+                remoteCache.download(
+                    client = client,
+                    remotePath = item.path,
+                    key = key,
+                    expectedSize = info.size,
+                ) { downloaded, total ->
+                    scope.launch {
+                        downloadProgress = DownloadProgressUi(downloaded, total)
+                    }
+                }
+            }.fold(
+                onSuccess = {
+                    downloadProgress = null
+                    webDavActionMessage = "已下载 ${item.name} 到本地"
+                    fileDirectoryViewModel.showMessage("已下载 ${item.name} 到本地")
+                },
+                onFailure = { error ->
+                    downloadProgress = null
+                    localOpenError = error.message ?: "下载到本地失败"
+                    ReaderDiagnosticLog.error("download_webdav_comic_failed path=${item.path}", error)
+                    fileDirectoryViewModel.showError(error.message ?: "下载到本地失败")
+                },
+            )
+        }
+    }
+
     fun closeReaderFromNavigation() {
         ReaderDiagnosticLog.event("reader_navigation_close")
         readerViewModel.closeReader()
         downloadProgress = null
+        webDavActionMessage = null
         isReaderOpen = false
     }
 
@@ -402,6 +497,7 @@ fun ComicDavApp() {
         }
         downloadProgress = null
         localOpenError = null
+        webDavActionMessage = null
         isReaderOpen = true
         startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
@@ -445,12 +541,14 @@ fun ComicDavApp() {
                 if (!webDavViewModel.handleBack()) {
                     isWebDavOpen = false
                     localOpenError = null
+                    webDavActionMessage = null
                 }
             }
             selectedTab == AppTab.SOURCES && fileDirectoryViewModel.handleBack() -> Unit
             selectedTab != AppTab.SOURCES -> {
                 selectedTabName = AppTab.SOURCES.name
                 localOpenError = null
+                webDavActionMessage = null
             }
         }
     }
@@ -510,6 +608,7 @@ fun ComicDavApp() {
                         onTabSelected = { tab ->
                             selectedTabName = tab.name
                             localOpenError = null
+                            webDavActionMessage = null
                         },
                     ) { contentModifier ->
                         when (selectedTab) {
@@ -531,38 +630,8 @@ fun ComicDavApp() {
                                                     )
                                                 }
                                             },
-                                            onSelectItem = webDavViewModel::selectItem,
-                                            onAddToLibrary = { item ->
-                                                webDavViewModel.selectItem(item)
-                                                val client = webDavViewModel.activeClient()
-                                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-                                                if (client == null) {
-                                                    libraryViewModel.showError("请先连接 WebDAV，再加入书架")
-                                                } else {
-                                                    scope.launch {
-                                                        runCatching {
-                                                            libraryRepository.addWebDavComic(
-                                                                accountId = accountId,
-                                                                remotePath = item.path,
-                                                                fileName = item.name,
-                                                                size = item.size,
-                                                                etag = item.etag,
-                                                                lastModified = item.lastModified,
-                                                            )
-                                                        }.fold(
-                                                            onSuccess = {
-                                                                libraryViewModel.showMessage("已将 ${item.name} 加入书架")
-                                                                fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
-                                                            },
-                                                            onFailure = { error ->
-                                                                ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
-                                                                libraryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
-                                                                fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
-                                                            },
-                                                        )
-                                                    }
-                                                }
-                                            },
+                                            onAddToLibrary = ::favoriteWebDavComic,
+                                            onDownloadToLocal = ::downloadWebDavComicToLocal,
                                             onSaveDirectory = {
                                                 val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
                                                 fileDirectoryViewModel.addWebDavDirectory(
@@ -577,10 +646,11 @@ fun ComicDavApp() {
                                             onBackToDirectories = {
                                                 isWebDavOpen = false
                                                 localOpenError = null
+                                                webDavActionMessage = null
                                             },
-                                            onProbeTail = webDavViewModel::probeTail64KiB,
                                             downloadProgress = downloadProgress,
                                             downloadError = localOpenError,
+                                            actionMessage = webDavActionMessage,
                                             onCancelDownload = {
                                                 downloadProgress = null
                                             },
@@ -596,6 +666,7 @@ fun ComicDavApp() {
                                             onBackToLibrary = {
                                                 isWebDavOpen = false
                                                 localOpenError = null
+                                                webDavActionMessage = null
                                             },
                                             message = localOpenError,
                                             modifier = contentModifier,
@@ -609,25 +680,30 @@ fun ComicDavApp() {
                                         },
                                         onOpenWebDav = {
                                             localOpenError = null
+                                            webDavActionMessage = null
                                             webDavViewModel.startNewConnection()
                                             isWebDavOpen = true
                                         },
                                         onOpenLibrary = {
                                             localOpenError = null
+                                            webDavActionMessage = null
                                             selectedTabName = AppTab.LIBRARY.name
                                         },
                                         onOpenSource = { source ->
                                             when (source.sourceType) {
                                                 FileDirectorySourceType.LOCAL -> {
+                                                    webDavActionMessage = null
                                                     fileDirectoryViewModel.openLocalSource(source)
                                                 }
                                                 FileDirectorySourceType.WEBDAV -> {
                                                     val expectedAccountId = source.webDavAccountId
                                                     val path = source.webDavPath ?: "/"
+                                                    webDavActionMessage = null
                                                     isWebDavOpen = true
                                                     scope.launch {
                                                         if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
                                                             localOpenError = null
+                                                            webDavActionMessage = null
                                                             webDavViewModel.openPath(path)
                                                             return@launch
                                                         }
@@ -639,9 +715,11 @@ fun ComicDavApp() {
                                                             ?: savedAccount?.baseUrl
                                                         if (baseUrl.isNullOrBlank()) {
                                                             localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
+                                                            webDavActionMessage = null
                                                             return@launch
                                                         }
                                                         localOpenError = null
+                                                        webDavActionMessage = null
                                                         webDavViewModel.connectToSavedSource(
                                                             baseUrl = baseUrl,
                                                             username = source.webDavUsername
