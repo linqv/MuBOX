@@ -39,8 +39,11 @@ class WebDavViewModel(
         private set
 
     private var client: WebDavClient? = null
+    private var connectedAccountId: String? = null
 
     fun activeClient(): WebDavClient? = client
+
+    fun activeAccountId(): String? = connectedAccountId
 
     fun accountId(): String = "${uiState.baseUrl.trim()}|${uiState.username}"
 
@@ -59,6 +62,7 @@ class WebDavViewModel(
     fun testConnection() {
         val newClient = clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
         client = newClient
+        connectedAccountId = accountId()
         loadPath(path = "/")
     }
 
@@ -68,6 +72,7 @@ class WebDavViewModel(
     }
 
     fun selectItem(item: WebDavItem) {
+        if (item.isDirectory) return
         uiState = uiState.copy(selectedItem = item, diagnostic = "")
     }
 
@@ -97,6 +102,9 @@ class WebDavViewModel(
     private fun loadPath(path: String) {
         val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
         client = activeClient
+        if (connectedAccountId == null) {
+            connectedAccountId = accountId()
+        }
         uiState = uiState.copy(isLoading = true, status = "Connecting...", diagnostic = "")
         viewModelScope.launch {
             runCatching {

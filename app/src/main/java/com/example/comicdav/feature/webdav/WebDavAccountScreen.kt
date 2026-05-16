@@ -2,6 +2,7 @@ package com.example.comicdav.feature.webdav
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,7 +10,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -22,6 +25,8 @@ fun WebDavAccountScreen(
     onPasswordChange: (String) -> Unit,
     onTestConnection: () -> Unit,
     onOpenLocal: () -> Unit,
+    onBackToLibrary: () -> Unit,
+    message: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -30,7 +35,16 @@ fun WebDavAccountScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(text = "ComicDav", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = "ComicDav", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = onBackToLibrary) {
+                Text("Library")
+            }
+        }
         OutlinedTextField(
             value = uiState.baseUrl,
             onValueChange = onBaseUrlChange,
@@ -58,6 +72,13 @@ fun WebDavAccountScreen(
         }
         Button(onClick = onOpenLocal, enabled = !uiState.isLoading) {
             Text("Open Local CBZ")
+        }
+        if (!message.isNullOrBlank()) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         Text(text = uiState.status)
     }

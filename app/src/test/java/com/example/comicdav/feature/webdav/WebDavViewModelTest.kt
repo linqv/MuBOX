@@ -51,6 +51,20 @@ class WebDavViewModelTest {
     }
 
     @Test
+    fun activeAccountIdUsesConnectedCredentialsEvenIfFormChangesLater() = runTest(dispatcher) {
+        val client = FakeWebDavClient()
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> client })
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.updateUsername("lin")
+
+        viewModel.testConnection()
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.updateUsername("other")
+
+        assertEquals("https://example.test/dav/|lin", viewModel.activeAccountId())
+    }
+
+    @Test
     fun probeTailReadsLast64KiB() = runTest(dispatcher) {
         val item = WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = 100_000, etag = "a", lastModified = null)
         val client = FakeWebDavClient(
@@ -66,6 +80,18 @@ class WebDavViewModelTest {
 
         assertEquals(34_464L to 99_999L, client.lastRange)
         assertTrue(viewModel.uiState.diagnostic.contains("Read 3 bytes"))
+    }
+
+    @Test
+    fun selectItemKeepsFilesButIgnoresDirectories() {
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> FakeWebDavClient() })
+        val file = WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = 100_000, etag = "a", lastModified = null)
+        val directory = WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null)
+
+        viewModel.selectItem(file)
+        viewModel.selectItem(directory)
+
+        assertEquals(file, viewModel.uiState.selectedItem)
     }
 
     private class FakeWebDavClient(
