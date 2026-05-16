@@ -36,7 +36,8 @@ fun WebDavBrowserScreen(
     onItemClick: (WebDavItem) -> Unit,
     onSelectItem: (WebDavItem) -> Unit,
     onAddToLibrary: (WebDavItem) -> Unit,
-    onBackToLibrary: () -> Unit,
+    onSaveDirectory: () -> Unit,
+    onBackToDirectories: () -> Unit,
     onProbeTail: () -> Unit,
     downloadProgress: DownloadProgressUi?,
     downloadError: String?,
@@ -72,10 +73,10 @@ fun WebDavBrowserScreen(
                 )
             }
             TextButton(
-                onClick = onBackToLibrary,
+                onClick = onBackToDirectories,
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp),
             ) {
-                Text("Library")
+                Text("Directories")
             }
         }
 
@@ -125,6 +126,14 @@ fun WebDavBrowserScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
+                    OutlinedButton(
+                        onClick = onSaveDirectory,
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Text("Save Dir")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     OutlinedButton(
                         onClick = onProbeTail,
                         enabled = uiState.selectedItem?.isDirectory == false && !uiState.isLoading && downloadProgress == null,

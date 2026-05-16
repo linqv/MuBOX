@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a library-first manga reader experience with Room-backed library data, first-run data-folder selection, WebDAV/local add flows, and a polished reader plus WebDAV UI.
+**Goal:** Add a manga reader experience with separate manually saved file directories, a favorites-style Room-backed library, first-run data-folder selection, WebDAV/local browse flows, and a polished reader plus WebDAV UI.
 
-**Architecture:** Room owns library metadata and source records. DataStore owns the selected app data-folder URI. Existing reader/opening code remains the execution path, with small adapters for library items. Compose screens are split into library, WebDAV browser, first-run gate, and reader UI.
+**Architecture:** Room owns library metadata plus manually saved file directory source records. DataStore owns the selected app data-folder URI. Existing reader/opening code remains the execution path, with small adapters for library items and file directory entries. Compose screens are split into file directory, library, WebDAV browser, first-run gate, and reader UI.
 
 **Tech Stack:** Kotlin, Jetpack Compose Material 3, Android Room, DataStore Preferences, Coil 3, existing Rust/JNI CBZ reader.
 
@@ -19,6 +19,8 @@
 - Create `app/src/main/java/com/example/comicdav/data/library/LibraryRepository.kt`: repository API for local/WebDAV add and list operations.
 - Create `app/src/main/java/com/example/comicdav/feature/library/LibraryViewModel.kt`: screen state and actions.
 - Create `app/src/main/java/com/example/comicdav/feature/library/LibraryScreen.kt`: library home grid and empty state.
+- Create `app/src/main/java/com/example/comicdav/data/filedirectory/`: Room entities, DAO, and repository for manually added local/WebDAV directory sources only.
+- Create `app/src/main/java/com/example/comicdav/feature/filedirectory/`: file directory view model, SAF local directory reader, and Compose screen for recursive on-demand local folder browsing.
 - Create `app/src/main/java/com/example/comicdav/ui/ComicDavTheme.kt`: app theme tokens and MaterialTheme wrapper.
 - Modify `app/build.gradle.kts`: add Room runtime, KSP or kapt compiler, and Room test dependency.
 - Modify `app/src/main/java/com/example/comicdav/MainActivity.kt`: route first-run folder selection, library home, WebDAV browse, local add, and reader open.

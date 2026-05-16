@@ -71,6 +71,10 @@ class WebDavViewModel(
         loadPath(item.path)
     }
 
+    fun openPath(path: String) {
+        loadPath(path)
+    }
+
     fun selectItem(item: WebDavItem) {
         if (item.isDirectory) return
         uiState = uiState.copy(selectedItem = item, diagnostic = "")

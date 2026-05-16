@@ -42,7 +42,7 @@ fun WebDavAccountScreen(
         ) {
             Text(text = "ComicDav", style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = onBackToLibrary) {
-                Text("Library")
+                Text("Directories")
             }
         }
         OutlinedTextField(
@@ -71,7 +71,7 @@ fun WebDavAccountScreen(
             Text("Test")
         }
         Button(onClick = onOpenLocal, enabled = !uiState.isLoading) {
-            Text("Open Local CBZ")
+            Text("Add Local Folder")
         }
         if (!message.isNullOrBlank()) {
             Text(

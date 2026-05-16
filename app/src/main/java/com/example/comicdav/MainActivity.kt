@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -40,8 +40,14 @@ import androidx.room.Room
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.ComicDownloadCache
+import com.example.comicdav.data.filedirectory.FileDirectoryRepository
+import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.LocalComicImportCache
 import com.example.comicdav.data.ReadingProgressStore
+import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
+import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
+import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
+import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
 import com.example.comicdav.data.library.LibraryDatabase
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.LibraryRepository
@@ -121,6 +127,12 @@ fun ComicDavApp() {
     val libraryRepository = remember(libraryDatabase) {
         LibraryRepository(libraryDatabase.libraryDao())
     }
+    val fileDirectoryRepository = remember(libraryDatabase) {
+        FileDirectoryRepository(libraryDatabase.fileDirectoryDao())
+    }
+    val localDirectoryReader = remember(context) {
+        AndroidLocalDirectoryReader(context.applicationContext)
+    }
     val libraryViewModel: LibraryViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -129,12 +141,22 @@ fun ComicDavApp() {
             }
         },
     )
+    val fileDirectoryViewModel: FileDirectoryViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return FileDirectoryViewModel(fileDirectoryRepository, localDirectoryReader) as T
+            }
+        },
+    )
     val uiState = webDavViewModel.uiState
     val readerUiState = readerViewModel.uiState
     val libraryUiState = libraryViewModel.uiState
+    val fileDirectoryUiState = fileDirectoryViewModel.uiState
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
+    var isLibraryOpen by rememberSaveable { mutableStateOf(false) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
     var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
@@ -182,39 +204,19 @@ fun ComicDavApp() {
         startReaderLogFile(context, logFolderUriText, scope)
         ReaderDiagnosticLog.event("log_folder_selected uri=$uri")
     }
-    val localFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val localDirectoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        ReaderDiagnosticLog.event("local_file_selected uri=$uri")
+        ReaderDiagnosticLog.event("local_directory_selected uri=$uri")
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         runCatching {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.contentResolver.takePersistableUriPermission(uri, flags)
         }.onFailure { error ->
-            ReaderDiagnosticLog.error("local_file_permission_failed uri=$uri", error)
+            ReaderDiagnosticLog.error("local_directory_permission_failed uri=$uri", error)
         }
-        val metadata = queryLocalComicMetadata(context, uri)
-        scope.launch {
-            runCatching {
-                val libraryItemId = libraryRepository.addLocalComic(
-                    uri = uri.toString(),
-                    fileName = metadata.fileName,
-                    size = metadata.size,
-                    lastModified = metadata.lastModified,
-                )
-                cacheLocalCover(
-                    context = context,
-                    repository = libraryRepository,
-                    libraryItemId = libraryItemId,
-                    uri = uri,
-                )
-            }.fold(
-                onSuccess = {
-                    libraryViewModel.showMessage("${metadata.fileName} added to library")
-                },
-                onFailure = { error ->
-                    ReaderDiagnosticLog.error("add_local_library_failed uri=$uri", error)
-                    libraryViewModel.showError(error.message ?: "Failed to add local comic")
-                },
-            )
-        }
+        fileDirectoryViewModel.addLocalDirectory(
+            displayName = queryDirectoryDisplayName(context, uri),
+            treeUri = uri.toString(),
+        )
     }
 
     fun openLocalLibraryComic(item: LibraryItemWithSources) {
@@ -243,6 +245,59 @@ fun ComicDavApp() {
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("open_library_local_copy_failed", error)
                     localOpenError = error.message ?: "Failed to open local file"
+                },
+            )
+        }
+    }
+
+    fun openLocalDirectoryComic(item: FileDirectoryBrowserItem) {
+        startReaderLogFile(context, logFolderUriText, scope)
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    copyUriToCache(context, Uri.parse(item.uri))
+                }
+            }.fold(
+                onSuccess = { cachedFile ->
+                    localOpenError = null
+                    ReaderDiagnosticLog.event("open_directory_local_cache_ready path=${cachedFile.name} size=${cachedFile.length()}")
+                    readerViewModel.openLocal(
+                        path = cachedFile.absolutePath,
+                        cacheDir = context.cacheDir,
+                        comicKey = "directory-${item.uri.hashCode()}",
+                    )
+                    isReaderOpen = true
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("open_directory_local_copy_failed uri=${item.uri}", error)
+                    fileDirectoryViewModel.showError(error.message ?: "Failed to open local file")
+                },
+            )
+        }
+    }
+
+    fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
+        scope.launch {
+            runCatching {
+                val libraryItemId = libraryRepository.addLocalComic(
+                    uri = item.uri,
+                    fileName = item.name,
+                    size = item.size,
+                    lastModified = item.lastModified,
+                )
+                cacheLocalCover(
+                    context = context,
+                    repository = libraryRepository,
+                    libraryItemId = libraryItemId,
+                    uri = Uri.parse(item.uri),
+                )
+            }.fold(
+                onSuccess = {
+                    fileDirectoryViewModel.showMessage("${item.name} added to library")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("favorite_local_directory_comic_failed uri=${item.uri}", error)
+                    fileDirectoryViewModel.showError(error.message ?: "Failed to favorite local comic")
                 },
             )
         }
@@ -385,16 +440,26 @@ fun ComicDavApp() {
                                         }.fold(
                                             onSuccess = {
                                                 libraryViewModel.showMessage("${item.name} added to library")
+                                                fileDirectoryViewModel.showMessage("${item.name} added to library")
                                             },
                                             onFailure = { error ->
                                                 ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
                                                 libraryViewModel.showError(error.message ?: "Failed to add WebDAV comic")
+                                                fileDirectoryViewModel.showError(error.message ?: "Failed to add WebDAV comic")
                                             },
                                         )
                                     }
                                 }
                             },
-                            onBackToLibrary = {
+                            onSaveDirectory = {
+                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+                                fileDirectoryViewModel.addWebDavDirectory(
+                                    displayName = uiState.currentPath,
+                                    accountId = accountId,
+                                    path = uiState.currentPath,
+                                )
+                            },
+                            onBackToDirectories = {
                                 isWebDavOpen = false
                                 localOpenError = null
                             },
@@ -413,7 +478,7 @@ fun ComicDavApp() {
                             onPasswordChange = webDavViewModel::updatePassword,
                             onTestConnection = webDavViewModel::testConnection,
                             onOpenLocal = {
-                                localFilePicker.launch(COMIC_FILE_MIME_TYPES)
+                                localDirectoryPicker.launch(null)
                             },
                             onBackToLibrary = {
                                 isWebDavOpen = false
@@ -424,7 +489,7 @@ fun ComicDavApp() {
                     }
                 }
 
-                else -> {
+                isLibraryOpen -> {
                     LibraryScreen(
                         uiState = libraryUiState.copy(error = libraryUiState.error ?: localOpenError),
                         onOpenItem = { item ->
@@ -449,16 +514,56 @@ fun ComicDavApp() {
                                 }
                             }
                         },
-                        onAddLocal = {
-                            localFilePicker.launch(COMIC_FILE_MIME_TYPES)
+                        onOpenDirectories = {
+                            localOpenError = null
+                            isLibraryOpen = false
+                        },
+                        onDismissMessage = {
+                            localOpenError = null
+                            libraryViewModel.clearMessage()
+                        },
+                    )
+                }
+
+                else -> {
+                    FileDirectoryScreen(
+                        uiState = fileDirectoryUiState.copy(error = fileDirectoryUiState.error ?: localOpenError),
+                        onAddLocalDirectory = {
+                            localDirectoryPicker.launch(null)
                         },
                         onOpenWebDav = {
                             localOpenError = null
                             isWebDavOpen = true
                         },
+                        onOpenLibrary = {
+                            localOpenError = null
+                            isLibraryOpen = true
+                        },
+                        onOpenSource = { source ->
+                            when (source.sourceType) {
+                                FileDirectorySourceType.LOCAL -> {
+                                    fileDirectoryViewModel.openLocalSource(source)
+                                }
+                                FileDirectorySourceType.WEBDAV -> {
+                                    val expectedAccountId = source.webDavAccountId
+                                    val path = source.webDavPath ?: "/"
+                                    if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
+                                        webDavViewModel.openPath(path)
+                                    } else {
+                                        localOpenError = "Connect to ${expectedAccountId.orEmpty()} before opening this WebDAV directory"
+                                    }
+                                    isWebDavOpen = true
+                                }
+                            }
+                        },
+                        onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
+                        onOpenComic = ::openLocalDirectoryComic,
+                        onFavoriteComic = ::favoriteLocalDirectoryComic,
+                        onGoUp = fileDirectoryViewModel::goUp,
+                        onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
                         onDismissMessage = {
                             localOpenError = null
-                            libraryViewModel.clearMessage()
+                            fileDirectoryViewModel.clearMessage()
                         },
                     )
                 }
@@ -509,34 +614,26 @@ private fun copyUriToCache(context: Context, uri: Uri): File {
     return target
 }
 
-private data class LocalComicMetadata(
-    val fileName: String,
-    val size: Long?,
-    val lastModified: Long?,
-)
-
-private fun queryLocalComicMetadata(context: Context, uri: Uri): LocalComicMetadata {
-    var fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "comic.cbz"
-    var size: Long? = null
+private fun queryDirectoryDisplayName(context: Context, treeUri: Uri): String {
+    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+        treeUri,
+        DocumentsContract.getTreeDocumentId(treeUri),
+    )
     context.contentResolver.query(
-        uri,
-        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+        rootDocumentUri,
+        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
         null,
         null,
         null,
     )?.use { cursor ->
         if (cursor.moveToFirst()) {
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
-                fileName = cursor.getString(nameIndex)
-            }
-            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                size = cursor.getLong(sizeIndex)
+                return cursor.getString(nameIndex)
             }
         }
     }
-    return LocalComicMetadata(fileName = fileName, size = size, lastModified = null)
+    return treeUri.lastPathSegment?.substringAfterLast(':')?.ifBlank { null } ?: "Local Folder"
 }
 
 private suspend fun cacheLocalCover(
@@ -656,13 +753,6 @@ private fun startReaderLogFile(
 
 private fun DownloadProgressUi.toReaderLoadingProgress(): ReaderLoadingProgress =
     ReaderLoadingProgress(downloadedBytes = downloadedBytes, totalBytes = totalBytes)
-
-private val COMIC_FILE_MIME_TYPES = arrayOf(
-    "application/zip",
-    "application/octet-stream",
-    "application/x-cbz",
-    "*/*",
-)
 
 private const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
 private const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"

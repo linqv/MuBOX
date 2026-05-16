@@ -40,8 +40,7 @@ import java.io.File
 fun LibraryScreen(
     uiState: LibraryUiState,
     onOpenItem: (LibraryItemWithSources) -> Unit,
-    onAddLocal: () -> Unit,
-    onOpenWebDav: () -> Unit,
+    onOpenDirectories: () -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,17 +71,11 @@ fun LibraryScreen(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onOpenWebDav,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Text("WebDAV")
-                }
                 Button(
-                    onClick = onAddLocal,
+                    onClick = onOpenDirectories,
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                 ) {
-                    Text("Local")
+                    Text("File Directory")
                 }
             }
         }
@@ -129,8 +122,7 @@ fun LibraryScreen(
 
             uiState.items.isEmpty() -> {
                 EmptyLibrary(
-                    onAddLocal = onAddLocal,
-                    onOpenWebDav = onOpenWebDav,
+                    onOpenDirectories = onOpenDirectories,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -156,8 +148,7 @@ fun LibraryScreen(
 
 @Composable
 private fun EmptyLibrary(
-    onAddLocal: () -> Unit,
-    onOpenWebDav: () -> Unit,
+    onOpenDirectories: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -172,23 +163,17 @@ private fun EmptyLibrary(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Add a local CBZ/ZIP or browse your WebDAV library.",
+            text = "Browse file directories and favorite comics to add them here.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(18.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
-                onClick = onAddLocal,
+                onClick = onOpenDirectories,
                 modifier = Modifier.defaultMinSize(minHeight = 48.dp),
             ) {
-                Text("Add Local")
-            }
-            OutlinedButton(
-                onClick = onOpenWebDav,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-            ) {
-                Text("WebDAV")
+                Text("Open File Directory")
             }
         }
     }

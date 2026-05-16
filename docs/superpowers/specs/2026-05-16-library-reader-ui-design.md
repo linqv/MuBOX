@@ -2,11 +2,18 @@
 
 ## Goal
 
-Turn ComicDav from a direct WebDAV file opener into a manga-reader style app with a real library, a polished WebDAV picker, and an immersive reader.
+Turn ComicDav from a direct WebDAV file opener into a manga-reader style app with separate file directories, a favorites-style library, a polished WebDAV picker, and an immersive reader.
 
 ## Product Decisions
 
-- The library starts as one item per CBZ/ZIP file.
+- File Directory and Library are separate product concepts.
+- File Directory stores only directories the user explicitly adds:
+  - local SAF document-tree folders,
+  - WebDAV account/path pairs saved from the WebDAV browser.
+- File Directory does not store recent visits, last visited folders, automatic history, or implicit browse state.
+- Local File Directory browsing behaves like an in-app file manager: the user opens a saved root folder, taps subfolders, and the app loads child folders plus CBZ/ZIP files on demand.
+- The library is a favorites collection. A comic enters the library only when the user taps Favorite/Add to Library from File Directory or WebDAV browsing.
+- The library starts as one favorite item per CBZ/ZIP file.
 - The data model keeps optional `seriesTitle` and `volumeTitle` fields so folder-based series grouping can be added later.
 - WebDAV items added to the library store metadata, cover path, remote identity, and optional offline download state. They do not download the whole comic by default.
 - Local items added to the library store a persisted document URI. They do not copy the source file by default.
@@ -24,17 +31,19 @@ Turn ComicDav from a direct WebDAV file opener into a manga-reader style app wit
 ## User Flow
 
 1. First launch shows a data-folder gate with a clear reason and one primary action.
-2. After folder selection, the app opens the library home.
-3. Empty library shows two primary ways to add books: local file and WebDAV.
-4. WebDAV browse keeps the existing connection flow but becomes an add/select surface:
+2. After folder selection, the app opens File Directory.
+3. File Directory shows only manually added local folders and WebDAV directories.
+4. Local File Directory opens a saved root folder and recursively navigates subfolders on demand.
+5. WebDAV browse keeps the existing connection flow but becomes an add/select surface:
    - folders are navigable rows,
    - CBZ/ZIP files show source metadata,
-   - each comic can be opened immediately or added to library.
-5. Library cards show cover, title, source badge, progress, and offline state.
-6. Opening a library item routes through the existing reader pipeline:
+   - each comic can be opened immediately or added to library,
+   - the current WebDAV path can be saved as a File Directory source.
+6. Library cards show only favorited comics with cover, title, source badge, progress, and offline state.
+7. Opening a library item routes through the existing reader pipeline:
    - local URI items are copied to a temporary app cache only for the active session,
    - WebDAV items use remote range opening first and whole-file cache fallback.
-7. Reader uses an immersive black canvas. A tap reveals top and bottom controls.
+8. Reader uses an immersive black canvas. A tap reveals top and bottom controls.
 
 ## Data Model
 
@@ -72,18 +81,31 @@ Turn ComicDav from a direct WebDAV file opener into a manga-reader style app wit
 - `lastModified: Long?`
 - `cacheKey: String?`
 
+`file_directory_sources`
+
+- `id: Long`
+- `displayName: String`
+- `sourceType: LOCAL | WEBDAV`
+- `localTreeUri: String?`
+- `webDavAccountId: String?`
+- `webDavPath: String?`
+- `addedAt: Long`
+
+This table intentionally has no recent-visit fields.
+
 ## UI Direction
 
 - Overall style: quiet Material 3 manga-reader UI, dark reader, light/dark-capable library surfaces.
-- Library: dense cover grid, top app bar with title and add actions, empty state with local/WebDAV choices.
-- WebDAV: path breadcrumb, source rows with folder/file icons, sticky progress/status area, add/open actions for files.
+- File Directory: source list for manually added folders, local recursive folder browsing, actions to read or favorite comic files.
+- Library: dense cover grid of favorites with a clear route back to File Directory.
+- WebDAV: path breadcrumb, source rows with folder/file icons, sticky progress/status area, save-current-directory action, add/open actions for files.
 - Reader: black background, full-screen page image, overlay controls, page counter, progress slider, close/log actions, polished loading/error states.
 
 ## Testing
 
 - Unit-test Room DAO and repository behavior.
+- Unit-test file directory source persistence and local browse view model behavior.
 - Unit-test data-folder preference persistence.
 - Unit-test library view model add/open state transitions where practical.
 - Keep existing reader and WebDAV tests passing.
 - Build verification remains `cargo test` and `./gradlew :app:testDebugUnitTest`.
-
