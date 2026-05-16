@@ -41,7 +41,7 @@ class OkHttpWebDavClient(
                 )
             }
             val responseBody = response.body ?: throw WebDavException.MissingMetadata("PROPFIND response body is empty")
-            WebDavXmlParser.parse(responseBody.byteStream(), path)
+            WebDavXmlParser.parse(responseBody.byteStream(), request.url.encodedPath)
         }
     }
 

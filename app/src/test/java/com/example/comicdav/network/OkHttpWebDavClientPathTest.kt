@@ -150,4 +150,36 @@ class OkHttpWebDavClientPathTest {
 
         assertEquals("/webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/", server.takeRequest().path)
     }
+
+    @Test
+    fun filtersCurrentDirectoryWhenBaseUrlAlreadyIncludesDirectoryPath() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(207)
+                .setHeader("Content-Type", "application/xml")
+                .setBody(
+                    """<?xml version="1.0"?>
+                    <d:multistatus xmlns:d="DAV:">
+                        <d:response><d:href>/webdav/%E6%BC%AB%E7%94%BB/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>
+                        <d:response><d:href>/webdav/%E6%BC%AB%E7%94%BB/%E7%AC%AC01%E5%8D%B7/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>
+                        <d:response><d:href>/webdav/%E6%BC%AB%E7%94%BB/Book.cbz</d:href><d:propstat><d:prop><d:getcontentlength>456</d:getcontentlength></d:prop></d:propstat></d:response>
+                    </d:multistatus>
+                    """.trimIndent(),
+                ),
+        )
+        val client = OkHttpWebDavClient(
+            server.url("/webdav/").toString() + "漫画/",
+            username = null,
+            password = null,
+        )
+
+        val items = client.list("/")
+
+        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/", server.takeRequest().path)
+        assertEquals(listOf("第01卷", "Book.cbz"), items.map { it.name })
+        assertEquals(
+            listOf("/webdav/%E6%BC%AB%E7%94%BB/%E7%AC%AC01%E5%8D%B7/", "/webdav/%E6%BC%AB%E7%94%BB/Book.cbz"),
+            items.map { it.path },
+        )
+    }
 }
