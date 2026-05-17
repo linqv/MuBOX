@@ -3,6 +3,8 @@ package com.example.comicdav.feature.reader
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.example.comicdav.data.ReaderLoggingMode
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -30,6 +32,16 @@ interface ReaderLogSink {
 object NoopReaderLogSink : ReaderLogSink {
     override fun log(line: String) = Unit
     override fun logBlocking(line: String) = Unit
+}
+
+enum class ReaderLogCategory {
+    SESSION,
+    LOCAL_FILE,
+    PAGE_LOAD,
+    IMAGE,
+    PREFETCH,
+    RANGE_CACHE,
+    UI,
 }
 
 class ContentUriReaderLogSink(
@@ -96,6 +108,9 @@ object ReaderDiagnosticLog {
     @Volatile
     private var sink: ReaderLogSink = NoopReaderLogSink
 
+    @Volatile
+    private var mode: ReaderLoggingMode = ReaderLoggingMode.SUMMARY
+
     fun setSink(nextSink: ReaderLogSink) {
         sink = nextSink
     }
@@ -104,21 +119,49 @@ object ReaderDiagnosticLog {
         sink = NoopReaderLogSink
     }
 
+    fun setMode(nextMode: ReaderLoggingMode) {
+        mode = nextMode
+    }
+
+    fun summary(category: ReaderLogCategory, event: () -> String) {
+        if (mode == ReaderLoggingMode.OFF) return
+        write(level = "summary", category = category, event = event)
+    }
+
+    fun detail(category: ReaderLogCategory, event: () -> String) {
+        if (mode != ReaderLoggingMode.DETAIL) return
+        write(level = "detail", category = category, event = event)
+    }
+
     fun event(event: String) {
+        summary(ReaderLogCategory.SESSION) { event }
+    }
+
+    fun error(category: ReaderLogCategory, event: String, error: Throwable) {
+        if (mode == ReaderLoggingMode.OFF) return
         runCatching {
-            sink.log(formatReaderLogLine(event))
+            sink.log(formatReaderLogLine("level=error category=${category.name} ${redactReaderLogText(formatThrowable(event, error))}"))
         }
     }
 
     fun error(event: String, error: Throwable) {
+        error(ReaderLogCategory.SESSION, event, error)
+    }
+
+    fun errorBlocking(category: ReaderLogCategory, event: String, error: Throwable) {
+        if (mode == ReaderLoggingMode.OFF) return
         runCatching {
-            sink.log(formatReaderLogLine(formatThrowable(event, error)))
+            sink.logBlocking(formatReaderLogLine("level=error category=${category.name} ${redactReaderLogText(formatThrowable(event, error))}"))
         }
     }
 
     fun errorBlocking(event: String, error: Throwable) {
+        errorBlocking(ReaderLogCategory.SESSION, event, error)
+    }
+
+    private fun write(level: String, category: ReaderLogCategory, event: () -> String) {
         runCatching {
-            sink.logBlocking(formatReaderLogLine(formatThrowable(event, error)))
+            sink.log(formatReaderLogLine("level=$level category=${category.name} ${redactReaderLogText(event())}"))
         }
     }
 }
@@ -139,6 +182,47 @@ fun formatReaderLogLine(event: String, now: () -> String = { Instant.now().toStr
 
 fun formatThrowable(event: String, error: Throwable): String {
     return "$event error=${error.javaClass.simpleName}: ${error.message}\n${error.stackTraceToString()}"
+}
+
+fun redactReaderLogText(text: String): String {
+    var redacted = text
+    redacted = replaceToken(redacted, "uri", "uriId=local")
+    redacted = replaceToken(redacted, "folderUri", "uriId=folder")
+    redacted = replaceToken(redacted, "path", "pathId=path")
+    redacted = replaceFileNameToken(redacted)
+    return redacted
+}
+
+fun readerLogId(prefix: String, raw: String): String = "$prefix:${shortHash(raw)}"
+
+private fun replaceToken(text: String, token: String, replacementName: String): String {
+    val regex = Regex("""\b$token=([^\s]+)""")
+    return regex.replace(text) { match ->
+        "$replacementName:${shortHash(match.groupValues[1])}"
+    }
+}
+
+private fun replaceFileNameToken(text: String): String {
+    val regex = Regex("""\bfileName=(.+?)(?=\s+\w+=|$)""")
+    return regex.replace(text) { match ->
+        val raw = match.groupValues[1].trim()
+        val extension = raw.substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase(Locale.ROOT)
+        buildString {
+            append("fileId=file:")
+            append(shortHash(raw))
+            if (extension.isNotBlank()) {
+                append(" fileExt=")
+                append(extension)
+            }
+        }
+    }
+}
+
+private fun shortHash(raw: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(raw.toByteArray(Charsets.UTF_8))
+    return digest.take(4).joinToString("") { byte -> "%02x".format(byte) }
 }
 
 data class FirstImageTiming(

@@ -36,6 +36,7 @@ import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
+import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,7 +52,7 @@ private const val MaxDiskCacheLimitGb = 5
 fun SettingsScreen(
     settings: AppSettings,
     onReadingDirectionChange: (ReadingDirection) -> Unit,
-    onLoggingEnabledChange: (Boolean) -> Unit,
+    onReaderLoggingModeChange: (ReaderLoggingMode) -> Unit,
     onColorPaletteChange: (AppColorPalette) -> Unit,
     onAutoPageEnabledChange: (Boolean) -> Unit,
     onAutoPageSpeedChange: (Int) -> Unit,
@@ -115,11 +116,12 @@ fun SettingsScreen(
                 label = AppColorPalette::label,
                 onSelected = onColorPaletteChange,
             )
-            SwitchRow(
-                title = "记录诊断日志",
-                subtitle = "保留阅读器加载和翻页诊断信息",
-                checked = settings.loggingEnabled,
-                onCheckedChange = onLoggingEnabledChange,
+            ChoiceRow(
+                title = "诊断日志",
+                options = ReaderLoggingMode.entries,
+                selected = settings.readerLoggingMode,
+                label = ReaderLoggingMode::label,
+                onSelected = onReaderLoggingModeChange,
             )
         }
 
@@ -225,6 +227,13 @@ private fun AppColorPalette.label(): String =
         AppColorPalette.SEPIA -> "纸张护眼"
         AppColorPalette.NIGHT -> "夜间深色"
         AppColorPalette.HIGH_CONTRAST -> "高对比"
+    }
+
+private fun ReaderLoggingMode.label(): String =
+    when (this) {
+        ReaderLoggingMode.OFF -> "关闭"
+        ReaderLoggingMode.SUMMARY -> "摘要"
+        ReaderLoggingMode.DETAIL -> "详细"
     }
 
 private fun formatDownloadTime(downloadedAtMillis: Long): String =

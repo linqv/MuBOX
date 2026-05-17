@@ -23,16 +23,25 @@ enum class AppColorPalette {
     HIGH_CONTRAST,
 }
 
+enum class ReaderLoggingMode {
+    OFF,
+    SUMMARY,
+    DETAIL,
+}
+
 data class AppSettings(
     val readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
-    val loggingEnabled: Boolean = true,
+    val readerLoggingMode: ReaderLoggingMode = ReaderLoggingMode.SUMMARY,
     val colorPalette: AppColorPalette = AppColorPalette.DEFAULT,
     val autoPageEnabled: Boolean = false,
     val autoPageSpeedMillis: Int = 5_000,
     val screenRotationLockEnabled: Boolean = false,
     val volumeKeysTurnPagesEnabled: Boolean = false,
     val diskCacheLimitGb: Int = 1,
-)
+) {
+    val loggingEnabled: Boolean
+        get() = readerLoggingMode != ReaderLoggingMode.OFF
+}
 
 class AppSettingsStore(
     private val dataStore: DataStore<Preferences>,
@@ -40,7 +49,8 @@ class AppSettingsStore(
     val settings: Flow<AppSettings> = dataStore.data.map { preferences ->
         AppSettings(
             readingDirection = preferences[READING_DIRECTION].toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
-            loggingEnabled = preferences[LOGGING_ENABLED] ?: true,
+            readerLoggingMode = preferences[READER_LOGGING_MODE].toEnumOrNull<ReaderLoggingMode>()
+                ?: if (preferences[LOGGING_ENABLED] == false) ReaderLoggingMode.OFF else ReaderLoggingMode.SUMMARY,
             colorPalette = preferences[COLOR_PALETTE].toEnumOrDefault(AppColorPalette.DEFAULT),
             autoPageEnabled = preferences[AUTO_PAGE_ENABLED] ?: false,
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
@@ -57,8 +67,13 @@ class AppSettingsStore(
     }
 
     suspend fun updateLoggingEnabled(enabled: Boolean) {
+        updateReaderLoggingMode(if (enabled) ReaderLoggingMode.SUMMARY else ReaderLoggingMode.OFF)
+    }
+
+    suspend fun updateReaderLoggingMode(mode: ReaderLoggingMode) {
         dataStore.edit { preferences ->
-            preferences[LOGGING_ENABLED] = enabled
+            preferences[READER_LOGGING_MODE] = mode.name
+            preferences[LOGGING_ENABLED] = mode != ReaderLoggingMode.OFF
         }
     }
 
@@ -101,6 +116,7 @@ class AppSettingsStore(
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
+        val READER_LOGGING_MODE = stringPreferencesKey("reader_logging_mode")
         val COLOR_PALETTE = stringPreferencesKey("color_palette")
         val AUTO_PAGE_ENABLED = booleanPreferencesKey("auto_page_enabled")
         val AUTO_PAGE_SPEED_MILLIS = intPreferencesKey("auto_page_speed_millis")
@@ -114,4 +130,8 @@ private fun coerceDiskCacheLimitGb(limitGb: Int): Int = limitGb.coerceIn(1, 5)
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T {
     return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default
+}
+
+private inline fun <reified T : Enum<T>> String?.toEnumOrNull(): T? {
+    return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() }
 }

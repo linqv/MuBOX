@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,7 +30,7 @@ class AppSettingsStoreTest {
         assertEquals(
             AppSettings(
                 readingDirection = ReadingDirection.LEFT_TO_RIGHT,
-                loggingEnabled = true,
+                readerLoggingMode = ReaderLoggingMode.SUMMARY,
                 colorPalette = AppColorPalette.DEFAULT,
                 autoPageEnabled = false,
                 autoPageSpeedMillis = 5_000,
@@ -39,6 +40,7 @@ class AppSettingsStoreTest {
             ),
             store.settings.first(),
         )
+        assertTrue(store.settings.first().loggingEnabled)
     }
 
     @Test
@@ -60,7 +62,7 @@ class AppSettingsStoreTest {
         assertEquals(
             AppSettings(
                 readingDirection = ReadingDirection.RIGHT_TO_LEFT,
-                loggingEnabled = false,
+                readerLoggingMode = ReaderLoggingMode.OFF,
                 colorPalette = AppColorPalette.SEPIA,
                 autoPageEnabled = true,
                 autoPageSpeedMillis = 7_500,
@@ -70,6 +72,36 @@ class AppSettingsStoreTest {
             ),
             restored.settings.first(),
         )
+        assertFalse(restored.settings.first().loggingEnabled)
+    }
+
+    @Test
+    fun defaultsToSummaryReaderLoggingMode() = runTest {
+        val store = AppSettingsStore(dataStore("app-settings-logging-default.preferences_pb"))
+
+        assertEquals(ReaderLoggingMode.SUMMARY, store.settings.first().readerLoggingMode)
+        assertTrue(store.settings.first().loggingEnabled)
+    }
+
+    @Test
+    fun persistsReaderLoggingModeWithStablePreferenceKey() = runTest {
+        val dataStore = dataStore("app-settings-logging-mode.preferences_pb")
+        val store = AppSettingsStore(dataStore)
+
+        store.updateReaderLoggingMode(ReaderLoggingMode.DETAIL)
+
+        assertEquals(ReaderLoggingMode.DETAIL, AppSettingsStore(dataStore).settings.first().readerLoggingMode)
+        assertEquals("DETAIL", dataStore.data.first()[stringPreferencesKey("reader_logging_mode")])
+    }
+
+    @Test
+    fun migratesOldDisabledLoggingBooleanToOffMode() = runTest {
+        val dataStore = dataStore("app-settings-logging-migration.preferences_pb")
+        dataStore.edit { preferences ->
+            preferences[booleanPreferencesKey("logging_enabled")] = false
+        }
+
+        assertEquals(ReaderLoggingMode.OFF, AppSettingsStore(dataStore).settings.first().readerLoggingMode)
     }
 
     @Test
@@ -90,6 +122,7 @@ class AppSettingsStoreTest {
 
         assertEquals("VERTICAL", preferences[stringPreferencesKey("reading_direction")])
         assertFalse(preferences[booleanPreferencesKey("logging_enabled")]!!)
+        assertEquals("OFF", preferences[stringPreferencesKey("reader_logging_mode")])
         assertEquals("NIGHT", preferences[stringPreferencesKey("color_palette")])
         assertTrue(preferences[booleanPreferencesKey("auto_page_enabled")]!!)
         assertEquals(3_000, preferences[intPreferencesKey("auto_page_speed_millis")])

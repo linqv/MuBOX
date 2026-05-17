@@ -882,8 +882,8 @@ fun ComicDavApp() {
                                     onReadingDirectionChange = { value ->
                                         scope.launch { appSettingsStore.updateReadingDirection(value) }
                                     },
-                                    onLoggingEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateLoggingEnabled(value) }
+                                    onReaderLoggingModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateReaderLoggingMode(value) }
                                     },
                                     onColorPaletteChange = { value ->
                                         scope.launch { appSettingsStore.updateColorPalette(value) }

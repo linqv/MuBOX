@@ -1,8 +1,10 @@
 package com.example.comicdav.feature.reader
 
+import com.example.comicdav.data.ReaderLoggingMode
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -119,5 +121,67 @@ class ReaderDiagnosticLogTest {
                 "prefetchStartedBeforeDemand=false extractMs=120 imageRenderMs=80",
             line,
         )
+    }
+
+    @Test
+    fun summaryModeWritesSummaryButSkipsDetailBuilders() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        var detailBuilt = false
+        try {
+            ReaderDiagnosticLog.summary(ReaderLogCategory.SESSION) { "reader_open pageCount=2" }
+            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) {
+                detailBuilt = true
+                "pager current=1"
+            }
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+
+        assertTrue(sink.lines.single().contains("level=summary category=SESSION reader_open pageCount=2"))
+        assertFalse(detailBuilt)
+    }
+
+    @Test
+    fun detailModeWritesDetailEvents() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        try {
+            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) { "pager current=1" }
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+
+        assertTrue(sink.lines.single().contains("level=detail category=UI pager current=1"))
+    }
+
+    @Test
+    fun redactionRemovesRawUriPathAndFileName() {
+        val line = redactReaderLogText(
+            "uri=content://provider/private/book.cbz path=/secret/books/book.cbz fileName=Secret Book.cbz",
+        )
+
+        assertFalse(line.contains("content://provider/private/book.cbz"))
+        assertFalse(line.contains("/secret/books/book.cbz"))
+        assertFalse(line.contains("Secret Book.cbz"))
+        assertTrue(line.contains("uriId=local:"))
+        assertTrue(line.contains("pathId=path:"))
+        assertTrue(line.contains("fileExt=cbz"))
+    }
+
+    private class CollectingReaderLogSink : ReaderLogSink {
+        val lines = mutableListOf<String>()
+
+        override fun log(line: String) {
+            lines += line
+        }
+
+        override fun logBlocking(line: String) {
+            lines += line
+        }
     }
 }
