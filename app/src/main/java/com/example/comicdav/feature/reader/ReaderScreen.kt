@@ -1,5 +1,6 @@
 package com.example.comicdav.feature.reader
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -61,6 +62,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.ui.ComicDavCopy
 import kotlinx.coroutines.launch
@@ -396,6 +399,13 @@ internal fun volumeKeyTargetPage(
 internal fun readerScrollStateKey(uiState: ReaderUiState): String =
     uiState.readerKey ?: "unkeyed-${uiState.pageCount}"
 
+internal fun readerImageRequest(context: Context, pageFile: java.io.File): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(pageFile)
+        .memoryCachePolicy(CachePolicy.DISABLED)
+        .diskCachePolicy(CachePolicy.DISABLED)
+        .build()
+
 internal fun reportableContinuousPageChange(
     firstVisiblePage: Int,
     isScrollInProgress: Boolean,
@@ -442,8 +452,12 @@ private fun ReaderImagePage(
                 CircularProgressIndicator(color = ReaderOnDark)
             }
         } else {
+            val context = LocalContext.current
+            val imageRequest = remember(pageFile.absolutePath) {
+                readerImageRequest(context, pageFile)
+            }
             AsyncImage(
-                model = pageFile,
+                model = imageRequest,
                 contentDescription = "第 ${page + 1} 页",
                 modifier = if (fillWidth) {
                     Modifier
