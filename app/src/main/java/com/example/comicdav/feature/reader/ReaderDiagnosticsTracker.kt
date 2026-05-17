@@ -157,6 +157,25 @@ internal class ReaderDiagnosticsTracker(
             )
         }
 
+    fun localSessionSummary(): LocalSessionPerformanceSummary? =
+        synchronized(lock) {
+            val loadedPages = pageLoadTimings.entries.toList()
+            if (loadedPages.isEmpty()) return@synchronized null
+
+            val slowestPage = loadedPages.maxByOrNull { (_, timing) -> timing.durationMs }
+                ?: return@synchronized null
+            LocalSessionPerformanceSummary(
+                pagesLoaded = loadedPages.size,
+                cacheHits = loadedPages.count { (_, timing) -> timing.cacheHit },
+                cacheMisses = loadedPages.count { (_, timing) -> !timing.cacheHit },
+                totalOutputBytes = loadedPages.sumOf { (_, timing) -> timing.fileSize },
+                largestOutputBytes = loadedPages.maxOf { (_, timing) -> timing.fileSize },
+                slowestPage = slowestPage.key,
+                slowestPageMs = slowestPage.value.durationMs,
+                slowestPageReason = slowestPage.value.reason,
+            )
+        }
+
     private data class PageLoadDiagnostic(
         val reason: String,
         val cacheHit: Boolean,
@@ -164,7 +183,10 @@ internal class ReaderDiagnosticsTracker(
         val fileReadyAtMs: Long,
         val extractMs: Long,
         val fileSize: Long,
-    )
+    ) {
+        val durationMs: Long
+            get() = (fileReadyAtMs - loadStartedAtMs).coerceAtLeast(0L)
+    }
 
     private data class PrefetchDiagnostic(
         val plannedAtMs: Long,
@@ -184,3 +206,14 @@ internal class ReaderDiagnosticsTracker(
         const val LOAD_REASON_INITIAL = "initial"
     }
 }
+
+internal data class LocalSessionPerformanceSummary(
+    val pagesLoaded: Int,
+    val cacheHits: Int,
+    val cacheMisses: Int,
+    val totalOutputBytes: Long,
+    val largestOutputBytes: Long,
+    val slowestPage: Int,
+    val slowestPageMs: Long,
+    val slowestPageReason: String,
+)

@@ -1,5 +1,6 @@
 package com.example.comicdav.feature.reader
 
+import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.PlannedRemoteRange
 import java.io.File
@@ -948,6 +949,40 @@ class ReaderViewModelTest {
 
         assertEquals(listOf(viewModel.uiState.pageFiles.getValue(0)), protectedFiles)
         assertEquals(listOf(2L * 1024L * 1024L * 1024L), maxBytes)
+    }
+
+    @Test
+    fun closeReaderEmitsLocalPerformanceSummary() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        try {
+            val session = FakeReaderSession(pageCount = 2)
+            val viewModel = ReaderViewModel(
+                openSession = { session },
+                ioDispatcher = dispatcher,
+            )
+
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            dispatcher.scheduler.advanceUntilIdle()
+            viewModel.selectPage(1)
+            dispatcher.scheduler.advanceUntilIdle()
+            viewModel.closeReader()
+
+            val summaryLine = sink.lines.singleOrNull { it.contains("local_session_summary") }
+                ?: error("Missing local_session_summary in ${sink.lines}")
+            assertTrue(summaryLine.contains("pagesLoaded=2"))
+            assertTrue(summaryLine.contains("cacheHits=0"))
+            assertTrue(summaryLine.contains("cacheMisses=2"))
+            assertTrue(summaryLine.contains("totalOutputBytes=12"))
+            assertTrue(summaryLine.contains("largestOutputBytes="))
+            assertTrue(summaryLine.contains("slowestPage="))
+            assertTrue(summaryLine.contains("slowestPageMs="))
+            assertTrue(summaryLine.contains("slowestPageReason="))
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
     }
 
     @Test
