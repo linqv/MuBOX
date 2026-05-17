@@ -36,3 +36,5 @@ data class MuPdfRenderMetrics(
 
 const val DEFAULT_MUPDF_RENDER_MAX_PIXELS: Int = 4_000_000
 const val DEFAULT_MUPDF_RENDER_JPEG_QUALITY: Int = 92
+const val PDF_MUPDF_RENDER_MAX_PIXELS: Int = 3_000_000
+const val PDF_MUPDF_RENDER_JPEG_QUALITY: Int = 87

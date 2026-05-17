@@ -11,14 +11,16 @@ import java.util.concurrent.CancellationException
 class MuPdfReaderSession(
     private val document: MuPdfDocumentHandle,
     private val format: LocalDocumentFormat,
-    private val maxPixels: Int = DEFAULT_MUPDF_RENDER_MAX_PIXELS,
+    private val maxPixels: Int = defaultMuPdfRenderMaxPixels(format),
+    private val jpegQuality: Int = defaultMuPdfRenderJpegQuality(format),
     private val logDiagnostic: (() -> String) -> Unit = { event ->
         ReaderDiagnosticLog.detail(ReaderLogCategory.PAGE_LOAD, event)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ComicReaderSession {
     override val pageCount: Int = document.pageCount
-    override val forwardPrefetchPageCount: Int = 2
+    override val forwardPrefetchPageCount: Int =
+        if (format == LocalDocumentFormat.Pdf) 3 else 2
     override val backwardPrefetchPageCount: Int = 0
     override val advancePrefetchOnPageDemand: Boolean = true
 
@@ -41,7 +43,7 @@ class MuPdfReaderSession(
                 pageIndex,
                 outputFile,
                 maxPixels,
-                DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
+                jpegQuality,
             )
             renderMs = (elapsedRealtimeMs() - renderStartMs).coerceAtLeast(0L)
             renderSucceeded = true
@@ -68,7 +70,7 @@ class MuPdfReaderSession(
                 renderMs = renderMs,
                 outputBytes = outputFile.length(),
                 maxPixels = maxPixels,
-                quality = DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
+                quality = jpegQuality,
                 metrics = renderMetrics,
             )
         }
@@ -115,3 +117,17 @@ private fun formatMuPdfRenderDone(
 
 private fun Float.formatDiagnosticFloat(): String =
     String.format(Locale.US, "%.4f", this)
+
+private fun defaultMuPdfRenderMaxPixels(format: LocalDocumentFormat): Int =
+    if (format == LocalDocumentFormat.Pdf) {
+        PDF_MUPDF_RENDER_MAX_PIXELS
+    } else {
+        DEFAULT_MUPDF_RENDER_MAX_PIXELS
+    }
+
+private fun defaultMuPdfRenderJpegQuality(format: LocalDocumentFormat): Int =
+    if (format == LocalDocumentFormat.Pdf) {
+        PDF_MUPDF_RENDER_JPEG_QUALITY
+    } else {
+        DEFAULT_MUPDF_RENDER_JPEG_QUALITY
+    }
