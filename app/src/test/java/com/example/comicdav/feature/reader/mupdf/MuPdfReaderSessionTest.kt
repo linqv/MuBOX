@@ -66,13 +66,37 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
-    fun loadPageToFileRendersJpegWithDefaultQuality() {
+    fun loadPageToFileRendersNonPdfWithDefaultQuality() {
+        val output = File(temp.root, "page-1.img")
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Epub)
+
+        session.loadPageToFile(1, output)
+
+        assertEquals(DEFAULT_MUPDF_RENDER_JPEG_QUALITY, document.renderedJpegQuality)
+    }
+
+    @Test
+    fun pdfUsesTunedRenderProfile() {
         val output = File(temp.root, "page-1.img")
         val document = FakeMuPdfDocument(pageCount = 2)
         val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
 
         session.loadPageToFile(1, output)
 
+        assertEquals(PDF_MUPDF_RENDER_MAX_PIXELS, document.renderedMaxPixels)
+        assertEquals(PDF_MUPDF_RENDER_JPEG_QUALITY, document.renderedJpegQuality)
+    }
+
+    @Test
+    fun nonPdfDocumentsKeepDefaultRenderProfile() {
+        val output = File(temp.root, "page-1.img")
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Epub)
+
+        session.loadPageToFile(1, output)
+
+        assertEquals(DEFAULT_MUPDF_RENDER_MAX_PIXELS, document.renderedMaxPixels)
         assertEquals(DEFAULT_MUPDF_RENDER_JPEG_QUALITY, document.renderedJpegQuality)
     }
 
@@ -95,7 +119,7 @@ class MuPdfReaderSessionTest {
         assertEquals(
             listOf(
                 "mupdf_render_done format=PDF page=0 pageCount=2 renderMs=40 " +
-                    "outputBytes=10 maxPixels=123456 quality=92",
+                    "outputBytes=10 maxPixels=123456 quality=$PDF_MUPDF_RENDER_JPEG_QUALITY",
             ),
             diagnostics,
         )
@@ -235,8 +259,16 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
-    fun pagePrefetchWindowIsLimitedForMuPdfDocuments() {
+    fun pdfPrefetchesThreeForwardPages() {
         val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 1), LocalDocumentFormat.Pdf)
+
+        assertEquals(3, session.forwardPrefetchPageCount)
+        assertEquals(0, session.backwardPrefetchPageCount)
+    }
+
+    @Test
+    fun nonPdfDocumentsKeepTwoForwardPrefetchPages() {
+        val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 1), LocalDocumentFormat.Epub)
 
         assertEquals(2, session.forwardPrefetchPageCount)
         assertEquals(0, session.backwardPrefetchPageCount)
