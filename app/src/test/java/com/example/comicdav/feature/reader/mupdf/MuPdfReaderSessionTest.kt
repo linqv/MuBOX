@@ -2,8 +2,10 @@ package com.example.comicdav.feature.reader.mupdf
 
 import com.example.comicdav.data.LocalDocumentFormat
 import java.io.File
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,6 +52,17 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileForwardsMaxPixels() {
+        val output = File(temp.root, "page-1.png")
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf, maxPixels = 123_456)
+
+        session.loadPageToFile(1, output)
+
+        assertEquals(123_456, document.renderedMaxPixels)
+    }
+
+    @Test
     fun loadPageToFileRejectsOutOfRangePage() {
         val output = File(temp.root, "page-9.png")
         val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 2), LocalDocumentFormat.Mobi)
@@ -78,6 +91,43 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileRethrowsCancellationException() {
+        val output = File(temp.root, "page.png")
+        val failure = CancellationException("cancelled")
+        val document = FakeMuPdfDocument(pageCount = 1, renderFailure = failure)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+
+        val thrown = catchThrowable {
+            session.loadPageToFile(0, output)
+        }
+
+        assertSame(failure, thrown)
+        assertFalse(output.exists())
+    }
+
+    @Test
+    fun loadPageToFileDoesNotCatchFatalRenderErrors() {
+        val output = File(temp.root, "page.png")
+        val failure = OutOfMemoryError("oom")
+        val document = FakeMuPdfDocument(pageCount = 1, renderFailure = failure)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+
+        val thrown = catchThrowable {
+            session.loadPageToFile(0, output)
+        }
+
+        assertSame(failure, thrown)
+        assertFalse(output.exists())
+    }
+
+    @Test
+    fun diagnosticsIncludesReaderFormatAndPageCount() {
+        val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 7), LocalDocumentFormat.Epub)
+
+        assertEquals("reader=mupdf;format=EPUB;pageCount=7", session.diagnostics())
+    }
+
+    @Test
     fun closeClosesDocumentOnce() {
         val document = FakeMuPdfDocument(pageCount = 1)
         val session = MuPdfReaderSession(document, LocalDocumentFormat.Azw3)
@@ -91,14 +141,18 @@ class MuPdfReaderSessionTest {
 
     private class FakeMuPdfDocument(
         override val pageCount: Int,
+        private val renderFailure: Throwable? = null,
     ) : MuPdfDocumentHandle {
         val renderedPages = mutableListOf<Int>()
+        var renderedMaxPixels: Int? = null
         var closed = false
         var closeCount = 0
 
         override fun renderPageToPng(pageIndex: Int, outputFile: File, maxPixels: Int) {
             if (pageIndex !in 0 until pageCount) error("bad page")
+            renderFailure?.let { throw it }
             renderedPages += pageIndex
+            renderedMaxPixels = maxPixels
             outputFile.writeText("rendered-$pageIndex")
         }
 
@@ -107,4 +161,12 @@ class MuPdfReaderSessionTest {
             closed = true
         }
     }
+
+    private fun catchThrowable(block: () -> Unit): Throwable? =
+        try {
+            block()
+            null
+        } catch (throwable: Throwable) {
+            throwable
+        }
 }

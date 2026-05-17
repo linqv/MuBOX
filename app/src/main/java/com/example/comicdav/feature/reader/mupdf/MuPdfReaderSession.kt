@@ -3,6 +3,7 @@ package com.example.comicdav.feature.reader.mupdf
 import com.example.comicdav.data.LocalDocumentFormat
 import com.example.comicdav.nativebridge.ComicReaderSession
 import java.io.File
+import java.util.concurrent.CancellationException
 
 class MuPdfReaderSession(
     private val document: MuPdfDocumentHandle,
@@ -20,12 +21,14 @@ class MuPdfReaderSession(
         if (outputFile.isFile && outputFile.length() > 0L) {
             return outputFile
         }
-        runCatching {
+        try {
             outputFile.parentFile?.mkdirs()
             document.renderPageToPng(pageIndex, outputFile, maxPixels)
-        }.getOrElse {
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: Exception) {
             outputFile.delete()
-            throw IllegalStateException("页面渲染失败", it)
+            throw IllegalStateException("页面渲染失败", exception)
         }
         if (!outputFile.isFile || outputFile.length() == 0L) {
             outputFile.delete()
