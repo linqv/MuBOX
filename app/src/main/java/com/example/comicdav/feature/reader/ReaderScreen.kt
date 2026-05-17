@@ -25,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,6 +76,7 @@ fun ReaderScreen(
     modifier: Modifier = Modifier,
     readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
     autoPageEnabled: Boolean = false,
+    onAutoPageEnabledChange: (Boolean) -> Unit = {},
     autoPageIntervalMillis: Long = 0L,
     volumeKeysTurnPages: Boolean = false,
 ) {
@@ -190,7 +192,14 @@ fun ReaderScreen(
                             }
                         }
                 }
-                LaunchedEffect(autoPageEnabled, autoPageIntervalMillis, pagerState, uiState.pageCount) {
+                LaunchedEffect(
+                    autoPageEnabled,
+                    autoPageIntervalMillis,
+                    pagerState,
+                    continuousListState,
+                    uiState.pageCount,
+                    isContinuousVertical,
+                ) {
                     while (autoPageEnabled && autoPageIntervalMillis > 0L && uiState.pageCount > 1) {
                         delay(autoPageIntervalMillis.coerceAtLeast(1_000L))
                         val targetPage = autoPageTargetPage(
@@ -319,6 +328,8 @@ fun ReaderScreen(
                     ReaderBottomOverlay(
                         currentPage = displayPage,
                         pageCount = uiState.pageCount,
+                        autoPageEnabled = autoPageEnabled,
+                        onAutoPageEnabledChange = onAutoPageEnabledChange,
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
@@ -511,6 +522,8 @@ private fun ReaderChromeButton(
 private fun ReaderBottomOverlay(
     currentPage: Int,
     pageCount: Int,
+    autoPageEnabled: Boolean,
+    onAutoPageEnabledChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val progress = currentPage.toFloat() / pageCount.toFloat()
@@ -551,6 +564,38 @@ private fun ReaderBottomOverlay(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "自动翻页",
+                    color = ReaderOnDark,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (autoPageEnabled) "已开启，按设置速度前进" else "已关闭",
+                    color = ReaderMutedOnDark,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Switch(
+                checked = autoPageEnabled,
+                onCheckedChange = onAutoPageEnabledChange,
             )
         }
         LinearProgressIndicator(

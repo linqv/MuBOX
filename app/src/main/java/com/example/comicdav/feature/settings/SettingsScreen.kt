@@ -33,7 +33,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.AppSettings
+import com.example.comicdav.data.ComicCacheAnalysis
+import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
+import com.example.comicdav.data.formatCacheSize
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val MinAutoPageSpeedSeconds = 3
@@ -49,6 +55,10 @@ fun SettingsScreen(
     onAutoPageSpeedChange: (Int) -> Unit,
     onScreenRotationLockChange: (Boolean) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
+    downloadRecords: List<DownloadRecord> = emptyList(),
+    cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
+    cacheActionMessage: String? = null,
+    onClearCache: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -122,6 +132,64 @@ fun SettingsScreen(
                 onSpeedChange = onAutoPageSpeedChange,
             )
         }
+
+        SettingsGroup(title = "下载记录") {
+            if (downloadRecords.isEmpty()) {
+                StaticInfoRow(
+                    title = "暂无下载记录",
+                    subtitle = "从 WebDAV 下载到本地后会显示在这里",
+                )
+            } else {
+                downloadRecords.take(8).forEach { record ->
+                    StaticInfoRow(
+                        title = record.fileName,
+                        subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n${record.remotePath}",
+                    )
+                }
+            }
+        }
+
+        SettingsGroup(title = "缓存") {
+            StaticInfoRow(
+                title = "缓存占用",
+                subtitle = formatCacheSize(cacheAnalysis.totalBytes),
+            )
+            StaticInfoRow(
+                title = "远程整本缓存",
+                subtitle = formatCacheSize(cacheAnalysis.remoteDownloadsBytes),
+            )
+            StaticInfoRow(
+                title = "页面图片缓存",
+                subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
+            )
+            StaticInfoRow(
+                title = "本地导入缓存",
+                subtitle = formatCacheSize(cacheAnalysis.localImportsBytes),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                OutlinedButton(
+                    onClick = onClearCache,
+                    enabled = cacheAnalysis.totalBytes > 0L,
+                ) {
+                    Text("清理")
+                }
+            }
+        }
     }
 }
 
@@ -149,6 +217,9 @@ private fun AppColorPalette.label(): String =
         AppColorPalette.NIGHT -> "夜间深色"
         AppColorPalette.HIGH_CONTRAST -> "高对比"
     }
+
+private fun formatDownloadTime(downloadedAtMillis: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(downloadedAtMillis))
 
 @Composable
 private fun SettingsGroup(
@@ -215,6 +286,36 @@ private fun SwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
+@Composable
+private fun StaticInfoRow(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

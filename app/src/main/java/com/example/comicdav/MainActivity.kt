@@ -46,13 +46,19 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
+import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
+import com.example.comicdav.data.DownloadRecord
+import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.LocalComicImportCache
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.WebDavAccountStore
+import com.example.comicdav.data.analyzeComicCache
+import com.example.comicdav.data.clearComicCache
+import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
@@ -89,6 +95,7 @@ private val Context.readingProgressDataStore by preferencesDataStore(name = "rea
 private val Context.appDataFolderDataStore by preferencesDataStore(name = "app_data_folder")
 private val Context.appSettingsDataStore by preferencesDataStore(name = "app_settings")
 private val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
+private val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
 
 class MainActivity : ComponentActivity() {
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
@@ -170,6 +177,8 @@ fun ComicDavApp() {
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var webDavActionMessage by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
+    var cacheAnalysis by remember { mutableStateOf(ComicCacheAnalysis()) }
+    var cacheActionMessage by remember { mutableStateOf<String?>(null) }
     var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
     var dataFolderUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var isDataFolderLoading by remember { mutableStateOf(true) }
@@ -178,7 +187,21 @@ fun ComicDavApp() {
     val dataFolderStore = remember(context) { AppDataFolderStore(context.appDataFolderDataStore) }
     val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
     val webDavAccountStore = remember(context) { WebDavAccountStore(context.webDavAccountDataStore) }
+    val downloadRecordStore = remember(context) { DownloadRecordStore(context.downloadRecordsDataStore) }
     val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings())
+    val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
+    fun refreshCacheAnalysis() {
+        scope.launch {
+            cacheAnalysis = withContext(Dispatchers.IO) {
+                analyzeComicCache(context.cacheDir)
+            }
+        }
+    }
+    LaunchedEffect(context.cacheDir) {
+        cacheAnalysis = withContext(Dispatchers.IO) {
+            analyzeComicCache(context.cacheDir)
+        }
+    }
     LaunchedEffect(dataFolderStore) {
         dataFolderUriText = dataFolderStore.loadFolderUri()
         if (logFolderUriText.isNullOrBlank()) {
@@ -412,8 +435,18 @@ fun ComicDavApp() {
                         downloadProgress = DownloadProgressUi(downloaded, total)
                     }
                 }
+                info.size
             }.fold(
-                onSuccess = {
+                onSuccess = { sizeBytes ->
+                    downloadRecordStore.addRecord(
+                        DownloadRecord(
+                            fileName = item.name,
+                            remotePath = item.path,
+                            sizeBytes = sizeBytes,
+                            downloadedAtMillis = System.currentTimeMillis(),
+                        ),
+                    )
+                    refreshCacheAnalysis()
                     downloadProgress = null
                     webDavActionMessage = "已下载 ${item.name} 到本地"
                     fileDirectoryViewModel.showMessage("已下载 ${item.name} 到本地")
@@ -555,6 +588,14 @@ fun ComicDavApp() {
         }
     }
 
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == AppTab.SETTINGS) {
+            cacheAnalysis = withContext(Dispatchers.IO) {
+                analyzeComicCache(context.cacheDir)
+            }
+        }
+    }
+
     ComicDavTheme(palette = appSettings.colorPalette) {
         Surface(modifier = Modifier.fillMaxSize()) {
             when {
@@ -599,6 +640,9 @@ fun ComicDavApp() {
                         },
                         readingDirection = appSettings.readingDirection,
                         autoPageEnabled = appSettings.autoPageEnabled,
+                        onAutoPageEnabledChange = { value ->
+                            scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
+                        },
                         autoPageIntervalMillis = appSettings.autoPageSpeedMillis.toLong(),
                         volumeKeysTurnPages = appSettings.volumeKeysTurnPagesEnabled,
                     )
@@ -818,6 +862,20 @@ fun ComicDavApp() {
                                     },
                                     onVolumeKeysTurnPagesChange = { value ->
                                         scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
+                                    },
+                                    downloadRecords = downloadRecords,
+                                    cacheAnalysis = cacheAnalysis,
+                                    cacheActionMessage = cacheActionMessage,
+                                    onClearCache = {
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                clearComicCache(context.cacheDir)
+                                            }
+                                            cacheAnalysis = withContext(Dispatchers.IO) {
+                                                analyzeComicCache(context.cacheDir)
+                                            }
+                                            cacheActionMessage = "已清理 ${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
+                                        }
                                     },
                                     modifier = contentModifier,
                                 )
