@@ -1,6 +1,9 @@
 package com.example.comicdav.feature.reader.mupdf
 
 import com.example.comicdav.data.LocalDocumentFormat
+import com.example.comicdav.data.ReaderLoggingMode
+import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.feature.reader.ReaderLogSink
 import java.io.File
 import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
@@ -83,7 +86,7 @@ class MuPdfReaderSessionTest {
             document = document,
             format = LocalDocumentFormat.Pdf,
             maxPixels = 123_456,
-            logDiagnostic = diagnostics::add,
+            logDiagnostic = { event -> diagnostics += event() },
             elapsedRealtimeMs = { elapsedTimes.next() },
         )
 
@@ -96,6 +99,25 @@ class MuPdfReaderSessionTest {
             ),
             diagnostics,
         )
+    }
+
+    @Test
+    fun summaryModeSuppressesRenderDiagnostics() {
+        val output = File(temp.root, "page-0.jpg")
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        try {
+            val document = FakeMuPdfDocument(pageCount = 2)
+            val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+
+            session.loadPageToFile(0, output)
+
+            assertTrue(sink.lines.none { it.contains("mupdf_render_done") })
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
     }
 
     @Test
@@ -118,7 +140,7 @@ class MuPdfReaderSessionTest {
         val session = MuPdfReaderSession(
             document = document,
             format = LocalDocumentFormat.Pdf,
-            logDiagnostic = diagnostics::add,
+            logDiagnostic = { event -> diagnostics += event() },
             elapsedRealtimeMs = { elapsedTimes.next() },
         )
 
@@ -270,6 +292,18 @@ class MuPdfReaderSessionTest {
         override fun close() {
             closeCount++
             closed = true
+        }
+    }
+
+    private class CollectingReaderLogSink : ReaderLogSink {
+        val lines = mutableListOf<String>()
+
+        override fun log(line: String) {
+            lines += line
+        }
+
+        override fun logBlocking(line: String) {
+            lines += line
         }
     }
 

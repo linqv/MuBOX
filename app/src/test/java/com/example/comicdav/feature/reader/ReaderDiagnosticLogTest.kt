@@ -174,6 +174,16 @@ class ReaderDiagnosticLogTest {
     }
 
     @Test
+    fun redactionRemovesPathValuesWithSpaces() {
+        val line = redactReaderLogText("path=/Books/Secret Book.cbz start=0")
+
+        assertFalse(line.contains("/Books/Secret Book.cbz"))
+        assertFalse(line.contains("Secret Book.cbz"))
+        assertTrue(line.contains("pathId=path:"))
+        assertTrue(line.contains("start=0"))
+    }
+
+    @Test
     fun offModeDoesNotInvokeSummaryOrDetailBuilders() {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)

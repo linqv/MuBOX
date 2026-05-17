@@ -70,7 +70,7 @@ class ComicEngineTest {
         val diagnosticLines = mutableListOf<String>()
         val engine = ComicEngine(
             native = native,
-            logDiagnostic = diagnosticLines::add,
+            logDiagnostic = { event -> diagnosticLines += event() },
             elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
         )
 

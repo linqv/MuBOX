@@ -12,8 +12,8 @@ class WebDavRangeProvider(
     private val size: Long,
     private val readAheadBytes: Long = DEFAULT_READ_AHEAD_BYTES,
     private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
-    private val logDiagnostic: (String) -> Unit = { line ->
-        ReaderDiagnosticLog.detail(ReaderLogCategory.RANGE_CACHE) { line }
+    private val logDiagnostic: (() -> String) -> Unit = { event ->
+        ReaderDiagnosticLog.detail(ReaderLogCategory.RANGE_CACHE, event)
     },
 ) : RangeProvider {
     private val lock = Any()
@@ -28,11 +28,11 @@ class WebDavRangeProvider(
             cache.find(start, endInclusive)
         }
         if (cached != null) {
-            emitDiagnostic(
+            emitDiagnostic {
                 "range_cache_hit path=$path start=$start end=$endInclusive " +
                     "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive} " +
-                    "bytes=${cached.bytes.size}",
-            )
+                    "bytes=${cached.bytes.size}"
+            }
             return cached.bytes
         }
 
@@ -50,9 +50,7 @@ class WebDavRangeProvider(
             return awaitInFlight(decision.inFlight, start, endInclusive)
         }
         val fetch = (decision as FetchDecision.Fetch).fetch
-        emitDiagnostic(
-            "range_cache_miss path=$path start=$start end=$endInclusive expandedEnd=$expandedEnd",
-        )
+        emitDiagnostic { "range_cache_miss path=$path start=$start end=$endInclusive expandedEnd=$expandedEnd" }
         val bytes = try {
             runBlocking {
                 client.readRange(path, fetch.start, fetch.endInclusive)
@@ -75,7 +73,7 @@ class WebDavRangeProvider(
         }
         completeInFlight(fetch, bytes)
         val storeDiagnostic = postFetch.storeDiagnostic
-        emitDiagnostic(
+        emitDiagnostic {
             "range_cache_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
                 "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
                 "evictionMode=${postFetch.storeResult.evictionMode} " +
@@ -85,13 +83,13 @@ class WebDavRangeProvider(
                 "readAheadReason=${storeDiagnostic.readAheadReason ?: "none"} " +
                 "storeStart=${storeDiagnostic.storeStart} storeEnd=${storeDiagnostic.storeEndInclusive} " +
                 "storeBytes=${storeDiagnostic.storeBytes} " +
-                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
-        )
+                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
+        }
         postFetch.storeResult.evicted.forEach { evicted ->
-            emitDiagnostic(
+            emitDiagnostic {
                 "range_cache_evict path=$path start=${evicted.start} end=${evicted.endInclusive} " +
-                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
-            )
+                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
+            }
         }
         return postFetch.bytes
     }
@@ -107,7 +105,7 @@ class WebDavRangeProvider(
         protectedRanges: List<LongRange>,
     ): Boolean {
         if (start >= size) {
-            emitDiagnostic("range_prefetch_skip path=$path start=$start end=$endInclusive reason=past_eof")
+            emitDiagnostic { "range_prefetch_skip path=$path start=$start end=$endInclusive reason=past_eof" }
             return false
         }
         val clampedEnd = endInclusive.coerceAtMost(size - 1)
@@ -120,10 +118,10 @@ class WebDavRangeProvider(
             cache.find(start, clampedEnd)
         }
         if (cached != null) {
-            emitDiagnostic(
+            emitDiagnostic {
                 "range_prefetch_hit path=$path start=$start end=$clampedEnd " +
-                    "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive}",
-            )
+                    "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive}"
+            }
             return true
         }
 
@@ -140,7 +138,7 @@ class WebDavRangeProvider(
         }
         val fetch = (decision as FetchDecision.Fetch).fetch
 
-        emitDiagnostic("range_prefetch_start path=$path start=${fetch.start} end=${fetch.endInclusive}")
+        emitDiagnostic { "range_prefetch_start path=$path start=${fetch.start} end=${fetch.endInclusive}" }
         val bytes = try {
             runBlocking {
                 client.readRange(path, fetch.start, fetch.endInclusive)
@@ -168,19 +166,19 @@ class WebDavRangeProvider(
             )
         }
         completeInFlight(fetch, bytes)
-        emitDiagnostic(
+        emitDiagnostic {
             "range_prefetch_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
                 "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
                 "priority=$priority evictionMode=${postFetch.storeResult.evictionMode} " +
                 "protectedCount=${protectedStats.count} protectedBytes=${protectedStats.bytes} " +
                 "fallbackReason=${postFetch.storeDiagnostic.fallbackReason ?: "none"} " +
-                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
-        )
+                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
+        }
         postFetch.storeResult.evicted.forEach { evicted ->
-            emitDiagnostic(
+            emitDiagnostic {
                 "range_cache_evict path=$path start=${evicted.start} end=${evicted.endInclusive} " +
-                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}",
-            )
+                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
+            }
         }
         return postFetch.storeResult.stored
     }
@@ -228,10 +226,10 @@ class WebDavRangeProvider(
     }
 
     private fun awaitInFlight(inFlight: InFlightRange, start: Long, endInclusive: Long): ByteArray {
-        emitDiagnostic(
+        emitDiagnostic {
             "range_inflight_join path=$path start=$start end=$endInclusive " +
-                "windowStart=${inFlight.start} windowEnd=${inFlight.endInclusive}",
-        )
+                "windowStart=${inFlight.start} windowEnd=${inFlight.endInclusive}"
+        }
         val bytes = runBlocking { inFlight.deferred.await() }
         return inFlight.slice(bytes, start, endInclusive)
     }
@@ -350,7 +348,7 @@ class WebDavRangeProvider(
             bytes = ranges.sumOf { range -> range.last - range.first + 1 },
         )
 
-    private fun emitDiagnostic(event: String) {
+    private fun emitDiagnostic(event: () -> String) {
         runCatching {
             logDiagnostic(event)
         }

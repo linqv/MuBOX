@@ -196,9 +196,9 @@ fun redactReaderLogText(text: String): String {
 fun readerLogId(prefix: String, raw: String): String = "$prefix:${shortHash(raw)}"
 
 private fun replaceToken(text: String, token: String, replacementName: String): String {
-    val regex = Regex("""\b$token=([^\s]+)""")
+    val regex = Regex("""\b$token=(.+?)(?=\s+\w+=|$)""")
     return regex.replace(text) { match ->
-        "$replacementName:${shortHash(match.groupValues[1])}"
+        "$replacementName:${shortHash(match.groupValues[1].trim())}"
     }
 }
 

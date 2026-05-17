@@ -172,7 +172,7 @@ internal class ReaderDiagnosticsTracker(
                 largestOutputBytes = loadedPages.maxOf { (_, timing) -> timing.fileSize },
                 slowestPage = slowestPage.key,
                 slowestPageMs = slowestPage.value.durationMs,
-                slowestPageReason = slowestPage.value.reason,
+                slowestPageReason = slowestPage.value.performanceReason,
             )
         }
 
@@ -186,6 +186,9 @@ internal class ReaderDiagnosticsTracker(
     ) {
         val durationMs: Long
             get() = (fileReadyAtMs - loadStartedAtMs).coerceAtLeast(0L)
+
+        val performanceReason: String
+            get() = if (cacheHit) PERFORMANCE_REASON_CACHE_READ else PERFORMANCE_REASON_DECODE_RENDER
     }
 
     private data class PrefetchDiagnostic(
@@ -204,6 +207,8 @@ internal class ReaderDiagnosticsTracker(
 
     private companion object {
         const val LOAD_REASON_INITIAL = "initial"
+        const val PERFORMANCE_REASON_CACHE_READ = "cache-read"
+        const val PERFORMANCE_REASON_DECODE_RENDER = "decode-render"
     }
 }
 

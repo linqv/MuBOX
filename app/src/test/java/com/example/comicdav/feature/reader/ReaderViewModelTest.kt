@@ -36,6 +36,7 @@ class ReaderViewModelTest {
     @After
     fun tearDown() {
         ReaderDiagnosticLog.clearSink()
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
         Dispatchers.resetMain()
     }
 
@@ -201,32 +202,67 @@ class ReaderViewModelTest {
     fun sameStartPlannedRangesAreMergedBeforeScheduling() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
-        val session = FakeReaderSession(
-            pageCount = 5,
-            plannedRangesByPage = mapOf(
-                0 to listOf(
-                    PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1, 2), priority = 1),
-                    PlannedRemoteRange(start = 100, endInclusive = 299, pages = listOf(2, 3), priority = 4),
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        try {
+            val session = FakeReaderSession(
+                pageCount = 5,
+                plannedRangesByPage = mapOf(
+                    0 to listOf(
+                        PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1, 2), priority = 1),
+                        PlannedRemoteRange(start = 100, endInclusive = 299, pages = listOf(2, 3), priority = 4),
+                    ),
                 ),
-            ),
-        )
-        val viewModel = ReaderViewModel(
-            openSession = { session },
-            ioDispatcher = dispatcher,
-        )
+            )
+            val viewModel = ReaderViewModel(
+                openSession = { session },
+                ioDispatcher = dispatcher,
+            )
 
-        viewModel.openLocal("/tmp/book.cbz", temp.root)
-        dispatcher.scheduler.advanceUntilIdle()
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(
-            listOf(RangePrefetchCall(start = 100, endInclusive = 299, priority = 1, protectedRanges = emptyList())),
-            session.prefetchCalls,
-        )
-        assertTrue(
-            sink.lines.any {
-                it.contains("planned_range_prefetch_start start=100 end=299 pages=[1, 2, 3] priority=1")
-            },
-        )
+            assertEquals(
+                listOf(RangePrefetchCall(start = 100, endInclusive = 299, priority = 1, protectedRanges = emptyList())),
+                session.prefetchCalls,
+            )
+            assertTrue(
+                sink.lines.any {
+                    it.contains("planned_range_prefetch_start start=100 end=299 pages=[1, 2, 3] priority=1")
+                },
+            )
+        } finally {
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+    }
+
+    @Test
+    fun summaryModeSuppressesPlannedRangePrefetchNoise() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        try {
+            val session = FakeReaderSession(
+                pageCount = 5,
+                plannedRangesByPage = mapOf(
+                    0 to listOf(
+                        PlannedRemoteRange(start = 100, endInclusive = 199, pages = listOf(1, 2), priority = 1),
+                    ),
+                ),
+            )
+            val viewModel = ReaderViewModel(
+                openSession = { session },
+                ioDispatcher = dispatcher,
+            )
+
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertTrue(
+                sink.lines.none { it.contains("planned_range_prefetch_start start=100 end=199") },
+            )
+        } finally {
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
     }
 
     @Test
@@ -615,6 +651,7 @@ class ReaderViewModelTest {
     fun selectPageWaitsForInFlightPlannedRangeCoveringSelectedPage() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
         val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
         val ioDispatcher = executor.asCoroutineDispatcher()
         val prefetchStarted = CountDownLatch(1)
@@ -665,6 +702,7 @@ class ReaderViewModelTest {
             }
             assertTrue(sink.lines.any { it.contains("prefetch_promoted page=5 source=planned_range_to_select") })
         } finally {
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
             releasePrefetch.countDown()
             prefetchFinished.await(1, TimeUnit.SECONDS)
             dispatcher.scheduler.advanceUntilIdle()
@@ -786,22 +824,27 @@ class ReaderViewModelTest {
     fun selectPagePromotesExistingPrefetchInsteadOfCancellingForSelection() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
-        val session = FakeReaderSession(pageCount = 6)
-        val viewModel = ReaderViewModel(
-            openSession = { session },
-            ioDispatcher = dispatcher,
-        )
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        try {
+            val session = FakeReaderSession(pageCount = 6)
+            val viewModel = ReaderViewModel(
+                openSession = { session },
+                ioDispatcher = dispatcher,
+            )
 
-        viewModel.openLocal("/tmp/book.cbz", temp.root)
-        dispatcher.scheduler.runCurrent()
-        assertEquals(0, viewModel.uiState.currentPage)
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            dispatcher.scheduler.runCurrent()
+            assertEquals(0, viewModel.uiState.currentPage)
 
-        viewModel.selectPage(1)
-        dispatcher.scheduler.advanceUntilIdle()
+            viewModel.selectPage(1)
+            dispatcher.scheduler.advanceUntilIdle()
 
-        assertTrue(sink.lines.any { it.contains("prefetch_promoted page=1 source=prefetch_to_select") })
-        assertTrue(sink.lines.none { it.contains("prefetch_cancelled reason=select_page") })
-        assertTrue(sink.lines.none { it.contains("prefetch_failed page=1") })
+            assertTrue(sink.lines.any { it.contains("prefetch_promoted page=1 source=prefetch_to_select") })
+            assertTrue(sink.lines.none { it.contains("prefetch_cancelled reason=select_page") })
+            assertTrue(sink.lines.none { it.contains("prefetch_failed page=1") })
+        } finally {
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
     }
 
     @Test

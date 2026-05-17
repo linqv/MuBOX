@@ -288,7 +288,9 @@ class ReaderViewModel(
             } else {
                 "planned_range_to_select"
             }
-            ReaderDiagnosticLog.event("prefetch_promoted page=$pageIndex source=$promotionSource")
+            ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+                "prefetch_promoted page=$pageIndex source=$promotionSource"
+            }
             viewModelScope.launch {
                 runCatching {
                     promotedJob.join()
@@ -452,7 +454,9 @@ class ReaderViewModel(
         val forwardPrefetchPages = activeSession.forwardPrefetchPageCount.coerceAtLeast(0)
         val backwardPrefetchPages = activeSession.backwardPrefetchPageCount.coerceAtLeast(0)
         if (forwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
-            ReaderDiagnosticLog.event("prefetch_skipped reason=session_disabled page=$pageIndex")
+            ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+                "prefetch_skipped reason=session_disabled page=$pageIndex"
+            }
             return
         }
         val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(
@@ -478,7 +482,9 @@ class ReaderViewModel(
 
         val prefetchGeneration = generation
         diagnostics.markPrefetchPlanned(missingNeighbors)
-        ReaderDiagnosticLog.event("prefetch_start current=$pageIndex pages=$missingNeighbors generation=$prefetchGeneration")
+        ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+            "prefetch_start current=$pageIndex pages=$missingNeighbors generation=$prefetchGeneration"
+        }
         missingNeighbors.forEachIndexed { order, page ->
             val job = viewModelScope.launch {
                 try {
@@ -666,9 +672,9 @@ class ReaderViewModel(
         val cancelledPages = activePages.subtract(desiredWindow)
 
         if (retainedPages.isNotEmpty() && reason.startsWith("select_page")) {
-            ReaderDiagnosticLog.event(
-                "prefetch_retained reason=select_page page=$selectedPage pages=${retainedPages.sorted()}",
-            )
+            ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+                "prefetch_retained reason=select_page page=$selectedPage pages=${retainedPages.sorted()}"
+            }
         }
         cancelPagePrefetches(
             reason = "outside_window",
@@ -686,7 +692,9 @@ class ReaderViewModel(
         activePages.forEach { page ->
             prefetchJobs.remove(page)?.cancel(CancellationException("prefetch $reason"))
         }
-        ReaderDiagnosticLog.event("prefetch_cancelled reason=$reason page=$selectedPage pages=${activePages.sorted()}")
+        ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+            "prefetch_cancelled reason=$reason page=$selectedPage pages=${activePages.sorted()}"
+        }
     }
 
     private fun scheduleDemandPlannedRangePrefetch(pageIndex: Int, source: String) {
@@ -699,10 +707,10 @@ class ReaderViewModel(
                     activeSession.plannedRanges(pageIndex, NETWORK_WIFI)
                 }
                 if (expectedGeneration == generation) {
-                    ReaderDiagnosticLog.event(
+                    ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                         "demand_planned_range_plan page=$pageIndex source=$source " +
-                            "count=${ranges.size} bytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}",
-                    )
+                            "count=${ranges.size} bytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}"
+                    }
                     schedulePlannedRangePrefetches(activeSession, ranges, expectedGeneration)
                 }
             }.onFailure { error ->
@@ -727,26 +735,26 @@ class ReaderViewModel(
         if (mergedRanges.isEmpty()) return
 
         val plannedBytes = mergedRanges.sumOf { it.endInclusive - it.start + 1 }
-        ReaderDiagnosticLog.event(
-            "planned_range_prefetch_plan count=${mergedRanges.size} bytes=$plannedBytes generation=$expectedGeneration",
-        )
+        ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+            "planned_range_prefetch_plan count=${mergedRanges.size} bytes=$plannedBytes generation=$expectedGeneration"
+        }
         mergedRanges.sortedBy { it.priority }.forEach { range ->
             val key = range.key()
             val protectedRanges = protectedPlannedByteRanges(mergedRanges, excludedKey = key)
             val job = plannedRangeScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     if (expectedGeneration != generation) return@launch
-                    ReaderDiagnosticLog.event(
+                    ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                         "planned_range_prefetch_start start=${range.start} end=${range.endInclusive} " +
-                            "pages=${range.pages} priority=${range.priority}",
-                    )
+                            "pages=${range.pages} priority=${range.priority}"
+                    }
                     val stored = prefetchPlannedRangeWithLimits(session, range, protectedRanges)
                     if (expectedGeneration == generation) {
                         markPlannedRangeCompleted(range)
-                        ReaderDiagnosticLog.event(
+                        ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                             "planned_range_prefetch_done start=${range.start} end=${range.endInclusive} " +
-                                "pages=${range.pages} priority=${range.priority} stored=$stored",
-                        )
+                                "pages=${range.pages} priority=${range.priority} stored=$stored"
+                        }
                     }
                 } catch (error: CancellationException) {
                     // Expected stale-plan cancellation is logged by the reconciler.
@@ -787,11 +795,11 @@ class ReaderViewModel(
             if (!shouldStart) {
                 job.cancel()
                 retained?.let { retainedRange ->
-                    ReaderDiagnosticLog.event(
+                    ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                         "planned_range_prefetch_retained start=${retainedRange.range.start} " +
                             "end=${retainedRange.range.endInclusive} pages=${retainedRange.range.pages} " +
-                            "requestedStart=${range.start} requestedEnd=${range.endInclusive}",
-                    )
+                            "requestedStart=${range.start} requestedEnd=${range.endInclusive}"
+                    }
                 }
                 return@forEach
             }
@@ -938,7 +946,9 @@ class ReaderViewModel(
                 plannedRangeJobs.remove(key)
             }?.job?.cancel(CancellationException("planned range $reason"))
         }
-        ReaderDiagnosticLog.event("planned_range_prefetch_cancelled reason=$reason count=${cancelled.size}")
+        ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
+            "planned_range_prefetch_cancelled reason=$reason count=${cancelled.size}"
+        }
     }
 
     private fun resetPlannedRangeScope() {

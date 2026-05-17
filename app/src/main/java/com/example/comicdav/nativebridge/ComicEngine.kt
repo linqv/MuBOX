@@ -7,8 +7,8 @@ import java.io.File
 
 class ComicEngine(
     private val native: ComicNativeFacade = ComicNative,
-    private val logDiagnostic: (String) -> Unit = { line ->
-        ReaderDiagnosticLog.summary(ReaderLogCategory.LOCAL_FILE) { line }
+    private val logDiagnostic: (() -> String) -> Unit = { event ->
+        ReaderDiagnosticLog.summary(ReaderLogCategory.LOCAL_FILE, event)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
@@ -69,13 +69,13 @@ class ComicEngine(
         }
 
         if (nativeOpenDiagnostics != null) {
-            logDiagnostic(
+            logDiagnostic {
                 "native_open_local_fd_done format=${nativeOpenDiagnostics.format} " +
                     "sizeBytes=${nativeOpenDiagnostics.sizeBytes} " +
                     "nativeOpenMs=${nativeOpenDiagnostics.nativeOpenMs} " +
                     "pageCountMs=$pageCountMs " +
-                    "pageCount=$pageCount",
-            )
+                    "pageCount=$pageCount"
+            }
         }
 
         return ComicSession(native, handle, pageCount, rangeProviderFileId, onClose)

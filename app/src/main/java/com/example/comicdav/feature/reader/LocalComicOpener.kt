@@ -34,8 +34,8 @@ class LocalComicOpener(
         val document = RealMuPdfDocumentAdapter().open(descriptor, fileName, format)
         MuPdfReaderSession(document, format)
     },
-    private val logDiagnostic: (String) -> Unit = { line ->
-        ReaderDiagnosticLog.summary(ReaderLogCategory.LOCAL_FILE) { line }
+    private val logDiagnostic: (() -> String) -> Unit = { event ->
+        ReaderDiagnosticLog.summary(ReaderLogCategory.LOCAL_FILE, event)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
@@ -93,15 +93,15 @@ class LocalComicOpener(
         pageCount: Int,
         fileExt: String,
     ) {
-        logDiagnostic(
+        logDiagnostic {
             "local_open_done engine=$engine " +
                 "format=$format " +
                 "sizeBytes=$sizeBytes " +
                 "descriptorOpenMs=$descriptorOpenMs " +
                 "openSessionMs=$openSessionMs " +
                 "pageCount=$pageCount " +
-                "fileExt=$fileExt",
-        )
+                "fileExt=$fileExt"
+        }
     }
 
     private fun safeFileExtension(fileName: String): String =

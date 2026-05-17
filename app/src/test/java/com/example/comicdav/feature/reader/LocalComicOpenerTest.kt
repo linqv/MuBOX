@@ -52,7 +52,7 @@ class LocalComicOpenerTest {
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
             openSession = { _, _, _ -> FakeReaderSession(pageCount = 3) },
-            logDiagnostic = diagnosticLines::add,
+            logDiagnostic = { event -> diagnosticLines += event() },
             elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
         )
 

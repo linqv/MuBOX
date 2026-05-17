@@ -12,8 +12,8 @@ class MuPdfReaderSession(
     private val document: MuPdfDocumentHandle,
     private val format: LocalDocumentFormat,
     private val maxPixels: Int = DEFAULT_MUPDF_RENDER_MAX_PIXELS,
-    private val logDiagnostic: (String) -> Unit = { line ->
-        ReaderDiagnosticLog.summary(ReaderLogCategory.PAGE_LOAD) { line }
+    private val logDiagnostic: (() -> String) -> Unit = { event ->
+        ReaderDiagnosticLog.detail(ReaderLogCategory.PAGE_LOAD, event)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ComicReaderSession {
@@ -60,7 +60,7 @@ class MuPdfReaderSession(
             outputFile.delete()
             throw IllegalStateException("页面渲染失败")
         }
-        logDiagnostic(
+        logDiagnostic {
             formatMuPdfRenderDone(
                 format = format,
                 pageIndex = pageIndex,
@@ -70,8 +70,8 @@ class MuPdfReaderSession(
                 maxPixels = maxPixels,
                 quality = DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
                 metrics = renderMetrics,
-            ),
-        )
+            )
+        }
         return outputFile
     }
 
