@@ -11,6 +11,8 @@ class MuPdfReaderSession(
     private val maxPixels: Int = DEFAULT_MUPDF_RENDER_MAX_PIXELS,
 ) : ComicReaderSession {
     override val pageCount: Int = document.pageCount
+    override val forwardPrefetchPageCount: Int = 2
+    override val backwardPrefetchPageCount: Int = 0
 
     private var isClosed = false
 
@@ -28,6 +30,8 @@ class MuPdfReaderSession(
             renderSucceeded = true
         } catch (exception: CancellationException) {
             throw exception
+        } catch (error: OutOfMemoryError) {
+            throw IllegalStateException("页面过大，内存不足，无法渲染", error)
         } catch (exception: Exception) {
             throw IllegalStateException("页面渲染失败", exception)
         } finally {

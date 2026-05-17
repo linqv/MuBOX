@@ -58,6 +58,11 @@ class ComicEngine(
 
 interface ComicReaderSession : Closeable {
     val pageCount: Int
+    val forwardPrefetchPageCount: Int
+        get() = 4
+    val backwardPrefetchPageCount: Int
+        get() = 1
+
     fun loadPageToFile(pageIndex: Int, outputFile: File): File
     fun updateViewport(pageIndex: Int, networkClass: Int) = Unit
     fun diagnostics(): String = ""

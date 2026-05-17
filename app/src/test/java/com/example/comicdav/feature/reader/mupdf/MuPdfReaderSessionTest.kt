@@ -125,7 +125,7 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
-    fun loadPageToFileDoesNotCatchFatalRenderErrors() {
+    fun loadPageToFileMapsOutOfMemoryToReadableFailure() {
         val output = File(temp.root, "page.png")
         val failure = OutOfMemoryError("oom")
         val document = FakeMuPdfDocument(pageCount = 1, renderFailure = failure)
@@ -135,8 +135,17 @@ class MuPdfReaderSessionTest {
             session.loadPageToFile(0, output)
         }
 
-        assertSame(failure, thrown)
+        assertEquals("页面过大，内存不足，无法渲染", thrown?.message)
+        assertSame(failure, thrown?.cause)
         assertFalse(output.exists())
+    }
+
+    @Test
+    fun pagePrefetchWindowIsLimitedForMuPdfDocuments() {
+        val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 1), LocalDocumentFormat.Pdf)
+
+        assertEquals(2, session.forwardPrefetchPageCount)
+        assertEquals(0, session.backwardPrefetchPageCount)
     }
 
     @Test

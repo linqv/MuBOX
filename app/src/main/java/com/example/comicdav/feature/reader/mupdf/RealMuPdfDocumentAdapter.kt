@@ -37,6 +37,8 @@ class RealMuPdfDocumentAdapter : MuPdfDocumentAdapter {
             )
             ownershipTransferred = true
             handle
+        } catch (error: OutOfMemoryError) {
+            throw IllegalStateException("文件过大，内存不足，无法打开这个 ${format.displayName} 文件", error)
         } catch (error: Exception) {
             throw mapMuPdfOpenError(format, error)
         } finally {

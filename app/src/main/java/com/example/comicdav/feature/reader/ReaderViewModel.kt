@@ -421,13 +421,29 @@ class ReaderViewModel(
     private fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(pageIndex, activeSession.pageCount)
+        val forwardPrefetchPages = activeSession.forwardPrefetchPageCount.coerceAtLeast(0)
+        val backwardPrefetchPages = activeSession.backwardPrefetchPageCount.coerceAtLeast(0)
+        if (forwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
+            ReaderDiagnosticLog.event("prefetch_skipped reason=session_disabled page=$pageIndex")
+            return
+        }
+        val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(
+            pageIndex = pageIndex,
+            pageCount = activeSession.pageCount,
+            forwardPages = forwardPrefetchPages,
+            backwardPages = backwardPrefetchPages,
+        )
         reconcilePagePrefetches(
             selectedPage = pageIndex,
             desiredWindow = desiredWindow,
             reason = reason,
         )
-        val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(pageIndex, activeSession.pageCount)
+        val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(
+            pageIndex = pageIndex,
+            pageCount = activeSession.pageCount,
+            forwardPages = forwardPrefetchPages,
+            backwardPages = backwardPrefetchPages,
+        )
             .filterNot { uiState.pageFiles.containsKey(it) }
             .filterNot { prefetchJobs[it]?.isActive == true }
         if (missingNeighbors.isEmpty()) return

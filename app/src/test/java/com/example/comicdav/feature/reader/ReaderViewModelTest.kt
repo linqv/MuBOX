@@ -804,6 +804,25 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun openLocalUsesSessionSpecificPagePrefetchWindow() = runTest(dispatcher) {
+        val session = LimitedPagePrefetchSession(
+            pageCount = 8,
+            forwardPrefetchPageCount = 2,
+            backwardPrefetchPageCount = 0,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.openLocal("/tmp/book.pdf", temp.root, initialPage = 3)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(3, 4, 5), session.loadedPages)
+        assertEquals(setOf(3, 4, 5), viewModel.uiState.pageFiles.keys)
+    }
+
+    @Test
     fun pageCacheFilesAreScopedByComicKey() = runTest(dispatcher) {
         val firstSession = FakeReaderSession(pageCount = 1)
         val secondSession = FakeReaderSession(pageCount = 1)
@@ -1191,6 +1210,22 @@ class ReaderViewModelTest {
                 prefetchFinished.countDown()
             }
             return true
+        }
+
+        override fun close() = Unit
+    }
+
+    private class LimitedPagePrefetchSession(
+        override val pageCount: Int,
+        override val forwardPrefetchPageCount: Int,
+        override val backwardPrefetchPageCount: Int,
+    ) : ComicReaderSession {
+        val loadedPages = mutableListOf<Int>()
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            loadedPages += pageIndex
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
         }
 
         override fun close() = Unit
