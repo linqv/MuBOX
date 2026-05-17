@@ -19,10 +19,9 @@ class CacheAnalysisTest {
 
         val analysis = analyzeComicCache(temp.root)
 
-        assertEquals(60, analysis.totalBytes)
+        assertEquals(30, analysis.totalBytes)
         assertEquals(10, analysis.remoteDownloadsBytes)
         assertEquals(20, analysis.readerPagesBytes)
-        assertEquals(30, analysis.localImportsBytes)
     }
 
     @Test
@@ -31,6 +30,10 @@ class CacheAnalysisTest {
             parentFile!!.mkdirs()
             writeBytes(ByteArray(10))
         }
+        val page = temp.root.resolve("comicdav-pages/book/page-1.img").apply {
+            parentFile!!.mkdirs()
+            writeBytes(ByteArray(20))
+        }
         val unrelated = temp.root.resolve("other/keep.txt").apply {
             parentFile!!.mkdirs()
             writeText("keep")
@@ -38,9 +41,10 @@ class CacheAnalysisTest {
 
         val deleted = clearComicCache(temp.root)
 
-        assertEquals(1, deleted.filesDeleted)
-        assertEquals(10, deleted.bytesDeleted)
+        assertEquals(2, deleted.filesDeleted)
+        assertEquals(30, deleted.bytesDeleted)
         assertFalse(remote.exists())
+        assertFalse(page.exists())
         assertTrue(unrelated.exists())
     }
 

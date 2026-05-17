@@ -932,16 +932,22 @@ class ReaderViewModelTest {
     fun pageLoadPrunesPageCacheAfterExtraction() = runTest(dispatcher) {
         val session = FakeReaderSession(pageCount = 1)
         val protectedFiles = mutableListOf<File>()
+        val maxBytes = mutableListOf<Long>()
         val viewModel = ReaderViewModel(
             openSession = { session },
             ioDispatcher = dispatcher,
-            prunePageCache = { _, protectedFile -> protectedFiles += protectedFile },
+            prunePageCache = { _, protectedFile, limitBytes ->
+                protectedFiles += protectedFile
+                maxBytes += limitBytes
+            },
         )
+        viewModel.updatePageCacheMaxBytes(2L * 1024L * 1024L * 1024L)
 
         viewModel.openLocal("/tmp/book.cbz", temp.root, comicKey = "cache-prune")
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(listOf(viewModel.uiState.pageFiles.getValue(0)), protectedFiles)
+        assertEquals(listOf(2L * 1024L * 1024L * 1024L), maxBytes)
     }
 
     @Test

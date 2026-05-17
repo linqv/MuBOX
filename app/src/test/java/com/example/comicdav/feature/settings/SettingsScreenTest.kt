@@ -17,4 +17,17 @@ class SettingsScreenTest {
         assertEquals(8_000L, autoPageIntervalMillisForSpeed(8))
         assertEquals(60_000L, autoPageIntervalMillisForSpeed(90))
     }
+
+    @Test
+    fun diskCacheLimitIsCoercedIntoSupportedRange() {
+        assertEquals(1, coerceDiskCacheLimitGb(0))
+        assertEquals(5, coerceDiskCacheLimitGb(9))
+        assertEquals(3, coerceDiskCacheLimitGb(3))
+    }
+
+    @Test
+    fun diskCacheLimitUsesGibibytesForPageCacheBytes() {
+        assertEquals(1_073_741_824L, pageCacheLimitBytesForGb(1))
+        assertEquals(5_368_709_120L, pageCacheLimitBytesForGb(5))
+    }
 }

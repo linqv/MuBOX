@@ -83,8 +83,11 @@ import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
 import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.reader.OpenComicUseCase
+import com.example.comicdav.feature.reader.ReaderPageCache
 import com.example.comicdav.feature.reader.createReaderLogFile
+import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
+import com.example.comicdav.feature.settings.pageCacheLimitBytesForGb
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
@@ -281,6 +284,15 @@ fun ComicDavApp() {
         }
     }
 
+    LaunchedEffect(appSettings.diskCacheLimitGb) {
+        val pageCacheLimitBytes = pageCacheLimitBytesForGb(appSettings.diskCacheLimitGb)
+        readerViewModel.updatePageCacheMaxBytes(pageCacheLimitBytes)
+        withContext(Dispatchers.IO) {
+            ReaderPageCache.prune(context.cacheDir, maxBytes = pageCacheLimitBytes)
+        }
+        refreshCacheAnalysis()
+    }
+
     LaunchedEffect(uiState.status, uiState.baseUrl, uiState.username, uiState.password) {
         if (uiState.status == WEB_DAV_STATUS_CONNECTED && uiState.baseUrl.isNotBlank()) {
             webDavAccountStore.saveAccount(
@@ -335,7 +347,12 @@ fun ComicDavApp() {
         openDirectLocalComic(
             uri = Uri.parse(source.uri),
             fileName = source.fileName,
-            comicKey = "library-${item.item.id}",
+            comicKey = localComicCacheKey(
+                prefix = "library",
+                stableId = "${item.item.id}:${source.uri}",
+                size = source.size,
+                lastModified = source.lastModified,
+            ),
             readyEvent = "open_library_local_fd_ready",
             failureEvent = "open_library_local_fd_failed",
             onOpened = { libraryViewModel.markOpened(item.item.id) },
@@ -347,7 +364,12 @@ fun ComicDavApp() {
         openDirectLocalComic(
             uri = Uri.parse(item.uri),
             fileName = item.name,
-            comicKey = "directory-${item.uri.hashCode()}",
+            comicKey = localComicCacheKey(
+                prefix = "directory",
+                stableId = item.uri,
+                size = item.size,
+                lastModified = item.lastModified,
+            ),
             readyEvent = "open_directory_local_fd_ready",
             failureEvent = "open_directory_local_fd_failed uri=${item.uri}",
             onFailure = { error -> fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败") },
@@ -877,6 +899,9 @@ fun ComicDavApp() {
                                     },
                                     onVolumeKeysTurnPagesChange = { value ->
                                         scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
+                                    },
+                                    onDiskCacheLimitChange = { value ->
+                                        scope.launch { appSettingsStore.updateDiskCacheLimitGb(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     cacheAnalysis = cacheAnalysis,

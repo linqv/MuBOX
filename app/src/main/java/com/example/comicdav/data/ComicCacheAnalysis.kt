@@ -6,10 +6,9 @@ import java.util.Locale
 data class ComicCacheAnalysis(
     val remoteDownloadsBytes: Long = 0,
     val readerPagesBytes: Long = 0,
-    val localImportsBytes: Long = 0,
 ) {
     val totalBytes: Long
-        get() = remoteDownloadsBytes + readerPagesBytes + localImportsBytes
+        get() = remoteDownloadsBytes + readerPagesBytes
 }
 
 data class CacheClearResult(
@@ -21,7 +20,6 @@ fun analyzeComicCache(cacheDir: File): ComicCacheAnalysis {
     return ComicCacheAnalysis(
         remoteDownloadsBytes = cacheDir.resolve("remote-comics").directorySize(),
         readerPagesBytes = cacheDir.resolve("comicdav-pages").directorySize(),
-        localImportsBytes = cacheDir.resolve("local-comics").directorySize(),
     )
 }
 
@@ -29,7 +27,6 @@ fun clearComicCache(cacheDir: File): CacheClearResult {
     val targets = listOf(
         cacheDir.resolve("remote-comics"),
         cacheDir.resolve("comicdav-pages"),
-        cacheDir.resolve("local-comics"),
     )
     var filesDeleted = 0
     var bytesDeleted = 0L

@@ -43,8 +43,8 @@ class ReaderViewModel(
     private val openSession: ComicSessionFactory = { path -> ComicEngine().openLocal(path) },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val savePage: SaveReadingProgress = { _, _ -> },
-    private val prunePageCache: (cacheDir: File, protectedFile: File) -> Unit = { cacheDir, protectedFile ->
-        ReaderPageCache.prune(cacheDir, protectedFile)
+    private val prunePageCache: (cacheDir: File, protectedFile: File, maxBytes: Long) -> Unit = { cacheDir, protectedFile, maxBytes ->
+        ReaderPageCache.prune(cacheDir, protectedFile, maxBytes)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ViewModel() {
@@ -55,6 +55,8 @@ class ReaderViewModel(
     private var cacheDir: File? = null
     private var comicKey: String? = null
     private var pageCacheKey: String? = null
+    @Volatile
+    private var pageCacheMaxBytes: Long = ReaderPageCache.DEFAULT_MAX_BYTES
     @Volatile
     private var generation = 0
     private var remoteOpenJob: Job? = null
@@ -70,6 +72,10 @@ class ReaderViewModel(
     private val sessionMutex = Mutex()
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val diagnostics = ReaderDiagnosticsTracker(elapsedRealtimeMs)
+
+    fun updatePageCacheMaxBytes(maxBytes: Long) {
+        pageCacheMaxBytes = maxBytes.coerceAtLeast(1L)
+    }
 
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
@@ -610,7 +616,7 @@ class ReaderViewModel(
                         loadedFile
                     }
                 }
-                pageCacheFileToPrune?.let { prunePageCache(cacheDir, it) }
+                pageCacheFileToPrune?.let { prunePageCache(cacheDir, it, pageCacheMaxBytes) }
                 files[index] = output
         }
         return files

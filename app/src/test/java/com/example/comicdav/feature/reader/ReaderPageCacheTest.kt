@@ -1,4 +1,4 @@
-package com.example.comicdav.data
+package com.example.comicdav.feature.reader
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -6,21 +6,20 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-class LocalComicImportCacheTest {
+class ReaderPageCacheTest {
     @get:Rule
     val temp = TemporaryFolder()
 
     @Test
-    fun pruneRemovesOldestLocalImportsAndKeepsProtectedFile() {
-        val oldFile = LocalComicImportCache.targetFile(temp.root, nowMs = 1_000L)
-        oldFile.parentFile?.mkdirs()
+    fun pruneRemovesOldestPageFilesUsingConfiguredLimitAndKeepsProtectedFile() {
+        val oldFile = ReaderPageCache.pageFile(temp.root, "book", 0)
         oldFile.writeBytes(ByteArray(8) { 1 })
         oldFile.setLastModified(1_000L)
-        val protectedFile = LocalComicImportCache.targetFile(temp.root, nowMs = 2_000L)
+        val protectedFile = ReaderPageCache.pageFile(temp.root, "book", 1)
         protectedFile.writeBytes(ByteArray(8) { 2 })
         protectedFile.setLastModified(2_000L)
 
-        LocalComicImportCache.prune(temp.root, maxBytes = 10L, protectedFile = protectedFile)
+        ReaderPageCache.prune(temp.root, protectedFile = protectedFile, maxBytes = 10L)
 
         assertFalse(oldFile.exists())
         assertTrue(protectedFile.exists())

@@ -44,6 +44,8 @@ import kotlin.math.roundToInt
 
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
+private const val MinDiskCacheLimitGb = 1
+private const val MaxDiskCacheLimitGb = 5
 
 @Composable
 fun SettingsScreen(
@@ -55,6 +57,7 @@ fun SettingsScreen(
     onAutoPageSpeedChange: (Int) -> Unit,
     onScreenRotationLockChange: (Boolean) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
+    onDiskCacheLimitChange: (Int) -> Unit,
     downloadRecords: List<DownloadRecord> = emptyList(),
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
@@ -162,9 +165,9 @@ fun SettingsScreen(
                 title = "页面图片缓存",
                 subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
             )
-            StaticInfoRow(
-                title = "本地导入缓存",
-                subtitle = formatCacheSize(cacheAnalysis.localImportsBytes),
+            DiskCacheLimitRow(
+                limitGb = settings.diskCacheLimitGb,
+                onLimitChange = onDiskCacheLimitChange,
             )
             Row(
                 modifier = Modifier
@@ -201,6 +204,12 @@ internal fun autoPageIntervalMillisForSpeed(speedSeconds: Int): Long =
 
 internal fun coerceAutoPageSpeedMillis(speedMillis: Int): Int =
     autoPageIntervalMillisForSpeed(speedMillis / 1_000).toInt()
+
+internal fun coerceDiskCacheLimitGb(limitGb: Int): Int =
+    limitGb.coerceIn(MinDiskCacheLimitGb, MaxDiskCacheLimitGb)
+
+internal fun pageCacheLimitBytesForGb(limitGb: Int): Long =
+    coerceDiskCacheLimitGb(limitGb) * 1024L * 1024L * 1024L
 
 internal fun ReadingDirection.label(): String =
     when (this) {
@@ -448,6 +457,57 @@ private fun AutoPageSpeedRow(
             },
             valueRange = MinAutoPageSpeedSeconds.toFloat()..MaxAutoPageSpeedSeconds.toFloat(),
             steps = MaxAutoPageSpeedSeconds - MinAutoPageSpeedSeconds - 1,
+        )
+    }
+}
+
+@Composable
+private fun DiskCacheLimitRow(
+    limitGb: Int,
+    onLimitChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val coercedLimit = coerceDiskCacheLimitGb(limitGb)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "磁盘缓存上限",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = "仅限制页面图片，不含 WebDAV 整本下载和索引",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "$coercedLimit GB",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = coercedLimit.toFloat(),
+            onValueChange = { value -> onLimitChange(coerceDiskCacheLimitGb(value.roundToInt())) },
+            valueRange = MinDiskCacheLimitGb.toFloat()..MaxDiskCacheLimitGb.toFloat(),
+            steps = MaxDiskCacheLimitGb - MinDiskCacheLimitGb - 1,
         )
     }
 }

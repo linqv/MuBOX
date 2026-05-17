@@ -35,6 +35,7 @@ class AppSettingsStoreTest {
                 autoPageSpeedMillis = 5_000,
                 screenRotationLockEnabled = false,
                 volumeKeysTurnPagesEnabled = false,
+                diskCacheLimitGb = 1,
             ),
             store.settings.first(),
         )
@@ -52,6 +53,7 @@ class AppSettingsStoreTest {
         store.updateAutoPageSpeedMillis(7_500)
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
+        store.updateDiskCacheLimitGb(4)
 
         val restored = AppSettingsStore(dataStore)
 
@@ -64,6 +66,7 @@ class AppSettingsStoreTest {
                 autoPageSpeedMillis = 7_500,
                 screenRotationLockEnabled = true,
                 volumeKeysTurnPagesEnabled = true,
+                diskCacheLimitGb = 4,
             ),
             restored.settings.first(),
         )
@@ -81,6 +84,7 @@ class AppSettingsStoreTest {
         store.updateAutoPageSpeedMillis(3_000)
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
+        store.updateDiskCacheLimitGb(5)
 
         val preferences = dataStore.data.first()
 
@@ -91,6 +95,7 @@ class AppSettingsStoreTest {
         assertEquals(3_000, preferences[intPreferencesKey("auto_page_speed_millis")])
         assertTrue(preferences[booleanPreferencesKey("screen_rotation_lock_enabled")]!!)
         assertTrue(preferences[booleanPreferencesKey("volume_keys_turn_pages_enabled")]!!)
+        assertEquals(5, preferences[intPreferencesKey("disk_cache_limit_gb")])
     }
 
     @Test
