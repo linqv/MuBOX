@@ -61,7 +61,6 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
-import com.example.comicdav.data.LocalComicImportCache
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.analyzeComicCache
@@ -82,6 +81,7 @@ import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
+import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.settings.SettingsScreen
@@ -153,6 +153,9 @@ fun ComicDavApp() {
     }
     val localDirectoryReader = remember(context) {
         AndroidLocalDirectoryReader(context.applicationContext)
+    }
+    val localComicOpener = remember(context) {
+        LocalComicOpener(context.applicationContext)
     }
     val libraryViewModel: LibraryViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
@@ -288,28 +291,30 @@ fun ComicDavApp() {
         }
     }
 
-    fun openCachedLocalComic(
+    fun openDirectLocalComic(
         uri: Uri,
+        fileName: String,
         comicKey: String,
         readyEvent: String,
         failureEvent: String,
-        onOpened: (File) -> Unit = {},
+        onOpened: () -> Unit = {},
         onFailure: (Throwable) -> Unit,
     ) {
         startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    copyUriToCache(context, uri)
+                    localComicOpener.open(uri, fileName)
                 }
             }.fold(
-                onSuccess = { cachedFile ->
+                onSuccess = { session ->
                     localOpenError = null
-                    onOpened(cachedFile)
-                    ReaderDiagnosticLog.event("$readyEvent path=${cachedFile.name} size=${cachedFile.length()}")
-                    readerViewModel.openLocal(
-                        path = cachedFile.absolutePath,
+                    onOpened()
+                    ReaderDiagnosticLog.event("$readyEvent fileName=$fileName")
+                    readerViewModel.openExistingSession(
+                        openedSession = session,
                         cacheDir = context.cacheDir,
+                        initialPage = 0,
                         comicKey = comicKey,
                     )
                     isReaderOpen = true
@@ -327,22 +332,24 @@ fun ComicDavApp() {
             localOpenError = "缺少本地来源"
             return
         }
-        openCachedLocalComic(
+        openDirectLocalComic(
             uri = Uri.parse(source.uri),
+            fileName = source.fileName,
             comicKey = "library-${item.item.id}",
-            readyEvent = "open_library_local_cache_ready",
-            failureEvent = "open_library_local_copy_failed",
+            readyEvent = "open_library_local_fd_ready",
+            failureEvent = "open_library_local_fd_failed",
             onOpened = { libraryViewModel.markOpened(item.item.id) },
             onFailure = { error -> localOpenError = error.message ?: "打开本地文件失败" },
         )
     }
 
     fun openLocalDirectoryComic(item: FileDirectoryBrowserItem) {
-        openCachedLocalComic(
+        openDirectLocalComic(
             uri = Uri.parse(item.uri),
+            fileName = item.name,
             comicKey = "directory-${item.uri.hashCode()}",
-            readyEvent = "open_directory_local_cache_ready",
-            failureEvent = "open_directory_local_copy_failed uri=${item.uri}",
+            readyEvent = "open_directory_local_fd_ready",
+            failureEvent = "open_directory_local_fd_failed uri=${item.uri}",
             onFailure = { error -> fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败") },
         )
     }
@@ -983,20 +990,6 @@ private fun DataFolderGateScreen(
             Text(ComicDavCopy.chooseFolder)
         }
     }
-}
-
-private fun copyUriToCache(context: Context, uri: Uri): File {
-    LocalComicImportCache.prune(context.cacheDir)
-    val target = LocalComicImportCache.targetFile(context.cacheDir)
-    target.parentFile?.mkdirs()
-    context.contentResolver.openInputStream(uri).use { input ->
-        requireNotNull(input) { "无法读取所选文件" }
-        target.outputStream().use { output ->
-            input.copyTo(output)
-        }
-    }
-    LocalComicImportCache.prune(context.cacheDir, protectedFile = target)
-    return target
 }
 
 private fun queryDirectoryDisplayName(context: Context, treeUri: Uri): String {

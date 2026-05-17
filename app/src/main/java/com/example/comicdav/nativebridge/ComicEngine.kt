@@ -11,6 +11,11 @@ class ComicEngine(
         return openChecked(handle)
     }
 
+    fun openLocalFd(fd: Int, size: Long, format: String): ComicReaderSession {
+        val handle = native.openLocalFd(fd, size, format)
+        return openChecked(handle)
+    }
+
     fun openRemote(
         fileId: Long,
         size: Long,

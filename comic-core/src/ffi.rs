@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use crate::archive::{open_local_archive_fd, ArchiveFormat, LocalArchiveSession};
 use crate::cache::index_cache::{open_cbz_with_index_cache, IndexCacheKey};
 use crate::cbz::{open_cbz, CbzIndex, CbzPageEntry};
 use crate::error::ComicCoreError;
@@ -27,8 +28,7 @@ use crate::zip::{FileRangeReader, RangeReader};
 pub type ComicHandle = u64;
 
 struct CbzSession {
-    reader: SessionReader,
-    index: CbzIndex,
+    kind: SessionKind,
     diagnostics: SessionDiagnostics,
 }
 
@@ -56,6 +56,14 @@ impl PlannedRangeDto {
 enum SessionReader {
     Local(FileRangeReader),
     Remote(JniRangeReader),
+}
+
+enum SessionKind {
+    Zip {
+        reader: SessionReader,
+        index: CbzIndex,
+    },
+    LocalArchive(LocalArchiveSession),
 }
 
 impl RangeReader for SessionReader {
@@ -173,6 +181,11 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
             native_open_remote as *const () as *mut c_void,
         ),
         native_method(
+            "openLocalFd",
+            "(IJLjava/lang/String;)J",
+            native_open_local_fd as *const () as *mut c_void,
+        ),
+        native_method(
             "pageCount",
             "(J)I",
             native_page_count as *const () as *mut c_void,
@@ -258,6 +271,27 @@ extern "system" fn native_open_remote(
             size as u64,
             validator,
         )
+    }) {
+        Ok(handle) => handle as jlong,
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+extern "system" fn native_open_local_fd(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    fd: jint,
+    size: jlong,
+    format: JString<'_>,
+) -> jlong {
+    let size_hint = if size > 0 { Some(size as u64) } else { None };
+    match jstring_to_string(&mut env, &format).and_then(|format| {
+        let format = archive_format_from_name(&format)?;
+        let archive = open_local_archive_fd(fd, size_hint, format)?;
+        insert_session(SessionKind::LocalArchive(archive))
     }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
@@ -383,7 +417,10 @@ extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>
 fn open_local_path(path: &Path) -> Result<ComicHandle> {
     let reader = FileRangeReader::open(path)?;
     let index = open_cbz(&reader)?;
-    insert_session(SessionReader::Local(reader), index)
+    insert_session(SessionKind::Zip {
+        reader: SessionReader::Local(reader),
+        index,
+    })
 }
 
 fn open_remote_reader(
@@ -399,10 +436,13 @@ fn open_remote_reader(
         validator,
     };
     let index = open_cbz_with_index_cache(&reader, &cache_dir, &key)?;
-    insert_session(SessionReader::Remote(reader), index)
+    insert_session(SessionKind::Zip {
+        reader: SessionReader::Remote(reader),
+        index,
+    })
 }
 
-fn insert_session(reader: SessionReader, index: CbzIndex) -> Result<ComicHandle> {
+fn insert_session(kind: SessionKind) -> Result<ComicHandle> {
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     if handle == 0 {
         return Err(anyhow!("native handle counter overflowed"));
@@ -413,8 +453,7 @@ fn insert_session(reader: SessionReader, index: CbzIndex) -> Result<ComicHandle>
     sessions.insert(
         handle,
         CbzSession {
-            reader,
-            index,
+            kind,
             diagnostics: SessionDiagnostics::default(),
         },
     );
@@ -428,7 +467,10 @@ fn page_count(handle: ComicHandle) -> Result<i32> {
     let session = sessions
         .get(&handle)
         .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
-    Ok(session.index.pages.len() as i32)
+    Ok(match &session.kind {
+        SessionKind::Zip { index, .. } => index.pages.len() as i32,
+        SessionKind::LocalArchive(archive) => archive.page_count() as i32,
+    })
 }
 
 fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path) -> Result<()> {
@@ -436,13 +478,16 @@ fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path)
         return Ok(());
     }
     let bytes = {
-        let sessions = SESSIONS
+        let mut sessions = SESSIONS
             .lock()
             .map_err(|_| anyhow!("native session table lock poisoned"))?;
         let session = sessions
-            .get(&handle)
+            .get_mut(&handle)
             .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
-        session.index.extract_page(&session.reader, page_index)?
+        match &mut session.kind {
+            SessionKind::Zip { reader, index } => index.extract_page(reader, page_index)?,
+            SessionKind::LocalArchive(archive) => archive.extract_page(page_index)?,
+        }
     };
     fs::write(output_path, bytes)?;
     Ok(())
@@ -459,12 +504,19 @@ fn update_viewport(
     let session = sessions
         .get_mut(&handle)
         .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
-    if page_index >= session.index.pages.len() {
+    let (index, reader) = match &session.kind {
+        SessionKind::Zip { reader, index } => (index, reader),
+        SessionKind::LocalArchive(_) => {
+            session.diagnostics = SessionDiagnostics::default();
+            return Ok(());
+        }
+    };
+    if page_index >= index.pages.len() {
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
     }
 
-    let file_size = session.reader.size()?;
-    let planned = build_planned_ranges(&session.index, file_size, page_index, network_class);
+    let file_size = reader.size()?;
+    let planned = build_planned_ranges(index, file_size, page_index, network_class);
     session.diagnostics = SessionDiagnostics {
         viewport_page: Some(page_index),
         planned_request_count: planned.len(),
@@ -484,12 +536,16 @@ fn planned_ranges_for_viewport(
     let session = sessions
         .get(&handle)
         .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
-    if page_index >= session.index.pages.len() {
+    let (index, reader) = match &session.kind {
+        SessionKind::Zip { reader, index } => (index, reader),
+        SessionKind::LocalArchive(_) => return Ok(Vec::new()),
+    };
+    if page_index >= index.pages.len() {
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
     }
-    let file_size = session.reader.size()?;
+    let file_size = reader.size()?;
     Ok(build_planned_ranges(
-        &session.index,
+        index,
         file_size,
         page_index,
         network_class,
@@ -601,6 +657,15 @@ fn network_class_from_i32(value: jint) -> NetworkClass {
         1 => NetworkClass::Mobile,
         2 => NetworkClass::Wifi,
         _ => NetworkClass::Unknown,
+    }
+}
+
+fn archive_format_from_name(value: &str) -> Result<ArchiveFormat> {
+    match value {
+        "zip" => Ok(ArchiveFormat::Zip),
+        "7z" => Ok(ArchiveFormat::SevenZ),
+        "tar" => Ok(ArchiveFormat::Tar),
+        _ => Err(anyhow!("unsupported local archive format: {value}")),
     }
 }
 

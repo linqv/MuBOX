@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod cache;
 pub mod cbz;
 pub mod error;

@@ -174,6 +174,8 @@ class ComicEngineTest {
 
         override fun openLocal(path: String): Long = openHandle
 
+        override fun openLocalFd(fd: Int, size: Long, format: String): Long = openHandle
+
         override fun openRemote(
             fileId: Long,
             size: Long,

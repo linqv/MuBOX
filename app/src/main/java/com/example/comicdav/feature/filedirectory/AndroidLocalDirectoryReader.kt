@@ -3,6 +3,7 @@ package com.example.comicdav.feature.filedirectory
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.example.comicdav.data.isSupportedLocalComicFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -37,7 +38,7 @@ class AndroidLocalDirectoryReader(
                 val name = cursor.stringOrNull(nameColumn) ?: continue
                 val mimeType = cursor.stringOrNull(mimeColumn).orEmpty()
                 val isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR
-                if (!isDirectory && !name.endsWith(".cbz", ignoreCase = true) && !name.endsWith(".zip", ignoreCase = true)) {
+                if (!isDirectory && !isSupportedLocalComicFileName(name)) {
                     continue
                 }
                 val childDocumentId = cursor.stringOrNull(idColumn) ?: continue

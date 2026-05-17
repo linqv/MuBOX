@@ -1,7 +1,7 @@
 package com.example.comicdav.data.library
 
+import com.example.comicdav.data.localComicTitleFromFileName
 import kotlinx.coroutines.flow.Flow
-import java.util.Locale
 
 interface LibraryCatalog {
     fun observeLibrary(): Flow<List<LibraryItemWithSources>>
@@ -93,11 +93,6 @@ class LibraryRepository(
     }
 
     private fun titleFrom(fileName: String): String {
-        val lowerCaseFileName = fileName.lowercase(Locale.ROOT)
-        return when {
-            lowerCaseFileName.endsWith(".cbz") -> fileName.dropLast(".cbz".length)
-            lowerCaseFileName.endsWith(".zip") -> fileName.dropLast(".zip".length)
-            else -> fileName
-        }
+        return localComicTitleFromFileName(fileName)
     }
 }

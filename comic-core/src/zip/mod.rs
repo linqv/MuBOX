@@ -46,7 +46,14 @@ pub struct FileRangeReader {
 impl FileRangeReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(path)?;
-        let size = file.metadata()?.len();
+        Self::from_file(file, None)
+    }
+
+    pub fn from_file(file: File, size_hint: Option<u64>) -> Result<Self> {
+        let size = match size_hint {
+            Some(size) if size > 0 => size,
+            _ => file.metadata()?.len(),
+        };
         Ok(Self { file, size })
     }
 }
