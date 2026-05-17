@@ -88,7 +88,8 @@ class FileDirectoryViewModelTest {
             rootUri = "content://tree/comics/root",
             children = listOf(
                 FileDirectoryBrowserItem("Series", "content://tree/comics/series", isDirectory = true),
-                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false),
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book-cbz", isDirectory = false),
+                FileDirectoryBrowserItem("book.pdf", "content://tree/comics/book-pdf", isDirectory = false),
             ),
         )
         val viewModel = FileDirectoryViewModel(catalog, reader)
@@ -99,7 +100,7 @@ class FileDirectoryViewModelTest {
 
         assertFalse(viewModel.uiState.isLoading)
         assertEquals("Comics", viewModel.uiState.currentTitle)
-        assertEquals(listOf("Series", "book.cbz"), viewModel.uiState.entries.map { it.name })
+        assertEquals(listOf("Series", "book.cbz", "book.pdf"), viewModel.uiState.entries.map { it.name })
         assertEquals(emptyList<FileDirectorySourceEntity>(), catalog.recentWrites)
     }
 

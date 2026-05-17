@@ -108,4 +108,21 @@ class LibraryRepositoryTest {
         assertEquals("primary-webdav:/library/series/Chapter 01.zip", webDavSource.cacheKey)
     }
 
+    @Test
+    fun addLocalDocumentStoresTitleWithoutMuPdfDocumentExtension() = runTest {
+        val libraryItemId = repository.addLocalComic(
+            uri = "content://documents/tree/books/document/book.pdf",
+            fileName = "book.pdf",
+            size = 100L,
+            lastModified = 10L,
+        )
+
+        val library = repository.observeLibrary().first()
+
+        assertTrue(libraryItemId > 0L)
+        assertEquals("book", library.single().item.title)
+        assertEquals("book", library.single().item.displayName)
+        assertEquals("book.pdf", library.single().localSource?.fileName)
+    }
+
 }
