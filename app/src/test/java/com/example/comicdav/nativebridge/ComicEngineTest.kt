@@ -64,6 +64,26 @@ class ComicEngineTest {
     }
 
     @Test
+    fun openLocalFdReportsNativeOpenAndPageCountTiming() {
+        val native = FakeComicNative(openHandle = 12, pageCount = 5)
+        val elapsedTimes = mutableListOf(10L, 35L, 42L)
+        val diagnosticLines = mutableListOf<String>()
+        val engine = ComicEngine(
+            native = native,
+            logDiagnostic = diagnosticLines::add,
+            elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
+        )
+
+        val session = engine.openLocalFd(fd = 11, size = 2048, format = "zip")
+
+        assertEquals(5, session.pageCount)
+        assertEquals(
+            listOf("native_open_local_fd_done format=zip sizeBytes=2048 nativeOpenMs=25 pageCountMs=7 pageCount=5"),
+            diagnosticLines,
+        )
+    }
+
+    @Test
     fun updateViewportCallsNativeForOpenSession() {
         val native = FakeComicNative(openHandle = 5, pageCount = 1)
         val session = ComicEngine(native).openLocal("/tmp/book.cbz")

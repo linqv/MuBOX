@@ -7,6 +7,7 @@ import com.example.comicdav.data.LocalDocumentFormat
 import com.example.comicdav.nativebridge.ComicReaderSession
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,6 +40,34 @@ class LocalComicOpenerTest {
         assertEquals(listOf(LocalArchiveFormat.Tar), calls.map { it.format })
         assertEquals(listOf(archive.length()), calls.map { it.size })
         assertTrue(calls.single().fd > 0)
+    }
+
+    @Test
+    fun openerReportsArchiveOpenDiagnosticsWithoutRawFileName() {
+        val archive = temp.newFile("Secret Book.cbz").apply {
+            writeBytes(ByteArray(64) { 9 })
+        }
+        val elapsedTimes = mutableListOf(100L, 115L, 160L)
+        val diagnosticLines = mutableListOf<String>()
+        val opener = LocalComicOpener(
+            context = ApplicationProvider.getApplicationContext(),
+            openSession = { _, _, _ -> FakeReaderSession(pageCount = 3) },
+            logDiagnostic = diagnosticLines::add,
+            elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
+        )
+
+        opener.open(Uri.fromFile(archive), archive.name)
+
+        val line = diagnosticLines.single()
+        assertTrue(line.contains("local_open_done"))
+        assertTrue(line.contains("engine=native-archive"))
+        assertTrue(line.contains("format=ZIP"))
+        assertTrue(line.contains("sizeBytes=64"))
+        assertTrue(line.contains("descriptorOpenMs=15"))
+        assertTrue(line.contains("openSessionMs=45"))
+        assertTrue(line.contains("pageCount=3"))
+        assertTrue(line.contains("fileExt=cbz"))
+        assertFalse(line.contains("Secret Book.cbz"))
     }
 
     @Test
