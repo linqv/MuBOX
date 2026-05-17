@@ -165,6 +165,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(files("libs/fitz-1.27.1.aar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
