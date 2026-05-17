@@ -13,6 +13,7 @@ class MuPdfReaderSession(
     override val pageCount: Int = document.pageCount
     override val forwardPrefetchPageCount: Int = 2
     override val backwardPrefetchPageCount: Int = 0
+    override val advancePrefetchOnPageDemand: Boolean = true
 
     private var isClosed = false
 
@@ -26,7 +27,7 @@ class MuPdfReaderSession(
         var renderSucceeded = false
         try {
             outputFile.parentFile?.mkdirs()
-            document.renderPageToPng(pageIndex, outputFile, maxPixels)
+            document.renderPageToJpeg(pageIndex, outputFile, maxPixels, DEFAULT_MUPDF_RENDER_JPEG_QUALITY)
             renderSucceeded = true
         } catch (exception: CancellationException) {
             throw exception

@@ -391,13 +391,23 @@ class ReaderViewModel(
     fun reportPageDemand(pageIndex: Int, source: String) {
         val ready = uiState.pageFiles[pageIndex] != null
         ReaderDiagnosticLog.event("page_demand page=$pageIndex source=$source ready=$ready")
-        if (ready || pageIndex !in 0 until uiState.pageCount) return
+        if (pageIndex !in 0 until uiState.pageCount) return
+        if (ready) {
+            val activeSession = session
+            if (activeSession?.advancePrefetchOnPageDemand == true && source.shouldAdvancePrefetchOnDemand()) {
+                prefetchNeighbors(pageIndex, reason = source)
+            }
+            return
+        }
         if (source == "pager_target") {
             scheduleDemandPlannedRangePrefetch(pageIndex, source)
         }
 
         diagnostics.recordPageDemand(pageIndex, source)
     }
+
+    private fun String.shouldAdvancePrefetchOnDemand(): Boolean =
+        this == "pager_target" || this == "continuous_visible"
 
     fun reportImageLoadStarted(pageIndex: Int) {
         diagnostics.recordImageLoadStarted(pageIndex)

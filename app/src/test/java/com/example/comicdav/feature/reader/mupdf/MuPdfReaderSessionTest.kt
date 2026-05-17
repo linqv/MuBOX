@@ -63,6 +63,17 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileRendersJpegWithDefaultQuality() {
+        val output = File(temp.root, "page-1.img")
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+
+        session.loadPageToFile(1, output)
+
+        assertEquals(DEFAULT_MUPDF_RENDER_JPEG_QUALITY, document.renderedJpegQuality)
+    }
+
+    @Test
     fun loadPageToFileRejectsOutOfRangePage() {
         val output = File(temp.root, "page-9.png")
         val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 2), LocalDocumentFormat.Mobi)
@@ -174,15 +185,17 @@ class MuPdfReaderSessionTest {
     ) : MuPdfDocumentHandle {
         val renderedPages = mutableListOf<Int>()
         var renderedMaxPixels: Int? = null
+        var renderedJpegQuality: Int? = null
         var closed = false
         var closeCount = 0
 
-        override fun renderPageToPng(pageIndex: Int, outputFile: File, maxPixels: Int) {
+        override fun renderPageToJpeg(pageIndex: Int, outputFile: File, maxPixels: Int, quality: Int) {
             if (pageIndex !in 0 until pageCount) error("bad page")
             partialRenderText?.let { outputFile.writeText(it) }
             renderFailure?.let { throw it }
             renderedPages += pageIndex
             renderedMaxPixels = maxPixels
+            renderedJpegQuality = quality
             outputFile.writeText("rendered-$pageIndex")
         }
 

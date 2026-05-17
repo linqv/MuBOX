@@ -62,6 +62,8 @@ interface ComicReaderSession : Closeable {
         get() = 4
     val backwardPrefetchPageCount: Int
         get() = 1
+    val advancePrefetchOnPageDemand: Boolean
+        get() = false
 
     fun loadPageToFile(pageIndex: Int, outputFile: File): File
     fun updateViewport(pageIndex: Int, networkClass: Int) = Unit

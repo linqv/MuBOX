@@ -57,7 +57,7 @@ class RealMuPdfDocumentHandle(
 ) : MuPdfDocumentHandle {
     private var isClosed = false
 
-    override fun renderPageToPng(pageIndex: Int, outputFile: File, maxPixels: Int) {
+    override fun renderPageToJpeg(pageIndex: Int, outputFile: File, maxPixels: Int, quality: Int) {
         val page = document.loadPage(pageIndex)
         try {
             val bounds = page.bounds
@@ -67,7 +67,7 @@ class RealMuPdfDocumentHandle(
             val pixmap = page.toPixmap(Matrix.Scale(scale), ColorSpace.DeviceRGB, false)
             try {
                 outputFile.parentFile?.mkdirs()
-                pixmap.saveAsPNG(outputFile.absolutePath)
+                pixmap.saveAsJPEG(outputFile.absolutePath, quality)
             } finally {
                 pixmap.destroy()
             }

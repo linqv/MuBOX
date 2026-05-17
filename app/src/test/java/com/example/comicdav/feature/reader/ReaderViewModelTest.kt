@@ -823,6 +823,49 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun selectingCachedPageContinuesSessionSpecificForwardPrefetchWindow() = runTest(dispatcher) {
+        val session = LimitedPagePrefetchSession(
+            pageCount = 8,
+            forwardPrefetchPageCount = 2,
+            backwardPrefetchPageCount = 0,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.pdf", temp.root, initialPage = 3)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectPage(4)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(3, 4, 5, 6), session.loadedPages)
+        assertEquals(setOf(3, 4, 5, 6), viewModel.uiState.pageFiles.keys)
+    }
+
+    @Test
+    fun demandingCachedTargetPageContinuesSessionSpecificForwardPrefetchWindow() = runTest(dispatcher) {
+        val session = LimitedPagePrefetchSession(
+            pageCount = 8,
+            forwardPrefetchPageCount = 2,
+            backwardPrefetchPageCount = 0,
+            advancePrefetchOnPageDemand = true,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+        )
+        viewModel.openLocal("/tmp/book.pdf", temp.root, initialPage = 3)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.reportPageDemand(4, "pager_target")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(3, 4, 5, 6), session.loadedPages)
+        assertEquals(setOf(3, 4, 5, 6), viewModel.uiState.pageFiles.keys)
+    }
+
+    @Test
     fun pageCacheFilesAreScopedByComicKey() = runTest(dispatcher) {
         val firstSession = FakeReaderSession(pageCount = 1)
         val secondSession = FakeReaderSession(pageCount = 1)
@@ -1219,6 +1262,7 @@ class ReaderViewModelTest {
         override val pageCount: Int,
         override val forwardPrefetchPageCount: Int,
         override val backwardPrefetchPageCount: Int,
+        override val advancePrefetchOnPageDemand: Boolean = false,
     ) : ComicReaderSession {
         val loadedPages = mutableListOf<Int>()
 
