@@ -82,16 +82,23 @@ class RealMuPdfDocumentHandle(
     }
 }
 
-fun mupdfRenderScale(width: Float, height: Float, maxPixels: Int): Float {
+fun mupdfRenderScale(
+    width: Float,
+    height: Float,
+    maxPixels: Int,
+    targetWidth: Float = DEFAULT_MUPDF_RENDER_TARGET_WIDTH,
+): Float {
     if (width <= 0f || height <= 0f || maxPixels <= 0) return 1f
     val pixels = width * height
-    if (pixels <= maxPixels.toFloat()) return 1f
+    val targetScale = (targetWidth / width).coerceAtLeast(1f)
+    if (pixels * targetScale * targetScale <= maxPixels.toFloat()) return targetScale
     return sqrt(maxPixels.toFloat() / pixels)
 }
 
 private const val DEFAULT_MUPDF_REFLOW_WIDTH = 1080f
 private const val DEFAULT_MUPDF_REFLOW_HEIGHT = 1920f
 private const val DEFAULT_MUPDF_REFLOW_EM = 12f
+private const val DEFAULT_MUPDF_RENDER_TARGET_WIDTH = 1600f
 
 fun mapMuPdfOpenError(format: LocalDocumentFormat, error: Exception): Exception {
     val message = error.message.orEmpty()
