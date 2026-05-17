@@ -910,6 +910,124 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun continuousVisibleRetainsNearbyActivePagePrefetch() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPagePrefetchSession(
+            pageCount = 12,
+            blockingPage = 9,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.pdf", temp.root, initialPage = 5)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(5)
+            }
+
+            viewModel.selectPage(7)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.reportPageDemand(5, "continuous_visible")
+            dispatcher.scheduler.advanceUntilIdle()
+            releasePrefetch.countDown()
+
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(9)
+            }
+
+            assertTrue(
+                sink.lines.any { it.contains("prefetch_retained reason=continuous_visible page=5 pages=[9]") },
+            )
+            assertTrue(
+                sink.lines.none {
+                    it.contains("prefetch_cancelled reason=outside_window page=5 pages=[9]")
+                },
+            )
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            executor.shutdown()
+            executor.awaitTermination(1, TimeUnit.SECONDS)
+            ioDispatcher.close()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+    }
+
+    @Test
+    fun continuousVisibleCancelsFarActivePagePrefetch() = runTest(dispatcher) {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPagePrefetchSession(
+            pageCount = 12,
+            blockingPage = 10,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.pdf", temp.root, initialPage = 5)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(5)
+            }
+
+            viewModel.selectPage(8)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.reportPageDemand(5, "continuous_visible")
+            dispatcher.scheduler.advanceUntilIdle()
+            releasePrefetch.countDown()
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertTrue(
+                sink.lines.any {
+                    it.contains("prefetch_cancelled reason=outside_window page=5 pages=[10]")
+                },
+            )
+            assertTrue(!viewModel.uiState.pageFiles.containsKey(10))
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            executor.shutdown()
+            executor.awaitTermination(1, TimeUnit.SECONDS)
+            ioDispatcher.close()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+    }
+
+    @Test
     fun pageCacheFilesAreScopedByComicKey() = runTest(dispatcher) {
         val firstSession = FakeReaderSession(pageCount = 1)
         val secondSession = FakeReaderSession(pageCount = 1)
@@ -1352,6 +1470,39 @@ class ReaderViewModelTest {
 
         override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
             loadedPages += pageIndex
+            outputFile.writeText("page-$pageIndex")
+            return outputFile
+        }
+
+        override fun close() = Unit
+    }
+
+    private class BlockingPagePrefetchSession(
+        override val pageCount: Int,
+        override val forwardPrefetchPageCount: Int = 2,
+        override val backwardPrefetchPageCount: Int = 0,
+        override val advancePrefetchOnPageDemand: Boolean = true,
+        private val blockingPage: Int,
+        private val prefetchStarted: CountDownLatch,
+        private val prefetchFinished: CountDownLatch,
+        private val releasePrefetch: CountDownLatch,
+    ) : ComicReaderSession {
+        val loadedPages = mutableListOf<Int>()
+
+        override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
+            synchronized(loadedPages) {
+                loadedPages += pageIndex
+            }
+            if (pageIndex == blockingPage) {
+                prefetchStarted.countDown()
+                try {
+                    releasePrefetch.await(2, TimeUnit.SECONDS)
+                    outputFile.writeText("page-$pageIndex")
+                    return outputFile
+                } finally {
+                    prefetchFinished.countDown()
+                }
+            }
             outputFile.writeText("page-$pageIndex")
             return outputFile
         }
