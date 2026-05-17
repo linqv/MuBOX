@@ -63,6 +63,21 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileRejectsOutOfRangePageBeforeCacheHit() {
+        val output = temp.newFile("page-9.png").apply {
+            writeText("cached")
+        }
+        val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 2), LocalDocumentFormat.Mobi)
+
+        val error = runCatching {
+            session.loadPageToFile(9, output)
+        }.exceptionOrNull()
+
+        assertEquals("页面渲染失败", error?.message)
+        assertEquals("cached", output.readText())
+    }
+
+    @Test
     fun closeClosesDocumentOnce() {
         val document = FakeMuPdfDocument(pageCount = 1)
         val session = MuPdfReaderSession(document, LocalDocumentFormat.Azw3)

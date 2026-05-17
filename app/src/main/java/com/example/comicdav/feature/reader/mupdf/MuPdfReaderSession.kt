@@ -14,11 +14,11 @@ class MuPdfReaderSession(
     private var isClosed = false
 
     override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
-        if (outputFile.isFile && outputFile.length() > 0L) {
-            return outputFile
-        }
         if (pageIndex !in 0 until pageCount) {
             throw IllegalStateException("页面渲染失败")
+        }
+        if (outputFile.isFile && outputFile.length() > 0L) {
+            return outputFile
         }
         runCatching {
             outputFile.parentFile?.mkdirs()
