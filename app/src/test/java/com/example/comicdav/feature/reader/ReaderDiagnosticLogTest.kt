@@ -173,6 +173,32 @@ class ReaderDiagnosticLogTest {
         assertTrue(line.contains("fileExt=cbz"))
     }
 
+    @Test
+    fun offModeDoesNotInvokeSummaryOrDetailBuilders() {
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.OFF)
+        var summaryBuilt = false
+        var detailBuilt = false
+        try {
+            ReaderDiagnosticLog.summary(ReaderLogCategory.SESSION) {
+                summaryBuilt = true
+                "summary"
+            }
+            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) {
+                detailBuilt = true
+                "detail"
+            }
+        } finally {
+            ReaderDiagnosticLog.clearSink()
+            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        }
+
+        assertFalse(summaryBuilt)
+        assertFalse(detailBuilt)
+        assertTrue(sink.lines.isEmpty())
+    }
+
     private class CollectingReaderLogSink : ReaderLogSink {
         val lines = mutableListOf<String>()
 

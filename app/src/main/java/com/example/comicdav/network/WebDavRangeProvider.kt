@@ -1,6 +1,7 @@
 package com.example.comicdav.network
 
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.feature.reader.ReaderLogCategory
 import com.example.comicdav.nativebridge.RangeProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -11,7 +12,9 @@ class WebDavRangeProvider(
     private val size: Long,
     private val readAheadBytes: Long = DEFAULT_READ_AHEAD_BYTES,
     private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
-    private val logDiagnostic: (String) -> Unit = ReaderDiagnosticLog::event,
+    private val logDiagnostic: (String) -> Unit = { line ->
+        ReaderDiagnosticLog.detail(ReaderLogCategory.RANGE_CACHE) { line }
+    },
 ) : RangeProvider {
     private val lock = Any()
     private val cache = RangeWindowCache(maxCacheBytes)

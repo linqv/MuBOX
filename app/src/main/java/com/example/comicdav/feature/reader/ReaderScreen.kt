@@ -171,7 +171,7 @@ fun ReaderScreen(
                     }
                         .reportableReaderPageChanges()
                         .collect { page ->
-                            ReaderDiagnosticLog.event("pager_report_page page=$page")
+                            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) { "pager_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }
@@ -187,10 +187,10 @@ fun ReaderScreen(
                             uiCurrentPage = uiState.currentPage,
                             pageCount = uiState.pageCount,
                         )
-                    }
+                        }
                         .distinctUntilChanged()
                         .collect { snapshot ->
-                            ReaderDiagnosticLog.event(formatPagerSnapshot(snapshot))
+                            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) { formatPagerSnapshot(snapshot) }
                             reportablePagerDemandPages(snapshot).forEach { demand ->
                                 onPageDemanded(demand.page, demand.source)
                             }
@@ -208,7 +208,7 @@ fun ReaderScreen(
                         .distinctUntilChanged()
                         .collect { page ->
                             if (page == null) return@collect
-                            ReaderDiagnosticLog.event("continuous_scroll_report_page page=$page")
+                            ReaderDiagnosticLog.detail(ReaderLogCategory.UI) { "continuous_scroll_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }

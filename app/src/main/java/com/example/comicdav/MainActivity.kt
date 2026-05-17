@@ -62,6 +62,7 @@ import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.ReadingProgressStore
+import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.analyzeComicCache
 import com.example.comicdav.data.clearComicCache
@@ -252,7 +253,7 @@ fun ComicDavApp() {
         }
         saveReaderLogFolderUri(context, uri)
         logFolderUriText = uri.toString()
-        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
         ReaderDiagnosticLog.event("log_folder_selected uri=$uri")
     }
     val localDirectoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -278,7 +279,8 @@ fun ComicDavApp() {
         }
     }
 
-    LaunchedEffect(appSettings.loggingEnabled) {
+    LaunchedEffect(appSettings.readerLoggingMode) {
+        ReaderDiagnosticLog.setMode(appSettings.readerLoggingMode)
         if (!appSettings.loggingEnabled) {
             ReaderDiagnosticLog.clearSink()
         }
@@ -312,7 +314,7 @@ fun ComicDavApp() {
         onOpened: () -> Unit = {},
         onFailure: (Throwable) -> Unit,
     ) {
-        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -570,7 +572,7 @@ fun ComicDavApp() {
         localOpenError = null
         webDavActionMessage = null
         isReaderOpen = true
-        startReaderLogFile(context, logFolderUriText, scope, appSettings.loggingEnabled)
+        startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
         readerViewModel.openRemote(cacheDir = context.cacheDir) {
             val useCase = OpenComicUseCase(

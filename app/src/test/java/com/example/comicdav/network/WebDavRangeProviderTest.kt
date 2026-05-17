@@ -2,6 +2,7 @@ package com.example.comicdav.network
 
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLogSink
+import com.example.comicdav.data.ReaderLoggingMode
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -102,7 +103,7 @@ class WebDavRangeProviderTest {
     @Test
     fun highPriorityPrefetchEvictsUnprotectedWindowBeforeProtectedWindow() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
+        installDetailLogSink(sink)
         try {
             val bytes = ByteArray(128) { it.toByte() }
             val client = RecordingWebDavClient(bytes)
@@ -132,14 +133,14 @@ class WebDavRangeProviderTest {
             assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedCount=1"))
             assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedBytes=10"))
         } finally {
-            ReaderDiagnosticLog.clearSink()
+            clearReaderLogSink()
         }
     }
 
     @Test
     fun highPriorityPrefetchFallbackDiagnosticReportsProtectedCapacityFallback() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
+        installDetailLogSink(sink)
         try {
             val bytes = ByteArray(128) { it.toByte() }
             val client = RecordingWebDavClient(bytes)
@@ -171,7 +172,7 @@ class WebDavRangeProviderTest {
             assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedCount=2"))
             assertTrue("prefetchLine=$prefetchLine", prefetchLine.contains("protectedBytes=20"))
         } finally {
-            ReaderDiagnosticLog.clearSink()
+            clearReaderLogSink()
         }
     }
 
@@ -290,7 +291,7 @@ class WebDavRangeProviderTest {
     @Test
     fun readRangeJoinsCoveringInFlightPrefetchWithoutSecondWebDavRequest() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
+        installDetailLogSink(sink)
         try {
             val bytes = ByteArray(128) { it.toByte() }
             val release = CompletableDeferred<Unit>()
@@ -329,7 +330,7 @@ class WebDavRangeProviderTest {
             assertEquals(listOf(40L to 79L), client.rangeCalls)
             assertTrue(sink.lines.any { it.contains("range_inflight_join") && it.contains("start=50") && it.contains("end=59") })
         } finally {
-            ReaderDiagnosticLog.clearSink()
+            clearReaderLogSink()
         }
     }
 
@@ -377,7 +378,7 @@ class WebDavRangeProviderTest {
     @Test
     fun rangeCacheDiagnosticsIncludeHitMissStoreAndEvict() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
+        installDetailLogSink(sink)
         try {
             val bytes = ByteArray(128) { it.toByte() }
             val client = RecordingWebDavClient(bytes)
@@ -399,14 +400,14 @@ class WebDavRangeProviderTest {
             assertTrue(sink.lines.any { it.contains("range_cache_hit") })
             assertTrue(sink.lines.any { it.contains("range_cache_evict") })
         } finally {
-            ReaderDiagnosticLog.clearSink()
+            clearReaderLogSink()
         }
     }
 
     @Test
     fun diagnosticsDescribeProtectedReadAheadTrimAndPrefetchContext() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
+        installDetailLogSink(sink)
         try {
             val bytes = ByteArray(128) { it.toByte() }
             val client = RecordingWebDavClient(bytes)
@@ -443,7 +444,7 @@ class WebDavRangeProviderTest {
             assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("storeStart=40"))
             assertTrue("readStoreLine=$readStoreLine", readStoreLine.contains("storeEnd=49"))
         } finally {
-            ReaderDiagnosticLog.clearSink()
+            clearReaderLogSink()
         }
     }
 
@@ -489,6 +490,16 @@ class WebDavRangeProviderTest {
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long {
             error("unused")
         }
+    }
+
+    private fun installDetailLogSink(sink: ReaderLogSink) {
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
+        ReaderDiagnosticLog.setSink(sink)
+    }
+
+    private fun clearReaderLogSink() {
+        ReaderDiagnosticLog.clearSink()
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
     }
 
     private class CollectingReaderLogSink : ReaderLogSink {
