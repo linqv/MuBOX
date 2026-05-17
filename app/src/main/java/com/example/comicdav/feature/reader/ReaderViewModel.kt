@@ -465,9 +465,16 @@ class ReaderViewModel(
             forwardPages = forwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
+        val retentionWindow = retainedPagePrefetchWindow(
+            pageIndex = pageIndex,
+            pageCount = activeSession.pageCount,
+            forwardPages = forwardPrefetchPages,
+            desiredWindow = desiredWindow,
+            reason = reason,
+        )
         reconcilePagePrefetches(
             selectedPage = pageIndex,
-            desiredWindow = desiredWindow,
+            retentionWindow = retentionWindow,
             reason = reason,
         )
         val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(
@@ -661,19 +668,19 @@ class ReaderViewModel(
 
     private fun reconcilePagePrefetches(
         selectedPage: Int,
-        desiredWindow: Set<Int>,
+        retentionWindow: Set<Int>,
         reason: String,
     ) {
         val activePages = prefetchJobs
             .filter { (_, job) -> job.isActive }
             .keys
             .toSet()
-        val retainedPages = activePages.intersect(desiredWindow)
-        val cancelledPages = activePages.subtract(desiredWindow)
+        val retainedPages = activePages.intersect(retentionWindow)
+        val cancelledPages = activePages.subtract(retentionWindow)
 
-        if (retainedPages.isNotEmpty() && reason.startsWith("select_page")) {
+        if (retainedPages.isNotEmpty() && (reason.startsWith("select_page") || reason == "continuous_visible")) {
             ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
-                "prefetch_retained reason=select_page page=$selectedPage pages=${retainedPages.sorted()}"
+                "prefetch_retained reason=$reason page=$selectedPage pages=${retainedPages.sorted()}"
             }
         }
         cancelPagePrefetches(
@@ -681,6 +688,21 @@ class ReaderViewModel(
             pages = cancelledPages.toList(),
             selectedPage = selectedPage,
         )
+    }
+
+    private fun retainedPagePrefetchWindow(
+        pageIndex: Int,
+        pageCount: Int,
+        forwardPages: Int,
+        desiredWindow: Set<Int>,
+        reason: String,
+    ): Set<Int> {
+        if (reason != "continuous_visible") return desiredWindow
+        val firstPage = (pageIndex - CONTINUOUS_PAGE_PREFETCH_RETENTION_BEHIND).coerceAtLeast(0)
+        val lastPage = (pageIndex + forwardPages + CONTINUOUS_PAGE_PREFETCH_RETENTION_AHEAD)
+            .coerceAtMost(pageCount - 1)
+        if (lastPage < firstPage) return desiredWindow
+        return desiredWindow + (firstPage..lastPage)
     }
 
     private fun cancelPagePrefetches(reason: String, pages: List<Int>, selectedPage: Int) {
@@ -1020,6 +1042,8 @@ class ReaderViewModel(
         const val MAX_PLANNED_RANGE_CONCURRENCY = 2
         const val MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY = 1
         const val MAX_PLANNED_RANGE_PROTECTED_BYTES = 32L * 1024L * 1024L
+        const val CONTINUOUS_PAGE_PREFETCH_RETENTION_BEHIND = 2
+        const val CONTINUOUS_PAGE_PREFETCH_RETENTION_AHEAD = 2
         const val PLANNED_RANGE_PROTECTION_SOURCE_CURRENT = 0
         const val PLANNED_RANGE_PROTECTION_SOURCE_ACTIVE = 1
         const val PLANNED_RANGE_PROTECTION_SOURCE_COMPLETED = 2
