@@ -15,31 +15,35 @@ class RealMuPdfDocumentAdapter : MuPdfDocumentAdapter {
         format: LocalDocumentFormat,
     ): MuPdfDocumentHandle {
         val stream = ParcelFileDescriptorSeekableInputStream(descriptor)
+        var document: Document? = null
+        var ownershipTransferred = false
         return try {
-            val document = Document.openDocument(stream, fileName)
-            if (document.needsPassword()) {
-                document.destroy()
-                stream.close()
+            val openedDocument = Document.openDocument(stream, fileName)
+            document = openedDocument
+            if (openedDocument.needsPassword()) {
                 throw IllegalStateException("暂不支持加密或需要密码的文件")
             }
-            if (document.isReflowable) {
-                document.layout(DEFAULT_MUPDF_REFLOW_WIDTH, DEFAULT_MUPDF_REFLOW_HEIGHT, DEFAULT_MUPDF_REFLOW_EM)
+            if (openedDocument.isReflowable) {
+                openedDocument.layout(DEFAULT_MUPDF_REFLOW_WIDTH, DEFAULT_MUPDF_REFLOW_HEIGHT, DEFAULT_MUPDF_REFLOW_EM)
             }
-            val pageCount = document.countPages()
+            val pageCount = openedDocument.countPages()
             if (pageCount <= 0) {
-                document.destroy()
-                stream.close()
                 throw IllegalStateException("这个文件没有可读取的页面")
             }
-            RealMuPdfDocumentHandle(
-                document = document,
+            val handle = RealMuPdfDocumentHandle(
+                document = openedDocument,
                 stream = stream,
-                format = format,
                 pageCount = pageCount,
             )
-        } catch (error: Throwable) {
-            runCatching { stream.close() }
+            ownershipTransferred = true
+            handle
+        } catch (error: Exception) {
             throw mapMuPdfOpenError(format, error)
+        } finally {
+            if (!ownershipTransferred) {
+                runCatching { document?.destroy() }
+                runCatching { stream.close() }
+            }
         }
     }
 }
@@ -47,7 +51,6 @@ class RealMuPdfDocumentAdapter : MuPdfDocumentAdapter {
 class RealMuPdfDocumentHandle(
     private val document: Document,
     private val stream: ParcelFileDescriptorSeekableInputStream,
-    private val format: LocalDocumentFormat,
     override val pageCount: Int,
 ) : MuPdfDocumentHandle {
     private var isClosed = false
@@ -90,7 +93,7 @@ private const val DEFAULT_MUPDF_REFLOW_WIDTH = 1080f
 private const val DEFAULT_MUPDF_REFLOW_HEIGHT = 1920f
 private const val DEFAULT_MUPDF_REFLOW_EM = 12f
 
-fun mapMuPdfOpenError(format: LocalDocumentFormat, error: Throwable): Throwable {
+fun mapMuPdfOpenError(format: LocalDocumentFormat, error: Exception): Exception {
     val message = error.message.orEmpty()
     if (message == "这个文件没有可读取的页面" || message == "暂不支持加密或需要密码的文件") {
         return error
