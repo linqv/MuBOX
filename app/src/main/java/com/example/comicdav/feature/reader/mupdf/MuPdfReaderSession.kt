@@ -21,14 +21,19 @@ class MuPdfReaderSession(
         if (outputFile.isFile && outputFile.length() > 0L) {
             return outputFile
         }
+        var renderSucceeded = false
         try {
             outputFile.parentFile?.mkdirs()
             document.renderPageToPng(pageIndex, outputFile, maxPixels)
+            renderSucceeded = true
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
-            outputFile.delete()
             throw IllegalStateException("页面渲染失败", exception)
+        } finally {
+            if (!renderSucceeded) {
+                outputFile.delete()
+            }
         }
         if (!outputFile.isFile || outputFile.length() == 0L) {
             outputFile.delete()

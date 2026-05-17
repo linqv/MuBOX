@@ -106,6 +106,25 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileRemovesPartialOutputOnCancellation() {
+        val output = File(temp.root, "page.png")
+        val failure = CancellationException("cancelled")
+        val document = FakeMuPdfDocument(
+            pageCount = 1,
+            renderFailure = failure,
+            partialRenderText = "partial",
+        )
+        val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+
+        val thrown = catchThrowable {
+            session.loadPageToFile(0, output)
+        }
+
+        assertSame(failure, thrown)
+        assertTrue(!output.exists() || output.length() == 0L)
+    }
+
+    @Test
     fun loadPageToFileDoesNotCatchFatalRenderErrors() {
         val output = File(temp.root, "page.png")
         val failure = OutOfMemoryError("oom")
@@ -142,6 +161,7 @@ class MuPdfReaderSessionTest {
     private class FakeMuPdfDocument(
         override val pageCount: Int,
         private val renderFailure: Throwable? = null,
+        private val partialRenderText: String? = null,
     ) : MuPdfDocumentHandle {
         val renderedPages = mutableListOf<Int>()
         var renderedMaxPixels: Int? = null
@@ -150,6 +170,7 @@ class MuPdfReaderSessionTest {
 
         override fun renderPageToPng(pageIndex: Int, outputFile: File, maxPixels: Int) {
             if (pageIndex !in 0 until pageCount) error("bad page")
+            partialRenderText?.let { outputFile.writeText(it) }
             renderFailure?.let { throw it }
             renderedPages += pageIndex
             renderedMaxPixels = maxPixels
