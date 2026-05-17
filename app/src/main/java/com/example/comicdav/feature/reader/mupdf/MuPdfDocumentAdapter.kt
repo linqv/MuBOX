@@ -21,8 +21,18 @@ interface MuPdfDocumentHandle : Closeable {
         outputFile: File,
         maxPixels: Int = DEFAULT_MUPDF_RENDER_MAX_PIXELS,
         quality: Int = DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
-    )
+    ): MuPdfRenderMetrics?
 }
+
+data class MuPdfRenderMetrics(
+    val boundsWidth: Float,
+    val boundsHeight: Float,
+    val scale: Float,
+    val estimatedPixels: Long,
+    val estimatedBytes: Long,
+    val pixmapMs: Long,
+    val jpegMs: Long,
+)
 
 const val DEFAULT_MUPDF_RENDER_MAX_PIXELS: Int = 4_000_000
 const val DEFAULT_MUPDF_RENDER_JPEG_QUALITY: Int = 92

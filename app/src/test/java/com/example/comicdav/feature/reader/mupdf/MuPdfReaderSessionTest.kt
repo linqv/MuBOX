@@ -74,6 +74,67 @@ class MuPdfReaderSessionTest {
     }
 
     @Test
+    fun loadPageToFileReportsRenderDiagnostics() {
+        val output = File(temp.root, "page-0.jpg")
+        val diagnostics = mutableListOf<String>()
+        val elapsedTimes = mutableListOf(100L, 140L).iterator()
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(
+            document = document,
+            format = LocalDocumentFormat.Pdf,
+            maxPixels = 123_456,
+            logDiagnostic = diagnostics::add,
+            elapsedRealtimeMs = { elapsedTimes.next() },
+        )
+
+        session.loadPageToFile(0, output)
+
+        assertEquals(
+            listOf(
+                "mupdf_render_done format=PDF page=0 pageCount=2 renderMs=40 " +
+                    "outputBytes=10 maxPixels=123456 quality=92",
+            ),
+            diagnostics,
+        )
+    }
+
+    @Test
+    fun loadPageToFileIncludesRenderMetricsInDiagnostics() {
+        val output = File(temp.root, "page-1.jpg")
+        val diagnostics = mutableListOf<String>()
+        val elapsedTimes = mutableListOf(200L, 260L).iterator()
+        val document = FakeMuPdfDocument(
+            pageCount = 2,
+            renderMetrics = MuPdfRenderMetrics(
+                boundsWidth = 612f,
+                boundsHeight = 792f,
+                scale = 2.5f,
+                estimatedPixels = 3_029_400L,
+                estimatedBytes = 12_117_600L,
+                pixmapMs = 35L,
+                jpegMs = 20L,
+            ),
+        )
+        val session = MuPdfReaderSession(
+            document = document,
+            format = LocalDocumentFormat.Pdf,
+            logDiagnostic = diagnostics::add,
+            elapsedRealtimeMs = { elapsedTimes.next() },
+        )
+
+        session.loadPageToFile(1, output)
+
+        val line = diagnostics.single()
+        assertTrue(line.contains("mupdf_render_done format=PDF page=1 pageCount=2 renderMs=60"))
+        assertTrue(line.contains("bounds=612.0000x792.0000"))
+        assertTrue(line.contains("scale=2.5000"))
+        assertTrue(line.contains("estimatedPixels=3029400"))
+        assertTrue(line.contains("estimatedBytes=12117600"))
+        assertTrue(line.contains("pixmapMs=35"))
+        assertTrue(line.contains("jpegMs=20"))
+    }
+
+    @Test
     fun loadPageToFileRejectsOutOfRangePage() {
         val output = File(temp.root, "page-9.png")
         val session = MuPdfReaderSession(FakeMuPdfDocument(pageCount = 2), LocalDocumentFormat.Mobi)
@@ -182,6 +243,7 @@ class MuPdfReaderSessionTest {
         override val pageCount: Int,
         private val renderFailure: Throwable? = null,
         private val partialRenderText: String? = null,
+        private val renderMetrics: MuPdfRenderMetrics? = null,
     ) : MuPdfDocumentHandle {
         val renderedPages = mutableListOf<Int>()
         var renderedMaxPixels: Int? = null
@@ -189,7 +251,12 @@ class MuPdfReaderSessionTest {
         var closed = false
         var closeCount = 0
 
-        override fun renderPageToJpeg(pageIndex: Int, outputFile: File, maxPixels: Int, quality: Int) {
+        override fun renderPageToJpeg(
+            pageIndex: Int,
+            outputFile: File,
+            maxPixels: Int,
+            quality: Int,
+        ): MuPdfRenderMetrics? {
             if (pageIndex !in 0 until pageCount) error("bad page")
             partialRenderText?.let { outputFile.writeText(it) }
             renderFailure?.let { throw it }
@@ -197,6 +264,7 @@ class MuPdfReaderSessionTest {
             renderedMaxPixels = maxPixels
             renderedJpegQuality = quality
             outputFile.writeText("rendered-$pageIndex")
+            return renderMetrics
         }
 
         override fun close() {

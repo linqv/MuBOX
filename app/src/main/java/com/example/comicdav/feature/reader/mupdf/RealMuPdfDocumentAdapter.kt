@@ -6,9 +6,12 @@ import com.artifex.mupdf.fitz.Document
 import com.artifex.mupdf.fitz.Matrix
 import com.example.comicdav.data.LocalDocumentFormat
 import java.io.File
+import kotlin.math.ceil
 import kotlin.math.sqrt
 
-class RealMuPdfDocumentAdapter : MuPdfDocumentAdapter {
+class RealMuPdfDocumentAdapter(
+    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
+) : MuPdfDocumentAdapter {
     override fun open(
         descriptor: ParcelFileDescriptor,
         fileName: String,
@@ -34,6 +37,7 @@ class RealMuPdfDocumentAdapter : MuPdfDocumentAdapter {
                 document = openedDocument,
                 stream = stream,
                 pageCount = pageCount,
+                elapsedRealtimeMs = elapsedRealtimeMs,
             )
             ownershipTransferred = true
             handle
@@ -54,20 +58,41 @@ class RealMuPdfDocumentHandle(
     private val document: Document,
     private val stream: ParcelFileDescriptorSeekableInputStream,
     override val pageCount: Int,
+    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : MuPdfDocumentHandle {
     private var isClosed = false
 
-    override fun renderPageToJpeg(pageIndex: Int, outputFile: File, maxPixels: Int, quality: Int) {
+    override fun renderPageToJpeg(
+        pageIndex: Int,
+        outputFile: File,
+        maxPixels: Int,
+        quality: Int,
+    ): MuPdfRenderMetrics? {
         val page = document.loadPage(pageIndex)
         try {
             val bounds = page.bounds
             val width = bounds.x1 - bounds.x0
             val height = bounds.y1 - bounds.y0
             val scale = mupdfRenderScale(width, height, maxPixels)
+            val estimatedPixels = mupdfEstimatedRenderPixels(width, height, scale)
+            val estimatedBytes = mupdfEstimatedRenderBytes(estimatedPixels)
+            val pixmapStartMs = elapsedRealtimeMs()
             val pixmap = page.toPixmap(Matrix.Scale(scale), ColorSpace.DeviceRGB, false)
+            val pixmapMs = (elapsedRealtimeMs() - pixmapStartMs).coerceAtLeast(0L)
             try {
                 outputFile.parentFile?.mkdirs()
+                val jpegStartMs = elapsedRealtimeMs()
                 pixmap.saveAsJPEG(outputFile.absolutePath, quality)
+                val jpegMs = (elapsedRealtimeMs() - jpegStartMs).coerceAtLeast(0L)
+                return MuPdfRenderMetrics(
+                    boundsWidth = width,
+                    boundsHeight = height,
+                    scale = scale,
+                    estimatedPixels = estimatedPixels,
+                    estimatedBytes = estimatedBytes,
+                    pixmapMs = pixmapMs,
+                    jpegMs = jpegMs,
+                )
             } finally {
                 pixmap.destroy()
             }
@@ -97,10 +122,21 @@ fun mupdfRenderScale(
     return sqrt(maxPixels.toFloat() / pixels)
 }
 
+fun mupdfEstimatedRenderPixels(width: Float, height: Float, scale: Float): Long {
+    if (width <= 0f || height <= 0f || scale <= 0f) return 0L
+    val scaledWidth = ceil(width * scale).toLong().coerceAtLeast(1L)
+    val scaledHeight = ceil(height * scale).toLong().coerceAtLeast(1L)
+    return scaledWidth * scaledHeight
+}
+
+fun mupdfEstimatedRenderBytes(estimatedPixels: Long): Long =
+    estimatedPixels.coerceAtLeast(0L) * MUPDF_RENDER_BYTES_PER_PIXEL
+
 private const val DEFAULT_MUPDF_REFLOW_WIDTH = 1080f
 private const val DEFAULT_MUPDF_REFLOW_HEIGHT = 1920f
 private const val DEFAULT_MUPDF_REFLOW_EM = 12f
 private const val DEFAULT_MUPDF_RENDER_TARGET_WIDTH = 1600f
+private const val MUPDF_RENDER_BYTES_PER_PIXEL = 3L
 
 fun mapMuPdfOpenError(format: LocalDocumentFormat, error: Exception): Exception {
     val message = error.message.orEmpty()

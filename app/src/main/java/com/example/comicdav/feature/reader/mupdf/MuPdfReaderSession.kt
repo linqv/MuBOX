@@ -1,14 +1,21 @@
 package com.example.comicdav.feature.reader.mupdf
 
 import com.example.comicdav.data.LocalDocumentFormat
+import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.feature.reader.ReaderLogCategory
 import com.example.comicdav.nativebridge.ComicReaderSession
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.CancellationException
 
 class MuPdfReaderSession(
     private val document: MuPdfDocumentHandle,
     private val format: LocalDocumentFormat,
     private val maxPixels: Int = DEFAULT_MUPDF_RENDER_MAX_PIXELS,
+    private val logDiagnostic: (String) -> Unit = { line ->
+        ReaderDiagnosticLog.summary(ReaderLogCategory.PAGE_LOAD) { line }
+    },
+    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ComicReaderSession {
     override val pageCount: Int = document.pageCount
     override val forwardPrefetchPageCount: Int = 2
@@ -25,9 +32,18 @@ class MuPdfReaderSession(
             return outputFile
         }
         var renderSucceeded = false
+        var renderMs = 0L
+        var renderMetrics: MuPdfRenderMetrics? = null
         try {
             outputFile.parentFile?.mkdirs()
-            document.renderPageToJpeg(pageIndex, outputFile, maxPixels, DEFAULT_MUPDF_RENDER_JPEG_QUALITY)
+            val renderStartMs = elapsedRealtimeMs()
+            renderMetrics = document.renderPageToJpeg(
+                pageIndex,
+                outputFile,
+                maxPixels,
+                DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
+            )
+            renderMs = (elapsedRealtimeMs() - renderStartMs).coerceAtLeast(0L)
             renderSucceeded = true
         } catch (exception: CancellationException) {
             throw exception
@@ -44,6 +60,18 @@ class MuPdfReaderSession(
             outputFile.delete()
             throw IllegalStateException("页面渲染失败")
         }
+        logDiagnostic(
+            formatMuPdfRenderDone(
+                format = format,
+                pageIndex = pageIndex,
+                pageCount = pageCount,
+                renderMs = renderMs,
+                outputBytes = outputFile.length(),
+                maxPixels = maxPixels,
+                quality = DEFAULT_MUPDF_RENDER_JPEG_QUALITY,
+                metrics = renderMetrics,
+            ),
+        )
         return outputFile
     }
 
@@ -56,3 +84,34 @@ class MuPdfReaderSession(
     override fun diagnostics(): String =
         "reader=mupdf;format=${format.displayName};pageCount=$pageCount"
 }
+
+private fun formatMuPdfRenderDone(
+    format: LocalDocumentFormat,
+    pageIndex: Int,
+    pageCount: Int,
+    renderMs: Long,
+    outputBytes: Long,
+    maxPixels: Int,
+    quality: Int,
+    metrics: MuPdfRenderMetrics?,
+): String = buildString {
+    append("mupdf_render_done ")
+    append("format=${format.displayName} ")
+    append("page=$pageIndex ")
+    append("pageCount=$pageCount ")
+    append("renderMs=$renderMs ")
+    append("outputBytes=$outputBytes ")
+    append("maxPixels=$maxPixels ")
+    append("quality=$quality")
+    if (metrics != null) {
+        append(" bounds=${metrics.boundsWidth.formatDiagnosticFloat()}x${metrics.boundsHeight.formatDiagnosticFloat()}")
+        append(" scale=${metrics.scale.formatDiagnosticFloat()}")
+        append(" estimatedPixels=${metrics.estimatedPixels}")
+        append(" estimatedBytes=${metrics.estimatedBytes}")
+        append(" pixmapMs=${metrics.pixmapMs}")
+        append(" jpegMs=${metrics.jpegMs}")
+    }
+}
+
+private fun Float.formatDiagnosticFloat(): String =
+    String.format(Locale.US, "%.4f", this)
