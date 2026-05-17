@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -50,6 +51,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,7 +114,33 @@ fun ReaderScreen(
 
             else -> {
                 val readerStateKey = readerScrollStateKey(uiState)
-                var controlsVisible by remember { mutableStateOf(true) }
+                var controlsVisible by remember { mutableStateOf(false) }
+                val context = LocalContext.current
+                val view = LocalView.current
+
+                LaunchedEffect(controlsVisible) {
+                    val window = (context as? android.app.Activity)?.window
+                    if (window != null) {
+                        val insetsController = WindowCompat.getInsetsController(window, view)
+                        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        if (controlsVisible) {
+                            insetsController.show(WindowInsetsCompat.Type.statusBars())
+                        } else {
+                            insetsController.hide(WindowInsetsCompat.Type.statusBars())
+                        }
+                    }
+                }
+
+                DisposableEffect(Unit) {
+                    onDispose {
+                        val window = (context as? android.app.Activity)?.window
+                        if (window != null) {
+                            val insetsController = WindowCompat.getInsetsController(window, view)
+                            insetsController.show(WindowInsetsCompat.Type.statusBars())
+                        }
+                    }
+                }
+
                 val scope = rememberCoroutineScope()
                 val focusRequester = remember { FocusRequester() }
                 val pagerState = key(readerStateKey) {

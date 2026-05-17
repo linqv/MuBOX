@@ -1,5 +1,9 @@
 package com.example.comicdav.feature.webdav
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -15,6 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -87,17 +96,24 @@ fun WebDavBrowserScreen(
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        LazyColumn(
+        AnimatedContent(
+            targetState = uiState.items,
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(uiState.items) { item ->
-                WebDavItemRow(
-                    item = item,
-                    onOpen = { onItemClick(item) },
-                    onAddToLibrary = { onAddToLibrary(item) },
-                    onDownloadToLocal = { onDownloadToLocal(item) },
-                )
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "WebDavListContent",
+        ) { items ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(items) { item ->
+                    WebDavItemRow(
+                        item = item,
+                        onOpen = { onItemClick(item) },
+                        onAddToLibrary = { onAddToLibrary(item) },
+                        onDownloadToLocal = { onDownloadToLocal(item) },
+                    )
+                }
             }
         }
 
@@ -239,8 +255,7 @@ private fun WebDavItemRow(
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(
             modifier = Modifier
@@ -333,15 +348,21 @@ private fun WebDavFileActionDialog(
 
 @Composable
 private fun WebDavItemTypeIcon(isDirectory: Boolean) {
+    val containerColor = if (isDirectory) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
+    val contentColor = if (isDirectory) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
+    val icon = if (isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.MenuBook
+
     Box(
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier
+            .size(44.dp)
+            .background(color = containerColor, shape = CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+            imageVector = icon,
             contentDescription = if (isDirectory) "文件夹" else "漫画文件",
-            modifier = Modifier.size(38.dp),
-            tint = Color.Unspecified,
+            modifier = Modifier.size(24.dp),
+            tint = contentColor,
         )
     }
 }

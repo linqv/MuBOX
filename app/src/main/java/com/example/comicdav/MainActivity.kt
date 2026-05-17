@@ -25,8 +25,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Source
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -900,11 +908,11 @@ private enum class AppTab {
             SETTINGS -> ComicDavCopy.settingsTab
         }
 
-    val compactIcon: String
+    val iconVector: ImageVector
         get() = when (this) {
-            SOURCES -> "源"
-            LIBRARY -> "书"
-            SETTINGS -> "设"
+            SOURCES -> Icons.Filled.Folder
+            LIBRARY -> Icons.AutoMirrored.Filled.LibraryBooks
+            SETTINGS -> Icons.Filled.Settings
         }
 }
 
@@ -932,9 +940,9 @@ private fun ComicDavAppShell(
                     selected = selectedTab == tab,
                     onClick = { onTabSelected(tab) },
                     icon = {
-                        Text(
-                            text = tab.compactIcon,
-                            style = MaterialTheme.typography.labelLarge,
+                        Icon(
+                            imageVector = tab.iconVector,
+                            contentDescription = tab.label,
                         )
                     },
                     label = {

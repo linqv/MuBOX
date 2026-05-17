@@ -1,6 +1,11 @@
 package com.example.comicdav.feature.filedirectory
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +18,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -118,35 +131,36 @@ fun FileDirectoryScreen(
             }
         }
 
-        when {
-            uiState.isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
+        AnimatedContent(
+            targetState = uiState.currentTitle != null,
+            modifier = Modifier.weight(1f),
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "FileDirectoryContent",
+        ) { isBrowsing ->
+            if (isBrowsing) {
+                if (uiState.isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    EntryList(
+                        entries = uiState.entries,
+                        onOpenDirectory = onOpenDirectory,
+                        onOpenComic = onOpenComic,
+                        onFavoriteComic = onFavoriteComic,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
-            }
-
-            uiState.currentTitle == null -> {
+            } else {
                 SourceList(
                     sources = uiState.sources,
                     onOpenSource = onOpenSource,
                     onDeleteSource = onDeleteSource,
                     onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            else -> {
-                EntryList(
-                    entries = uiState.entries,
-                    onOpenDirectory = onOpenDirectory,
-                    onOpenComic = onOpenComic,
-                    onFavoriteComic = onFavoriteComic,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -196,10 +210,9 @@ private fun FileDirectoryHomeHeader(
                         onClick = { isAddMenuOpen = true },
                         modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                     ) {
-                        Text(
-                            text = "+",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold,
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "添加",
                         )
                     }
                     DropdownMenu(
@@ -254,17 +267,23 @@ private fun FileDirectoryBrowseHeader(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(
+                IconButton(
                     onClick = onGoUp,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
-                    Text("上一级")
+                    Icon(
+                        imageVector = Icons.Filled.ArrowUpward,
+                        contentDescription = "上一级",
+                    )
                 }
-                TextButton(
+                IconButton(
                     onClick = onCloseBrowser,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
-                    Text(ComicDavCopy.sourcesTitle)
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "关闭",
+                    )
                 }
             }
         }
@@ -616,15 +635,21 @@ private fun FileDirectoryEntryActionDialog(
 
 @Composable
 private fun EntryTypeIcon(isDirectory: Boolean) {
+    val containerColor = if (isDirectory) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
+    val contentColor = if (isDirectory) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
+    val icon = if (isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.MenuBook
+
     Box(
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier
+            .size(44.dp)
+            .background(color = containerColor, shape = CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (isDirectory) ComicDavIcons.Folder else ComicDavIcons.Archive,
+            imageVector = icon,
             contentDescription = if (isDirectory) "文件夹" else "漫画文件",
-            modifier = Modifier.size(38.dp),
-            tint = Color.Unspecified,
+            modifier = Modifier.size(24.dp),
+            tint = contentColor,
         )
     }
 }
