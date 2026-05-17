@@ -204,6 +204,51 @@ class WebDavViewModelTest {
     }
 
     @Test
+    fun handleBackFromMountedChineseWebDavRootIsNotHandled() = runTest(dispatcher) {
+        val client = FakeWebDavClient()
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> client })
+
+        viewModel.connectToSavedSource(
+            baseUrl = "https://example.test/webdav/漫画/",
+            username = null,
+            password = null,
+            path = "webdav/%E6%BC%AB%E7%94%BB/",
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.handleBack())
+
+        assertEquals("webdav/%E6%BC%AB%E7%94%BB/", viewModel.uiState.currentPath)
+        assertEquals(listOf("webdav/%E6%BC%AB%E7%94%BB/"), client.listedPaths)
+    }
+
+    @Test
+    fun handleBackFromChildOfMountedChineseWebDavRootOpensMountedRoot() = runTest(dispatcher) {
+        val client = FakeWebDavClient()
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> client })
+
+        viewModel.connectToSavedSource(
+            baseUrl = "https://example.test/webdav/漫画/",
+            username = null,
+            password = null,
+            path = "webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.handleBack())
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("webdav/%E6%BC%AB%E7%94%BB/", viewModel.uiState.currentPath)
+        assertEquals(
+            listOf(
+                "webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+                "webdav/%E6%BC%AB%E7%94%BB/",
+            ),
+            client.listedPaths,
+        )
+    }
+
+    @Test
     fun handleBackFromWebDavRootIsNotHandled() = runTest(dispatcher) {
         val client = FakeWebDavClient()
         val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> client })

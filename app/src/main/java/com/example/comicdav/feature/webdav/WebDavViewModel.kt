@@ -9,6 +9,9 @@ import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavException
 import com.example.comicdav.network.WebDavItem
+import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 typealias WebDavClientFactory = (baseUrl: String, username: String?, password: String?) -> WebDavClient
@@ -112,7 +115,9 @@ class WebDavViewModel(
     }
 
     fun handleBack(): Boolean {
+        if (isAtMountedRoot(uiState.currentPath)) return false
         val parentPath = parentDirectoryPath(uiState.currentPath) ?: return false
+        if (isMountedPath(uiState.currentPath) && !isMountedPath(parentPath)) return false
         loadPath(parentPath, keepConnectedStatus = true)
         return true
     }
@@ -178,6 +183,30 @@ class WebDavViewModel(
         } else {
             withoutTrailingSlash.substring(0, lastSlashIndex + 1)
         }
+    }
+
+    private fun isAtMountedRoot(path: String): Boolean {
+        val mountedRoot = mountedRootPath() ?: return false
+        return mountedRoot != "/" && canonicalDirectoryPath(path) == mountedRoot
+    }
+
+    private fun isMountedPath(path: String): Boolean {
+        val mountedRoot = mountedRootPath() ?: return false
+        return mountedRoot != "/" && canonicalDirectoryPath(path).startsWith(mountedRoot)
+    }
+
+    private fun mountedRootPath(): String? {
+        val baseUrl = connectedCredentials?.baseUrl ?: uiState.baseUrl.trim()
+        return runCatching {
+            val rawPath = URI(baseUrl).rawPath.orEmpty()
+            canonicalDirectoryPath(rawPath)
+        }.getOrNull()
+    }
+
+    private fun canonicalDirectoryPath(path: String): String {
+        val withLeadingSlash = if (path.startsWith("/")) path else "/$path"
+        val withTrailingSlash = if (withLeadingSlash.endsWith("/")) withLeadingSlash else "$withLeadingSlash/"
+        return URLDecoder.decode(withTrailingSlash, StandardCharsets.UTF_8.name())
     }
 
     private data class WebDavConnectionCredentials(
