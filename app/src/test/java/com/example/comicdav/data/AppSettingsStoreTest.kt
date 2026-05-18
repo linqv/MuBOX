@@ -58,6 +58,7 @@ class AppSettingsStoreTest {
         store.updateVolumeKeysTurnPagesEnabled(true)
         store.updateDiskCacheLimitMb(500)
         store.updateWebDavPrefetchPageCount(6)
+        store.updateLibraryCoversEnabled(false)
 
         val restored = AppSettingsStore(dataStore)
 
@@ -72,6 +73,7 @@ class AppSettingsStoreTest {
                 volumeKeysTurnPagesEnabled = true,
                 diskCacheLimitMb = 500,
                 webDavPrefetchPageCount = 6,
+                libraryCoversEnabled = false,
             ),
             restored.settings.first(),
         )
@@ -121,6 +123,7 @@ class AppSettingsStoreTest {
         store.updateVolumeKeysTurnPagesEnabled(true)
         store.updateDiskCacheLimitMb(5120)
         store.updateWebDavPrefetchPageCount(8)
+        store.updateLibraryCoversEnabled(false)
 
         val preferences = dataStore.data.first()
 
@@ -134,6 +137,7 @@ class AppSettingsStoreTest {
         assertTrue(preferences[booleanPreferencesKey("volume_keys_turn_pages_enabled")]!!)
         assertEquals(5120, preferences[intPreferencesKey("disk_cache_limit_gb")])
         assertEquals(8, preferences[intPreferencesKey("webdav_prefetch_page_count")])
+        assertFalse(preferences[booleanPreferencesKey("library_covers_enabled")]!!)
     }
 
     @Test

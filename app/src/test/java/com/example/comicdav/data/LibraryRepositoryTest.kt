@@ -82,6 +82,7 @@ class LibraryRepositoryTest {
             etag = "\"abc123\"",
             lastModified = 1_650_000_000_000L,
             cacheKey = "primary-webdav:/library/series/Chapter 01.zip",
+            coverPath = "/cache/library-covers/chapter-01.img",
         )
 
         val library = repository.observeLibrary().first()
@@ -94,6 +95,7 @@ class LibraryRepositoryTest {
         assertEquals("Chapter 01", itemWithSources.item.displayName)
         assertEquals(SourceType.WEBDAV, itemWithSources.item.sourceType)
         assertEquals(OfflineState.NOT_DOWNLOADED, itemWithSources.item.offlineState)
+        assertEquals("/cache/library-covers/chapter-01.img", itemWithSources.item.coverPath)
         assertNull(itemWithSources.localSource)
 
         val webDavSource = itemWithSources.webDavSource

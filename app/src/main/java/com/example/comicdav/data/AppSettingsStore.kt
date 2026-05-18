@@ -39,6 +39,7 @@ data class AppSettings(
     val volumeKeysTurnPagesEnabled: Boolean = false,
     val diskCacheLimitMb: Int = 1024,
     val webDavPrefetchPageCount: Int = 4,
+    val libraryCoversEnabled: Boolean = true,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -59,6 +60,7 @@ class AppSettingsStore(
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
             diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
             webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
+            libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
         )
     }
 
@@ -121,6 +123,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateLibraryCoversEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[LIBRARY_COVERS_ENABLED] = enabled
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -132,11 +140,12 @@ class AppSettingsStore(
         val VOLUME_KEYS_TURN_PAGES_ENABLED = booleanPreferencesKey("volume_keys_turn_pages_enabled")
         val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
         val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
+        val LIBRARY_COVERS_ENABLED = booleanPreferencesKey("library_covers_enabled")
     }
 }
 
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
-private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8)
+private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
 private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
     if (limitMb in 1..5) {

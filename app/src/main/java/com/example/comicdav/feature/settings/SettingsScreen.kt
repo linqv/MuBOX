@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.ComicCacheAnalysis
+import com.example.comicdav.data.ComicCacheCategory
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
@@ -47,7 +48,7 @@ import kotlin.math.roundToInt
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
-private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8)
+private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
 @Composable
 fun SettingsScreen(
@@ -61,10 +62,11 @@ fun SettingsScreen(
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
     onDiskCacheLimitChange: (Int) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
+    onLibraryCoversEnabledChange: (Boolean) -> Unit,
     downloadRecords: List<DownloadRecord> = emptyList(),
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
-    onClearCache: () -> Unit = {},
+    onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -132,6 +134,12 @@ fun SettingsScreen(
                 label = ReaderLoggingMode::label,
                 onSelected = onReaderLoggingModeChange,
             )
+            SwitchRow(
+                title = "书架封面",
+                subtitle = "从 WebDAV 漫画提取首图并显示在书架",
+                checked = settings.libraryCoversEnabled,
+                onCheckedChange = onLibraryCoversEnabledChange,
+            )
         }
 
         SettingsGroup(title = "自动翻页") {
@@ -168,41 +176,44 @@ fun SettingsScreen(
                 title = "缓存占用",
                 subtitle = formatCacheSize(cacheAnalysis.totalBytes),
             )
-            StaticInfoRow(
+            CacheActionRow(
                 title = "远程整本缓存",
                 subtitle = formatCacheSize(cacheAnalysis.remoteDownloadsBytes),
+                enabled = cacheAnalysis.remoteDownloadsBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_DOWNLOADS) },
             )
-            StaticInfoRow(
+            CacheActionRow(
+                title = "WebDAV 索引缓存",
+                subtitle = formatCacheSize(cacheAnalysis.remoteIndexBytes),
+                enabled = cacheAnalysis.remoteIndexBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_INDEX) },
+            )
+            CacheActionRow(
                 title = "页面图片缓存",
                 subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
+                enabled = cacheAnalysis.readerPagesBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
+            )
+            CacheActionRow(
+                title = "书架封面缓存",
+                subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
+                enabled = cacheAnalysis.libraryCoversBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
             )
             DiskCacheLimitRow(
                 limitMb = settings.diskCacheLimitMb,
                 onLimitChange = onDiskCacheLimitChange,
             )
-            Row(
+            Text(
+                text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 64.dp)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                OutlinedButton(
-                    onClick = onClearCache,
-                    enabled = cacheAnalysis.totalBytes > 0L,
-                ) {
-                    Text("清理")
-                }
-            }
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -357,6 +368,50 @@ private fun StaticInfoRow(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun CacheActionRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        OutlinedButton(
+            onClick = onClear,
+            enabled = enabled,
+        ) {
+            Text("清理")
+        }
     }
 }
 

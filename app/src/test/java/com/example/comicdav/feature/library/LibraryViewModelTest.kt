@@ -105,8 +105,9 @@ class LibraryViewModelTest {
             etag: String?,
             lastModified: Long?,
             cacheKey: String?,
+            coverPath: String?,
         ): Long {
-            webDavAdds += WebDavAdd(accountId, remotePath, fileName, size, etag, lastModified, cacheKey)
+            webDavAdds += WebDavAdd(accountId, remotePath, fileName, size, etag, lastModified, cacheKey, coverPath)
             return webDavAdds.size.toLong()
         }
 
@@ -128,5 +129,6 @@ class LibraryViewModelTest {
         val etag: String?,
         val lastModified: Long?,
         val cacheKey: String?,
+        val coverPath: String?,
     )
 }

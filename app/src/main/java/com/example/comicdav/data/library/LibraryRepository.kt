@@ -21,6 +21,7 @@ interface LibraryCatalog {
         etag: String? = null,
         lastModified: Long? = null,
         cacheKey: String? = null,
+        coverPath: String? = null,
     ): Long
 
     suspend fun markOpened(libraryItemId: Long)
@@ -62,6 +63,7 @@ class LibraryRepository(
         etag: String?,
         lastModified: Long?,
         cacheKey: String?,
+        coverPath: String?,
     ): Long {
         val title = titleFrom(fileName)
         return dao.insertWebDavComic(
@@ -69,6 +71,7 @@ class LibraryRepository(
                 title = title,
                 displayName = title,
                 sourceType = SourceType.WEBDAV,
+                coverPath = coverPath,
                 addedAt = clock(),
             ),
             source = WebDavComicSourceEntity(

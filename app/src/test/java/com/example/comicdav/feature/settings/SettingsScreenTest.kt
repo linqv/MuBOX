@@ -47,7 +47,7 @@ class SettingsScreenTest {
         assertEquals(2, coerceWebDavPrefetchPageCount(1))
         assertEquals(4, coerceWebDavPrefetchPageCount(5))
         assertEquals(6, coerceWebDavPrefetchPageCount(7))
-        assertEquals(8, coerceWebDavPrefetchPageCount(99))
+        assertEquals(12, coerceWebDavPrefetchPageCount(99))
     }
 
     @Test
@@ -55,5 +55,6 @@ class SettingsScreenTest {
         assertEquals("2 页", webDavPrefetchPageCountLabel(2))
         assertEquals("4 页", webDavPrefetchPageCountLabel(4))
         assertEquals("8 页", webDavPrefetchPageCountLabel(8))
+        assertEquals("12 页", webDavPrefetchPageCountLabel(12))
     }
 }

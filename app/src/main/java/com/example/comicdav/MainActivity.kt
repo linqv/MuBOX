@@ -55,6 +55,7 @@ import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheAnalysis
+import com.example.comicdav.data.ComicCacheCategory
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.DownloadRecord
@@ -65,7 +66,7 @@ import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.analyzeComicCache
-import com.example.comicdav.data.clearComicCache
+import com.example.comicdav.data.clearComicCacheCategory
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
@@ -78,6 +79,7 @@ import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.data.library.createLibraryDatabase
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryViewModel
+import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.reader.ReaderScreen
@@ -199,6 +201,12 @@ fun ComicDavApp() {
     var dataFolderUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var isDataFolderLoading by remember { mutableStateOf(true) }
     val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
+    val coverExtractor = remember(context, remoteCache) {
+        WebDavLibraryCoverExtractor(
+            appCacheDir = context.cacheDir,
+            remoteCacheDir = remoteCache.cacheDir,
+        )
+    }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
     val dataFolderStore = remember(context) { AppDataFolderStore(context.appDataFolderDataStore) }
     val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
@@ -412,6 +420,29 @@ fun ComicDavApp() {
         webDavActionMessage = null
         scope.launch {
             runCatching {
+                val knownInfo = item.size?.let { knownSize ->
+                    RemoteFileInfo(
+                        path = item.path,
+                        size = knownSize,
+                        etag = item.etag,
+                        lastModified = item.lastModified,
+                        supportsRange = true,
+                    )
+                }
+                val coverPath = if (appSettings.libraryCoversEnabled) {
+                    runCatching {
+                        coverExtractor.extractFirstPageCover(
+                            client = client,
+                            accountId = accountId,
+                            remotePath = item.path,
+                            knownInfo = knownInfo,
+                        )
+                    }.onFailure { error ->
+                        ReaderDiagnosticLog.error("extract_webdav_cover_failed path=${item.path}", error)
+                    }.getOrNull()
+                } else {
+                    null
+                }
                 libraryRepository.addWebDavComic(
                     accountId = accountId,
                     remotePath = item.path,
@@ -419,9 +450,11 @@ fun ComicDavApp() {
                     size = item.size,
                     etag = item.etag,
                     lastModified = item.lastModified,
+                    coverPath = coverPath,
                 )
             }.fold(
                 onSuccess = {
+                    refreshCacheAnalysis()
                     webDavActionMessage = "已将 ${item.name} 加入书架"
                     libraryViewModel.showMessage("已将 ${item.name} 加入书架")
                     fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
@@ -933,6 +966,7 @@ fun ComicDavApp() {
                                         localOpenError = null
                                         libraryViewModel.clearMessage()
                                     },
+                                    coversEnabled = appSettings.libraryCoversEnabled,
                                     modifier = contentModifier,
                                 )
                             }
@@ -966,18 +1000,22 @@ fun ComicDavApp() {
                                     onWebDavPrefetchPageCountChange = { value ->
                                         scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(value) }
                                     },
+                                    onLibraryCoversEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateLibraryCoversEnabled(value) }
+                                    },
                                     downloadRecords = downloadRecords,
                                     cacheAnalysis = cacheAnalysis,
                                     cacheActionMessage = cacheActionMessage,
-                                    onClearCache = {
+                                    onClearCacheCategory = { category ->
                                         scope.launch {
                                             val result = withContext(Dispatchers.IO) {
-                                                clearComicCache(context.cacheDir)
+                                                clearComicCacheCategory(context.cacheDir, category)
                                             }
                                             cacheAnalysis = withContext(Dispatchers.IO) {
                                                 analyzeComicCache(context.cacheDir)
                                             }
-                                            cacheActionMessage = "已清理 ${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
+                                            cacheActionMessage =
+                                                "已清理 ${category.cacheLabel()}：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
                                         }
                                     },
                                     modifier = contentModifier,
@@ -990,6 +1028,14 @@ fun ComicDavApp() {
         }
     }
 }
+
+private fun ComicCacheCategory.cacheLabel(): String =
+    when (this) {
+        ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"
+        ComicCacheCategory.REMOTE_INDEX -> "WebDAV 索引缓存"
+        ComicCacheCategory.READER_PAGES -> "页面图片缓存"
+        ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
+    }
 
 private enum class AppTab {
     SOURCES,

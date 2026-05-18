@@ -31,15 +31,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.ui.ComicDavCopy
+import java.io.File
 
 @Composable
 fun LibraryScreen(
@@ -47,6 +49,7 @@ fun LibraryScreen(
     onOpenItem: (LibraryItemWithSources) -> Unit,
     onOpenDirectories: () -> Unit,
     onDismissMessage: () -> Unit,
+    coversEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -145,6 +148,7 @@ fun LibraryScreen(
                             LibraryCard(
                                 item = item,
                                 onClick = { onOpenItem(item) },
+                                coversEnabled = coversEnabled,
                             )
                         }
                     }
@@ -193,6 +197,7 @@ private fun EmptyLibrary(
 private fun LibraryCard(
     item: LibraryItemWithSources,
     onClick: () -> Unit,
+    coversEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -226,7 +231,20 @@ private fun LibraryCard(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    FallbackCoverTitle(item.item.displayName)
+                    val coverFile = item.item.coverPath
+                        ?.takeIf { coversEnabled }
+                        ?.let(::File)
+                        ?.takeIf { it.isFile }
+                    if (coverFile != null) {
+                        AsyncImage(
+                            model = coverFile,
+                            contentDescription = item.item.displayName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        FallbackCoverTitle(item.item.displayName)
+                    }
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
