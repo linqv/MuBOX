@@ -41,4 +41,19 @@ class SettingsScreenTest {
         assertEquals("1 GB", diskCacheLimitLabel(1024))
         assertEquals("5 GB", diskCacheLimitLabel(5120))
     }
+
+    @Test
+    fun webDavPrefetchPageCountIsCoercedIntoSupportedOptions() {
+        assertEquals(2, coerceWebDavPrefetchPageCount(1))
+        assertEquals(4, coerceWebDavPrefetchPageCount(5))
+        assertEquals(6, coerceWebDavPrefetchPageCount(7))
+        assertEquals(8, coerceWebDavPrefetchPageCount(99))
+    }
+
+    @Test
+    fun webDavPrefetchPageCountLabelUsesPages() {
+        assertEquals("2 页", webDavPrefetchPageCountLabel(2))
+        assertEquals("4 页", webDavPrefetchPageCountLabel(4))
+        assertEquals("8 页", webDavPrefetchPageCountLabel(8))
+    }
 }

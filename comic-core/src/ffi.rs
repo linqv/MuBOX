@@ -18,7 +18,7 @@ use crate::cache::index_cache::{open_cbz_with_index_cache, IndexCacheKey};
 use crate::cbz::{open_cbz, CbzIndex, CbzPageEntry};
 use crate::error::ComicCoreError;
 use crate::remote::jni_range_reader::JniRangeReader;
-use crate::scheduler::prefetch::{plan_prefetch, NetworkClass};
+use crate::scheduler::prefetch::{plan_prefetch_with_forward_window, NetworkClass};
 use crate::scheduler::range_planner::{
     plan_page_ranges, ByteRange, PageByteRange, PlannedPageRange,
 };
@@ -197,7 +197,7 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "updateViewport",
-            "(JII)I",
+            "(JIII)I",
             native_update_viewport as *const () as *mut c_void,
         ),
         native_method(
@@ -207,7 +207,7 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "plannedRanges",
-            "(JII)Ljava/lang/String;",
+            "(JIII)Ljava/lang/String;",
             native_planned_ranges as *const () as *mut c_void,
         ),
         native_method("close", "(J)V", native_close as *const () as *mut c_void),
@@ -307,6 +307,7 @@ extern "system" fn native_update_viewport(
     handle: jlong,
     page_index: jint,
     network_class: jint,
+    forward_prefetch_page_count: jint,
 ) -> jint {
     if page_index < 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -318,6 +319,7 @@ extern "system" fn native_update_viewport(
         handle as ComicHandle,
         page_index as usize,
         network_class_from_i32(network_class),
+        forward_prefetch_window_from_i32(forward_prefetch_page_count),
     ) {
         Ok(()) => 0,
         Err(error) => {
@@ -383,6 +385,7 @@ extern "system" fn native_planned_ranges(
     handle: jlong,
     page_index: jint,
     network_class: jint,
+    forward_prefetch_page_count: jint,
 ) -> jstring {
     let message = if page_index < 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -394,6 +397,7 @@ extern "system" fn native_planned_ranges(
             handle as ComicHandle,
             page_index as usize,
             network_class_from_i32(network_class),
+            forward_prefetch_window_from_i32(forward_prefetch_page_count),
         ) {
             Ok(ranges) => encode_planned_ranges(&ranges),
             Err(error) => {
@@ -497,6 +501,7 @@ fn update_viewport(
     handle: ComicHandle,
     page_index: usize,
     network_class: NetworkClass,
+    forward_prefetch_window: usize,
 ) -> Result<()> {
     let mut sessions = SESSIONS
         .lock()
@@ -516,7 +521,13 @@ fn update_viewport(
     }
 
     let file_size = reader.size()?;
-    let planned = build_planned_ranges(index, file_size, page_index, network_class);
+    let planned = build_planned_ranges(
+        index,
+        file_size,
+        page_index,
+        network_class,
+        forward_prefetch_window,
+    );
     session.diagnostics = SessionDiagnostics {
         viewport_page: Some(page_index),
         planned_request_count: planned.len(),
@@ -529,6 +540,7 @@ fn planned_ranges_for_viewport(
     handle: ComicHandle,
     page_index: usize,
     network_class: NetworkClass,
+    forward_prefetch_window: usize,
 ) -> Result<Vec<PlannedRangeDto>> {
     let sessions = SESSIONS
         .lock()
@@ -549,6 +561,7 @@ fn planned_ranges_for_viewport(
         file_size,
         page_index,
         network_class,
+        forward_prefetch_window,
     ))
 }
 
@@ -557,8 +570,14 @@ fn build_planned_ranges(
     file_size: u64,
     page_index: usize,
     network_class: NetworkClass,
+    forward_prefetch_window: usize,
 ) -> Vec<PlannedRangeDto> {
-    let plan = plan_prefetch(index.pages.len(), page_index, network_class);
+    let plan = plan_prefetch_with_forward_window(
+        index.pages.len(),
+        page_index,
+        network_class,
+        forward_prefetch_window,
+    );
     let page_ranges = plan
         .tasks
         .iter()
@@ -657,6 +676,14 @@ fn network_class_from_i32(value: jint) -> NetworkClass {
         1 => NetworkClass::Mobile,
         2 => NetworkClass::Wifi,
         _ => NetworkClass::Unknown,
+    }
+}
+
+fn forward_prefetch_window_from_i32(value: jint) -> usize {
+    if value <= 0 {
+        4
+    } else {
+        (value as usize).min(16)
     }
 }
 

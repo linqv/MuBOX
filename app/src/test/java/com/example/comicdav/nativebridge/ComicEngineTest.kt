@@ -36,7 +36,14 @@ class ComicEngineTest {
     fun loadPageReturnsCacheFilePath() {
         val output = temp.newFile("page-0.bin")
         val native = FakeComicNative(openHandle = 3, pageCount = 2)
-        val session = ComicEngine(native).openLocal("/tmp/book.cbz")
+        val session = ComicEngine(native).openRemote(
+            fileId = 4,
+            size = 100,
+            cacheDir = temp.newFolder("remote-planned-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+            webDavPrefetchPageCount = 8,
+        )
 
         val pageFile = session.loadPageToFile(0, output)
 
@@ -55,6 +62,7 @@ class ComicEngineTest {
             cacheDir = cacheDir,
             comicKey = "comic-key",
             validator = "etag-1",
+            webDavPrefetchPageCount = 6,
         )
 
         assertEquals(
@@ -86,17 +94,32 @@ class ComicEngineTest {
     @Test
     fun updateViewportCallsNativeForOpenSession() {
         val native = FakeComicNative(openHandle = 5, pageCount = 1)
-        val session = ComicEngine(native).openLocal("/tmp/book.cbz")
+        val session = ComicEngine(native).openRemote(
+            fileId = 4,
+            size = 100,
+            cacheDir = temp.newFolder("remote-viewport-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+            webDavPrefetchPageCount = 6,
+        )
 
         session.updateViewport(pageIndex = 3, networkClass = 2)
 
-        assertEquals(ViewportCall(5, 3, 2), native.viewportCalls.single())
+        assertEquals(ViewportCall(5, 3, 2, 6), native.viewportCalls.single())
+        assertEquals(6, session.forwardPrefetchPageCount)
     }
 
     @Test
     fun diagnosticsReadsNativeSessionDiagnostics() {
         val native = FakeComicNative(openHandle = 5, pageCount = 1, diagnostics = "planned_request_count=2")
-        val session = ComicEngine(native).openLocal("/tmp/book.cbz")
+        val session = ComicEngine(native).openRemote(
+            fileId = 4,
+            size = 100,
+            cacheDir = temp.newFolder("remote-planned-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+            webDavPrefetchPageCount = 8,
+        )
 
         assertEquals("planned_request_count=2", session.diagnostics())
     }
@@ -108,7 +131,14 @@ class ComicEngineTest {
             pageCount = 6,
             plannedRanges = "v1;10,29,1,2|3;40,49,5,4",
         )
-        val session = ComicEngine(native).openLocal("/tmp/book.cbz")
+        val session = ComicEngine(native).openRemote(
+            fileId = 4,
+            size = 100,
+            cacheDir = temp.newFolder("remote-planned-cache"),
+            comicKey = "comic-key",
+            validator = "etag-1",
+            webDavPrefetchPageCount = 8,
+        )
 
         assertEquals(
             listOf(
@@ -117,7 +147,7 @@ class ComicEngineTest {
             ),
             session.plannedRanges(pageIndex = 2, networkClass = 2),
         )
-        assertEquals(PlannedRangeCall(5, 2, 2), native.plannedRangeCalls.single())
+        assertEquals(PlannedRangeCall(5, 2, 2, 8), native.plannedRangeCalls.single())
     }
 
     @Test
@@ -218,15 +248,25 @@ class ComicEngineTest {
             closedHandles += handle
         }
 
-        override fun updateViewport(handle: Long, pageIndex: Int, networkClass: Int): Int {
-            viewportCalls += ViewportCall(handle, pageIndex, networkClass)
+        override fun updateViewport(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+        ): Int {
+            viewportCalls += ViewportCall(handle, pageIndex, networkClass, forwardPrefetchPageCount)
             return 0
         }
 
         override fun diagnostics(handle: Long): String = diagnostics
 
-        override fun plannedRanges(handle: Long, pageIndex: Int, networkClass: Int): String {
-            plannedRangeCalls += PlannedRangeCall(handle, pageIndex, networkClass)
+        override fun plannedRanges(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+        ): String {
+            plannedRangeCalls += PlannedRangeCall(handle, pageIndex, networkClass, forwardPrefetchPageCount)
             return plannedRanges
         }
 
@@ -276,12 +316,14 @@ class ComicEngineTest {
         val handle: Long,
         val pageIndex: Int,
         val networkClass: Int,
+        val forwardPrefetchPageCount: Int,
     )
 
     private data class PlannedRangeCall(
         val handle: Long,
         val pageIndex: Int,
         val networkClass: Int,
+        val forwardPrefetchPageCount: Int,
     )
 
     private data class PriorityPrefetchCall(

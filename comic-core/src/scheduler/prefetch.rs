@@ -21,15 +21,24 @@ pub fn plan_prefetch(
     current_page: usize,
     network_class: NetworkClass,
 ) -> PrefetchPlan {
+    plan_prefetch_with_forward_window(
+        page_count,
+        current_page,
+        network_class,
+        default_forward_window(network_class),
+    )
+}
+
+pub fn plan_prefetch_with_forward_window(
+    page_count: usize,
+    current_page: usize,
+    _network_class: NetworkClass,
+    forward_window: usize,
+) -> PrefetchPlan {
     if page_count == 0 || current_page >= page_count {
         return PrefetchPlan { tasks: Vec::new() };
     }
 
-    let forward_window = match network_class {
-        NetworkClass::Wifi => 4,
-        NetworkClass::Mobile => 2,
-        NetworkClass::Unknown => 3,
-    };
     let backward_window = 1usize;
     let mut tasks = Vec::new();
     push_unique(&mut tasks, current_page, 0);
@@ -52,6 +61,14 @@ pub fn plan_prefetch(
     }
     tasks.sort_by_key(|task| task.priority);
     PrefetchPlan { tasks }
+}
+
+fn default_forward_window(network_class: NetworkClass) -> usize {
+    match network_class {
+        NetworkClass::Wifi => 4,
+        NetworkClass::Mobile => 2,
+        NetworkClass::Unknown => 3,
+    }
 }
 
 fn push_unique(tasks: &mut Vec<PrefetchTask>, page_index: usize, priority: u8) {

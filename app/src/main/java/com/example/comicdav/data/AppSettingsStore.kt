@@ -38,6 +38,7 @@ data class AppSettings(
     val screenRotationLockEnabled: Boolean = false,
     val volumeKeysTurnPagesEnabled: Boolean = false,
     val diskCacheLimitMb: Int = 1024,
+    val webDavPrefetchPageCount: Int = 4,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -57,6 +58,7 @@ class AppSettingsStore(
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
             diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
+            webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
         )
     }
 
@@ -113,6 +115,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateWebDavPrefetchPageCount(pageCount: Int) {
+        dataStore.edit { preferences ->
+            preferences[WEB_DAV_PREFETCH_PAGE_COUNT] = coerceWebDavPrefetchPageCount(pageCount)
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -123,10 +131,12 @@ class AppSettingsStore(
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")
         val VOLUME_KEYS_TURN_PAGES_ENABLED = booleanPreferencesKey("volume_keys_turn_pages_enabled")
         val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
+        val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
     }
 }
 
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
+private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8)
 
 private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
     if (limitMb in 1..5) {
@@ -137,6 +147,9 @@ private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
 
 private fun coerceDiskCacheLimitMb(limitMb: Int): Int =
     SupportedDiskCacheLimitMb.minBy { kotlin.math.abs(it - limitMb) }
+
+private fun coerceWebDavPrefetchPageCount(pageCount: Int): Int =
+    SupportedWebDavPrefetchPageCounts.minBy { kotlin.math.abs(it - pageCount) }
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T {
     return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default

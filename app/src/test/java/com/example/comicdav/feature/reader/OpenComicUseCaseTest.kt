@@ -36,7 +36,7 @@ class OpenComicUseCaseTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = progress,
-            openRemoteSession = { _, size, _, _, _ ->
+            openRemoteSession = { _, size, _, _, _, _ ->
                 remoteOpenSizes += size
                 FakeReaderSession(pageCount = 5)
             },

@@ -579,6 +579,7 @@ fun ComicDavApp() {
                 accountId = accountId,
                 cache = remoteCache,
                 progressStore = progressStore,
+                webDavPrefetchPageCount = appSettings.webDavPrefetchPageCount,
             )
             val result = useCase.open(
                 client = client,
@@ -900,6 +901,9 @@ fun ComicDavApp() {
                                     },
                                     onDiskCacheLimitChange = { value ->
                                         scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
+                                    },
+                                    onWebDavPrefetchPageCountChange = { value ->
+                                        scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     cacheAnalysis = cacheAnalysis,

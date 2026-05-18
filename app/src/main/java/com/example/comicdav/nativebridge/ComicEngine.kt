@@ -38,12 +38,14 @@ class ComicEngine(
         cacheDir: File,
         comicKey: String,
         validator: String,
+        webDavPrefetchPageCount: Int = 4,
     ): ComicReaderSession {
         val handle = native.openRemote(fileId, size, cacheDir.absolutePath, comicKey, validator)
         return openChecked(
             handle = handle,
             rangeProviderFileId = fileId,
             onClose = { RangeProviderRegistry.unregister(fileId) },
+            forwardPrefetchPageCount = webDavPrefetchPageCount,
         )
     }
 
@@ -52,6 +54,7 @@ class ComicEngine(
         rangeProviderFileId: Long? = null,
         onClose: () -> Unit = {},
         nativeOpenDiagnostics: NativeOpenDiagnostics? = null,
+        forwardPrefetchPageCount: Int = 4,
     ) : ComicReaderSession {
         if (handle == 0L) {
             onClose()
@@ -78,7 +81,14 @@ class ComicEngine(
             }
         }
 
-        return ComicSession(native, handle, pageCount, rangeProviderFileId, onClose)
+        return ComicSession(
+            native = native,
+            handle = handle,
+            pageCount = pageCount,
+            rangeProviderFileId = rangeProviderFileId,
+            onClose = onClose,
+            forwardPrefetchPageCount = forwardPrefetchPageCount,
+        )
     }
 
     private fun nativeException(): ComicNativeException {
@@ -128,6 +138,7 @@ class ComicSession internal constructor(
     override val pageCount: Int,
     private val rangeProviderFileId: Long? = null,
     private val onClose: () -> Unit = {},
+    override val forwardPrefetchPageCount: Int = 4,
 ) : ComicReaderSession {
     private var isClosed = false
 
@@ -140,7 +151,7 @@ class ComicSession internal constructor(
     }
 
     override fun updateViewport(pageIndex: Int, networkClass: Int) {
-        val result = native.updateViewport(handle, pageIndex, networkClass)
+        val result = native.updateViewport(handle, pageIndex, networkClass, forwardPrefetchPageCount)
         if (result < 0) {
             throw ComicNativeException(native.lastErrorMessage().ifBlank { "Failed to update viewport" })
         }
@@ -149,7 +160,7 @@ class ComicSession internal constructor(
     override fun diagnostics(): String = native.diagnostics(handle)
 
     override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
-        val encoded = native.plannedRanges(handle, pageIndex, networkClass)
+        val encoded = native.plannedRanges(handle, pageIndex, networkClass, forwardPrefetchPageCount)
         return decodePlannedRanges(encoded)
     }
 

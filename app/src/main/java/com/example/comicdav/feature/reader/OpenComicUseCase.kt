@@ -20,6 +20,7 @@ typealias RemoteRangeComicSessionFactory = (
     cacheDir: File,
     comicKey: String,
     validator: String,
+    webDavPrefetchPageCount: Int,
 ) -> ComicReaderSession
 
 interface ReadingProgressGateway {
@@ -38,9 +39,10 @@ class OpenComicUseCase(
     private val accountId: String,
     private val cache: ComicDownloadCache,
     private val progressStore: ReadingProgressGateway,
-    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir, comicKey, validator ->
-        ComicEngine().openRemote(fileId, size, cacheDir, comicKey, validator)
+    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
+        ComicEngine().openRemote(fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount)
     },
+    private val webDavPrefetchPageCount: Int = 4,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun open(
@@ -80,7 +82,7 @@ class OpenComicUseCase(
         val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, info.size))
         return try {
             val session = withContext(ioDispatcher) {
-                openRemoteSession(fileId, info.size, cache.cacheDir, key.value, info.validator())
+                openRemoteSession(fileId, info.size, cache.cacheDir, key.value, info.validator(), webDavPrefetchPageCount)
             }
             val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
             OpenComicResult(

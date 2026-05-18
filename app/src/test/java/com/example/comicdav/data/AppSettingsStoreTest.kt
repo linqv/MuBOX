@@ -37,6 +37,7 @@ class AppSettingsStoreTest {
                 screenRotationLockEnabled = false,
                 volumeKeysTurnPagesEnabled = false,
                 diskCacheLimitMb = 1024,
+                webDavPrefetchPageCount = 4,
             ),
             store.settings.first(),
         )
@@ -56,6 +57,7 @@ class AppSettingsStoreTest {
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
         store.updateDiskCacheLimitMb(500)
+        store.updateWebDavPrefetchPageCount(6)
 
         val restored = AppSettingsStore(dataStore)
 
@@ -69,6 +71,7 @@ class AppSettingsStoreTest {
                 screenRotationLockEnabled = true,
                 volumeKeysTurnPagesEnabled = true,
                 diskCacheLimitMb = 500,
+                webDavPrefetchPageCount = 6,
             ),
             restored.settings.first(),
         )
@@ -117,6 +120,7 @@ class AppSettingsStoreTest {
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
         store.updateDiskCacheLimitMb(5120)
+        store.updateWebDavPrefetchPageCount(8)
 
         val preferences = dataStore.data.first()
 
@@ -129,6 +133,17 @@ class AppSettingsStoreTest {
         assertTrue(preferences[booleanPreferencesKey("screen_rotation_lock_enabled")]!!)
         assertTrue(preferences[booleanPreferencesKey("volume_keys_turn_pages_enabled")]!!)
         assertEquals(5120, preferences[intPreferencesKey("disk_cache_limit_gb")])
+        assertEquals(8, preferences[intPreferencesKey("webdav_prefetch_page_count")])
+    }
+
+    @Test
+    fun coercesStoredWebDavPrefetchPageCountToSupportedOption() = runTest {
+        val dataStore = dataStore("app-settings-webdav-prefetch-coerce.preferences_pb")
+        dataStore.edit { preferences ->
+            preferences[intPreferencesKey("webdav_prefetch_page_count")] = 7
+        }
+
+        assertEquals(6, AppSettingsStore(dataStore).settings.first().webDavPrefetchPageCount)
     }
 
     @Test

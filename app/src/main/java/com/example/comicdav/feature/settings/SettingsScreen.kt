@@ -47,6 +47,7 @@ import kotlin.math.roundToInt
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
+private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8)
 
 @Composable
 fun SettingsScreen(
@@ -59,6 +60,7 @@ fun SettingsScreen(
     onScreenRotationLockChange: (Boolean) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
     onDiskCacheLimitChange: (Int) -> Unit,
+    onWebDavPrefetchPageCountChange: (Int) -> Unit,
     downloadRecords: List<DownloadRecord> = emptyList(),
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
@@ -105,6 +107,13 @@ fun SettingsScreen(
                 subtitle = "阅读时锁定当前屏幕方向",
                 checked = settings.screenRotationLockEnabled,
                 onCheckedChange = onScreenRotationLockChange,
+            )
+            DropdownRow(
+                title = "WebDAV 预取页数",
+                selected = settings.webDavPrefetchPageCount,
+                options = SupportedWebDavPrefetchPageCounts,
+                label = ::webDavPrefetchPageCountLabel,
+                onSelected = onWebDavPrefetchPageCountChange,
             )
         }
 
@@ -210,6 +219,9 @@ internal fun coerceAutoPageSpeedMillis(speedMillis: Int): Int =
 internal fun coerceDiskCacheLimitMb(limitMb: Int): Int =
     SupportedDiskCacheLimitMb.minBy { abs(it - limitMb) }
 
+internal fun coerceWebDavPrefetchPageCount(pageCount: Int): Int =
+    SupportedWebDavPrefetchPageCounts.minBy { abs(it - pageCount) }
+
 internal fun pageCacheLimitBytesForMb(limitMb: Int): Long =
     coerceDiskCacheLimitMb(limitMb) * 1024L * 1024L
 
@@ -219,6 +231,9 @@ internal fun diskCacheLimitLabel(limitMb: Int): String =
         500 -> "500 MB"
         else -> "${coercedLimit / 1024} GB"
     }
+
+internal fun webDavPrefetchPageCountLabel(pageCount: Int): String =
+    "${coerceWebDavPrefetchPageCount(pageCount)} 页"
 
 internal fun ReadingDirection.label(): String =
     when (this) {

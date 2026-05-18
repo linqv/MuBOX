@@ -3,7 +3,9 @@ use comic_core::cache::index_cache::{
 };
 use comic_core::cache::page_cache::{enforce_lru_capacity, page_cache_file};
 use comic_core::cbz::{CbzIndex, CbzPageEntry};
-use comic_core::scheduler::prefetch::{plan_prefetch, NetworkClass};
+use comic_core::scheduler::prefetch::{
+    plan_prefetch, plan_prefetch_with_forward_window, NetworkClass,
+};
 use comic_core::scheduler::range_planner::{
     plan_page_ranges, plan_ranges, ByteRange, PageByteRange,
 };
@@ -213,6 +215,19 @@ fn viewport_jump_demotes_old_forward_window_tasks() {
     assert!(old.tasks.iter().any(|task| task.page_index == 3));
     assert_eq!(Some(10), new.tasks.first().map(|task| task.page_index));
     assert!(new.tasks.iter().take(3).all(|task| task.page_index != 3));
+}
+
+#[test]
+fn prefetch_uses_custom_forward_window_when_configured() {
+    let plan = plan_prefetch_with_forward_window(20, 4, NetworkClass::Wifi, 6);
+    let pages = plan
+        .tasks
+        .iter()
+        .map(|task| task.page_index)
+        .collect::<Vec<_>>();
+
+    assert!(pages.contains(&10));
+    assert!(!pages.contains(&11));
 }
 
 fn sample_index() -> CbzIndex {

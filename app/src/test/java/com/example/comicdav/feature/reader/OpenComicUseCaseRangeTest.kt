@@ -40,10 +40,11 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 1),
-            openRemoteSession = { fileId, size, cacheDir, comicKey, validator ->
-                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
+                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator, webDavPrefetchPageCount)
                 FakeReaderSession(pageCount = 3)
             },
+            webDavPrefetchPageCount = 6,
         )
 
         val result = useCase.open(client, "/books/book.cbz")
@@ -54,6 +55,7 @@ class OpenComicUseCaseRangeTest {
         assertTrue(remoteOpens.single().fileId > 0)
         assertTrue(File(remoteOpens.single().cacheDir).isDirectory)
         assertEquals("\"v1\"", remoteOpens.single().validator)
+        assertEquals(6, remoteOpens.single().webDavPrefetchPageCount)
         assertNull(client.downloadedPath)
     }
 
@@ -74,7 +76,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
+            openRemoteSession = { _, _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
         )
 
         val result = useCase.open(client, "/books/book.cbz", knownInfo = knownInfo)
@@ -95,8 +97,8 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { fileId, size, cacheDir, comicKey, validator ->
-                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
+                remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator, webDavPrefetchPageCount)
                 FakeReaderSession(pageCount = 3)
             },
         )
@@ -121,7 +123,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
+            openRemoteSession = { _, _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
         )
 
         try {
@@ -149,7 +151,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _ -> throw CancellationException("reader closed") },
+            openRemoteSession = { _, _, _, _, _, _ -> throw CancellationException("reader closed") },
         )
 
         try {
@@ -179,7 +181,7 @@ class OpenComicUseCaseRangeTest {
                 cache = ComicDownloadCache(temp.root),
                 progressStore = FakeProgressStore(savedPage = 0),
                 ioDispatcher = ioDispatcher,
-                openRemoteSession = { _, _, _, _, _ ->
+                openRemoteSession = { _, _, _, _, _, _ ->
                     openThreads += Thread.currentThread().name
                     FakeReaderSession(pageCount = 1)
                 },
@@ -231,6 +233,7 @@ class OpenComicUseCaseRangeTest {
         val cacheDir: String,
         val comicKey: String,
         val validator: String,
+        val webDavPrefetchPageCount: Int,
     )
 
     private class CollectingReaderLogSink : ReaderLogSink {
