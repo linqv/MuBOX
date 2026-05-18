@@ -14,4 +14,7 @@ worktrees/
 app/src/main/jniLibs/
 comic-core/target/
 docs/
+**/src/test/
+**/src/androidTest/
+**/tests/
 .gitignore
