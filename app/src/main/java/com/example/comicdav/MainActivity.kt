@@ -185,6 +185,7 @@ fun ComicDavApp() {
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
     var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
+    var editingWebDavSourceId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.SOURCES.name) }
     val selectedTab = remember(selectedTabName) {
         runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
@@ -611,6 +612,7 @@ fun ComicDavApp() {
                 if (!webDavViewModel.handleBack()) {
                     isWebDavOpen = false
                     isAddingWebDavPath = false
+                    editingWebDavSourceId = null
                     localOpenError = null
                     webDavActionMessage = null
                 }
@@ -729,6 +731,7 @@ fun ComicDavApp() {
                                             onBackToDirectories = {
                                                 isWebDavOpen = false
                                                 isAddingWebDavPath = false
+                                                editingWebDavSourceId = null
                                                 localOpenError = null
                                                 webDavActionMessage = null
                                             },
@@ -744,13 +747,52 @@ fun ComicDavApp() {
                                     } else {
                                         WebDavAccountScreen(
                                             uiState = uiState,
-                                            onBaseUrlChange = webDavViewModel::updateBaseUrl,
+                                            onDisplayNameChange = webDavViewModel::updateDisplayName,
+                                            onHostChange = webDavViewModel::updateHost,
+                                            onPortChange = webDavViewModel::updatePort,
+                                            onRootPathChange = webDavViewModel::updateRootPath,
+                                            onUseHttpsChange = webDavViewModel::updateUseHttps,
+                                            onAnonymousAccessChange = webDavViewModel::updateAnonymousAccess,
                                             onUsernameChange = webDavViewModel::updateUsername,
                                             onPasswordChange = webDavViewModel::updatePassword,
-                                            onTestConnection = webDavViewModel::testConnection,
+                                            onTestConnection = {
+                                                val latestWebDavState = webDavViewModel.uiState
+                                                val username = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.username
+                                                val password = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.password
+                                                val displayName = latestWebDavState.displayName
+                                                    .takeIf { it.isNotBlank() }
+                                                    ?: latestWebDavState.host.takeIf { it.isNotBlank() }
+                                                    ?: latestWebDavState.baseUrl
+                                                val accountId = "${latestWebDavState.baseUrl.trim()}|$username"
+                                                val sourceId = editingWebDavSourceId
+                                                if (sourceId != null) {
+                                                    fileDirectoryViewModel.updateWebDavDirectory(
+                                                        id = sourceId,
+                                                        displayName = displayName,
+                                                        accountId = accountId,
+                                                        path = latestWebDavState.currentPath,
+                                                        baseUrl = latestWebDavState.baseUrl,
+                                                        username = username,
+                                                        password = password,
+                                                    )
+                                                } else {
+                                                    fileDirectoryViewModel.addWebDavDirectory(
+                                                        displayName = displayName,
+                                                        accountId = accountId,
+                                                        path = "/",
+                                                        baseUrl = latestWebDavState.baseUrl,
+                                                        username = username,
+                                                        password = password,
+                                                    )
+                                                }
+                                                isWebDavOpen = false
+                                                isAddingWebDavPath = false
+                                                editingWebDavSourceId = null
+                                            },
                                             onBackToLibrary = {
                                                 isWebDavOpen = false
                                                 isAddingWebDavPath = false
+                                                editingWebDavSourceId = null
                                                 localOpenError = null
                                                 webDavActionMessage = null
                                             },
@@ -767,6 +809,7 @@ fun ComicDavApp() {
                                         onOpenWebDav = {
                                             localOpenError = null
                                             webDavActionMessage = null
+                                            editingWebDavSourceId = null
                                             webDavViewModel.startNewConnection()
                                             isWebDavOpen = true
                                             isAddingWebDavPath = true
@@ -788,6 +831,7 @@ fun ComicDavApp() {
                                                     webDavActionMessage = null
                                                     isWebDavOpen = true
                                                     isAddingWebDavPath = false
+                                                    editingWebDavSourceId = null
                                                     scope.launch {
                                                         if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
                                                             localOpenError = null
@@ -835,6 +879,23 @@ fun ComicDavApp() {
                                             fileDirectoryViewModel.deleteSource(source.id)
                                         },
                                         onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
+                                        onEditWebDavSource = { source ->
+                                            val baseUrl = source.webDavBaseUrl
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?: source.webDavAccountId?.substringBefore("|").orEmpty()
+                                            webDavViewModel.editSavedConnection(
+                                                displayName = source.displayName,
+                                                baseUrl = baseUrl,
+                                                username = source.webDavUsername,
+                                                password = source.webDavPassword,
+                                                path = source.webDavPath ?: "/",
+                                            )
+                                            editingWebDavSourceId = source.id
+                                            isAddingWebDavPath = false
+                                            isWebDavOpen = true
+                                            localOpenError = null
+                                            webDavActionMessage = null
+                                        },
                                         modifier = contentModifier,
                                     )
                                 }

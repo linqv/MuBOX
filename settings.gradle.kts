@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ComicDav"
+rootProject.name = "MuBOX"
 include(":app")

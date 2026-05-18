@@ -3,11 +3,13 @@
 
     <application
         android:allowBackup="true"
-        android:label="ComicDav"
+        android:icon="@drawable/ic_mubox"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/ic_mubox"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ComicDav">
+        android:theme="@style/Theme.MuBOX">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.comicdav.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

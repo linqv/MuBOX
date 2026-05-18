@@ -21,6 +21,16 @@ interface FileDirectoryCatalog {
     }
 
     suspend fun deleteSource(id: Long) = Unit
+
+    suspend fun updateWebDavDirectory(
+        id: Long,
+        displayName: String,
+        accountId: String,
+        path: String,
+        baseUrl: String,
+        username: String,
+        password: String,
+    ) = Unit
 }
 
 class FileDirectoryRepository(
@@ -75,5 +85,25 @@ class FileDirectoryRepository(
 
     override suspend fun deleteSource(id: Long) {
         dao.deleteSource(id)
+    }
+
+    override suspend fun updateWebDavDirectory(
+        id: Long,
+        displayName: String,
+        accountId: String,
+        path: String,
+        baseUrl: String,
+        username: String,
+        password: String,
+    ) {
+        dao.updateWebDavSource(
+            id = id,
+            displayName = displayName,
+            accountId = accountId,
+            path = path,
+            baseUrl = baseUrl.ifEmpty { null },
+            username = username.ifEmpty { null },
+            password = password.ifEmpty { null },
+        )
     }
 }

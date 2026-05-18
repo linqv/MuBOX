@@ -185,12 +185,44 @@ class FileDirectoryViewModelTest {
         assertEquals("已删除来源", viewModel.uiState.message)
     }
 
+    @Test
+    fun updateWebDavDirectoryEditsExistingSource() = runTest(dispatcher) {
+        val catalog = FakeFileDirectoryCatalog()
+        val viewModel = FileDirectoryViewModel(catalog, FakeLocalDirectoryReader())
+
+        viewModel.updateWebDavDirectory(
+            id = 42L,
+            displayName = "漫画库",
+            accountId = "https://cloud.example.test:8443/dav|lin",
+            path = "/manga/",
+            baseUrl = "https://cloud.example.test:8443/dav",
+            username = "lin",
+            password = "secret",
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            WebDavDirectoryUpdate(
+                id = 42L,
+                displayName = "漫画库",
+                accountId = "https://cloud.example.test:8443/dav|lin",
+                path = "/manga/",
+                baseUrl = "https://cloud.example.test:8443/dav",
+                username = "lin",
+                password = "secret",
+            ),
+            catalog.webDavUpdates.single(),
+        )
+        assertEquals("已更新来源：漫画库", viewModel.uiState.message)
+    }
+
     private class FakeFileDirectoryCatalog(
         initialSources: List<FileDirectorySourceEntity> = emptyList(),
     ) : FileDirectoryCatalog {
         private val sources = MutableStateFlow(initialSources)
         val localAdds = mutableListOf<LocalDirectoryAdd>()
         val webDavAdds = mutableListOf<WebDavDirectoryAdd>()
+        val webDavUpdates = mutableListOf<WebDavDirectoryUpdate>()
         val recentWrites = mutableListOf<FileDirectorySourceEntity>()
         val deletedSourceIds = mutableListOf<Long>()
 
@@ -221,6 +253,18 @@ class FileDirectoryViewModelTest {
         override suspend fun deleteSource(id: Long) {
             deletedSourceIds += id
         }
+
+        override suspend fun updateWebDavDirectory(
+            id: Long,
+            displayName: String,
+            accountId: String,
+            path: String,
+            baseUrl: String,
+            username: String,
+            password: String,
+        ) {
+            webDavUpdates += WebDavDirectoryUpdate(id, displayName, accountId, path, baseUrl, username, password)
+        }
     }
 
     private class FakeLocalDirectoryReader(
@@ -247,5 +291,15 @@ class FileDirectoryViewModelTest {
         val baseUrl: String = "",
         val username: String = "",
         val password: String = "",
+    )
+
+    private data class WebDavDirectoryUpdate(
+        val id: Long,
+        val displayName: String,
+        val accountId: String,
+        val path: String,
+        val baseUrl: String,
+        val username: String,
+        val password: String,
     )
 }

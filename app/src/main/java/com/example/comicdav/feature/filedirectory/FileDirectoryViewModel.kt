@@ -144,6 +144,37 @@ class FileDirectoryViewModel(
         }
     }
 
+    fun updateWebDavDirectory(
+        id: Long,
+        displayName: String,
+        accountId: String,
+        path: String,
+        baseUrl: String,
+        username: String,
+        password: String,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                catalog.updateWebDavDirectory(
+                    id = id,
+                    displayName = displayName,
+                    accountId = accountId,
+                    path = path,
+                    baseUrl = baseUrl,
+                    username = username,
+                    password = password,
+                )
+            }.fold(
+                onSuccess = {
+                    uiState = uiState.copy(message = "已更新来源：$displayName", error = null)
+                },
+                onFailure = { error ->
+                    uiState = uiState.copy(error = error.message ?: "更新 WebDAV 来源失败")
+                },
+            )
+        }
+    }
+
     fun clearMessage() {
         uiState = uiState.copy(message = null, error = null)
     }

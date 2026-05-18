@@ -35,22 +35,22 @@ fun releaseSigningValue(vararg names: String): String? =
     }?.takeIf { it.isNotBlank() }
 
 val releaseStoreFile = releaseSigningValue(
-    "COMICDAV_RELEASE_STORE_FILE",
+    "MUBOX_RELEASE_STORE_FILE",
     "RELEASE_STORE_FILE",
     "storeFile",
 )
 val releaseStorePassword = releaseSigningValue(
-    "COMICDAV_RELEASE_STORE_PASSWORD",
+    "MUBOX_RELEASE_STORE_PASSWORD",
     "RELEASE_STORE_PASSWORD",
     "storePassword",
 )
 val releaseKeyAlias = releaseSigningValue(
-    "COMICDAV_RELEASE_KEY_ALIAS",
+    "MUBOX_RELEASE_KEY_ALIAS",
     "RELEASE_KEY_ALIAS",
     "keyAlias",
 )
 val releaseKeyPassword = releaseSigningValue(
-    "COMICDAV_RELEASE_KEY_PASSWORD",
+    "MUBOX_RELEASE_KEY_PASSWORD",
     "RELEASE_KEY_PASSWORD",
     "keyPassword",
 )
@@ -66,12 +66,12 @@ val releaseSigningMissing = releaseSigningEntries
 val hasReleaseSigning = releaseSigningMissing.isEmpty()
 
 android {
-    namespace = "com.example.comicdav"
+    namespace = "org.mubox.reader"
     compileSdk = 35
     buildToolsVersion = "35.0.1"
 
     defaultConfig {
-        applicationId = "com.example.comicdav"
+        applicationId = "org.mubox.reader"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

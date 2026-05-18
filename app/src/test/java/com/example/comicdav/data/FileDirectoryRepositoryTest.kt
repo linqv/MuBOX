@@ -109,4 +109,35 @@ class FileDirectoryRepositoryTest {
 
         assertTrue(repository.observeSources().first().isEmpty())
     }
+
+    @Test
+    fun updateWebDavDirectoryEditsExistingSource() = runTest {
+        val id = repository.addWebDavDirectory(
+            displayName = "/manga",
+            accountId = "https://example.test/dav|lin",
+            path = "/manga",
+            baseUrl = "https://example.test/dav",
+            username = "lin",
+            password = "old",
+        )
+
+        repository.updateWebDavDirectory(
+            id = id,
+            displayName = "漫画库",
+            accountId = "https://cloud.example.test:8443/webdav|alex",
+            path = "/books/",
+            baseUrl = "https://cloud.example.test:8443/webdav",
+            username = "alex",
+            password = "new",
+        )
+
+        val source = repository.observeSources().first().single()
+        assertEquals(id, source.id)
+        assertEquals("漫画库", source.displayName)
+        assertEquals("https://cloud.example.test:8443/webdav|alex", source.webDavAccountId)
+        assertEquals("/books/", source.webDavPath)
+        assertEquals("https://cloud.example.test:8443/webdav", source.webDavBaseUrl)
+        assertEquals("alex", source.webDavUsername)
+        assertEquals("new", source.webDavPassword)
+    }
 }

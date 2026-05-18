@@ -19,4 +19,13 @@ class ComicDavCopyTest {
         assertEquals("加入书架", ComicDavCopy.addToLibrary)
         assertEquals("保存当前目录", ComicDavCopy.saveCurrentDirectory)
     }
+
+    @Test
+    fun firstRunDataFolderCopyUsesMuBoxBrand() {
+        assertEquals("选择 MuBOX 数据文件夹", ComicDavCopy.chooseDataFolderTitle)
+        assertEquals(
+            "MuBOX 会把封面、离线漫画、诊断日志和后续导出的文件保存在你选择的文件夹中。",
+            ComicDavCopy.chooseDataFolderBody,
+        )
+    }
 }

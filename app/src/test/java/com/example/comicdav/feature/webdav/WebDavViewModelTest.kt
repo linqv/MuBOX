@@ -91,7 +91,7 @@ class WebDavViewModelTest {
 
         assertEquals(Triple("https://example.test/dav/", "lin", "secret"), createdWith)
         assertEquals(viewModel.accountId(), viewModel.activeAccountId())
-        assertEquals("https://example.test/dav/ ", viewModel.uiState.baseUrl)
+        assertEquals("https://example.test/dav/", viewModel.uiState.baseUrl)
         assertEquals("lin", viewModel.uiState.username)
         assertEquals("secret", viewModel.uiState.password)
         assertEquals("/Comics/", viewModel.uiState.currentPath)
@@ -129,6 +129,74 @@ class WebDavViewModelTest {
         assertEquals(1, clientCreations)
         assertEquals(listOf("/Comics/", "/Comics/Series/"), client.listedPaths)
         assertEquals("/Comics/Series/", viewModel.uiState.currentPath)
+    }
+
+    @Test
+    fun splitConnectionFieldsBuildWebDavBaseUrl() {
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> FakeWebDavClient() })
+
+        viewModel.updateHost("cloud.example.test")
+        viewModel.updatePort("8443")
+        viewModel.updateRootPath("dav/books")
+
+        assertEquals("https://cloud.example.test:8443/dav/books", viewModel.uiState.baseUrl)
+    }
+
+    @Test
+    fun splitConnectionFieldsOmitStandardHttpsPort() {
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> FakeWebDavClient() })
+
+        viewModel.updateHost("webdav.123pan.cn")
+        viewModel.updatePort("443")
+        viewModel.updateRootPath("/webdav")
+
+        assertEquals("https://webdav.123pan.cn/webdav", viewModel.uiState.baseUrl)
+    }
+
+    @Test
+    fun connectToSavedSourceOmitStandardHttpsPort() = runTest(dispatcher) {
+        val client = FakeWebDavClient()
+        var createdBaseUrl: String? = null
+        val viewModel = WebDavViewModel(
+            clientFactory = { baseUrl, _, _ ->
+                createdBaseUrl = baseUrl
+                client
+            },
+        )
+
+        viewModel.connectToSavedSource(
+            baseUrl = "https://webdav.123pan.cn:443/webdav",
+            username = "lin",
+            password = "secret",
+            path = "/",
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("https://webdav.123pan.cn/webdav", createdBaseUrl)
+        assertEquals("https://webdav.123pan.cn/webdav", viewModel.uiState.baseUrl)
+    }
+
+    @Test
+    fun editingSavedConnectionPopulatesConnectionFields() {
+        val viewModel = WebDavViewModel(clientFactory = { _, _, _ -> FakeWebDavClient() })
+
+        viewModel.editSavedConnection(
+            displayName = "漫画库",
+            baseUrl = "http://nas.example.test:8080/webdav/",
+            username = "lin",
+            password = "secret",
+            path = "/manga/",
+        )
+
+        assertEquals("漫画库", viewModel.uiState.displayName)
+        assertEquals("nas.example.test", viewModel.uiState.host)
+        assertEquals("8080", viewModel.uiState.port)
+        assertEquals("/webdav/", viewModel.uiState.rootPath)
+        assertFalse(viewModel.uiState.useHttps)
+        assertEquals("lin", viewModel.uiState.username)
+        assertEquals("secret", viewModel.uiState.password)
+        assertEquals("/manga/", viewModel.uiState.currentPath)
+        assertEquals(WEB_DAV_STATUS_NOT_CONNECTED, viewModel.uiState.status)
     }
 
     @Test

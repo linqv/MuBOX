@@ -1,27 +1,42 @@
 package com.example.comicdav.feature.webdav
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.ui.ComicDavCopy
 
 @Composable
 fun WebDavAccountScreen(
     uiState: WebDavUiState,
-    onBaseUrlChange: (String) -> Unit,
+    onDisplayNameChange: (String) -> Unit,
+    onHostChange: (String) -> Unit,
+    onPortChange: (String) -> Unit,
+    onRootPathChange: (String) -> Unit,
+    onUseHttpsChange: (Boolean) -> Unit,
+    onAnonymousAccessChange: (Boolean) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTestConnection: () -> Unit,
@@ -29,54 +44,167 @@ fun WebDavAccountScreen(
     message: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 420.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 6.dp,
         ) {
-            Text(text = "WebDAV", style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onBackToLibrary) {
-                Text(ComicDavCopy.sourcesTitle)
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(text = "添加网络连接", style = MaterialTheme.typography.headlineMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = uiState.displayName,
+                        onValueChange = onDisplayNameChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("名称") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = "WebDAV",
+                        onValueChange = {},
+                        modifier = Modifier.weight(1f),
+                        label = { Text("协议") },
+                        readOnly = true,
+                        singleLine = true,
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.ArrowDropDown,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                }
+                OutlinedTextField(
+                    value = uiState.host,
+                    onValueChange = onHostChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("主机/IP地址") },
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = uiState.port,
+                        onValueChange = onPortChange,
+                        modifier = Modifier.weight(0.42f),
+                        label = { Text("端口") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    OutlinedTextField(
+                        value = uiState.rootPath,
+                        onValueChange = onRootPathChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("路径") },
+                        singleLine = true,
+                    )
+                }
+                CheckRow(
+                    checked = uiState.anonymousAccess,
+                    onCheckedChange = onAnonymousAccessChange,
+                    label = "匿名/访客访问",
+                )
+                CheckRow(
+                    checked = uiState.useHttps,
+                    onCheckedChange = onUseHttpsChange,
+                    label = "使用 HTTPS（安全连接）",
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = uiState.username,
+                        onValueChange = onUsernameChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("用户名") },
+                        enabled = !uiState.anonymousAccess,
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = uiState.password,
+                        onValueChange = onPasswordChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("密码") },
+                        enabled = !uiState.anonymousAccess,
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                if (!message.isNullOrBlank()) {
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (uiState.status != WEB_DAV_STATUS_NOT_CONNECTED) {
+                    Text(text = uiState.status)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = onBackToLibrary,
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Text("取消")
+                    }
+                    Button(
+                        onClick = onTestConnection,
+                        enabled = !uiState.isLoading && uiState.host.isNotBlank(),
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Text("保存")
+                    }
+                }
             }
         }
-        OutlinedTextField(
-            value = uiState.baseUrl,
-            onValueChange = onBaseUrlChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("WebDAV URL") },
-            singleLine = true,
+    }
+}
+
+@Composable
+private fun CheckRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    label: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
         )
-        OutlinedTextField(
-            value = uiState.username,
-            onValueChange = onUsernameChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("用户名") },
-            singleLine = true,
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        OutlinedTextField(
-            value = uiState.password,
-            onValueChange = onPasswordChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("密码") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-        )
-        Button(onClick = onTestConnection, enabled = !uiState.isLoading && uiState.baseUrl.isNotBlank()) {
-            Text("连接")
-        }
-        if (!message.isNullOrBlank()) {
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        Text(text = uiState.status)
     }
 }

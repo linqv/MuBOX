@@ -1,6 +1,8 @@
-# ComicDav
+# MuBOX
 
-Android comic reader for WebDAV libraries. Android/Kotlin owns UI and networking. Rust owns CBZ/ZIP parsing and page extraction.
+MuBOX is an Android comic reader for local folders and WebDAV libraries. Android/Kotlin owns UI and networking. Rust owns CBZ/ZIP parsing and page extraction.
+
+Android release package ID: `org.mubox.reader`.
 
 ## Build
 
@@ -13,11 +15,15 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleDebug
 Create a local `keystore.properties` first. Do not commit this file.
 
 ```properties
-storeFile=/absolute/path/to/comicdav-release.jks
+storeFile=/absolute/path/to/mubox-release.jks
 storePassword=your-store-password
-keyAlias=comicdav
+keyAlias=mubox
 keyPassword=your-key-password
 ```
+
+The same values can also be supplied with `MUBOX_RELEASE_STORE_FILE`,
+`MUBOX_RELEASE_STORE_PASSWORD`, `MUBOX_RELEASE_KEY_ALIAS`, and
+`MUBOX_RELEASE_KEY_PASSWORD`.
 
 ```bash
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleRelease -PtargetAbi=arm64-v8a
@@ -38,3 +44,11 @@ cargo test
 - x86_64
 
 Use `-PtargetAbi=<abi>` to build a single ABI. Android builds cross-compile the Rust JNI library for the selected ABI.
+
+## Release Preparation
+
+See `RELEASE.md` before publishing an APK.
+
+## License
+
+MuBOX is free software distributed under the GNU General Public License v3.0 or later. See `LICENSE` and `NOTICE`.

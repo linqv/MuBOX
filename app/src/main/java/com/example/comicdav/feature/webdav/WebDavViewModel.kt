@@ -17,6 +17,12 @@ import kotlinx.coroutines.launch
 typealias WebDavClientFactory = (baseUrl: String, username: String?, password: String?) -> WebDavClient
 
 data class WebDavUiState(
+    val displayName: String = "",
+    val host: String = "",
+    val port: String = "443",
+    val rootPath: String = "/",
+    val useHttps: Boolean = true,
+    val anonymousAccess: Boolean = false,
     val baseUrl: String = "",
     val username: String = "",
     val password: String = "",
@@ -25,6 +31,14 @@ data class WebDavUiState(
     val status: String = WEB_DAV_STATUS_NOT_CONNECTED,
     val message: String = "",
     val isLoading: Boolean = false,
+)
+
+private data class WebDavUrlFields(
+    val baseUrl: String,
+    val host: String,
+    val port: String,
+    val rootPath: String,
+    val useHttps: Boolean,
 )
 
 const val WEB_DAV_STATUS_NOT_CONNECTED = "未连接"
@@ -54,7 +68,37 @@ class WebDavViewModel(
     fun accountId(): String = "${uiState.baseUrl.trim()}|${uiState.username}"
 
     fun updateBaseUrl(value: String) {
-        uiState = uiState.copy(baseUrl = value)
+        uiState = uiState.withBaseUrl(value)
+    }
+
+    fun updateDisplayName(value: String) {
+        uiState = uiState.copy(displayName = value)
+    }
+
+    fun updateHost(value: String) {
+        uiState = uiState.copy(host = value).withBuiltBaseUrl()
+    }
+
+    fun updatePort(value: String) {
+        uiState = uiState.copy(port = value.filter { it.isDigit() }).withBuiltBaseUrl()
+    }
+
+    fun updateRootPath(value: String) {
+        uiState = uiState.copy(rootPath = value).withBuiltBaseUrl()
+    }
+
+    fun updateUseHttps(value: Boolean) {
+        val defaultPort = if (value) "443" else "80"
+        val nextPort = uiState.port.takeIf { it.isNotBlank() } ?: defaultPort
+        uiState = uiState.copy(useHttps = value, port = nextPort).withBuiltBaseUrl()
+    }
+
+    fun updateAnonymousAccess(value: Boolean) {
+        uiState = uiState.copy(
+            anonymousAccess = value,
+            username = if (value) "" else uiState.username,
+            password = if (value) "" else uiState.password,
+        )
     }
 
     fun updateUsername(value: String) {
@@ -66,10 +110,11 @@ class WebDavViewModel(
     }
 
     fun testConnection() {
+        uiState = uiState.withBuiltBaseUrl()
         val credentials = WebDavConnectionCredentials(
             baseUrl = uiState.baseUrl.trim(),
-            username = uiState.username,
-            password = uiState.password,
+            username = if (uiState.anonymousAccess) "" else uiState.username,
+            password = if (uiState.anonymousAccess) "" else uiState.password,
         )
         val newClient = clientFactory(credentials.baseUrl, credentials.username, credentials.password)
         client = newClient
@@ -85,17 +130,37 @@ class WebDavViewModel(
         uiState = WebDavUiState()
     }
 
+    fun editSavedConnection(
+        displayName: String,
+        baseUrl: String,
+        username: String?,
+        password: String?,
+        path: String,
+    ) {
+        client = null
+        connectedAccountId = null
+        connectedCredentials = null
+        uiState = WebDavUiState(
+            displayName = displayName,
+            username = username.orEmpty(),
+            password = password.orEmpty(),
+            currentPath = path.ifBlank { "/" },
+            anonymousAccess = username.isNullOrBlank() && password.isNullOrBlank(),
+        ).withBaseUrl(baseUrl)
+    }
+
     fun connectToSavedSource(baseUrl: String, username: String?, password: String?, path: String) {
+        val normalizedBaseUrl = parseWebDavBaseUrl(baseUrl).baseUrl
         val credentials = WebDavConnectionCredentials(
-            baseUrl = baseUrl.trim(),
+            baseUrl = normalizedBaseUrl,
             username = username.orEmpty(),
             password = password.orEmpty(),
         )
         val shouldReuseClient = client != null && connectedCredentials == credentials
-        uiState = uiState.copy(
-            baseUrl = baseUrl,
+        uiState = uiState.withBaseUrl(normalizedBaseUrl).copy(
             username = username.orEmpty(),
             password = password.orEmpty(),
+            anonymousAccess = username.isNullOrBlank() && password.isNullOrBlank(),
         )
         if (!shouldReuseClient) {
             client = clientFactory(credentials.baseUrl, username, password)
@@ -209,9 +274,75 @@ class WebDavViewModel(
         return URLDecoder.decode(withTrailingSlash, StandardCharsets.UTF_8.name())
     }
 
+    private fun WebDavUiState.withBuiltBaseUrl(): WebDavUiState {
+        return copy(baseUrl = buildWebDavBaseUrl(useHttps, host, port, rootPath))
+    }
+
+    private fun WebDavUiState.withBaseUrl(baseUrl: String): WebDavUiState {
+        val fields = parseWebDavBaseUrl(baseUrl)
+        return copy(
+            baseUrl = fields.baseUrl,
+            host = fields.host,
+            port = fields.port,
+            rootPath = fields.rootPath,
+            useHttps = fields.useHttps,
+        )
+    }
+
     private data class WebDavConnectionCredentials(
         val baseUrl: String,
         val username: String,
         val password: String,
     )
+}
+
+internal fun buildWebDavBaseUrl(useHttps: Boolean, host: String, port: String, rootPath: String): String {
+    val cleanHost = host.trim()
+    if (cleanHost.isBlank()) return ""
+    val scheme = if (useHttps) "https" else "http"
+    val cleanPort = port.trim()
+    val shouldIncludePort = cleanPort.isNotBlank() &&
+        !((useHttps && cleanPort == "443") || (!useHttps && cleanPort == "80"))
+    val normalizedPath = normalizeWebDavRootPath(rootPath)
+    return buildString {
+        append(scheme)
+        append("://")
+        append(cleanHost)
+        if (shouldIncludePort) {
+            append(":")
+            append(cleanPort)
+        }
+        append(normalizedPath)
+    }
+}
+
+private fun parseWebDavBaseUrl(baseUrl: String): WebDavUrlFields {
+    val trimmed = baseUrl.trim()
+    val uri = runCatching { URI(trimmed) }.getOrNull()
+    if (uri == null || uri.host.isNullOrBlank()) {
+        return WebDavUrlFields(
+            baseUrl = trimmed,
+            host = "",
+            port = "443",
+            rootPath = "/",
+            useHttps = true,
+        )
+    }
+    val useHttps = !uri.scheme.equals("http", ignoreCase = true)
+    val defaultPort = if (useHttps) "443" else "80"
+    val port = uri.port.takeIf { it > 0 }?.toString() ?: defaultPort
+    val rootPath = uri.rawPath?.takeIf { it.isNotBlank() } ?: "/"
+    return WebDavUrlFields(
+        baseUrl = buildWebDavBaseUrl(useHttps = useHttps, host = uri.host, port = port, rootPath = rootPath),
+        host = uri.host,
+        port = port,
+        rootPath = rootPath,
+        useHttps = useHttps,
+    )
+}
+
+private fun normalizeWebDavRootPath(path: String): String {
+    val cleanPath = path.trim()
+    if (cleanPath.isBlank()) return "/"
+    return if (cleanPath.startsWith("/")) cleanPath else "/$cleanPath"
 }

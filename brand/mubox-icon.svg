@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" role="img" aria-labelledby="title desc">
+  <title id="title">MuBOX app icon</title>
+  <desc id="desc">A compact book-shaped MuBOX icon with an M mark.</desc>
+  <rect x="10" y="10" width="88" height="88" rx="10" fill="#103B34"/>
+  <path d="M29 26h35a13 13 0 0 1 13 13v43H41a12 12 0 0 1-12-12z" fill="#E6F4EE"/>
+  <path d="M42 26h26a11 11 0 0 1 11 11v45H52a10 10 0 0 1-10-10z" fill="#6DC6A4"/>
+  <path d="M29 26h15v56H29z" fill="#F4C95D"/>
+  <path d="M53 44h7l7 16 7-16h7v31h-7V58l-5 12h-4l-5-12v17h-7z" fill="#103B34"/>
+  <path d="M31 82h48a6 6 0 0 1 6 6H37a6 6 0 0 1-6-6z" fill="#103B34"/>
+  <path d="M31 74h38a7 7 0 0 1 7 7v1H38a7 7 0 0 1-7-7z" fill="#E6F4EE"/>
+</svg>

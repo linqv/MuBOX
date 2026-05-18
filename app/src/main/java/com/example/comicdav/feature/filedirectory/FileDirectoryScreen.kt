@@ -61,11 +61,31 @@ internal enum class FileDirectoryEntryMenuAction {
     AddToLibrary,
 }
 
+internal enum class SourceManagementAction {
+    EditWebDav,
+    DeleteSource,
+    RemoveSource,
+    DeleteLocalSourceWithFiles,
+}
+
 internal fun fileDirectoryEntryClickAction(entry: FileDirectoryBrowserItem): FileDirectoryEntryClickAction =
     if (entry.isDirectory) FileDirectoryEntryClickAction.OpenDirectory else FileDirectoryEntryClickAction.OpenComic
 
 internal fun fileDirectoryEntryLongPressActions(entry: FileDirectoryBrowserItem): List<FileDirectoryEntryMenuAction> =
     if (entry.isDirectory) emptyList() else listOf(FileDirectoryEntryMenuAction.AddToLibrary)
+
+internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<SourceManagementAction> {
+    return when (source.sourceType) {
+        FileDirectorySourceType.LOCAL -> listOf(
+            SourceManagementAction.RemoveSource,
+            SourceManagementAction.DeleteLocalSourceWithFiles,
+        )
+        FileDirectorySourceType.WEBDAV -> listOf(
+            SourceManagementAction.EditWebDav,
+            SourceManagementAction.DeleteSource,
+        )
+    }
+}
 
 @Composable
 fun FileDirectoryScreen(
@@ -83,6 +103,7 @@ fun FileDirectoryScreen(
     modifier: Modifier = Modifier,
     onDeleteSource: (FileDirectorySourceEntity) -> Unit = {},
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit = {},
+    onEditWebDavSource: (FileDirectorySourceEntity) -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -160,6 +181,7 @@ fun FileDirectoryScreen(
                     onOpenSource = onOpenSource,
                     onDeleteSource = onDeleteSource,
                     onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
+                    onEditWebDavSource = onEditWebDavSource,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -317,6 +339,7 @@ private fun SourceList(
     onOpenSource: (FileDirectorySourceEntity) -> Unit,
     onDeleteSource: (FileDirectorySourceEntity) -> Unit,
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit,
+    onEditWebDavSource: (FileDirectorySourceEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var sourceBeingManaged by remember { mutableStateOf<FileDirectorySourceEntity?>(null) }
@@ -353,6 +376,10 @@ private fun SourceList(
                 sourceBeingManaged = null
                 onDeleteLocalSourceWithFiles(source)
             },
+            onEditWebDavSource = {
+                sourceBeingManaged = null
+                onEditWebDavSource(source)
+            },
         )
     }
     LazyColumn(
@@ -385,7 +412,7 @@ private fun DirectorySourceRow(
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
-                onLongClickLabel = "删除来源",
+                onLongClickLabel = "管理来源",
             ),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -436,10 +463,12 @@ private fun SourceManagementDialog(
     onDismiss: () -> Unit,
     onDeleteSource: () -> Unit,
     onDeleteLocalSourceWithFiles: () -> Unit,
+    onEditWebDavSource: () -> Unit,
 ) {
+    val actions = sourceManagementActions(source)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("删除来源") },
+        title = { Text("管理来源") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -448,31 +477,48 @@ private fun SourceManagementDialog(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (source.sourceType == FileDirectorySourceType.LOCAL) {
-                    TextButton(
-                        onClick = onDeleteSource,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp),
-                    ) {
-                        Text("仅移除来源")
-                    }
-                    TextButton(
-                        onClick = onDeleteLocalSourceWithFiles,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp),
-                    ) {
-                        Text("同时删除源文件")
-                    }
-                } else {
-                    TextButton(
-                        onClick = onDeleteSource,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp),
-                    ) {
-                        Text("删除来源")
+                actions.forEach { action ->
+                    when (action) {
+                        SourceManagementAction.EditWebDav -> {
+                            TextButton(
+                                onClick = onEditWebDavSource,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("编辑 WebDAV")
+                            }
+                        }
+                        SourceManagementAction.DeleteSource -> {
+                            TextButton(
+                                onClick = onDeleteSource,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("删除来源")
+                            }
+                        }
+                        SourceManagementAction.RemoveSource -> {
+                            TextButton(
+                                onClick = onDeleteSource,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("仅移除来源")
+                            }
+                        }
+                        SourceManagementAction.DeleteLocalSourceWithFiles -> {
+                            TextButton(
+                                onClick = onDeleteLocalSourceWithFiles,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("同时删除源文件")
+                            }
+                        }
                     }
                 }
             }
