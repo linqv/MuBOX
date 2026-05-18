@@ -1,1 +1,2 @@
 -keep class com.example.comicdav.nativebridge.ComicNative { *; }
+-keep class com.example.comicdav.nativebridge.RangeProviderRegistry { *; }

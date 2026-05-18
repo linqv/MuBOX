@@ -88,7 +88,7 @@ import com.example.comicdav.feature.reader.ReaderPageCache
 import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
-import com.example.comicdav.feature.settings.pageCacheLimitBytesForGb
+import com.example.comicdav.feature.settings.pageCacheLimitBytesForMb
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
@@ -286,8 +286,8 @@ fun ComicDavApp() {
         }
     }
 
-    LaunchedEffect(appSettings.diskCacheLimitGb) {
-        val pageCacheLimitBytes = pageCacheLimitBytesForGb(appSettings.diskCacheLimitGb)
+    LaunchedEffect(appSettings.diskCacheLimitMb) {
+        val pageCacheLimitBytes = pageCacheLimitBytesForMb(appSettings.diskCacheLimitMb)
         readerViewModel.updatePageCacheMaxBytes(pageCacheLimitBytes)
         withContext(Dispatchers.IO) {
             ReaderPageCache.prune(context.cacheDir, maxBytes = pageCacheLimitBytes)
@@ -592,11 +592,7 @@ fun ComicDavApp() {
                         supportsRange = true,
                     )
                 },
-            ) { downloaded, total ->
-                scope.launch {
-                    downloadProgress = DownloadProgressUi(downloaded, total)
-                }
-            }
+            )
             onOpenSucceeded?.invoke()
             result
         }
@@ -903,7 +899,7 @@ fun ComicDavApp() {
                                         scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
                                     },
                                     onDiskCacheLimitChange = { value ->
-                                        scope.launch { appSettingsStore.updateDiskCacheLimitGb(value) }
+                                        scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     cacheAnalysis = cacheAnalysis,

@@ -74,7 +74,7 @@ class ReaderViewModel(
     private val diagnostics = ReaderDiagnosticsTracker(elapsedRealtimeMs)
 
     fun updatePageCacheMaxBytes(maxBytes: Long) {
-        pageCacheMaxBytes = maxBytes.coerceAtLeast(1L)
+        pageCacheMaxBytes = maxBytes.coerceAtLeast(0L)
     }
 
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {

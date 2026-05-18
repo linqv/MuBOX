@@ -9,7 +9,7 @@ import com.example.comicdav.network.WebDavItem
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -19,7 +19,7 @@ class OpenComicUseCaseTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun downloadsRemoteFileOpensLocalSessionAndReturnsSavedPage() = runTest {
+    fun opensRemoteSessionAndReturnsSavedPageWithoutDownloadingWholeFile() = runTest {
         val client = FakeWebDavClient(
             info = RemoteFileInfo(
                 path = "/books/book.cbz",
@@ -31,13 +31,13 @@ class OpenComicUseCaseTest {
             bytes = byteArrayOf(1, 2, 3, 4),
         )
         val progress = FakeProgressStore(savedPage = 3)
-        val openedPaths = mutableListOf<String>()
+        val remoteOpenSizes = mutableListOf<Long>()
         val useCase = OpenComicUseCase(
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = progress,
-            openSession = { path ->
-                openedPaths += path
+            openRemoteSession = { _, size, _, _, _ ->
+                remoteOpenSizes += size
                 FakeReaderSession(pageCount = 5)
             },
         )
@@ -46,8 +46,8 @@ class OpenComicUseCaseTest {
 
         assertEquals(3, result.initialPage)
         assertEquals(5, result.session.pageCount)
-        assertTrue(File(openedPaths.single()).isFile)
-        assertEquals("/books/book.cbz", client.downloadedPath)
+        assertEquals(listOf(4L), remoteOpenSizes)
+        assertNull(client.downloadedPath)
         assertEquals(result.comicKey, progress.loadedKey)
     }
 

@@ -20,14 +20,25 @@ class SettingsScreenTest {
 
     @Test
     fun diskCacheLimitIsCoercedIntoSupportedRange() {
-        assertEquals(1, coerceDiskCacheLimitGb(0))
-        assertEquals(5, coerceDiskCacheLimitGb(9))
-        assertEquals(3, coerceDiskCacheLimitGb(3))
+        assertEquals(0, coerceDiskCacheLimitMb(0))
+        assertEquals(500, coerceDiskCacheLimitMb(500))
+        assertEquals(1024, coerceDiskCacheLimitMb(1024))
+        assertEquals(5120, coerceDiskCacheLimitMb(9000))
     }
 
     @Test
-    fun diskCacheLimitUsesGibibytesForPageCacheBytes() {
-        assertEquals(1_073_741_824L, pageCacheLimitBytesForGb(1))
-        assertEquals(5_368_709_120L, pageCacheLimitBytesForGb(5))
+    fun diskCacheLimitUsesMebibytesForPageCacheBytes() {
+        assertEquals(0L, pageCacheLimitBytesForMb(0))
+        assertEquals(524_288_000L, pageCacheLimitBytesForMb(500))
+        assertEquals(1_073_741_824L, pageCacheLimitBytesForMb(1024))
+        assertEquals(5_368_709_120L, pageCacheLimitBytesForMb(5120))
+    }
+
+    @Test
+    fun diskCacheLimitLabelsUseMbAndGb() {
+        assertEquals("0 MB", diskCacheLimitLabel(0))
+        assertEquals("500 MB", diskCacheLimitLabel(500))
+        assertEquals("1 GB", diskCacheLimitLabel(1024))
+        assertEquals("5 GB", diskCacheLimitLabel(5120))
     }
 }

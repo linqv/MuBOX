@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.data.ComicDownloadCache
+import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavException
@@ -10,6 +11,7 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -20,6 +22,12 @@ import org.junit.rules.TemporaryFolder
 class OpenComicUseCaseRangeTest {
     @get:Rule
     val temp = TemporaryFolder()
+
+    @After
+    fun tearDown() {
+        ReaderDiagnosticLog.clearSink()
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+    }
 
     @Test
     fun rangeCapableRemoteOpensNativeRemoteSessionWithoutDownloadingWholeFile() = runTest {
@@ -36,7 +44,6 @@ class OpenComicUseCaseRangeTest {
                 remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
                 FakeReaderSession(pageCount = 3)
             },
-            openSession = { error("whole-file fallback should not open") },
         )
 
         val result = useCase.open(client, "/books/book.cbz")
@@ -68,7 +75,6 @@ class OpenComicUseCaseRangeTest {
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
             openRemoteSession = { _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
-            openSession = { error("whole-file fallback should not open") },
         )
 
         val result = useCase.open(client, "/books/book.cbz", knownInfo = knownInfo)
@@ -85,7 +91,6 @@ class OpenComicUseCaseRangeTest {
             bytes = byteArrayOf(1, 2, 3, 4),
         )
         val remoteOpens = mutableListOf<RemoteOpenCall>()
-        val progressCalls = mutableListOf<Pair<Long, Long>>()
         val useCase = OpenComicUseCase(
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
@@ -94,42 +99,44 @@ class OpenComicUseCaseRangeTest {
                 remoteOpens += RemoteOpenCall(fileId, size, cacheDir.absolutePath, comicKey, validator)
                 FakeReaderSession(pageCount = 3)
             },
-            openSession = { error("whole-file fallback should not open") },
         )
 
-        val result = useCase.open(client, "/books/book.cbz") { downloaded, total ->
-            progressCalls += downloaded to total
-        }
+        val result = useCase.open(client, "/books/book.cbz")
 
         assertEquals(3, result.session.pageCount)
         assertEquals(9L, remoteOpens.single().size)
         assertNull(client.downloadedPath)
-        assertTrue(progressCalls.isEmpty())
     }
 
     @Test
-    fun rangeFailureFallsBackToWholeFileCache() = runTest {
+    fun rangeFailureIsReportedWithoutWholeFileDownloadAndLogsReason() = runTest {
         val client = FakeWebDavClient(
             info = RemoteFileInfo("/books/book.cbz", size = 4, etag = "\"v1\"", lastModified = null, supportsRange = true),
             bytes = byteArrayOf(1, 2, 3, 4),
         )
-        val openedLocalPaths = mutableListOf<String>()
+        val sink = CollectingReaderLogSink()
+        ReaderDiagnosticLog.setSink(sink)
+        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
         val useCase = OpenComicUseCase(
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
             openRemoteSession = { _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
-            openSession = { path ->
-                openedLocalPaths += path
-                FakeReaderSession(pageCount = 2)
-            },
         )
 
-        val result = useCase.open(client, "/books/book.cbz")
-
-        assertEquals(2, result.session.pageCount)
-        assertEquals("/books/book.cbz", client.downloadedPath)
-        assertTrue(File(openedLocalPaths.single()).isFile)
+        try {
+            useCase.open(client, "/books/book.cbz")
+        } catch (error: WebDavException.RangeNotSupported) {
+            assertNull(client.downloadedPath)
+            assertTrue(
+                sink.lines.any { line ->
+                    line.contains("open_remote_range_failed") &&
+                        line.contains("RangeNotSupported")
+                },
+            )
+            return@runTest
+        }
+        error("Expected range failure to be reported")
     }
 
     @Test
@@ -143,7 +150,6 @@ class OpenComicUseCaseRangeTest {
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
             openRemoteSession = { _, _, _, _, _ -> throw CancellationException("reader closed") },
-            openSession = { error("whole-file fallback should not open after cancellation") },
         )
 
         try {
@@ -177,7 +183,6 @@ class OpenComicUseCaseRangeTest {
                     openThreads += Thread.currentThread().name
                     FakeReaderSession(pageCount = 1)
                 },
-                openSession = { error("whole-file fallback should not open") },
             )
 
             useCase.open(client, "/books/book.cbz")
@@ -227,4 +232,16 @@ class OpenComicUseCaseRangeTest {
         val comicKey: String,
         val validator: String,
     )
+
+    private class CollectingReaderLogSink : ReaderLogSink {
+        val lines = mutableListOf<String>()
+
+        override fun log(line: String) {
+            lines += line
+        }
+
+        override fun logBlocking(line: String) {
+            lines += line
+        }
+    }
 }

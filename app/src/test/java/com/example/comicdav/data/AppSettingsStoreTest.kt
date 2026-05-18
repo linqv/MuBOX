@@ -36,7 +36,7 @@ class AppSettingsStoreTest {
                 autoPageSpeedMillis = 5_000,
                 screenRotationLockEnabled = false,
                 volumeKeysTurnPagesEnabled = false,
-                diskCacheLimitGb = 1,
+                diskCacheLimitMb = 1024,
             ),
             store.settings.first(),
         )
@@ -55,7 +55,7 @@ class AppSettingsStoreTest {
         store.updateAutoPageSpeedMillis(7_500)
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
-        store.updateDiskCacheLimitGb(4)
+        store.updateDiskCacheLimitMb(500)
 
         val restored = AppSettingsStore(dataStore)
 
@@ -68,7 +68,7 @@ class AppSettingsStoreTest {
                 autoPageSpeedMillis = 7_500,
                 screenRotationLockEnabled = true,
                 volumeKeysTurnPagesEnabled = true,
-                diskCacheLimitGb = 4,
+                diskCacheLimitMb = 500,
             ),
             restored.settings.first(),
         )
@@ -116,7 +116,7 @@ class AppSettingsStoreTest {
         store.updateAutoPageSpeedMillis(3_000)
         store.updateScreenRotationLockEnabled(true)
         store.updateVolumeKeysTurnPagesEnabled(true)
-        store.updateDiskCacheLimitGb(5)
+        store.updateDiskCacheLimitMb(5120)
 
         val preferences = dataStore.data.first()
 
@@ -128,7 +128,17 @@ class AppSettingsStoreTest {
         assertEquals(3_000, preferences[intPreferencesKey("auto_page_speed_millis")])
         assertTrue(preferences[booleanPreferencesKey("screen_rotation_lock_enabled")]!!)
         assertTrue(preferences[booleanPreferencesKey("volume_keys_turn_pages_enabled")]!!)
-        assertEquals(5, preferences[intPreferencesKey("disk_cache_limit_gb")])
+        assertEquals(5120, preferences[intPreferencesKey("disk_cache_limit_gb")])
+    }
+
+    @Test
+    fun migratesLegacyDiskCacheLimitGbPreferenceToMb() = runTest {
+        val dataStore = dataStore("app-settings-cache-limit-migration.preferences_pb")
+        dataStore.edit { preferences ->
+            preferences[intPreferencesKey("disk_cache_limit_gb")] = 4
+        }
+
+        assertEquals(4096, AppSettingsStore(dataStore).settings.first().diskCacheLimitMb)
     }
 
     @Test

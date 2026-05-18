@@ -1113,6 +1113,25 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun zeroPageCacheLimitPrunesToZeroBytesAfterExtraction() = runTest(dispatcher) {
+        val session = FakeReaderSession(pageCount = 1)
+        val maxBytes = mutableListOf<Long>()
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = dispatcher,
+            prunePageCache = { _, _, limitBytes ->
+                maxBytes += limitBytes
+            },
+        )
+        viewModel.updatePageCacheMaxBytes(0L)
+
+        viewModel.openLocal("/tmp/book.cbz", temp.root, comicKey = "cache-zero")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf(0L), maxBytes)
+    }
+
+    @Test
     fun closeReaderEmitsLocalPerformanceSummary() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)

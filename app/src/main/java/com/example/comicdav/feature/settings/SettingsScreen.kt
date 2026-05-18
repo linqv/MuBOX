@@ -41,12 +41,12 @@ import com.example.comicdav.data.formatCacheSize
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
-private const val MinDiskCacheLimitGb = 1
-private const val MaxDiskCacheLimitGb = 5
+private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
 
 @Composable
 fun SettingsScreen(
@@ -168,7 +168,7 @@ fun SettingsScreen(
                 subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
             )
             DiskCacheLimitRow(
-                limitGb = settings.diskCacheLimitGb,
+                limitMb = settings.diskCacheLimitMb,
                 onLimitChange = onDiskCacheLimitChange,
             )
             Row(
@@ -207,11 +207,18 @@ internal fun autoPageIntervalMillisForSpeed(speedSeconds: Int): Long =
 internal fun coerceAutoPageSpeedMillis(speedMillis: Int): Int =
     autoPageIntervalMillisForSpeed(speedMillis / 1_000).toInt()
 
-internal fun coerceDiskCacheLimitGb(limitGb: Int): Int =
-    limitGb.coerceIn(MinDiskCacheLimitGb, MaxDiskCacheLimitGb)
+internal fun coerceDiskCacheLimitMb(limitMb: Int): Int =
+    SupportedDiskCacheLimitMb.minBy { abs(it - limitMb) }
 
-internal fun pageCacheLimitBytesForGb(limitGb: Int): Long =
-    coerceDiskCacheLimitGb(limitGb) * 1024L * 1024L * 1024L
+internal fun pageCacheLimitBytesForMb(limitMb: Int): Long =
+    coerceDiskCacheLimitMb(limitMb) * 1024L * 1024L
+
+internal fun diskCacheLimitLabel(limitMb: Int): String =
+    when (val coercedLimit = coerceDiskCacheLimitMb(limitMb)) {
+        0 -> "0 MB"
+        500 -> "500 MB"
+        else -> "${coercedLimit / 1024} GB"
+    }
 
 internal fun ReadingDirection.label(): String =
     when (this) {
@@ -472,11 +479,12 @@ private fun AutoPageSpeedRow(
 
 @Composable
 private fun DiskCacheLimitRow(
-    limitGb: Int,
+    limitMb: Int,
     onLimitChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val coercedLimit = coerceDiskCacheLimitGb(limitGb)
+    val coercedLimit = coerceDiskCacheLimitMb(limitMb)
+    var expanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -506,17 +514,25 @@ private fun DiskCacheLimitRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = "$coercedLimit GB",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Box {
+                OutlinedButton(onClick = { expanded = true }) {
+                    Text(diskCacheLimitLabel(coercedLimit))
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    SupportedDiskCacheLimitMb.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(diskCacheLimitLabel(option)) },
+                            onClick = {
+                                expanded = false
+                                onLimitChange(option)
+                            },
+                        )
+                    }
+                }
+            }
         }
-        Slider(
-            value = coercedLimit.toFloat(),
-            onValueChange = { value -> onLimitChange(coerceDiskCacheLimitGb(value.roundToInt())) },
-            valueRange = MinDiskCacheLimitGb.toFloat()..MaxDiskCacheLimitGb.toFloat(),
-            steps = MaxDiskCacheLimitGb - MinDiskCacheLimitGb - 1,
-        )
     }
 }

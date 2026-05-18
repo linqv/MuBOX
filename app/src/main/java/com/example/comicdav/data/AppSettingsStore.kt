@@ -37,7 +37,7 @@ data class AppSettings(
     val autoPageSpeedMillis: Int = 5_000,
     val screenRotationLockEnabled: Boolean = false,
     val volumeKeysTurnPagesEnabled: Boolean = false,
-    val diskCacheLimitGb: Int = 1,
+    val diskCacheLimitMb: Int = 1024,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -56,7 +56,7 @@ class AppSettingsStore(
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
-            diskCacheLimitGb = coerceDiskCacheLimitGb(preferences[DISK_CACHE_LIMIT_GB] ?: 1),
+            diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
         )
     }
 
@@ -107,9 +107,9 @@ class AppSettingsStore(
         }
     }
 
-    suspend fun updateDiskCacheLimitGb(limitGb: Int) {
+    suspend fun updateDiskCacheLimitMb(limitMb: Int) {
         dataStore.edit { preferences ->
-            preferences[DISK_CACHE_LIMIT_GB] = coerceDiskCacheLimitGb(limitGb)
+            preferences[DISK_CACHE_LIMIT_MB] = coerceDiskCacheLimitMb(limitMb)
         }
     }
 
@@ -122,11 +122,21 @@ class AppSettingsStore(
         val AUTO_PAGE_SPEED_MILLIS = intPreferencesKey("auto_page_speed_millis")
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")
         val VOLUME_KEYS_TURN_PAGES_ENABLED = booleanPreferencesKey("volume_keys_turn_pages_enabled")
-        val DISK_CACHE_LIMIT_GB = intPreferencesKey("disk_cache_limit_gb")
+        val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
     }
 }
 
-private fun coerceDiskCacheLimitGb(limitGb: Int): Int = limitGb.coerceIn(1, 5)
+private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
+
+private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
+    if (limitMb in 1..5) {
+        limitMb * 1024
+    } else {
+        coerceDiskCacheLimitMb(limitMb)
+    }
+
+private fun coerceDiskCacheLimitMb(limitMb: Int): Int =
+    SupportedDiskCacheLimitMb.minBy { kotlin.math.abs(it - limitMb) }
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T {
     return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default
