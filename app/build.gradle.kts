@@ -1,5 +1,6 @@
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.PathSensitivity
 import java.util.Properties
 
 plugins {
@@ -163,6 +164,13 @@ fun org.gradle.api.Task.buildRustAndroidVariant(
 ) {
     inputs.property("targetAbi", targetAbi ?: "all")
     inputs.property("cargoProfile", cargoProfile.targetDirName)
+    inputs.files(
+        fileTree("../comic-core") {
+            include("Cargo.toml", "Cargo.lock", "src/**/*.rs")
+        },
+    )
+        .withPropertyName("rustInputs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.dir(outputRoot)
 
     doLast {
