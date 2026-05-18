@@ -17,7 +17,52 @@ data class RustAndroidTarget(
 )
 
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
+val generatedRustReleaseJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/release")
 val targetAbi = providers.gradleProperty("targetAbi").orNull
+val releaseSigningProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.isFile) {
+        propertiesFile.inputStream().use(::load)
+    }
+}
+
+fun releaseSigningValue(vararg names: String): String? =
+    names.firstNotNullOfOrNull { name ->
+        providers.gradleProperty(name).orNull
+            ?: releaseSigningProperties.getProperty(name)
+            ?: System.getenv(name)
+    }?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = releaseSigningValue(
+    "COMICDAV_RELEASE_STORE_FILE",
+    "RELEASE_STORE_FILE",
+    "storeFile",
+)
+val releaseStorePassword = releaseSigningValue(
+    "COMICDAV_RELEASE_STORE_PASSWORD",
+    "RELEASE_STORE_PASSWORD",
+    "storePassword",
+)
+val releaseKeyAlias = releaseSigningValue(
+    "COMICDAV_RELEASE_KEY_ALIAS",
+    "RELEASE_KEY_ALIAS",
+    "keyAlias",
+)
+val releaseKeyPassword = releaseSigningValue(
+    "COMICDAV_RELEASE_KEY_PASSWORD",
+    "RELEASE_KEY_PASSWORD",
+    "keyPassword",
+)
+val releaseSigningEntries = mapOf(
+    "storeFile" to releaseStoreFile,
+    "storePassword" to releaseStorePassword,
+    "keyAlias" to releaseKeyAlias,
+    "keyPassword" to releaseKeyPassword,
+)
+val releaseSigningMissing = releaseSigningEntries
+    .filterValues { it.isNullOrBlank() }
+    .keys
+val hasReleaseSigning = releaseSigningMissing.isEmpty()
 
 android {
     namespace = "com.example.comicdav"
@@ -42,8 +87,34 @@ android {
     }
 
     sourceSets {
-        getByName("main") {
+        getByName("debug") {
             jniLibs.srcDir(generatedRustJniLibs)
+        }
+        getByName("release") {
+            jniLibs.srcDir(generatedRustReleaseJniLibs)
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -64,13 +135,34 @@ tasks.register<Exec>("buildRustDebug") {
     commandLine("cargo", "build")
 }
 
-tasks.named("preBuild") {
-    dependsOn("buildRustDebug")
+tasks.register("buildRustAndroidDebug") {
+    buildRustAndroidVariant(
+        outputRoot = generatedRustJniLibs,
+        cargoProfile = RustCargoProfile.Debug,
+    )
 }
 
-tasks.register("buildRustAndroidDebug") {
-    val outputRoot = generatedRustJniLibs
+tasks.register("buildRustAndroidRelease") {
+    buildRustAndroidVariant(
+        outputRoot = generatedRustReleaseJniLibs,
+        cargoProfile = RustCargoProfile.Release,
+    )
+}
+
+enum class RustCargoProfile(
+    val targetDirName: String,
+    val cargoArgs: List<String>,
+) {
+    Debug("debug", emptyList()),
+    Release("release", listOf("--release")),
+}
+
+fun org.gradle.api.Task.buildRustAndroidVariant(
+    outputRoot: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
+    cargoProfile: RustCargoProfile,
+) {
     inputs.property("targetAbi", targetAbi ?: "all")
+    inputs.property("cargoProfile", cargoProfile.targetDirName)
     outputs.dir(outputRoot)
 
     doLast {
@@ -107,10 +199,13 @@ tasks.register("buildRustAndroidDebug") {
             providers.exec {
                 workingDir = file("../comic-core")
                 environment(target.linkerEnv, linker.absolutePath)
-                commandLine("cargo", "build", "--target", target.triple)
+                commandLine(
+                    listOf("cargo", "build", "--target", target.triple) + cargoProfile.cargoArgs,
+                )
             }.result.get()
 
-            val sourceLibrary = file("../comic-core/target/${target.triple}/debug/libcomic_core.so")
+            val sourceLibrary =
+                file("../comic-core/target/${target.triple}/${cargoProfile.targetDirName}/libcomic_core.so")
             if (!sourceLibrary.isFile) {
                 throw GradleException("Rust output not found at $sourceLibrary")
             }
@@ -123,6 +218,34 @@ tasks.register("buildRustAndroidDebug") {
 
 tasks.matching { it.name == "mergeDebugJniLibFolders" }.configureEach {
     dependsOn("buildRustAndroidDebug")
+}
+
+tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
+    dependsOn("buildRustAndroidRelease")
+}
+
+tasks.register("checkReleaseSigning") {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw GradleException(
+                "Release signing is not configured. Missing ${releaseSigningMissing.joinToString()} in " +
+                    "keystore.properties, Gradle properties, or environment variables.",
+            )
+        }
+        val store = file(releaseStoreFile!!)
+        if (!store.isFile) {
+            throw GradleException("Release keystore not found at ${store.absolutePath}")
+        }
+    }
+}
+
+tasks.matching {
+    it.name == "assembleRelease" ||
+        it.name == "bundleRelease" ||
+        it.name == "packageRelease" ||
+        it.name == "validateSigningRelease"
+}.configureEach {
+    dependsOn("checkReleaseSigning")
 }
 
 fun androidSdkDir(): File {

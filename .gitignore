@@ -4,6 +4,9 @@ build/
 .idea/
 *.iml
 local.properties
+keystore.properties
+*.jks
+*.keystore
 .DS_Store
 .superpowers/
 .worktrees/

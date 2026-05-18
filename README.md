@@ -8,6 +8,23 @@ Android comic reader for WebDAV libraries. Android/Kotlin owns UI and networking
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleDebug
 ```
 
+## Optimized ARM64 Release Build
+
+Create a local `keystore.properties` first. Do not commit this file.
+
+```properties
+storeFile=/absolute/path/to/comicdav-release.jks
+storePassword=your-store-password
+keyAlias=comicdav
+keyPassword=your-key-password
+```
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleRelease -PtargetAbi=arm64-v8a
+```
+
+The release build fails if signing is not configured, instead of producing an unsigned APK.
+
 ## Test Rust Core
 
 ```bash
@@ -20,4 +37,4 @@ cargo test
 - arm64-v8a
 - x86_64
 
-Phase 0 configures the Android ABI filters and builds the Rust smoke library on the host. Android Rust cross-compilation is added in the JNI phase.
+Use `-PtargetAbi=<abi>` to build a single ABI. Android builds cross-compile the Rust JNI library for the selected ABI.
