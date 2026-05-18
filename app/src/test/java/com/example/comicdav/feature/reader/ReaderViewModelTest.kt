@@ -821,6 +821,62 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun partiallyCoveredPlannedRangePrefetchesOnlyMissingForwardBytes() = runTest(dispatcher) {
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val prefetchStarted = CountDownLatch(1)
+        val prefetchFinished = CountDownLatch(1)
+        val releasePrefetch = CountDownLatch(1)
+        val session = BlockingPlannedRangeSession(
+            pageCount = 12,
+            plannedRangesByPage = mapOf(
+                5 to listOf(
+                    PlannedRemoteRange(start = 500, endInclusive = 599, pages = listOf(5, 6), priority = 1),
+                ),
+                6 to listOf(
+                    PlannedRemoteRange(start = 550, endInclusive = 699, pages = listOf(6, 7), priority = 1),
+                ),
+            ),
+            blockingRange = 500L to 599L,
+            prefetchStarted = prefetchStarted,
+            prefetchFinished = prefetchFinished,
+            releasePrefetch = releasePrefetch,
+        )
+        val viewModel = ReaderViewModel(
+            openSession = { session },
+            ioDispatcher = ioDispatcher,
+        )
+        try {
+            viewModel.openLocal("/tmp/book.cbz", temp.root)
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                viewModel.uiState.pageFiles.containsKey(4)
+            }
+            viewModel.reportPageDemand(5, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                prefetchStarted.count == 0L
+            }
+
+            viewModel.reportPageDemand(6, "pager_target")
+            waitUntil(timeoutMs = 1_000) {
+                dispatcher.scheduler.advanceUntilIdle()
+                session.prefetchedRanges.contains(600L to 699L)
+            }
+
+            assertTrue(session.prefetchedRanges.contains(500L to 599L))
+            assertTrue(session.prefetchedRanges.contains(600L to 699L))
+            assertTrue(!session.prefetchedRanges.contains(550L to 699L))
+        } finally {
+            releasePrefetch.countDown()
+            prefetchFinished.await(1, TimeUnit.SECONDS)
+            dispatcher.scheduler.advanceUntilIdle()
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun selectPagePromotesExistingPrefetchInsteadOfCancellingForSelection() = runTest(dispatcher) {
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)

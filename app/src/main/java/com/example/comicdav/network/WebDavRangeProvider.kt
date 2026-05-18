@@ -377,10 +377,20 @@ class WebDavRangeProvider(
             if (bytes.size.toLong() > maxBytes) {
                 return StoreResult(stored = false, skippedReason = "oversized", evictionMode = "none")
             }
-            if (protectedRanges.isNotEmpty()) {
-                return storeWithoutEvictingProtected(start, endInclusive, bytes, protectedRanges)
+            val mergedCandidate = mergedWindow(start, endInclusive, bytes)
+            val merged = if (mergedCandidate.window.bytes.size.toLong() <= maxBytes) {
+                mergedCandidate
+            } else {
+                MergedWindow(
+                    window = Window(start, endInclusive, bytes, ++sequence),
+                    sources = emptyList(),
+                )
             }
-            windows.add(Window(start, endInclusive, bytes, ++sequence))
+            if (protectedRanges.isNotEmpty()) {
+                return storeWithoutEvictingProtected(merged, protectedRanges)
+            }
+            windows.removeAll(merged.sources.toSet())
+            windows.add(merged.window)
             return StoreResult(stored = true, evicted = evict(), evictionMode = "lru")
         }
 
@@ -399,14 +409,16 @@ class WebDavRangeProvider(
         }
 
         private fun storeWithoutEvictingProtected(
-            start: Long,
-            endInclusive: Long,
-            bytes: ByteArray,
+            merged: MergedWindow,
             protectedRanges: List<LongRange>,
         ): StoreResult {
-            var projectedBytes = totalBytes() + bytes.size.toLong()
+            val mergedSourceSet = merged.sources.toSet()
+            var projectedBytes = totalBytes() -
+                merged.sources.sumOf { it.bytes.size.toLong() } +
+                merged.window.bytes.size.toLong()
             val windowsToEvict = mutableListOf<Window>()
             val candidates = windows
+                .filterNot { it in mergedSourceSet }
                 .filterNot { it.intersectsAny(protectedRanges) }
                 .sortedBy { it.lastAccess }
             for (window in candidates) {
@@ -424,9 +436,39 @@ class WebDavRangeProvider(
                 )
             }
             val evicted = windowsToEvict.map { it.snapshot() }
-            windows.removeAll(windowsToEvict.toSet())
-            windows.add(Window(start, endInclusive, bytes, ++sequence))
+            windows.removeAll(mergedSourceSet + windowsToEvict.toSet())
+            windows.add(merged.window)
             return StoreResult(stored = true, evicted = evicted, evictionMode = "protected")
+        }
+
+        private fun mergedWindow(start: Long, endInclusive: Long, bytes: ByteArray): MergedWindow {
+            val sources = windows
+                .filter { it.touches(start, endInclusive) }
+                .sortedBy { it.start }
+            if (sources.isEmpty()) {
+                return MergedWindow(
+                    window = Window(start, endInclusive, bytes, ++sequence),
+                    sources = emptyList(),
+                )
+            }
+
+            val mergedStart = minOf(start, sources.minOf { it.start })
+            val mergedEnd = maxOf(endInclusive, sources.maxOf { it.endInclusive })
+            val mergedBytes = ByteArray((mergedEnd - mergedStart + 1).toInt())
+            sources.forEach { source ->
+                source.bytes.copyInto(
+                    destination = mergedBytes,
+                    destinationOffset = (source.start - mergedStart).toInt(),
+                )
+            }
+            bytes.copyInto(
+                destination = mergedBytes,
+                destinationOffset = (start - mergedStart).toInt(),
+            )
+            return MergedWindow(
+                window = Window(mergedStart, mergedEnd, mergedBytes, ++sequence),
+                sources = sources,
+            )
         }
 
         internal data class LookupResult(
@@ -462,6 +504,12 @@ class WebDavRangeProvider(
                     !range.isEmpty() && start <= range.last && endInclusive >= range.first
                 }
 
+            fun touches(reqStart: Long, reqEnd: Long): Boolean {
+                val reqEndPlusOne = if (reqEnd == Long.MAX_VALUE) Long.MAX_VALUE else reqEnd + 1
+                val endPlusOne = if (endInclusive == Long.MAX_VALUE) Long.MAX_VALUE else endInclusive + 1
+                return start <= reqEndPlusOne && reqStart <= endPlusOne
+            }
+
             fun slice(reqStart: Long, reqEnd: Long): ByteArray {
                 val from = (reqStart - start).toInt()
                 val toInclusive = (reqEnd - start).toInt()
@@ -471,6 +519,11 @@ class WebDavRangeProvider(
             fun snapshot(): WindowSnapshot =
                 WindowSnapshot(start = start, endInclusive = endInclusive, bytes = bytes.size)
         }
+
+        private data class MergedWindow(
+            val window: Window,
+            val sources: List<Window>,
+        )
     }
 
     private data class InFlightRange(

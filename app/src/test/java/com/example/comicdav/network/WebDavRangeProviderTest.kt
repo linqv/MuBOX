@@ -289,6 +289,24 @@ class WebDavRangeProviderTest {
     }
 
     @Test
+    fun adjacentPrefetchedRangesAreMergedForLaterCrossRangeRead() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val client = RecordingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 0,
+        )
+
+        assertTrue(provider.prefetchRange(start = 40, endInclusive = 79))
+        assertTrue(provider.prefetchRange(start = 80, endInclusive = 99))
+        assertArrayEquals(bytes.sliceArray(50..90), provider.readRange(fileId = 1, start = 50, endInclusive = 90))
+
+        assertEquals(listOf(40L to 79L, 80L to 99L), client.rangeCalls)
+    }
+
+    @Test
     fun readRangeJoinsCoveringInFlightPrefetchWithoutSecondWebDavRequest() {
         val sink = CollectingReaderLogSink()
         installDetailLogSink(sink)

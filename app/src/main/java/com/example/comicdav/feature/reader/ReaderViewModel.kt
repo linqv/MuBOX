@@ -756,13 +756,16 @@ class ReaderViewModel(
         cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = retainedPages)
         if (mergedRanges.isEmpty()) return
 
-        val plannedBytes = mergedRanges.sumOf { it.endInclusive - it.start + 1 }
+        val prefetchRanges = mergedRanges.flatMap(::missingPlannedRangeSegments)
+        if (prefetchRanges.isEmpty()) return
+
+        val plannedBytes = prefetchRanges.sumOf { it.endInclusive - it.start + 1 }
         ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
-            "planned_range_prefetch_plan count=${mergedRanges.size} bytes=$plannedBytes generation=$expectedGeneration"
+            "planned_range_prefetch_plan count=${prefetchRanges.size} bytes=$plannedBytes generation=$expectedGeneration"
         }
-        mergedRanges.sortedBy { it.priority }.forEach { range ->
+        prefetchRanges.sortedBy { it.priority }.forEach { range ->
             val key = range.key()
-            val protectedRanges = protectedPlannedByteRanges(mergedRanges, excludedKey = key)
+            val protectedRanges = protectedPlannedByteRanges(prefetchRanges, excludedKey = key)
             val job = plannedRangeScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     if (expectedGeneration != generation) return@launch
@@ -798,35 +801,77 @@ class ReaderViewModel(
                     }
                 }
             }
-            var retained: PlannedRangePrefetch? = null
             val shouldStart = synchronized(plannedRangeLock) {
                 when {
                     plannedRangeJobs[key]?.job?.isPendingOrActive() == true -> false
                     completedPlannedRanges[key] != null -> false
                     else -> {
-                        retained = activePlannedRangeForPagesLocked(range.pages)
-                        if (retained != null) {
-                            false
-                        } else {
-                            plannedRangeJobs[key] = PlannedRangePrefetch(range = range, job = job)
-                            true
-                        }
+                        plannedRangeJobs[key] = PlannedRangePrefetch(range = range, job = job)
+                        true
                     }
                 }
             }
             if (!shouldStart) {
                 job.cancel()
-                retained?.let { retainedRange ->
-                    ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
-                        "planned_range_prefetch_retained start=${retainedRange.range.start} " +
-                            "end=${retainedRange.range.endInclusive} pages=${retainedRange.range.pages} " +
-                            "requestedStart=${range.start} requestedEnd=${range.endInclusive}"
-                    }
-                }
                 return@forEach
             }
             job.start()
         }
+    }
+
+    private fun missingPlannedRangeSegments(range: PlannedRemoteRange): List<PlannedRemoteRange> {
+        val coveredRanges = synchronized(plannedRangeLock) {
+            val activeRanges = plannedRangeJobs
+                .values
+                .filter { it.job.isPendingOrActive() }
+                .map { it.range.key() }
+            activeRanges + completedPlannedRanges.keys
+        }
+        val missingRanges = subtractCoveredRanges(
+            start = range.start,
+            endInclusive = range.endInclusive,
+            coveredRanges = coveredRanges,
+        )
+        return missingRanges.map { missing ->
+            PlannedRemoteRange(
+                start = missing.first,
+                endInclusive = missing.last,
+                pages = range.pages,
+                priority = range.priority,
+            )
+        }
+    }
+
+    private fun subtractCoveredRanges(
+        start: Long,
+        endInclusive: Long,
+        coveredRanges: List<PlannedRangeKey>,
+    ): List<LongRange> {
+        if (endInclusive < start) return emptyList()
+        val clipped = coveredRanges
+            .mapNotNull { covered ->
+                val clippedStart = maxOf(start, covered.start)
+                val clippedEnd = minOf(endInclusive, covered.endInclusive)
+                if (clippedStart <= clippedEnd) clippedStart..clippedEnd else null
+            }
+            .sortedBy { it.first }
+        if (clipped.isEmpty()) return listOf(start..endInclusive)
+
+        val missing = mutableListOf<LongRange>()
+        var cursor = start
+        clipped.forEach { covered ->
+            if (covered.last < cursor) return@forEach
+            if (covered.first > endInclusive) return@forEach
+            if (covered.first > cursor) {
+                missing += cursor..(covered.first - 1)
+            }
+            if (covered.last == Long.MAX_VALUE) return missing
+            cursor = maxOf(cursor, covered.last + 1)
+        }
+        if (cursor <= endInclusive) {
+            missing += cursor..endInclusive
+        }
+        return missing
     }
 
     private fun mergeSameStartPlannedRanges(ranges: List<PlannedRemoteRange>): List<PlannedRemoteRange> =
