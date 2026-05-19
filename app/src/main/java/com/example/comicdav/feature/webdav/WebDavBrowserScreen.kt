@@ -22,6 +22,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -40,11 +42,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
-import com.example.comicdav.ui.ComicDavIcons
+import com.example.comicdav.video.MediaKind
 
 internal enum class WebDavItemClickAction {
     OpenDirectory,
     OpenComic,
+    OpenVideo,
+    NoAction,
 }
 
 internal enum class WebDavFileMenuAction {
@@ -53,10 +57,22 @@ internal enum class WebDavFileMenuAction {
 }
 
 internal fun webDavItemClickAction(item: WebDavItem): WebDavItemClickAction =
-    if (item.isDirectory) WebDavItemClickAction.OpenDirectory else WebDavItemClickAction.OpenComic
+    when (item.mediaKind) {
+        MediaKind.Directory -> WebDavItemClickAction.OpenDirectory
+        MediaKind.Comic -> WebDavItemClickAction.OpenComic
+        MediaKind.Video -> WebDavItemClickAction.OpenVideo
+        MediaKind.Audio,
+        MediaKind.Subtitle,
+        MediaKind.Unknown,
+        -> WebDavItemClickAction.NoAction
+    }
 
 internal fun webDavItemLongPressActions(item: WebDavItem): List<WebDavFileMenuAction> =
-    if (item.isDirectory) emptyList() else listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal)
+    if (item.mediaKind == MediaKind.Comic) {
+        listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal)
+    } else {
+        emptyList()
+    }
 
 @Composable
 fun WebDavBrowserScreen(
@@ -231,6 +247,8 @@ private fun WebDavItemRow(
                     when (clickAction) {
                         WebDavItemClickAction.OpenDirectory -> onOpen()
                         WebDavItemClickAction.OpenComic -> onOpen()
+                        WebDavItemClickAction.OpenVideo -> onOpen()
+                        WebDavItemClickAction.NoAction -> Unit
                     }
                 },
                 onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
@@ -248,7 +266,7 @@ private fun WebDavItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            WebDavItemTypeIcon(isDirectory = item.isDirectory)
+            WebDavItemTypeIcon(mediaKind = item.mediaKind)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -275,10 +293,24 @@ private fun WebDavItemRow(
 }
 
 @Composable
-private fun WebDavItemTypeIcon(isDirectory: Boolean) {
+private fun WebDavItemTypeIcon(mediaKind: MediaKind) {
+    val isDirectory = mediaKind == MediaKind.Directory
     val containerColor = if (isDirectory) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
     val contentColor = if (isDirectory) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
-    val icon = if (isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.MenuBook
+    val icon = when (mediaKind) {
+        MediaKind.Directory -> Icons.Rounded.Folder
+        MediaKind.Video -> Icons.Rounded.PlayCircle
+        MediaKind.Subtitle -> Icons.Rounded.Subtitles
+        else -> Icons.AutoMirrored.Rounded.MenuBook
+    }
+    val contentDescription = when (mediaKind) {
+        MediaKind.Directory -> "文件夹"
+        MediaKind.Comic -> "漫画文件"
+        MediaKind.Video -> "视频文件"
+        MediaKind.Subtitle -> "字幕文件"
+        MediaKind.Audio -> "音频文件"
+        MediaKind.Unknown -> "文件"
+    }
 
     Box(
         modifier = Modifier
@@ -288,7 +320,7 @@ private fun WebDavItemTypeIcon(isDirectory: Boolean) {
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+            contentDescription = contentDescription,
             modifier = Modifier.size(24.dp),
             tint = contentColor,
         )

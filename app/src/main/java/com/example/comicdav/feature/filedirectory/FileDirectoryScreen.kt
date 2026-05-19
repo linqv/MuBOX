@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,11 +52,13 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.ComicDavCopy
-import com.example.comicdav.ui.ComicDavIcons
+import com.example.comicdav.video.MediaKind
 
 internal enum class FileDirectoryEntryClickAction {
     OpenDirectory,
     OpenComic,
+    OpenVideo,
+    NoAction,
 }
 
 internal enum class FileDirectoryEntryMenuAction {
@@ -69,10 +73,18 @@ internal enum class SourceManagementAction {
 }
 
 internal fun fileDirectoryEntryClickAction(entry: FileDirectoryBrowserItem): FileDirectoryEntryClickAction =
-    if (entry.isDirectory) FileDirectoryEntryClickAction.OpenDirectory else FileDirectoryEntryClickAction.OpenComic
+    when (entry.mediaKind) {
+        MediaKind.Directory -> FileDirectoryEntryClickAction.OpenDirectory
+        MediaKind.Comic -> FileDirectoryEntryClickAction.OpenComic
+        MediaKind.Video -> FileDirectoryEntryClickAction.OpenVideo
+        MediaKind.Audio,
+        MediaKind.Subtitle,
+        MediaKind.Unknown,
+        -> FileDirectoryEntryClickAction.NoAction
+    }
 
 internal fun fileDirectoryEntryLongPressActions(entry: FileDirectoryBrowserItem): List<FileDirectoryEntryMenuAction> =
-    if (entry.isDirectory) emptyList() else listOf(FileDirectoryEntryMenuAction.AddToLibrary)
+    if (entry.mediaKind == MediaKind.Comic) listOf(FileDirectoryEntryMenuAction.AddToLibrary) else emptyList()
 
 internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<SourceManagementAction> {
     return when (source.sourceType) {
@@ -96,6 +108,7 @@ fun FileDirectoryScreen(
     onOpenSource: (FileDirectorySourceEntity) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
+    onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     onGoUp: () -> Unit,
     onCloseBrowser: () -> Unit,
@@ -172,6 +185,7 @@ fun FileDirectoryScreen(
                         entries = uiState.entries,
                         onOpenDirectory = onOpenDirectory,
                         onOpenComic = onOpenComic,
+                        onOpenVideo = onOpenVideo,
                         onSelectComic = onSelectComic,
                         selectedComic = selectedComic,
                         modifier = Modifier.fillMaxSize(),
@@ -541,6 +555,7 @@ private fun EntryList(
     entries: List<FileDirectoryBrowserItem>,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
+    onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     selectedComic: FileDirectoryBrowserItem?,
     modifier: Modifier = Modifier,
@@ -557,6 +572,7 @@ private fun EntryList(
                 entry = entry,
                 onOpenDirectory = { onOpenDirectory(entry) },
                 onOpenComic = { onOpenComic(entry) },
+                onOpenVideo = { onOpenVideo(entry) },
                 onSelectComic = { onSelectComic(entry) },
                 isSelected = selectedComic?.uri == entry.uri,
             )
@@ -570,6 +586,7 @@ private fun FileDirectoryEntryRow(
     entry: FileDirectoryBrowserItem,
     onOpenDirectory: () -> Unit,
     onOpenComic: () -> Unit,
+    onOpenVideo: () -> Unit,
     onSelectComic: () -> Unit,
     isSelected: Boolean,
 ) {
@@ -585,6 +602,8 @@ private fun FileDirectoryEntryRow(
                     when (clickAction) {
                         FileDirectoryEntryClickAction.OpenDirectory -> onOpenDirectory()
                         FileDirectoryEntryClickAction.OpenComic -> onOpenComic()
+                        FileDirectoryEntryClickAction.OpenVideo -> onOpenVideo()
+                        FileDirectoryEntryClickAction.NoAction -> Unit
                     }
                 },
                 onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
@@ -600,7 +619,7 @@ private fun FileDirectoryEntryRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            EntryTypeIcon(isDirectory = entry.isDirectory)
+            EntryTypeIcon(mediaKind = entry.mediaKind)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entry.name,
@@ -627,10 +646,24 @@ internal fun fileDirectoryEntrySupportingLabel(entry: FileDirectoryBrowserItem):
     if (entry.isDirectory) "" else entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
 
 @Composable
-private fun EntryTypeIcon(isDirectory: Boolean) {
+private fun EntryTypeIcon(mediaKind: MediaKind) {
+    val isDirectory = mediaKind == MediaKind.Directory
     val containerColor = if (isDirectory) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
     val contentColor = if (isDirectory) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
-    val icon = if (isDirectory) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.MenuBook
+    val icon = when (mediaKind) {
+        MediaKind.Directory -> Icons.Rounded.Folder
+        MediaKind.Video -> Icons.Rounded.PlayCircle
+        MediaKind.Subtitle -> Icons.Rounded.Subtitles
+        else -> Icons.AutoMirrored.Rounded.MenuBook
+    }
+    val contentDescription = when (mediaKind) {
+        MediaKind.Directory -> "文件夹"
+        MediaKind.Comic -> "漫画文件"
+        MediaKind.Video -> "视频文件"
+        MediaKind.Subtitle -> "字幕文件"
+        MediaKind.Audio -> "音频文件"
+        MediaKind.Unknown -> "文件"
+    }
 
     Box(
         modifier = Modifier
@@ -640,7 +673,7 @@ private fun EntryTypeIcon(isDirectory: Boolean) {
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = if (isDirectory) "文件夹" else "漫画文件",
+            contentDescription = contentDescription,
             modifier = Modifier.size(24.dp),
             tint = contentColor,
         )

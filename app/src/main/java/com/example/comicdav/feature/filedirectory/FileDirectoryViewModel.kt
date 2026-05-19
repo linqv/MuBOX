@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.video.MediaKind
+import com.example.comicdav.video.isBrowsableInSources
+import com.example.comicdav.video.mediaKindFor
 import kotlinx.coroutines.launch
 
 data class FileDirectoryBrowserItem(
@@ -15,12 +18,16 @@ data class FileDirectoryBrowserItem(
     val isDirectory: Boolean,
     val size: Long? = null,
     val lastModified: Long? = null,
+    val mediaKind: MediaKind = mediaKindFor(name = name, isDirectory = isDirectory),
 )
 
 interface LocalDirectoryReader {
     fun rootDocumentUri(treeUri: String): String
     suspend fun listChildren(documentUri: String): List<FileDirectoryBrowserItem>
 }
+
+internal fun filterBrowsableLocalDirectoryItems(items: List<FileDirectoryBrowserItem>): List<FileDirectoryBrowserItem> =
+    items.filter { it.mediaKind.isBrowsableInSources }
 
 data class FileDirectoryUiState(
     val sources: List<FileDirectorySourceEntity> = emptyList(),
@@ -196,7 +203,8 @@ class FileDirectoryViewModel(
             }.fold(
                 onSuccess = { entries ->
                     uiState = uiState.copy(
-                        entries = entries.sortedWith(compareBy<FileDirectoryBrowserItem> { !it.isDirectory }.thenBy { it.name.lowercase() }),
+                        entries = filterBrowsableLocalDirectoryItems(entries)
+                            .sortedWith(compareBy<FileDirectoryBrowserItem> { !it.isDirectory }.thenBy { it.name.lowercase() }),
                         currentTitle = frame.title,
                         isLoading = false,
                     )

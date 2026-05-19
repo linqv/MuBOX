@@ -15,8 +15,5 @@ app/src/main/jniLibs/
 comic-core/target/
 docs/
 agent.md
-**/src/test/
-**/src/androidTest/
-**/tests/
 .gitignore
 mpvEx/

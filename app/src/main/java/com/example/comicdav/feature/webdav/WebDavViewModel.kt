@@ -204,7 +204,7 @@ class WebDavViewModel(
         viewModelScope.launch {
             runCatching {
                 activeClient.list(path)
-                    .filter { it.isDirectory || it.name.endsWith(".cbz", true) || it.name.endsWith(".zip", true) }
+                    .let(::filterBrowsableWebDavItems)
                     .sortedWith(compareBy<WebDavItem> { !it.isDirectory }.thenBy { it.name.lowercase() })
             }.fold(
                 onSuccess = { items ->

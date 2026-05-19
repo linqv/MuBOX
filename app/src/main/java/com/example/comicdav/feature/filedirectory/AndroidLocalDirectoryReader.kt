@@ -3,7 +3,8 @@ package com.example.comicdav.feature.filedirectory
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.example.comicdav.data.isSupportedLocalComicFileName
+import com.example.comicdav.video.isBrowsableInSources
+import com.example.comicdav.video.mediaKindFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -38,18 +39,19 @@ class AndroidLocalDirectoryReader(
                 val name = cursor.stringOrNull(nameColumn) ?: continue
                 val mimeType = cursor.stringOrNull(mimeColumn).orEmpty()
                 val isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR
-                if (!isDirectory && !isSupportedLocalComicFileName(name)) {
-                    continue
-                }
                 val childDocumentId = cursor.stringOrNull(idColumn) ?: continue
                 val childUri = DocumentsContract.buildDocumentUriUsingTree(uri, childDocumentId)
-                items += FileDirectoryBrowserItem(
+                val item = FileDirectoryBrowserItem(
                     name = name,
                     uri = childUri.toString(),
                     isDirectory = isDirectory,
                     size = cursor.longOrNull(sizeColumn),
                     lastModified = cursor.longOrNull(modifiedColumn),
+                    mediaKind = mediaKindFor(name = name, isDirectory = isDirectory, mimeType = mimeType),
                 )
+                if (item.mediaKind.isBrowsableInSources) {
+                    items += item
+                }
             }
         }
         items

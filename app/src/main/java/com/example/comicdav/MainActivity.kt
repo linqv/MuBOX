@@ -104,6 +104,11 @@ import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
+import com.example.comicdav.video.LocalVideoOpenRequest
+import com.example.comicdav.video.MediaKind
+import com.example.comicdav.video.WebDavVideoOpenRequest
+import com.example.comicdav.video.mediaKindFor
+import com.example.comicdav.video.mimeTypeForMediaFileName
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -200,6 +205,8 @@ fun ComicDavApp() {
     var selectedDirectoryComic by remember { mutableStateOf<FileDirectoryBrowserItem?>(null) }
     var selectedLibraryItem by remember { mutableStateOf<LibraryItemWithSources?>(null) }
     var selectedDownloadRecord by remember { mutableStateOf<DownloadRecord?>(null) }
+    var pendingLocalVideoOpen by remember { mutableStateOf<LocalVideoOpenRequest?>(null) }
+    var pendingWebDavVideoOpen by remember { mutableStateOf<WebDavVideoOpenRequest?>(null) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var webDavActionMessage by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
@@ -401,6 +408,18 @@ fun ComicDavApp() {
         )
     }
 
+    fun openLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
+        pendingWebDavVideoOpen = null
+        pendingLocalVideoOpen = LocalVideoOpenRequest(
+            uri = item.uri,
+            displayName = item.name,
+            size = item.size,
+            lastModified = item.lastModified,
+        )
+        localOpenError = null
+        fileDirectoryViewModel.showMessage("已进入内部视频打开流程：${item.name}")
+    }
+
     fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
         scope.launch {
             runCatching {
@@ -547,6 +566,22 @@ fun ComicDavApp() {
                 },
             )
         }
+    }
+
+    fun openWebDavVideo(item: WebDavItem) {
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        pendingLocalVideoOpen = null
+        pendingWebDavVideoOpen = WebDavVideoOpenRequest(
+            accountId = accountId,
+            remotePath = item.path,
+            displayName = item.name,
+            size = item.size,
+            etag = item.etag,
+            lastModified = item.lastModified,
+            mimeType = mimeTypeForMediaFileName(item.name),
+        )
+        localOpenError = null
+        webDavActionMessage = "已进入内部视频打开流程：${item.name}"
     }
 
     suspend fun webDavClientForAccount(accountId: String): com.example.comicdav.network.WebDavClient? {
@@ -978,16 +1013,20 @@ fun ComicDavApp() {
                                         WebDavBrowserScreen(
                                             uiState = uiState,
                                             onItemClick = { item ->
-                                                if (item.isDirectory) {
-                                                    webDavViewModel.openDirectory(item)
-                                                } else {
-                                                    openRemoteComic(
+                                                when (mediaKindFor(name = item.name, isDirectory = item.isDirectory)) {
+                                                    MediaKind.Directory -> webDavViewModel.openDirectory(item)
+                                                    MediaKind.Comic -> openRemoteComic(
                                                         accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId(),
                                                         remotePath = item.path,
                                                         size = item.size,
                                                         etag = item.etag,
                                                         lastModified = item.lastModified,
                                                     )
+                                                    MediaKind.Video -> openWebDavVideo(item)
+                                                    MediaKind.Audio,
+                                                    MediaKind.Subtitle,
+                                                    MediaKind.Unknown,
+                                                    -> Unit
                                                 }
                                             },
                                             onAddToLibrary = ::favoriteWebDavComic,
@@ -1151,6 +1190,7 @@ fun ComicDavApp() {
                                         },
                                         onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
                                         onOpenComic = ::openLocalDirectoryComic,
+                                        onOpenVideo = ::openLocalDirectoryVideo,
                                         onSelectComic = { item ->
                                             selectedDirectoryComic = item
                                             selectedWebDavFile = null
