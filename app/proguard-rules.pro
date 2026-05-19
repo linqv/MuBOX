@@ -10,3 +10,5 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+-keep,allowoptimization class is.xyz.mpv.** { public protected *; }

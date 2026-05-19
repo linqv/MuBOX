@@ -9,6 +9,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MuBOX">
         <activity
+            android:name="com.example.comicdav.video.player.VideoPlayerActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false"
+            android:screenOrientation="sensor"
+            android:theme="@style/Theme.MuBOX" />
+        <activity
             android:name="com.example.comicdav.MainActivity"
             android:exported="true">
             <intent-filter>

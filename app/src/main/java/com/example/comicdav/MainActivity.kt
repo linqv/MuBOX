@@ -109,6 +109,7 @@ import com.example.comicdav.video.MediaKind
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
+import com.example.comicdav.video.player.VideoPlayerActivity
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -410,14 +411,15 @@ fun ComicDavApp() {
 
     fun openLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
         pendingWebDavVideoOpen = null
-        pendingLocalVideoOpen = LocalVideoOpenRequest(
+        val request = LocalVideoOpenRequest(
             uri = item.uri,
             displayName = item.name,
             size = item.size,
             lastModified = item.lastModified,
         )
+        pendingLocalVideoOpen = request
         localOpenError = null
-        fileDirectoryViewModel.showMessage("已进入内部视频打开流程：${item.name}")
+        context.startActivity(VideoPlayerActivity.localIntent(context, request))
     }
 
     fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
