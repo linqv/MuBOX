@@ -96,11 +96,12 @@ fun FileDirectoryScreen(
     onOpenSource: (FileDirectorySourceEntity) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
-    onFavoriteComic: (FileDirectoryBrowserItem) -> Unit,
+    onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     onGoUp: () -> Unit,
     onCloseBrowser: () -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
+    selectedComic: FileDirectoryBrowserItem? = null,
     onDeleteSource: (FileDirectorySourceEntity) -> Unit = {},
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit = {},
     onEditWebDavSource: (FileDirectorySourceEntity) -> Unit = {},
@@ -171,7 +172,8 @@ fun FileDirectoryScreen(
                         entries = uiState.entries,
                         onOpenDirectory = onOpenDirectory,
                         onOpenComic = onOpenComic,
-                        onFavoriteComic = onFavoriteComic,
+                        onSelectComic = onSelectComic,
+                        selectedComic = selectedComic,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -539,7 +541,8 @@ private fun EntryList(
     entries: List<FileDirectoryBrowserItem>,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
-    onFavoriteComic: (FileDirectoryBrowserItem) -> Unit,
+    onSelectComic: (FileDirectoryBrowserItem) -> Unit,
+    selectedComic: FileDirectoryBrowserItem?,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -554,7 +557,8 @@ private fun EntryList(
                 entry = entry,
                 onOpenDirectory = { onOpenDirectory(entry) },
                 onOpenComic = { onOpenComic(entry) },
-                onFavoriteComic = { onFavoriteComic(entry) },
+                onSelectComic = { onSelectComic(entry) },
+                isSelected = selectedComic?.uri == entry.uri,
             )
         }
     }
@@ -566,24 +570,12 @@ private fun FileDirectoryEntryRow(
     entry: FileDirectoryBrowserItem,
     onOpenDirectory: () -> Unit,
     onOpenComic: () -> Unit,
-    onFavoriteComic: () -> Unit,
+    onSelectComic: () -> Unit,
+    isSelected: Boolean,
 ) {
-    var isActionDialogOpen by remember { mutableStateOf(false) }
     val longPressActions = fileDirectoryEntryLongPressActions(entry)
     val clickAction = fileDirectoryEntryClickAction(entry)
     val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
-
-    if (isActionDialogOpen) {
-        FileDirectoryEntryActionDialog(
-            entry = entry,
-            actions = longPressActions,
-            onDismiss = { isActionDialogOpen = false },
-            onFavoriteComic = {
-                isActionDialogOpen = false
-                onFavoriteComic()
-            },
-        )
-    }
 
     Surface(
         modifier = Modifier
@@ -596,12 +588,12 @@ private fun FileDirectoryEntryRow(
                     }
                 },
                 onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
-                    { isActionDialogOpen = true }
+                    { onSelectComic() }
                 },
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -633,51 +625,6 @@ private fun FileDirectoryEntryRow(
 
 internal fun fileDirectoryEntrySupportingLabel(entry: FileDirectoryBrowserItem): String =
     if (entry.isDirectory) "" else entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
-
-@Composable
-private fun FileDirectoryEntryActionDialog(
-    entry: FileDirectoryBrowserItem,
-    actions: List<FileDirectoryEntryMenuAction>,
-    onDismiss: () -> Unit,
-    onFavoriteComic: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("文件操作") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                actions.forEach { action ->
-                    when (action) {
-                        FileDirectoryEntryMenuAction.AddToLibrary -> {
-                            TextButton(
-                                onClick = onFavoriteComic,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text(ComicDavCopy.addToLibrary)
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-            ) {
-                Text("取消")
-            }
-        },
-    )
-}
 
 @Composable
 private fun EntryTypeIcon(isDirectory: Boolean) {

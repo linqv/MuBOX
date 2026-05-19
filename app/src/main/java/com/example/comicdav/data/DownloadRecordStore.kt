@@ -12,6 +12,7 @@ data class DownloadRecord(
     val remotePath: String,
     val sizeBytes: Long,
     val downloadedAtMillis: Long,
+    val accountId: String? = null,
 )
 
 class DownloadRecordStore(
@@ -41,6 +42,18 @@ class DownloadRecordStore(
         }
     }
 
+    suspend fun removeRecord(record: DownloadRecord) {
+        dataStore.edit { preferences ->
+            val updated = preferences[DOWNLOAD_RECORDS]
+                .orEmpty()
+                .lineSequence()
+                .mapNotNull(::decodeRecord)
+                .filterNot { it.remotePath == record.remotePath && it.fileName == record.fileName }
+                .joinToString(separator = "\n", transform = ::encodeRecord)
+            preferences[DOWNLOAD_RECORDS] = updated
+        }
+    }
+
     private companion object {
         const val DEFAULT_MAX_RECORDS = 20
         val DOWNLOAD_RECORDS = stringPreferencesKey("download_records")
@@ -53,16 +66,18 @@ private fun encodeRecord(record: DownloadRecord): String =
         record.remotePath.sanitizeRecordField(),
         record.sizeBytes.toString(),
         record.downloadedAtMillis.toString(),
+        record.accountId.orEmpty().sanitizeRecordField(),
     ).joinToString(separator = "\t")
 
 private fun decodeRecord(raw: String): DownloadRecord? {
     val parts = raw.split('\t')
-    if (parts.size != 4) return null
+    if (parts.size !in 4..5) return null
     return DownloadRecord(
         fileName = parts[0],
         remotePath = parts[1],
         sizeBytes = parts[2].toLongOrNull() ?: return null,
         downloadedAtMillis = parts[3].toLongOrNull() ?: return null,
+        accountId = parts.getOrNull(4)?.takeIf { it.isNotBlank() },
     )
 }
 

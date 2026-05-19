@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -33,10 +32,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,6 +64,7 @@ fun WebDavBrowserScreen(
     onItemClick: (WebDavItem) -> Unit,
     onAddToLibrary: (WebDavItem) -> Unit,
     onDownloadToLocal: (WebDavItem) -> Unit,
+    onSelectFile: (WebDavItem) -> Unit,
     onSaveDirectory: () -> Unit,
     onBackToDirectories: () -> Unit,
     showSaveDirectoryAction: Boolean,
@@ -77,6 +73,7 @@ fun WebDavBrowserScreen(
     actionMessage: String?,
     onCancelDownload: () -> Unit,
     modifier: Modifier = Modifier,
+    selectedFile: WebDavItem? = null,
 ) {
     Column(
         modifier = modifier
@@ -112,6 +109,8 @@ fun WebDavBrowserScreen(
                         onOpen = { onItemClick(item) },
                         onAddToLibrary = { onAddToLibrary(item) },
                         onDownloadToLocal = { onDownloadToLocal(item) },
+                        onSelectFile = { onSelectFile(item) },
+                        isSelected = selectedFile?.path == item.path,
                     )
                 }
             }
@@ -217,27 +216,12 @@ private fun WebDavItemRow(
     onOpen: () -> Unit,
     onAddToLibrary: () -> Unit,
     onDownloadToLocal: () -> Unit,
+    onSelectFile: () -> Unit,
+    isSelected: Boolean,
 ) {
-    var isActionDialogOpen by remember { mutableStateOf(false) }
     val clickAction = webDavItemClickAction(item)
     val longPressActions = webDavItemLongPressActions(item)
     val supportingLabel = webDavItemSupportingLabel(item)
-
-    if (isActionDialogOpen) {
-        WebDavFileActionDialog(
-            item = item,
-            actions = longPressActions,
-            onDismiss = { isActionDialogOpen = false },
-            onAddToLibrary = {
-                isActionDialogOpen = false
-                onAddToLibrary()
-            },
-            onDownloadToLocal = {
-                isActionDialogOpen = false
-                onDownloadToLocal()
-            },
-        )
-    }
 
     Surface(
         modifier = Modifier
@@ -250,12 +234,12 @@ private fun WebDavItemRow(
                     }
                 },
                 onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
-                    { isActionDialogOpen = true }
+                    { onSelectFile() }
                 },
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(
             modifier = Modifier
@@ -288,62 +272,6 @@ private fun WebDavItemRow(
             }
         }
     }
-}
-
-@Composable
-private fun WebDavFileActionDialog(
-    item: WebDavItem,
-    actions: List<WebDavFileMenuAction>,
-    onDismiss: () -> Unit,
-    onAddToLibrary: () -> Unit,
-    onDownloadToLocal: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("文件操作") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                actions.forEach { action ->
-                    when (action) {
-                        WebDavFileMenuAction.AddToLibrary -> {
-                            TextButton(
-                                onClick = onAddToLibrary,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text(ComicDavCopy.addToLibrary)
-                            }
-                        }
-                        WebDavFileMenuAction.DownloadToLocal -> {
-                            TextButton(
-                                onClick = onDownloadToLocal,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text("下载到本地")
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-            ) {
-                Text("取消")
-            }
-        },
-    )
 }
 
 @Composable

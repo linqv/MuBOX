@@ -47,7 +47,10 @@ data class LibraryItemEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("libraryItemId")],
+    indices = [
+        Index("libraryItemId"),
+        Index(value = ["uri"], unique = true),
+    ],
 )
 data class LocalComicSourceEntity(
     @PrimaryKey
@@ -68,7 +71,10 @@ data class LocalComicSourceEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("libraryItemId")],
+    indices = [
+        Index("libraryItemId"),
+        Index(value = ["accountId", "remotePath"], unique = true),
+    ],
 )
 data class WebDavComicSourceEntity(
     @PrimaryKey

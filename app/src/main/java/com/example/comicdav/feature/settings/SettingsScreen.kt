@@ -1,6 +1,9 @@
 package com.example.comicdav.feature.settings
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -21,6 +26,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,11 +70,30 @@ fun SettingsScreen(
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
     downloadRecords: List<DownloadRecord> = emptyList(),
+    selectedDownloadRecord: DownloadRecord? = null,
+    onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
+    onClearSelectedDownloadRecord: () -> Unit = {},
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
     onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var isDownloadRecordsOpen by remember { mutableStateOf(false) }
+
+    if (isDownloadRecordsOpen) {
+        DownloadRecordsScreen(
+            records = downloadRecords,
+            selectedRecord = selectedDownloadRecord,
+            onSelectRecord = onSelectDownloadRecord,
+            onBack = {
+                onClearSelectedDownloadRecord()
+                isDownloadRecordsOpen = false
+            },
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -162,12 +187,11 @@ fun SettingsScreen(
                     subtitle = "从 WebDAV 下载到本地后会显示在这里",
                 )
             } else {
-                downloadRecords.take(8).forEach { record ->
-                    StaticInfoRow(
-                        title = record.fileName,
-                        subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n${record.remotePath}",
-                    )
-                }
+                ClickableInfoRow(
+                    title = "下载记录",
+                    subtitle = "${downloadRecords.size} 本漫画，点开查看完整记录",
+                    onClick = { isDownloadRecordsOpen = true },
+                )
             }
         }
 
@@ -215,6 +239,97 @@ fun SettingsScreen(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+@Composable
+private fun DownloadRecordsScreen(
+    records: List<DownloadRecord>,
+    selectedRecord: DownloadRecord?,
+    onSelectRecord: (DownloadRecord) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "下载记录",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (records.isEmpty()) "暂无下载记录" else "${records.size} 本漫画",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onBack) {
+                Text("返回")
+            }
+        }
+
+        if (records.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "从 WebDAV 下载到本地后会显示在这里",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(records, key = { "${it.accountId.orEmpty()}\u001F${it.remotePath}\u001F${it.fileName}" }) { record ->
+                    DownloadRecordRow(
+                        record = record,
+                        isSelected = selectedRecord.sameDownloadRecord(record),
+                        onSelect = { onSelectRecord(record) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DownloadRecordRow(
+    record: DownloadRecord,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onSelect,
+                onLongClickLabel = "下载记录操作",
+            ),
+        shape = MaterialTheme.shapes.medium,
+        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+    ) {
+        StaticInfoRow(
+            title = record.fileName,
+            subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n${record.remotePath}",
+        )
     }
 }
 
@@ -272,6 +387,9 @@ private fun ReaderLoggingMode.label(): String =
 private fun formatDownloadTime(downloadedAtMillis: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(downloadedAtMillis))
 
+private fun DownloadRecord?.sameDownloadRecord(other: DownloadRecord): Boolean =
+    this != null && fileName == other.fileName && remotePath == other.remotePath
+
 @Composable
 private fun SettingsGroup(
     title: String,
@@ -299,6 +417,20 @@ private fun SettingsGroup(
             )
         }
     }
+}
+
+@Composable
+private fun ClickableInfoRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    StaticInfoRow(
+        title = title,
+        subtitle = subtitle,
+        modifier = modifier.clickable(onClick = onClick),
+    )
 }
 
 @Composable

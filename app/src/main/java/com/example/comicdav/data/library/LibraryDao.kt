@@ -45,6 +45,18 @@ abstract class LibraryDao {
     @Query("SELECT * FROM library_items ORDER BY addedAt DESC, id DESC")
     abstract suspend fun getLibrary(): List<LibraryItemWithSources>
 
+    @Query("SELECT libraryItemId FROM local_comic_sources WHERE uri = :uri LIMIT 1")
+    abstract suspend fun findLocalComicId(uri: String): Long?
+
+    @Query("SELECT libraryItemId FROM webdav_comic_sources WHERE accountId = :accountId AND remotePath = :remotePath LIMIT 1")
+    abstract suspend fun findWebDavComicId(accountId: String, remotePath: String): Long?
+
     @Query("UPDATE library_items SET lastOpenedAt = :openedAt WHERE id = :libraryItemId")
     abstract suspend fun updateLastOpened(libraryItemId: Long, openedAt: Long)
+
+    @Query("UPDATE library_items SET coverPath = :coverPath WHERE id = :libraryItemId")
+    abstract suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?)
+
+    @Query("DELETE FROM library_items WHERE id = :libraryItemId")
+    abstract suspend fun deleteLibraryItem(libraryItemId: Long)
 }

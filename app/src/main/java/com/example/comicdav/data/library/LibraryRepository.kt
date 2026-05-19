@@ -25,6 +25,10 @@ interface LibraryCatalog {
     ): Long
 
     suspend fun markOpened(libraryItemId: Long)
+
+    suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?)
+
+    suspend fun removeComic(libraryItemId: Long)
 }
 
 class LibraryRepository(
@@ -37,6 +41,7 @@ class LibraryRepository(
         size: Long?,
         lastModified: Long?,
     ): Long {
+        dao.findLocalComicId(uri)?.let { return it }
         val title = titleFrom(fileName)
         return dao.insertLocalComic(
             item = LibraryItemEntity(
@@ -65,6 +70,7 @@ class LibraryRepository(
         cacheKey: String?,
         coverPath: String?,
     ): Long {
+        dao.findWebDavComicId(accountId, remotePath)?.let { return it }
         val title = titleFrom(fileName)
         return dao.insertWebDavComic(
             item = LibraryItemEntity(
@@ -93,6 +99,14 @@ class LibraryRepository(
 
     override suspend fun markOpened(libraryItemId: Long) {
         dao.updateLastOpened(libraryItemId, clock())
+    }
+
+    override suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?) {
+        dao.updateCoverPath(libraryItemId, coverPath)
+    }
+
+    override suspend fun removeComic(libraryItemId: Long) {
+        dao.deleteLibraryItem(libraryItemId)
     }
 
     private fun titleFrom(fileName: String): String {

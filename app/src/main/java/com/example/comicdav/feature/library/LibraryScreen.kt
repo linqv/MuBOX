@@ -4,8 +4,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,9 +49,11 @@ import java.io.File
 fun LibraryScreen(
     uiState: LibraryUiState,
     onOpenItem: (LibraryItemWithSources) -> Unit,
+    onSelectItem: (LibraryItemWithSources) -> Unit,
     onOpenDirectories: () -> Unit,
     onDismissMessage: () -> Unit,
     coversEnabled: Boolean = true,
+    selectedItemId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -148,7 +152,9 @@ fun LibraryScreen(
                             LibraryCard(
                                 item = item,
                                 onClick = { onOpenItem(item) },
+                                onLongClick = { onSelectItem(item) },
                                 coversEnabled = coversEnabled,
+                                isSelected = selectedItemId == item.item.id,
                             )
                         }
                     }
@@ -193,19 +199,26 @@ private fun EmptyLibrary(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryCard(
     item: LibraryItemWithSources,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     coversEnabled: Boolean,
+    isSelected: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = "书架操作",
+            ),
         shape = RoundedCornerShape(12.dp),
-        color = Color.Transparent,
+        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),

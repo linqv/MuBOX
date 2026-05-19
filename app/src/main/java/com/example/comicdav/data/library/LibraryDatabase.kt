@@ -20,7 +20,7 @@ const val LIBRARY_DATABASE_NAME = "comicdav-library.db"
         WebDavComicSourceEntity::class,
         FileDirectorySourceEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(LibraryTypeConverters::class, FileDirectoryTypeConverters::class)
@@ -38,7 +38,7 @@ fun createLibraryDatabase(
         LibraryDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         .build()
 }
 
@@ -65,5 +65,40 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("ALTER TABLE `file_directory_sources` ADD COLUMN `webDavBaseUrl` TEXT")
         db.execSQL("ALTER TABLE `file_directory_sources` ADD COLUMN `webDavUsername` TEXT")
         db.execSQL("ALTER TABLE `file_directory_sources` ADD COLUMN `webDavPassword` TEXT")
+    }
+}
+
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            DELETE FROM `library_items`
+            WHERE `id` IN (
+                SELECT duplicate.`libraryItemId`
+                FROM `local_comic_sources` AS duplicate
+                WHERE duplicate.`libraryItemId` NOT IN (
+                    SELECT MIN(kept.`libraryItemId`)
+                    FROM `local_comic_sources` AS kept
+                    GROUP BY kept.`uri`
+                )
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            DELETE FROM `library_items`
+            WHERE `id` IN (
+                SELECT duplicate.`libraryItemId`
+                FROM `webdav_comic_sources` AS duplicate
+                WHERE duplicate.`libraryItemId` NOT IN (
+                    SELECT MIN(kept.`libraryItemId`)
+                    FROM `webdav_comic_sources` AS kept
+                    GROUP BY kept.`accountId`, kept.`remotePath`
+                )
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_local_comic_sources_uri` ON `local_comic_sources` (`uri`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_webdav_comic_sources_accountId_remotePath` ON `webdav_comic_sources` (`accountId`, `remotePath`)")
     }
 }

@@ -31,8 +31,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Source
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.collectAsState
@@ -192,6 +196,10 @@ fun ComicDavApp() {
     val selectedTab = remember(selectedTabName) {
         runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
     }
+    var selectedWebDavFile by remember { mutableStateOf<WebDavItem?>(null) }
+    var selectedDirectoryComic by remember { mutableStateOf<FileDirectoryBrowserItem?>(null) }
+    var selectedLibraryItem by remember { mutableStateOf<LibraryItemWithSources?>(null) }
+    var selectedDownloadRecord by remember { mutableStateOf<DownloadRecord?>(null) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
     var webDavActionMessage by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<DownloadProgressUi?>(null) }
@@ -214,6 +222,12 @@ fun ComicDavApp() {
     val downloadRecordStore = remember(context) { DownloadRecordStore(context.downloadRecordsDataStore) }
     val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings())
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
+    fun clearSelection() {
+        selectedWebDavFile = null
+        selectedDirectoryComic = null
+        selectedLibraryItem = null
+        selectedDownloadRecord = null
+    }
     fun refreshCacheAnalysis() {
         scope.launch {
             cacheAnalysis = withContext(Dispatchers.IO) {
@@ -517,6 +531,7 @@ fun ComicDavApp() {
                             remotePath = item.path,
                             sizeBytes = sizeBytes,
                             downloadedAtMillis = System.currentTimeMillis(),
+                            accountId = accountId,
                         ),
                     )
                     refreshCacheAnalysis()
@@ -531,6 +546,198 @@ fun ComicDavApp() {
                     fileDirectoryViewModel.showError(error.message ?: "下载到本地失败")
                 },
             )
+        }
+    }
+
+    suspend fun webDavClientForAccount(accountId: String): com.example.comicdav.network.WebDavClient? {
+        val activeClient = webDavViewModel.activeClient()
+        if (activeClient != null && webDavViewModel.activeAccountId() == accountId) {
+            return activeClient
+        }
+        val savedAccount = webDavAccountStore.loadAccount(accountId) ?: return null
+        webDavViewModel.connectToSavedSource(
+            baseUrl = savedAccount.baseUrl,
+            username = savedAccount.username,
+            password = savedAccount.password,
+            path = "/",
+        )
+        return webDavViewModel.activeClient()
+    }
+
+    fun downloadRemoteComicToLocal(
+        accountId: String,
+        remotePath: String,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+        onSuccess: (String) -> Unit,
+        onFailure: (String) -> Unit,
+    ) {
+        downloadProgress = null
+        localOpenError = null
+        webDavActionMessage = null
+        scope.launch {
+            runCatching {
+                val client = webDavClientForAccount(accountId) ?: error("请先连接 $accountId，再下载漫画")
+                val info = size?.let { knownSize ->
+                    RemoteFileInfo(
+                        path = remotePath,
+                        size = knownSize,
+                        etag = etag,
+                        lastModified = lastModified,
+                        supportsRange = true,
+                    )
+                } ?: client.head(remotePath)
+                val key = ComicCacheKey.fromRemote(
+                    accountId = accountId,
+                    remotePath = remotePath,
+                    size = info.size,
+                    etag = info.etag,
+                    lastModified = info.lastModified,
+                )
+                remoteCache.download(
+                    client = client,
+                    remotePath = remotePath,
+                    key = key,
+                    expectedSize = info.size,
+                ) { downloaded, total ->
+                    scope.launch {
+                        downloadProgress = DownloadProgressUi(downloaded, total)
+                    }
+                }
+                info.size
+            }.fold(
+                onSuccess = { sizeBytes ->
+                    downloadRecordStore.addRecord(
+                        DownloadRecord(
+                            fileName = fileName,
+                            remotePath = remotePath,
+                            sizeBytes = sizeBytes,
+                            downloadedAtMillis = System.currentTimeMillis(),
+                            accountId = accountId,
+                        ),
+                    )
+                    refreshCacheAnalysis()
+                    downloadProgress = null
+                    onSuccess("已下载 $fileName 到本地")
+                },
+                onFailure = { error ->
+                    downloadProgress = null
+                    ReaderDiagnosticLog.error("download_remote_comic_failed path=$remotePath", error)
+                    onFailure(error.message ?: "下载到本地失败")
+                },
+            )
+        }
+    }
+
+    fun downloadLibraryWebDavComic(item: LibraryItemWithSources) {
+        val source = item.webDavSource ?: run {
+            libraryViewModel.showError("本地漫画无需下载")
+            return
+        }
+        downloadRemoteComicToLocal(
+            accountId = source.accountId,
+            remotePath = source.remotePath,
+            fileName = source.fileName,
+            size = source.size,
+            etag = source.etag,
+            lastModified = source.lastModified,
+            onSuccess = { message ->
+                libraryViewModel.showMessage(message)
+            },
+            onFailure = { message ->
+                libraryViewModel.showError(message)
+            },
+        )
+    }
+
+    fun removeLibraryItem(item: LibraryItemWithSources) {
+        scope.launch {
+            runCatching {
+                libraryRepository.removeComic(item.item.id)
+            }.fold(
+                onSuccess = {
+                    selectedLibraryItem = null
+                    libraryViewModel.showMessage("已将 ${item.item.displayName} 移出书架")
+                },
+                onFailure = { error ->
+                    libraryViewModel.showError(error.message ?: "移出书架失败")
+                },
+            )
+        }
+    }
+
+    fun refreshLibraryCover(item: LibraryItemWithSources) {
+        val source = item.webDavSource ?: run {
+            libraryViewModel.showError("本地漫画暂不支持重新获取封面")
+            return
+        }
+        scope.launch {
+            runCatching {
+                val client = webDavClientForAccount(source.accountId) ?: error("请先连接 ${source.accountId}，再重新获取封面")
+                coverExtractor.extractFirstPageCover(
+                    client = client,
+                    accountId = source.accountId,
+                    remotePath = source.remotePath,
+                    knownInfo = source.size?.let { knownSize ->
+                        RemoteFileInfo(
+                            path = source.remotePath,
+                            size = knownSize,
+                            etag = source.etag,
+                            lastModified = source.lastModified,
+                            supportsRange = true,
+                        )
+                    },
+                )
+            }.fold(
+                onSuccess = { coverPath ->
+                    libraryRepository.updateCoverPath(item.item.id, coverPath)
+                    selectedLibraryItem = null
+                    refreshCacheAnalysis()
+                    libraryViewModel.showMessage("已重新获取 ${item.item.displayName} 的封面")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("refresh_library_cover_failed id=${item.item.id}", error)
+                    libraryViewModel.showError(error.message ?: "重新获取封面失败")
+                },
+            )
+        }
+    }
+
+    fun addDownloadRecordToLibrary(record: DownloadRecord) {
+        val accountId = record.accountId
+            ?: webDavViewModel.activeAccountId()
+            ?: webDavViewModel.accountId().takeIf { it.substringBefore("|").isNotBlank() }
+        if (accountId.isNullOrBlank()) {
+            localOpenError = "这条下载记录缺少 WebDAV 账号，请先连接对应账号"
+            return
+        }
+        scope.launch {
+            runCatching {
+                libraryRepository.addWebDavComic(
+                    accountId = accountId,
+                    remotePath = record.remotePath,
+                    fileName = record.fileName,
+                    size = record.sizeBytes,
+                )
+            }.fold(
+                onSuccess = {
+                    selectedDownloadRecord = null
+                    libraryViewModel.showMessage("已将 ${record.fileName} 加入书架")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("add_download_record_to_library_failed path=${record.remotePath}", error)
+                    localOpenError = error.message ?: "加入书架失败"
+                },
+            )
+        }
+    }
+
+    fun deleteDownloadRecord(record: DownloadRecord) {
+        scope.launch {
+            downloadRecordStore.removeRecord(record)
+            selectedDownloadRecord = null
         }
     }
 
@@ -634,12 +841,20 @@ fun ComicDavApp() {
     }
 
     BackHandler(
-        enabled = isReaderOpen ||
+        enabled = selectedWebDavFile != null ||
+            selectedDirectoryComic != null ||
+            selectedLibraryItem != null ||
+            selectedDownloadRecord != null ||
+            isReaderOpen ||
             isWebDavOpen ||
             fileDirectoryUiState.currentTitle != null ||
             selectedTab != AppTab.SOURCES,
     ) {
         when {
+            selectedWebDavFile != null ||
+                selectedDirectoryComic != null ||
+                selectedLibraryItem != null ||
+                selectedDownloadRecord != null -> clearSelection()
             isReaderOpen -> closeReaderFromNavigation()
             isWebDavOpen -> {
                 if (!webDavViewModel.handleBack()) {
@@ -726,7 +941,35 @@ fun ComicDavApp() {
                             selectedTabName = tab.name
                             localOpenError = null
                             webDavActionMessage = null
+                            clearSelection()
                         },
+                        bottomBar = selectionBottomBar(
+                            selectedWebDavFile = selectedWebDavFile,
+                            selectedDirectoryComic = selectedDirectoryComic,
+                            selectedLibraryItem = selectedLibraryItem,
+                            selectedDownloadRecord = selectedDownloadRecord,
+                            onDownloadWebDavFile = { item ->
+                                clearSelection()
+                                downloadWebDavComicToLocal(item)
+                            },
+                            onAddWebDavFileToLibrary = { item ->
+                                clearSelection()
+                                favoriteWebDavComic(item)
+                            },
+                            onAddDirectoryComicToLibrary = { item ->
+                                clearSelection()
+                                favoriteLocalDirectoryComic(item)
+                            },
+                            onRemoveLibraryItem = ::removeLibraryItem,
+                            onRefreshLibraryCover = ::refreshLibraryCover,
+                            onDownloadLibraryItem = { item ->
+                                selectedLibraryItem = null
+                                downloadLibraryWebDavComic(item)
+                            },
+                            onDeleteDownloadRecord = ::deleteDownloadRecord,
+                            onAddDownloadRecordToLibrary = ::addDownloadRecordToLibrary,
+                            onCancel = ::clearSelection,
+                        ),
                     ) { contentModifier ->
                         when (selectedTab) {
                             AppTab.SOURCES -> {
@@ -749,6 +992,12 @@ fun ComicDavApp() {
                                             },
                                             onAddToLibrary = ::favoriteWebDavComic,
                                             onDownloadToLocal = ::downloadWebDavComicToLocal,
+                                            onSelectFile = { item ->
+                                                selectedWebDavFile = item
+                                                selectedDirectoryComic = null
+                                                selectedLibraryItem = null
+                                                selectedDownloadRecord = null
+                                            },
                                             onSaveDirectory = {
                                                 val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
                                                 fileDirectoryViewModel.addWebDavDirectory(
@@ -775,6 +1024,7 @@ fun ComicDavApp() {
                                             onCancelDownload = {
                                                 downloadProgress = null
                                             },
+                                            selectedFile = selectedWebDavFile,
                                             modifier = contentModifier,
                                         )
                                     } else {
@@ -901,7 +1151,12 @@ fun ComicDavApp() {
                                         },
                                         onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
                                         onOpenComic = ::openLocalDirectoryComic,
-                                        onFavoriteComic = ::favoriteLocalDirectoryComic,
+                                        onSelectComic = { item ->
+                                            selectedDirectoryComic = item
+                                            selectedWebDavFile = null
+                                            selectedLibraryItem = null
+                                            selectedDownloadRecord = null
+                                        },
                                         onGoUp = fileDirectoryViewModel::goUp,
                                         onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
                                         onDismissMessage = {
@@ -929,6 +1184,7 @@ fun ComicDavApp() {
                                             localOpenError = null
                                             webDavActionMessage = null
                                         },
+                                        selectedComic = selectedDirectoryComic,
                                         modifier = contentModifier,
                                     )
                                 }
@@ -958,6 +1214,12 @@ fun ComicDavApp() {
                                             }
                                         }
                                     },
+                                    onSelectItem = { item ->
+                                        selectedLibraryItem = item
+                                        selectedWebDavFile = null
+                                        selectedDirectoryComic = null
+                                        selectedDownloadRecord = null
+                                    },
                                     onOpenDirectories = {
                                         localOpenError = null
                                         selectedTabName = AppTab.SOURCES.name
@@ -967,6 +1229,7 @@ fun ComicDavApp() {
                                         libraryViewModel.clearMessage()
                                     },
                                     coversEnabled = appSettings.libraryCoversEnabled,
+                                    selectedItemId = selectedLibraryItem?.item?.id,
                                     modifier = contentModifier,
                                 )
                             }
@@ -1004,6 +1267,16 @@ fun ComicDavApp() {
                                         scope.launch { appSettingsStore.updateLibraryCoversEnabled(value) }
                                     },
                                     downloadRecords = downloadRecords,
+                                    selectedDownloadRecord = selectedDownloadRecord,
+                                    onSelectDownloadRecord = { record ->
+                                        selectedDownloadRecord = record
+                                        selectedWebDavFile = null
+                                        selectedDirectoryComic = null
+                                        selectedLibraryItem = null
+                                    },
+                                    onClearSelectedDownloadRecord = {
+                                        selectedDownloadRecord = null
+                                    },
                                     cacheAnalysis = cacheAnalysis,
                                     cacheActionMessage = cacheActionMessage,
                                     onClearCacheCategory = { category ->
@@ -1062,6 +1335,7 @@ private fun ComicDavAppShell(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
+    bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
     Column(
@@ -1072,28 +1346,117 @@ private fun ComicDavAppShell(
         Box(modifier = Modifier.weight(1f)) {
             content(Modifier.fillMaxSize())
         }
-        NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp,
-        ) {
-            AppTab.values().forEach { tab ->
-                NavigationBarItem(
-                    selected = selectedTab == tab,
-                    onClick = { onTabSelected(tab) },
-                    icon = {
-                        Icon(
-                            imageVector = tab.iconVector,
-                            contentDescription = tab.label,
-                        )
-                    },
-                    label = {
-                        Text(
-                            text = tab.label,
-                            maxLines = 1,
-                        )
-                    },
-                )
+        if (bottomBar != null) {
+            bottomBar()
+        } else {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
+            ) {
+                AppTab.values().forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { onTabSelected(tab) },
+                        icon = {
+                            Icon(
+                                imageVector = tab.iconVector,
+                                contentDescription = tab.label,
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = tab.label,
+                                maxLines = 1,
+                            )
+                        },
+                    )
+                }
             }
+        }
+    }
+}
+
+private data class SelectionAction(
+    val label: String,
+    val icon: ImageVector,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+private fun selectionBottomBar(
+    selectedWebDavFile: WebDavItem?,
+    selectedDirectoryComic: FileDirectoryBrowserItem?,
+    selectedLibraryItem: LibraryItemWithSources?,
+    selectedDownloadRecord: DownloadRecord?,
+    onDownloadWebDavFile: (WebDavItem) -> Unit,
+    onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
+    onAddDirectoryComicToLibrary: (FileDirectoryBrowserItem) -> Unit,
+    onRemoveLibraryItem: (LibraryItemWithSources) -> Unit,
+    onRefreshLibraryCover: (LibraryItemWithSources) -> Unit,
+    onDownloadLibraryItem: (LibraryItemWithSources) -> Unit,
+    onDeleteDownloadRecord: (DownloadRecord) -> Unit,
+    onAddDownloadRecordToLibrary: (DownloadRecord) -> Unit,
+    onCancel: () -> Unit,
+): (@Composable () -> Unit)? {
+    val actions = when {
+        selectedWebDavFile != null -> listOf(
+            SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavFile(selectedWebDavFile) },
+            SelectionAction("加入书架", Icons.Filled.Book) { onAddWebDavFileToLibrary(selectedWebDavFile) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+        )
+        selectedDirectoryComic != null -> listOf(
+            SelectionAction("加入书架", Icons.Filled.Book) { onAddDirectoryComicToLibrary(selectedDirectoryComic) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+        )
+        selectedLibraryItem != null -> {
+            val isWebDav = selectedLibraryItem.webDavSource != null
+            listOf(
+                SelectionAction("移除", Icons.Filled.Delete) { onRemoveLibraryItem(selectedLibraryItem) },
+                SelectionAction("重新获取封面", Icons.Filled.Refresh, enabled = isWebDav) {
+                    onRefreshLibraryCover(selectedLibraryItem)
+                },
+                SelectionAction("下载", Icons.Filled.Download, enabled = isWebDav) {
+                    onDownloadLibraryItem(selectedLibraryItem)
+                },
+                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+            )
+        }
+        selectedDownloadRecord != null -> listOf(
+            SelectionAction("删除", Icons.Filled.Delete) { onDeleteDownloadRecord(selectedDownloadRecord) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+            SelectionAction("加入书架", Icons.Filled.Book) { onAddDownloadRecordToLibrary(selectedDownloadRecord) },
+        )
+        else -> return null
+    }
+    return {
+        SelectionNavigationBar(actions = actions)
+    }
+}
+
+@Composable
+private fun SelectionNavigationBar(actions: List<SelectionAction>) {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+    ) {
+        actions.forEach { action ->
+            NavigationBarItem(
+                selected = false,
+                enabled = action.enabled,
+                onClick = action.onClick,
+                icon = {
+                    Icon(
+                        imageVector = action.icon,
+                        contentDescription = action.label,
+                    )
+                },
+                label = {
+                    Text(
+                        text = action.label,
+                        maxLines = 1,
+                    )
+                },
+            )
         }
     }
 }
