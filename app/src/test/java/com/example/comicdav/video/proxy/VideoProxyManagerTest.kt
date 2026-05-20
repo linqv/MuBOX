@@ -76,6 +76,24 @@ class VideoProxyManagerTest {
         VideoProxyManager.close(second.streamId)
     }
 
+    @Test
+    fun closingUnknownStreamDoesNotShutdownActiveProxy() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-0/1")
+                .setBody("a"),
+        )
+
+        val session = VideoProxyManager.open(request = request(size = 1), account = account())
+        VideoProxyManager.close("missing-stream")
+        try {
+            assertArrayEquals("a".toByteArray(), httpRequest(session.url, range = "bytes=0-0").body)
+        } finally {
+            VideoProxyManager.close(session.streamId)
+        }
+    }
+
     private fun request(size: Long): WebDavVideoOpenRequest =
         WebDavVideoOpenRequest(
             accountId = account().accountId,

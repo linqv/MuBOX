@@ -8,9 +8,17 @@ import com.example.comicdav.network.WebDavStreamResponse
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,6 +29,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MuBoxVideoProxyTest {
@@ -105,6 +114,19 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun suffixRangeReturnsTailBytes() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val url = startProxy(client = client, size = 10L)
+
+        val response = httpRequest(url, method = "GET", range = "bytes=-4")
+
+        assertEquals(206, response.code)
+        assertEquals("bytes 6-9/10", response.headers["Content-Range"])
+        assertEquals(listOf(6L to 9L), client.openRangeCalls)
+        assertArrayEquals("6789".toByteArray(), response.body)
+    }
+
+    @Test
     fun invalidRangeReturnsRangeNotSatisfiable() = runTest {
         val client = RecordingClient("0123456789".toByteArray())
         val url = startProxy(client = client, size = 10L)
@@ -126,6 +148,67 @@ class MuBoxVideoProxyTest {
         val response = httpRequest(streamUrl, method = "GET")
 
         assertEquals(404, response.code)
+    }
+
+    @Test
+    fun unregisterClosesActiveStreamResponse() = runTest {
+        val input = BlockingInputStream()
+        val client = BlockingStreamClient(input)
+        val streamUrl = startProxy(client = client, size = 10L)
+        val streamId = streamUrl.substringAfterLast('/')
+        val requestThread = thread(start = true) {
+            runCatching {
+                httpRequest(streamUrl, method = "GET", range = "bytes=0-")
+            }
+        }
+        assertTrue(input.readStarted.await(2, TimeUnit.SECONDS))
+
+        proxy?.unregister(streamId)
+        val closedByUnregister = input.closed.await(500, TimeUnit.MILLISECONDS)
+        input.forceClose()
+        requestThread.join(1_000)
+
+        assertTrue("unregister should close active stream response", closedByUnregister)
+    }
+
+    @Test
+    fun clientDisconnectDuringRangeStreamDoesNotBreakProxy() = runTest {
+        val exceptionCount = AtomicInteger(0)
+        val localScope = CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.IO +
+                CoroutineExceptionHandler { _, _ -> exceptionCount.incrementAndGet() },
+        )
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient(ByteArray(256 * 1024) { (it % 251).toByte() }) },
+            coroutineScope = localScope,
+            portRange = 0..0,
+        )
+        try {
+            localProxy.start()
+            val streamUrl = localProxy.register(
+                WebDavVideoOpenRequest(
+                    accountId = "account-1",
+                    remotePath = "/video.mp4",
+                    displayName = "video.mp4",
+                    size = 256L * 1024L,
+                    etag = null,
+                    lastModified = null,
+                    mimeType = "video/mp4",
+                ),
+            )
+            abortStreamingRequest(streamUrl)
+            Thread.sleep(200)
+
+            val response = httpRequest(streamUrl, method = "GET", range = "bytes=0-3")
+
+            assertEquals(0, exceptionCount.get())
+            assertEquals(206, response.code)
+            assertEquals("bytes 0-3/262144", response.headers["Content-Range"])
+        } finally {
+            localProxy.close()
+            localScope.cancel()
+        }
     }
 
     @Test
@@ -210,6 +293,25 @@ class MuBoxVideoProxyTest {
         return HttpResponse(code, headers, body)
     }
 
+    private fun abortStreamingRequest(url: String) {
+        val parsed = URL(url)
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.setSoLinger(true, 0)
+            socket.getOutputStream().write(
+                buildString {
+                    append("GET ${parsed.path} HTTP/1.1\r\n")
+                    append("Host: ${parsed.host}:${parsed.port}\r\n")
+                    append("Range: bytes=0-\r\n")
+                    append("Connection: close\r\n")
+                    append("\r\n")
+                }.toByteArray(),
+            )
+            socket.getOutputStream().flush()
+            val buffer = ByteArray(256)
+            socket.getInputStream().read(buffer)
+        }
+    }
+
     private data class HttpResponse(
         val code: Int,
         val headers: Map<String, String>,
@@ -283,6 +385,61 @@ class MuBoxVideoProxyTest {
                 close = {},
             )
         }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+    }
+
+    private class BlockingInputStream : InputStream() {
+        val readStarted = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        private val isClosed = AtomicBoolean(false)
+
+        override fun read(): Int {
+            readStarted.countDown()
+            while (!isClosed.get()) {
+                Thread.sleep(10)
+            }
+            return -1
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = read()
+
+        override fun close() {
+            forceClose()
+        }
+
+        fun forceClose() {
+            isClosed.set(true)
+            closed.countDown()
+        }
+    }
+
+    private class BlockingStreamClient(
+        private val input: BlockingInputStream,
+    ) : WebDavClient {
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 10L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("readRange is not used by video proxy tests")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse =
+            WebDavStreamResponse(
+                stream = input,
+                statusCode = 206,
+                contentLength = 10L,
+                contentRange = ContentRange(start, endInclusive ?: 9L, 10L),
+                contentType = "video/mp4",
+                totalSize = 10L,
+                close = input::close,
+            )
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by video proxy tests")

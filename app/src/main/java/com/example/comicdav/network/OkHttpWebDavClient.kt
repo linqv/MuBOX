@@ -86,15 +86,20 @@ class OkHttpWebDavClient(
                 }
                 try {
                     val contentRangeHeader = response.header("Content-Range")
-                    val parsedRange = parseContentRange(contentRangeHeader)
-                    validateContentRange(
+                    val parsedRange = validateContentRange(
                         header = contentRangeHeader,
                         expectedStart = start,
                         expectedEndInclusive = endInclusive,
                     )
-                    val totalSize = parsedRange?.totalSize?.takeIf { it >= 0 }
-                    val contentLength = body.contentLength().takeIf { it >= 0 }
-                        ?: (parsedRange?.let { it.endInclusive - it.start + 1 } ?: body.bytes().size.toLong())
+                    val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
+                    val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
+                    val declaredContentLength = body.contentLength()
+                    if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
+                        throw WebDavException.InvalidContentRange(
+                            "Expected response body length $expectedContentLength but got $declaredContentLength",
+                        )
+                    }
+                    val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
                     val stream = body.byteStream()
                     val close = { response.close() }
                     WebDavStreamResponse(
@@ -218,9 +223,19 @@ class OkHttpWebDavClient(
         header: String?,
         expectedStart: Long,
         expectedEndInclusive: Long?,
-    ) {
+    ): ContentRange {
         val parsed = parseContentRange(header)
             ?: throw WebDavException.InvalidContentRange("Missing or invalid Content-Range header: ${header ?: "<null>"}")
+        if (parsed.endInclusive < parsed.start) {
+            throw WebDavException.InvalidContentRange(
+                "Content-Range end is before start in ${header ?: "<null>"}",
+            )
+        }
+        if (parsed.totalSize >= 0 && parsed.endInclusive >= parsed.totalSize) {
+            throw WebDavException.InvalidContentRange(
+                "Content-Range end ${parsed.endInclusive} is outside total size ${parsed.totalSize}",
+            )
+        }
         if (parsed.start != expectedStart) {
             throw WebDavException.InvalidContentRange(
                 "Expected Content-Range start $expectedStart but got ${parsed.start} in ${header ?: "<null>"}",
@@ -231,6 +246,7 @@ class OkHttpWebDavClient(
                 "Expected Content-Range end $expectedEndInclusive but got ${parsed.endInclusive} in ${header ?: "<null>"}",
             )
         }
+        return parsed
     }
 
     private suspend fun <T> WebDavStreamResponse.useResponse(block: suspend (WebDavStreamResponse) -> T): T {

@@ -1,8 +1,11 @@
 package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.shouldShowWebDavAccountForm
 import com.example.comicdav.video.MediaKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebDavMediaFilterTest {
@@ -48,6 +51,38 @@ class WebDavMediaFilterTest {
         assertEquals(MediaKind.Directory, item("folder", isDirectory = true).mediaKind)
         assertEquals(MediaKind.Video, item("movie.webm").mediaKind)
         assertEquals(MediaKind.Unknown, item("notes.txt").mediaKind)
+    }
+
+    @Test
+    fun accountFormOnlyShowsWhenAddingOrEditingWebDavSource() {
+        assertTrue(
+            shouldShowWebDavAccountForm(
+                isAddingWebDavPath = true,
+                editingWebDavSourceId = null,
+                webDavStatus = WEB_DAV_STATUS_NOT_CONNECTED,
+            ),
+        )
+        assertTrue(
+            shouldShowWebDavAccountForm(
+                isAddingWebDavPath = false,
+                editingWebDavSourceId = 7L,
+                webDavStatus = WEB_DAV_STATUS_NOT_CONNECTED,
+            ),
+        )
+        assertFalse(
+            shouldShowWebDavAccountForm(
+                isAddingWebDavPath = false,
+                editingWebDavSourceId = null,
+                webDavStatus = WEB_DAV_STATUS_NOT_CONNECTED,
+            ),
+        )
+        assertFalse(
+            shouldShowWebDavAccountForm(
+                isAddingWebDavPath = false,
+                editingWebDavSourceId = null,
+                webDavStatus = WEB_DAV_STATUS_CONNECTED,
+            ),
+        )
     }
 
     private fun item(name: String, isDirectory: Boolean = false): WebDavItem =

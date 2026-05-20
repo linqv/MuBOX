@@ -61,9 +61,7 @@ class MuBoxVideoProxy(
         return "$baseUrl/stream/$streamId"
     }
 
-    fun unregister(streamId: String) {
-        registry.remove(streamId)
-    }
+    fun unregister(streamId: String): Boolean = registry.remove(streamId) != null
 
     private fun bindPort(): ServerSocket {
         var lastError: IOException? = null
@@ -85,6 +83,12 @@ class MuBoxVideoProxy(
             coroutineScope.launch(Dispatchers.IO) {
                 try {
                     handleConnection(client)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: IOException) {
+                    logClientDisconnect(error)
+                } catch (error: Exception) {
+                    logConnectionFailure(error)
                 } finally {
                     client.close()
                 }
@@ -184,6 +188,11 @@ class MuBoxVideoProxy(
             writeResponse(output, 502, emptyMap(), null)
             return
         }
+        val responseCloseable = Closeable { response.close() }
+        if (!registry.addActive(entry.streamId, responseCloseable)) {
+            writeResponse(output, 404, emptyMap(), null)
+            return
+        }
         try {
             val statusCode = if (range == null) 200 else 206
             val contentRange = if (statusCode == 206) {
@@ -210,15 +219,24 @@ class MuBoxVideoProxy(
                 response.stream,
             )
         } finally {
-            response.close()
+            registry.removeActive(entry.streamId, responseCloseable)
+            responseCloseable.close()
         }
     }
 
     private fun parseRange(rangeHeader: String?, totalSize: Long): ParsedRange? {
         val value = rangeHeader ?: return null
         val match = RANGE_REGEX.matchEntire(value.trim()) ?: return ParsedRange.Invalid
-        val start = match.groupValues[1].toLongOrNull() ?: return ParsedRange.Invalid
-        val end = match.groupValues[2].takeIf { it.isNotBlank() }?.toLongOrNull()
+        val startValue = match.groupValues[1]
+        val endValue = match.groupValues[2]
+        if (startValue.isBlank()) {
+            val suffixLength = endValue.toLongOrNull() ?: return ParsedRange.Invalid
+            if (suffixLength <= 0 || totalSize <= 0) return ParsedRange.Invalid
+            val start = (totalSize - suffixLength).coerceAtLeast(0L)
+            return ParsedRange.Valid(start = start, endInclusive = totalSize - 1)
+        }
+        val start = startValue.toLongOrNull() ?: return ParsedRange.Invalid
+        val end = endValue.takeIf { it.isNotBlank() }?.toLongOrNull()
         if (start < 0 || start >= totalSize) return ParsedRange.Invalid
         if (end != null && end < start) return ParsedRange.Invalid
         val boundedEnd = (end ?: (start + DEFAULT_STREAM_CHUNK_BYTES - 1)).coerceAtMost(totalSize - 1)
@@ -259,6 +277,14 @@ class MuBoxVideoProxy(
         )
     }
 
+    private fun logClientDisconnect(error: IOException) {
+        System.err.println("Video proxy client disconnected: ${error.message ?: error::class.java.simpleName}")
+    }
+
+    private fun logConnectionFailure(error: Throwable) {
+        System.err.println("Video proxy connection failed: ${error.message ?: error::class.java.simpleName}")
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         acceptJob?.cancel()
@@ -274,6 +300,6 @@ class MuBoxVideoProxy(
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_CHUNK_BYTES = 8L * 1024L * 1024L
-        private val RANGE_REGEX = Regex("bytes=(\\d+)-(\\d*)")
+        private val RANGE_REGEX = Regex("bytes=(\\d*)-(\\d*)", RegexOption.IGNORE_CASE)
     }
 }

@@ -1,6 +1,5 @@
 package com.example.comicdav.network
 
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 
@@ -12,16 +11,9 @@ interface WebDavClient {
         path: String,
         start: Long,
         endInclusive: Long? = null,
-    ): WebDavStreamResponse =
-        WebDavStreamResponse(
-            stream = ByteArrayInputStream(readRange(path, start, endInclusive ?: Long.MAX_VALUE)),
-            statusCode = if (endInclusive == null) 200 else 206,
-            contentLength = -1L,
-            contentRange = null,
-            contentType = null,
-            totalSize = null,
-            close = {},
-        )
+    ): WebDavStreamResponse {
+        throw UnsupportedOperationException("Streaming range reads are not supported by this WebDavClient")
+    }
     suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long
 }
 

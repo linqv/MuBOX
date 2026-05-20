@@ -44,8 +44,8 @@ object VideoProxyManager {
     }
 
     fun close(streamId: String) {
-        proxy?.unregister(streamId)
-        if (activeSessions.updateAndGet { current -> (current - 1).coerceAtLeast(0) } <= 0) {
+        val removed = proxy?.unregister(streamId) == true
+        if (removed && activeSessions.updateAndGet { current -> (current - 1).coerceAtLeast(0) } <= 0) {
             shutdown()
         }
     }
