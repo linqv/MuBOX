@@ -68,6 +68,7 @@ import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.ReaderLoggingMode
+import com.example.comicdav.data.SavedWebDavAccount
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.analyzeComicCache
 import com.example.comicdav.data.clearComicCacheCategory
@@ -110,6 +111,7 @@ import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
+import com.example.comicdav.video.proxy.VideoProxyManager
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -570,23 +572,7 @@ fun ComicDavApp() {
         }
     }
 
-    fun openWebDavVideo(item: WebDavItem) {
-        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-        pendingLocalVideoOpen = null
-        pendingWebDavVideoOpen = WebDavVideoOpenRequest(
-            accountId = accountId,
-            remotePath = item.path,
-            displayName = item.name,
-            size = item.size,
-            etag = item.etag,
-            lastModified = item.lastModified,
-            mimeType = mimeTypeForMediaFileName(item.name),
-        )
-        localOpenError = null
-        webDavActionMessage = "已进入内部视频打开流程：${item.name}"
-    }
-
-    suspend fun webDavClientForAccount(accountId: String): com.example.comicdav.network.WebDavClient? {
+    suspend fun resolveWebDavClientForAccount(accountId: String): com.example.comicdav.network.WebDavClient? {
         val activeClient = webDavViewModel.activeClient()
         if (activeClient != null && webDavViewModel.activeAccountId() == accountId) {
             return activeClient
@@ -599,6 +585,58 @@ fun ComicDavApp() {
             path = "/",
         )
         return webDavViewModel.activeClient()
+    }
+
+    suspend fun resolveWebDavAccountForPlayback(accountId: String): SavedWebDavAccount? {
+        webDavAccountStore.loadAccount(accountId)?.let { return it }
+        val activeAccountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val baseUrl = uiState.baseUrl.trim()
+        if (activeAccountId != accountId || baseUrl.isBlank()) return null
+        return SavedWebDavAccount(
+            accountId = accountId,
+            baseUrl = baseUrl,
+            username = uiState.username,
+            password = uiState.password,
+        )
+    }
+
+    fun openWebDavVideo(item: WebDavItem) {
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val request = WebDavVideoOpenRequest(
+            accountId = accountId,
+            remotePath = item.path,
+            displayName = item.name,
+            size = item.size,
+            etag = item.etag,
+            lastModified = item.lastModified,
+            mimeType = mimeTypeForMediaFileName(item.name),
+        )
+        pendingLocalVideoOpen = null
+        pendingWebDavVideoOpen = request
+        localOpenError = null
+        webDavActionMessage = "已进入内部视频打开流程：${item.name}"
+        scope.launch {
+            runCatching {
+                val account = resolveWebDavAccountForPlayback(accountId)
+                    ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
+                val session = VideoProxyManager.open(
+                    request = request,
+                    account = account,
+                )
+                context.startActivity(
+                    VideoPlayerActivity.webDavIntent(
+                        context = context,
+                        uri = session.url,
+                        displayName = item.name,
+                        size = item.size,
+                        lastModified = item.lastModified,
+                    ),
+                )
+            }.onFailure { error ->
+                localOpenError = error.message ?: "打开视频失败"
+                webDavActionMessage = null
+            }
+        }
     }
 
     fun downloadRemoteComicToLocal(
@@ -616,7 +654,7 @@ fun ComicDavApp() {
         webDavActionMessage = null
         scope.launch {
             runCatching {
-                val client = webDavClientForAccount(accountId) ?: error("请先连接 $accountId，再下载漫画")
+                val client = resolveWebDavClientForAccount(accountId) ?: error("请先连接 $accountId，再下载漫画")
                 val info = size?.let { knownSize ->
                     RemoteFileInfo(
                         path = remotePath,
@@ -712,7 +750,7 @@ fun ComicDavApp() {
         }
         scope.launch {
             runCatching {
-                val client = webDavClientForAccount(source.accountId) ?: error("请先连接 ${source.accountId}，再重新获取封面")
+                val client = resolveWebDavClientForAccount(source.accountId) ?: error("请先连接 ${source.accountId}，再重新获取封面")
                 coverExtractor.extractFirstPageCover(
                     client = client,
                     accountId = source.accountId,

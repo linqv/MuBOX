@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
+import com.example.comicdav.video.proxy.VideoProxyManager
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
@@ -51,6 +52,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var mpvObserverRegistered = false
     private var mpvInitialized = false
     private var isCleaningUp = false
+    private var webDavStreamId: String? = null
 
     private val mpvObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) = Unit
@@ -90,9 +92,13 @@ class VideoPlayerActivity : ComponentActivity() {
 
         val uri = intent.getStringExtra(EXTRA_URI)
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: intent.data?.lastPathSegment ?: "视频"
+        val source = intent.getStringExtra(EXTRA_SOURCE)
         if (uri.isNullOrBlank()) {
             finish()
             return
+        }
+        if (source == SOURCE_WEB_DAV) {
+            webDavStreamId = uri.substringAfterLast('/').takeIf { it.isNotBlank() }
         }
 
         mpvView = MuBoxMpvView.create(this)
@@ -153,6 +159,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     audioFocusController.abandon()
                 }
             }
+            webDavStreamId?.let { VideoProxyManager.close(it) }
+            webDavStreamId = null
             if (mpvObserverRegistered) {
                 MPVLib.removeObserver(mpvObserver)
                 mpvObserverRegistered = false
@@ -173,7 +181,11 @@ class VideoPlayerActivity : ComponentActivity() {
             mpvInitialized = true
             MPVLib.addObserver(mpvObserver)
             mpvObserverRegistered = true
-            val playableUri = LocalVideoUriResolver(this).resolve(uri)
+            val playableUri = if (intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV) {
+                uri
+            } else {
+                LocalVideoUriResolver(this).resolve(uri)
+            }
             if (audioFocusController.request()) {
                 controller.load(playableUri, displayName)
             } else {
@@ -200,6 +212,22 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_DISPLAY_NAME, request.displayName)
                 .putExtra(EXTRA_SIZE, request.size ?: -1L)
                 .putExtra(EXTRA_LAST_MODIFIED, request.lastModified ?: -1L)
+
+        fun webDavIntent(
+            context: Context,
+            uri: String,
+            displayName: String,
+            size: Long?,
+            lastModified: Long?,
+        ): Intent =
+            Intent(context, VideoPlayerActivity::class.java)
+                .putExtra(EXTRA_SOURCE, SOURCE_WEB_DAV)
+                .putExtra(EXTRA_URI, uri)
+                .putExtra(EXTRA_DISPLAY_NAME, displayName)
+                .putExtra(EXTRA_SIZE, size ?: -1L)
+                .putExtra(EXTRA_LAST_MODIFIED, lastModified ?: -1L)
+
+        private const val SOURCE_WEB_DAV = "webdav"
     }
 }
 

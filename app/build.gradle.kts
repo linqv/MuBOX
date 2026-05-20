@@ -19,7 +19,19 @@ data class RustAndroidTarget(
 
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
 val generatedRustReleaseJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/release")
-val targetAbi = providers.gradleProperty("targetAbi").orNull
+val supportedTargetAbis = setOf("arm64-v8a", "x86_64")
+val targetAbiAliases = mapOf(
+    "arm64_v8a" to "arm64-v8a",
+)
+val rawTargetAbi = providers.gradleProperty("targetAbi").orNull?.trim()?.takeIf { it.isNotBlank() }
+fun normalizeTargetAbi(value: String): String = targetAbiAliases[value] ?: value
+val targetAbi = rawTargetAbi?.let(::normalizeTargetAbi)
+if (targetAbi != null && targetAbi !in supportedTargetAbis) {
+    throw GradleException(
+        "Unsupported targetAbi '$rawTargetAbi' (normalized to '$targetAbi'). " +
+            "Supported values: ${supportedTargetAbis.joinToString()}",
+    )
+}
 val releaseSigningProperties = Properties().apply {
     val propertiesFile = rootProject.file("keystore.properties")
     if (propertiesFile.isFile) {

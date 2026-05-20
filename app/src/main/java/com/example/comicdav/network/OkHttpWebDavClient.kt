@@ -16,7 +16,7 @@ class OkHttpWebDavClient(
     private val baseUrl: String,
     private val username: String?,
     private val password: String?,
-    private val httpClient: OkHttpClient = OkHttpClient(),
+    private val httpClient: OkHttpClient = HttpClients.webDav,
 ) : WebDavClient {
     override suspend fun list(path: String): List<WebDavItem> = withContext(Dispatchers.IO) {
         val body = """<?xml version="1.0" encoding="utf-8" ?>
@@ -64,30 +64,66 @@ class OkHttpWebDavClient(
     }
 
     override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
-        withContext(Dispatchers.IO) {
-            val request = requestBuilder(path)
-                .get()
-                .header("Range", "bytes=$start-$endInclusive")
-                .build()
-            httpClient.newCall(request).execute().use { response ->
-                when (response.code) {
-                    206 -> {
-                        validateContentRange(
-                            header = response.header("Content-Range"),
-                            expectedStart = start,
-                            expectedEndInclusive = endInclusive,
-                        )
-                        response.body?.bytes()
-                            ?: throw WebDavException.MissingMetadata("Range response body is empty")
-                    }
-                    200 -> throw WebDavException.RangeNotSupported()
-                    else -> throw WebDavException.HttpStatus(
-                        response.code,
-                        "Range GET failed with HTTP ${response.code}: ${request.url}",
+        openRangeStream(path, start, endInclusive).useResponse { response ->
+            response.stream.readBytes()
+        }
+
+    override suspend fun openRangeStream(
+        path: String,
+        start: Long,
+        endInclusive: Long?,
+    ): WebDavStreamResponse = withContext(Dispatchers.IO) {
+        val request = requestBuilder(path)
+            .get()
+            .header("Range", buildRangeHeader(start, endInclusive))
+            .build()
+        val response = httpClient.newCall(request).execute()
+        when (response.code) {
+            206 -> {
+                val body = response.body ?: run {
+                    response.close()
+                    throw WebDavException.MissingMetadata("Range response body is empty")
+                }
+                try {
+                    val contentRangeHeader = response.header("Content-Range")
+                    val parsedRange = parseContentRange(contentRangeHeader)
+                    validateContentRange(
+                        header = contentRangeHeader,
+                        expectedStart = start,
+                        expectedEndInclusive = endInclusive,
                     )
+                    val totalSize = parsedRange?.totalSize?.takeIf { it >= 0 }
+                    val contentLength = body.contentLength().takeIf { it >= 0 }
+                        ?: (parsedRange?.let { it.endInclusive - it.start + 1 } ?: body.bytes().size.toLong())
+                    val stream = body.byteStream()
+                    val close = { response.close() }
+                    WebDavStreamResponse(
+                        stream = stream,
+                        statusCode = response.code,
+                        contentLength = contentLength,
+                        contentRange = parsedRange,
+                        contentType = response.header("Content-Type"),
+                        totalSize = totalSize,
+                        close = close,
+                    )
+                } catch (error: Throwable) {
+                    response.close()
+                    throw error
                 }
             }
+            200 -> {
+                response.close()
+                throw WebDavException.RangeNotSupported()
+            }
+            else -> {
+                response.close()
+                throw WebDavException.HttpStatus(
+                    response.code,
+                    "Range GET failed with HTTP ${response.code}: ${request.url}",
+                )
+            }
         }
+    }
 
     override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
         withContext(Dispatchers.IO) {
@@ -161,20 +197,47 @@ class OkHttpWebDavClient(
     private fun encodePath(path: String): String =
         URI(null, null, path, null).toASCIIString()
 
+    private fun buildRangeHeader(start: Long, endInclusive: Long?): String =
+        if (endInclusive == null) {
+            "bytes=$start-"
+        } else {
+            "bytes=$start-$endInclusive"
+        }
+
+    private fun parseContentRange(header: String?): ContentRange? {
+        val value = header ?: return null
+        val match = CONTENT_RANGE.matchEntire(value.lowercase(Locale.US)) ?: return null
+        return ContentRange(
+            start = match.groupValues[1].toLong(),
+            endInclusive = match.groupValues[2].toLong(),
+            totalSize = match.groupValues[3].takeIf { it != "*" }?.toLong() ?: -1L,
+        )
+    }
+
     private fun validateContentRange(
         header: String?,
         expectedStart: Long,
-        expectedEndInclusive: Long,
+        expectedEndInclusive: Long?,
     ) {
-        val value = header ?: throw WebDavException.InvalidContentRange("Missing Content-Range header")
-        val match = CONTENT_RANGE.matchEntire(value.lowercase(Locale.US))
-            ?: throw WebDavException.InvalidContentRange("Invalid Content-Range header: $value")
-        val start = match.groupValues[1].toLong()
-        val end = match.groupValues[2].toLong()
-        if (start != expectedStart || end != expectedEndInclusive) {
+        val parsed = parseContentRange(header)
+            ?: throw WebDavException.InvalidContentRange("Missing or invalid Content-Range header: ${header ?: "<null>"}")
+        if (parsed.start != expectedStart) {
             throw WebDavException.InvalidContentRange(
-                "Expected Content-Range bytes $expectedStart-$expectedEndInclusive but got $value",
+                "Expected Content-Range start $expectedStart but got ${parsed.start} in ${header ?: "<null>"}",
             )
+        }
+        if (expectedEndInclusive != null && parsed.endInclusive != expectedEndInclusive) {
+            throw WebDavException.InvalidContentRange(
+                "Expected Content-Range end $expectedEndInclusive but got ${parsed.endInclusive} in ${header ?: "<null>"}",
+            )
+        }
+    }
+
+    private suspend fun <T> WebDavStreamResponse.useResponse(block: suspend (WebDavStreamResponse) -> T): T {
+        try {
+            return block(this)
+        } finally {
+            close()
         }
     }
 
