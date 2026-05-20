@@ -19,25 +19,35 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class MuBoxVideoProxy(
     private val clientProvider: suspend (String) -> WebDavClient?,
     private val coroutineScope: CoroutineScope,
     private val portRange: IntRange = 49152..65535,
+    private val serverSocketFactory: (host: String, port: Int) -> ServerSocket = { host, port ->
+        ServerSocket().apply {
+            bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
+        }
+    },
 ) : Closeable {
     private val registry = StreamRegistry()
     private val closed = AtomicBoolean(false)
     private val nextId = AtomicLong(1)
+    private val startMutex = Mutex()
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
 
     val baseUrl: String
         get() = "http://127.0.0.1:${serverSocket?.localPort ?: error("proxy not started")}"
     suspend fun start() {
-        if (serverSocket != null) return
-        withContext(Dispatchers.IO) {
-            val socket = bindPort()
+        startMutex.withLock {
+            if (serverSocket != null) return
+            val socket = withContext(Dispatchers.IO) {
+                bindPort()
+            }
             serverSocket = socket
             acceptJob = coroutineScope.launch(Dispatchers.IO) { acceptLoop(socket) }
         }
@@ -67,9 +77,7 @@ class MuBoxVideoProxy(
         var lastError: IOException? = null
         for (port in portRange) {
             try {
-                return ServerSocket().apply {
-                    bind(InetSocketAddress(InetAddress.getByName(LOOPBACK_HOST), port), 50)
-                }
+                return serverSocketFactory(LOOPBACK_HOST, port)
             } catch (error: IOException) {
                 lastError = error
             }
@@ -196,11 +204,12 @@ class MuBoxVideoProxy(
         try {
             val statusCode = if (range == null) 200 else 206
             val contentRange = if (statusCode == 206) {
-                response.contentRange ?: ContentRange(
-                    start = range!!.start,
-                    endInclusive = range.endInclusive,
-                    totalSize = response.totalSize ?: info.size,
-                )
+                response.contentRange?.withKnownTotalSize(response.totalSize, info.size)
+                    ?: ContentRange(
+                        start = range!!.start,
+                        endInclusive = range.endInclusive,
+                        totalSize = response.totalSize ?: info.size,
+                    )
             } else {
                 null
             }
@@ -260,6 +269,13 @@ class MuBoxVideoProxy(
         body?.copyTo(output)
         output.flush()
     }
+
+    private fun ContentRange.withKnownTotalSize(responseTotalSize: Long?, fallbackTotalSize: Long): ContentRange =
+        if (totalSize >= 0) {
+            this
+        } else {
+            copy(totalSize = responseTotalSize?.takeIf { it >= 0 } ?: fallbackTotalSize)
+        }
 
     private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
         try {

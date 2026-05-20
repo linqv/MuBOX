@@ -111,7 +111,7 @@ import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
-import com.example.comicdav.video.proxy.VideoProxyManager
+import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -619,19 +619,20 @@ fun ComicDavApp() {
             runCatching {
                 val account = resolveWebDavAccountForPlayback(accountId)
                     ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
-                val session = VideoProxyManager.open(
+                startWebDavVideoPlayback(
                     request = request,
                     account = account,
-                )
-                context.startActivity(
-                    VideoPlayerActivity.webDavIntent(
-                        context = context,
-                        uri = session.url,
-                        displayName = item.name,
-                        size = item.size,
-                        lastModified = item.lastModified,
-                    ),
-                )
+                ) { session ->
+                    context.startActivity(
+                        VideoPlayerActivity.webDavIntent(
+                            context = context,
+                            uri = session.url,
+                            displayName = item.name,
+                            size = item.size,
+                            lastModified = item.lastModified,
+                        ),
+                    )
+                }
             }.onFailure { error ->
                 localOpenError = error.message ?: "打开视频失败"
                 webDavActionMessage = null

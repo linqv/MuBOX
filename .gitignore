@@ -23,9 +23,12 @@ app/src/test/**
 !app/src/test/java/com/example/
 !app/src/test/java/com/example/comicdav/
 !app/src/test/java/com/example/comicdav/video/
+!app/src/test/java/com/example/comicdav/video/player/
+!app/src/test/java/com/example/comicdav/video/player/MpvEndFileEventTest.kt
 !app/src/test/java/com/example/comicdav/video/proxy/
 !app/src/test/java/com/example/comicdav/video/proxy/MuBoxVideoProxyTest.kt
 !app/src/test/java/com/example/comicdav/video/proxy/VideoProxyManagerTest.kt
+!app/src/test/java/com/example/comicdav/video/proxy/WebDavVideoPlaybackStarterTest.kt
 !app/src/test/java/com/example/comicdav/network/
 !app/src/test/java/com/example/comicdav/network/OkHttpWebDavClientTest.kt
 !app/src/test/java/com/example/comicdav/nativebridge/

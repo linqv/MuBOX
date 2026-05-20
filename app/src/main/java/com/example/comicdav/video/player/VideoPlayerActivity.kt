@@ -80,7 +80,14 @@ class VideoPlayerActivity : ComponentActivity() {
 
         override fun event(eventId: Int, data: MPVNode) {
             if (eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE) {
-                runOnUiThread { controller.onPlaybackEnded() }
+                val errorMessage = mpvEndFileErrorMessage(data)
+                runOnUiThread {
+                    if (errorMessage == null) {
+                        controller.onPlaybackEnded()
+                    } else {
+                        controller.onError(errorMessage)
+                    }
+                }
             }
         }
     }

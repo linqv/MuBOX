@@ -10,9 +10,12 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
 import java.net.ServerSocket
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,7 +25,10 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -229,6 +235,44 @@ class MuBoxVideoProxyTest {
         val response = httpRequest(url, method = "GET", range = "bytes=0-2")
 
         assertEquals(502, response.code)
+    }
+
+    @Test
+    fun responseContentRangeWithUnknownTotalFallsBackToKnownSize() = runTest {
+        val client = UnknownTotalRangeClient()
+        val url = startProxy(client = client, size = 10L)
+
+        val response = httpRequest(url, method = "GET", range = "bytes=2-4")
+
+        assertEquals(206, response.code)
+        assertEquals("bytes 2-4/10", response.headers["Content-Range"])
+        assertArrayEquals("234".toByteArray(), response.body)
+    }
+
+    @Test
+    fun concurrentStartBindsOnlyOneServerSocket() = runTest {
+        val boundSockets = CopyOnWriteArrayList<ServerSocket>()
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient("0123456789".toByteArray()) },
+            coroutineScope = scope,
+            portRange = 0..0,
+            serverSocketFactory = { host, port ->
+                Thread.sleep(50)
+                ServerSocket().apply {
+                    bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
+                    boundSockets += this
+                }
+            },
+        )
+        proxy = localProxy
+
+        coroutineScope {
+            List(16) {
+                async(Dispatchers.IO) { localProxy.start() }
+            }.awaitAll()
+        }
+
+        assertEquals(1, boundSockets.size)
     }
 
     private suspend fun startProxy(
@@ -440,6 +484,39 @@ class MuBoxVideoProxyTest {
                 totalSize = 10L,
                 close = input::close,
             )
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+    }
+
+    private class UnknownTotalRangeClient : WebDavClient {
+        private val bytes = "0123456789".toByteArray()
+
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("readRange is not used by video proxy tests")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse {
+            val end = endInclusive ?: bytes.lastIndex.toLong()
+            val chunk = bytes.sliceArray(start.toInt()..end.toInt())
+            return WebDavStreamResponse(
+                stream = ByteArrayInputStream(chunk),
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, -1L),
+                contentType = "video/mp4",
+                totalSize = null,
+                close = {},
+            )
+        }
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by video proxy tests")
