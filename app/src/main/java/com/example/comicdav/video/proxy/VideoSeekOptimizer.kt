@@ -9,6 +9,7 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.coroutines.coroutineContext
@@ -32,7 +33,7 @@ internal class VideoSeekOptimizer(
     }
 
     private val closed = AtomicBoolean(false)
-    private val inFlight = ConcurrentHashMap<SegmentKey, Deferred<VideoRangeMemoryCache.Segment>>()
+    private val inFlight = ConcurrentHashMap<SegmentKey, InFlightSegment>()
     private val activeResponses = ConcurrentHashMap<SegmentKey, Closeable>()
     private val prefetchLock = Any()
     private val prefetchJobs = mutableMapOf<String, MutableSet<Job>>()
@@ -62,16 +63,28 @@ internal class VideoSeekOptimizer(
         val output = ByteArrayOutputStream(requestedBytes)
 
         for (segmentIndex in firstSegmentIndex..lastSegmentIndex) {
-            val segment = getOrFetchSegment(
-                client = client,
-                request = request,
-                totalSize = totalSize,
-                segmentIndex = segmentIndex,
-                diagnostics = diagnostics,
-            )
-            val sliceStart = max(start, segment.start)
-            val sliceEnd = min(endInclusive, segment.endInclusive)
-            output.write(segment.slice(sliceStart, sliceEnd))
+            val segmentStart = segmentIndex * segmentBytes
+            val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
+            val sliceStart = max(start, segmentStart)
+            val sliceEnd = min(endInclusive, segmentEnd)
+            val cachedSlice = cache.getSegmentSlice(request.streamId, segmentIndex, sliceStart, sliceEnd)
+            if (cachedSlice != null) {
+                diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
+                diagnostics.detail {
+                    "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
+                        "segment=$segmentIndex range=$segmentStart-$segmentEnd cache_bytes=${cache.totalBytes()}"
+                }
+                output.write(cachedSlice)
+            } else {
+                val segment = getOrFetchSegment(
+                    client = client,
+                    request = request,
+                    totalSize = totalSize,
+                    segmentIndex = segmentIndex,
+                    diagnostics = diagnostics,
+                )
+                output.write(segment.slice(sliceStart, sliceEnd))
+            }
         }
 
         schedulePrefetch(
@@ -100,7 +113,7 @@ internal class VideoSeekOptimizer(
         inFlight.entries
             .filter { it.key.streamId == streamId }
             .forEach { entry ->
-                entry.value.cancel()
+                entry.value.deferred.cancel()
                 inFlight.remove(entry.key, entry.value)
             }
         activeResponses.entries
@@ -118,7 +131,7 @@ internal class VideoSeekOptimizer(
             prefetchJobs.values.flatten().also { prefetchJobs.clear() }
         }
         jobs.forEach { it.cancel() }
-        inFlight.values.forEach { it.cancel() }
+        inFlight.values.forEach { it.deferred.cancel() }
         inFlight.clear()
         activeResponses.values.forEach { it.closeQuietly() }
         activeResponses.clear()
@@ -174,9 +187,9 @@ internal class VideoSeekOptimizer(
 
         val created = AtomicBoolean(false)
         val key = SegmentKey(request.streamId, segmentIndex)
-        val deferred = inFlight.computeIfAbsent(key) {
+        val inFlightSegment = inFlight.computeIfAbsent(key) {
             created.set(true)
-            coroutineScope.async(Dispatchers.IO) {
+            val deferred = coroutineScope.async(Dispatchers.IO) {
                 fetchSegment(
                     client = client,
                     request = request,
@@ -184,9 +197,10 @@ internal class VideoSeekOptimizer(
                     segmentIndex = segmentIndex,
                     diagnostics = diagnostics,
                 )
-            }.also { newDeferred ->
-                newDeferred.invokeOnCompletion {
-                    inFlight.remove(key, newDeferred)
+            }
+            InFlightSegment(deferred).also { newEntry ->
+                deferred.invokeOnCompletion {
+                    inFlight.remove(key, newEntry)
                 }
             }
         }
@@ -196,7 +210,19 @@ internal class VideoSeekOptimizer(
             diagnostics.detail { "inflight_join stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex" }
         }
 
-        return deferred.await()
+        inFlightSegment.waiters.incrementAndGet()
+        var waiterReleased = false
+        try {
+            return inFlightSegment.deferred.await()
+        } catch (error: CancellationException) {
+            releaseWaiter(key, inFlightSegment, cancelIfLast = true)
+            waiterReleased = true
+            throw error
+        } finally {
+            if (!waiterReleased) {
+                releaseWaiter(key, inFlightSegment, cancelIfLast = false)
+            }
+        }
     }
 
     private suspend fun fetchSegment(
@@ -343,6 +369,18 @@ internal class VideoSeekOptimizer(
         jobs.forEach { it.cancel() }
     }
 
+    private fun releaseWaiter(
+        key: SegmentKey,
+        entry: InFlightSegment,
+        cancelIfLast: Boolean,
+    ) {
+        val remainingWaiters = entry.waiters.decrementAndGet()
+        if (cancelIfLast && remainingWaiters <= 0 && inFlight[key] === entry) {
+            entry.deferred.cancel()
+            activeResponses[key]?.closeQuietly()
+        }
+    }
+
     private fun segmentIndexFor(byteOffset: Long): Long = byteOffset / segmentBytes
 
     private fun checkedRequestedByteCount(start: Long, endInclusive: Long): Int {
@@ -363,6 +401,12 @@ internal class VideoSeekOptimizer(
         val streamId: String,
         val segmentIndex: Long,
     )
+
+    private class InFlightSegment(
+        val deferred: Deferred<VideoRangeMemoryCache.Segment>,
+    ) {
+        val waiters = AtomicInteger(0)
+    }
 
     private fun Closeable.closeQuietly() {
         runCatching { close() }

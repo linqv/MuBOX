@@ -15,6 +15,15 @@ class VideoRangeMemoryCache(
         entries[SegmentKey(streamId, segmentIndex)]?.snapshot()
     }
 
+    fun getSegmentSlice(
+        streamId: String,
+        segmentIndex: Long,
+        start: Long,
+        endInclusive: Long,
+    ): ByteArray? = synchronized(lock) {
+        entries[SegmentKey(streamId, segmentIndex)]?.slice(start, endInclusive)
+    }
+
     fun putSegment(streamId: String, segmentIndex: Long, start: Long, bytes: ByteArray): Boolean = synchronized(lock) {
         require(segmentIndex >= 0L) { "segmentIndex must not be negative" }
         require(start >= 0L) { "start must not be negative" }

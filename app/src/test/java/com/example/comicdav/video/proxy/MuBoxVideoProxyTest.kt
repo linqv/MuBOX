@@ -170,7 +170,7 @@ class MuBoxVideoProxyTest {
 
     @Test
     fun explicitRangeLargerThanOptimizerLimitUsesDirectRemoteRange() = runTest {
-        val maxOptimizedBytes = 8L * 1024L * 1024L
+        val maxOptimizedBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
         val bytes = ByteArray((maxOptimizedBytes + 2L).toInt()) { (it % 251).toByte() }
         val client = RecordingClient(bytes)
         val url = startProxy(client = client, size = bytes.size.toLong())
@@ -193,6 +193,32 @@ class MuBoxVideoProxyTest {
         assertEquals("bytes 2-4/10", response.headers["Content-Range"])
         assertArrayEquals("234".toByteArray(), response.body)
         assertEquals(listOf(0L to 9L, 2L to 4L), client.openRangeCalls)
+    }
+
+    @Test
+    fun optimizedRangeFailureEmitsSummaryDiagnosticFallback() = runTest {
+        val originalErr = System.err
+        val errorBytes = ByteArrayOutputStream()
+        System.setErr(PrintStream(errorBytes))
+        try {
+            val client = OptimizedRangeFailingClient("0123456789".toByteArray())
+            val url = startProxy(
+                client = client,
+                size = 10L,
+                proxySettings = VideoProxySettings.DEFAULT.copy(
+                    diagnosticsMode = VideoProxyDiagnosticsMode.SUMMARY,
+                ),
+            )
+
+            val response = httpRequest(url, method = "GET", range = "bytes=2-4")
+
+            assertEquals(206, response.code)
+        } finally {
+            System.setErr(originalErr)
+        }
+        val logs = errorBytes.toString(Charsets.UTF_8.name())
+        assertTrue(logs.contains("video_proxy fallback"))
+        assertFalse(logs.contains("/video.mp4"))
     }
 
     @Test
@@ -249,7 +275,7 @@ class MuBoxVideoProxyTest {
 
         assertEquals(206, response.code)
         assertEquals("bytes 2-9/10", response.headers["Content-Range"])
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(listOf(2L to 9L), client.openRangeCalls)
         assertArrayEquals("23456789".toByteArray(), response.body)
     }
 
@@ -262,7 +288,7 @@ class MuBoxVideoProxyTest {
 
         assertEquals(206, response.code)
         assertEquals("bytes 6-9/10", response.headers["Content-Range"])
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(listOf(6L to 9L), client.openRangeCalls)
         assertArrayEquals("6789".toByteArray(), response.body)
     }
 

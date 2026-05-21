@@ -7,7 +7,10 @@ import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.network.WebDavStreamResponse
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -159,7 +163,7 @@ class VideoSeekOptimizerTest {
         ).close()
 
         eventually {
-            assertEquals(listOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls)
+            assertEquals(setOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls.toSet())
         }
     }
 
@@ -217,6 +221,96 @@ class VideoSeekOptimizerTest {
 
         assertTrue(result.isFailure)
         assertEquals("range failed", result.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun cancellingLastAwaiterClosesActiveRemoteResponse() = runTest {
+        val client = BlockingReadClient()
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val job = async(Dispatchers.IO) {
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = 16L),
+                totalSize = 16L,
+                start = 0L,
+                endInclusive = 3L,
+                settings = settings,
+            )
+        }
+
+        try {
+            assertTrue("remote response should start reading", client.readStarted.await(2, TimeUnit.SECONDS))
+
+            job.cancelAndJoin()
+
+            assertTrue("cancelling the only waiter should close the remote response", client.closed.await(2, TimeUnit.SECONDS))
+        } finally {
+            client.forceClose()
+            optimizer.close()
+        }
+    }
+
+    @Test
+    fun removeStreamClosesActiveRemoteResponse() = runTest {
+        val client = BlockingReadClient()
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val job = async(Dispatchers.IO) {
+            runCatching {
+                optimizer.openRangeStream(
+                    client = client,
+                    request = request(size = 16L),
+                    totalSize = 16L,
+                    start = 0L,
+                    endInclusive = 3L,
+                    settings = settings,
+                )
+            }
+        }
+
+        try {
+            assertTrue("remote response should start reading", client.readStarted.await(2, TimeUnit.SECONDS))
+
+            optimizer.removeStream("stream-1")
+
+            assertTrue("removeStream should close active remote response", client.closed.await(2, TimeUnit.SECONDS))
+        } finally {
+            client.forceClose()
+            job.cancelAndJoin()
+            optimizer.close()
+        }
+    }
+
+    @Test
+    fun closeClosesActiveRemoteResponse() = runTest {
+        val client = BlockingReadClient()
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val job = async(Dispatchers.IO) {
+            runCatching {
+                optimizer.openRangeStream(
+                    client = client,
+                    request = request(size = 16L),
+                    totalSize = 16L,
+                    start = 0L,
+                    endInclusive = 3L,
+                    settings = settings,
+                )
+            }
+        }
+
+        try {
+            assertTrue("remote response should start reading", client.readStarted.await(2, TimeUnit.SECONDS))
+
+            optimizer.close()
+
+            assertTrue("close should close active remote response", client.closed.await(2, TimeUnit.SECONDS))
+        } finally {
+            client.forceClose()
+            job.cancelAndJoin()
+            optimizer.close()
+        }
     }
 
     @Test
@@ -332,5 +426,60 @@ class VideoSeekOptimizerTest {
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("not used")
+    }
+
+    private class BlockingReadClient : WebDavClient {
+        val readStarted = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        private val input = BlockingInputStream(readStarted, closed)
+
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 16L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("not used")
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse =
+            WebDavStreamResponse(
+                stream = input,
+                statusCode = 206,
+                contentLength = endInclusive!! - start + 1L,
+                contentRange = ContentRange(start, endInclusive, 16L),
+                contentType = "video/mp4",
+                totalSize = 16L,
+                close = input::close,
+            )
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("not used")
+
+        fun forceClose() {
+            input.close()
+        }
+    }
+
+    private class BlockingInputStream(
+        private val readStarted: CountDownLatch,
+        private val closed: CountDownLatch,
+    ) : InputStream() {
+        @Volatile
+        private var isClosed = false
+
+        override fun read(): Int {
+            readStarted.countDown()
+            while (!isClosed) {
+                Thread.sleep(10)
+            }
+            return -1
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = read()
+
+        override fun close() {
+            isClosed = true
+            closed.countDown()
+        }
     }
 }

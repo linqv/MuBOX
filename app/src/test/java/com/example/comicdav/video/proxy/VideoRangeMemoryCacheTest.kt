@@ -45,6 +45,21 @@ class VideoRangeMemoryCacheTest {
     }
 
     @Test
+    fun getSegmentSliceCopiesOnlyRequestedRangeAndUpdatesRecency() {
+        val cache = VideoRangeMemoryCache(maxBytes = 8)
+        cache.putSegment("stream-1", 0L, 0L, "abcd".toByteArray())
+        cache.putSegment("stream-1", 1L, 4L, "efgh".toByteArray())
+
+        val slice = cache.getSegmentSlice("stream-1", 0L, 1L, 2L)
+        cache.putSegment("stream-1", 2L, 8L, "ijkl".toByteArray())
+
+        assertArrayEquals("bc".toByteArray(), slice)
+        assertArrayEquals("abcd".toByteArray(), cache.getSegment("stream-1", 0L)?.bytes)
+        assertNull(cache.getSegment("stream-1", 1L))
+        assertArrayEquals("ijkl".toByteArray(), cache.getSegment("stream-1", 2L)?.bytes)
+    }
+
+    @Test
     fun streamScopedKeysKeepSameSegmentIndexIsolated() {
         val cache = VideoRangeMemoryCache(maxBytes = 16)
         cache.putSegment("stream-1", 0L, 0L, "aaaa".toByteArray())
