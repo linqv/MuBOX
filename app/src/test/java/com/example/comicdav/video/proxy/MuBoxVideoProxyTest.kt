@@ -129,8 +129,41 @@ class MuBoxVideoProxyTest {
         assertEquals(206, response.code)
         assertEquals("3", response.headers["Content-Length"])
         assertEquals("bytes 2-4/10", response.headers["Content-Range"])
-        assertEquals(listOf(2L to 4L), client.openRangeCalls)
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
         assertArrayEquals("234".toByteArray(), response.body)
+    }
+
+    @Test
+    fun repeatedRangeRequestUsesCacheWhenSeekOptimizationIsEnabled() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val url = startProxy(
+            client = client,
+            size = 10L,
+            proxySettings = VideoProxySettings.DEFAULT.copy(
+                seekOptimizationEnabled = true,
+                forwardPrefetchMode = VideoForwardPrefetchMode.OFF,
+            ),
+        )
+
+        assertArrayEquals("012".toByteArray(), httpRequest(url, method = "GET", range = "bytes=0-2").body)
+        assertArrayEquals("123".toByteArray(), httpRequest(url, method = "GET", range = "bytes=1-3").body)
+
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+    }
+
+    @Test
+    fun rangeRequestBypassesOptimizerWhenSeekOptimizationIsDisabled() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val url = startProxy(
+            client = client,
+            size = 10L,
+            proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false),
+        )
+
+        httpRequest(url, method = "GET", range = "bytes=0-2")
+        httpRequest(url, method = "GET", range = "bytes=1-3")
+
+        assertEquals(listOf(0L to 2L, 1L to 3L), client.openRangeCalls)
     }
 
     @Test
@@ -174,7 +207,7 @@ class MuBoxVideoProxyTest {
         val headerBlock = response.toString(Charsets.ISO_8859_1).substringBefore("\r\n\r\n")
         assertTrue(headerBlock.startsWith("HTTP/1.1 206 Partial Content"))
         val body = response.copyOfRange(response.size - 3, response.size)
-        assertEquals(listOf(2L to 4L), client.openRangeCalls)
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
         assertArrayEquals("234".toByteArray(), body)
     }
 
@@ -187,7 +220,7 @@ class MuBoxVideoProxyTest {
 
         assertEquals(206, response.code)
         assertEquals("bytes 2-9/10", response.headers["Content-Range"])
-        assertEquals(listOf(2L to 9L), client.openRangeCalls)
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
         assertArrayEquals("23456789".toByteArray(), response.body)
     }
 
@@ -200,7 +233,7 @@ class MuBoxVideoProxyTest {
 
         assertEquals(206, response.code)
         assertEquals("bytes 6-9/10", response.headers["Content-Range"])
-        assertEquals(listOf(6L to 9L), client.openRangeCalls)
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
         assertArrayEquals("6789".toByteArray(), response.body)
     }
 
@@ -408,16 +441,19 @@ class MuBoxVideoProxyTest {
         bytes: ByteArray,
         size: Long,
         mimeType: String = "video/mp4",
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
     ): String = startProxy(
         client = RecordingClient(bytes),
         size = size,
         mimeType = mimeType,
+        proxySettings = proxySettings,
     )
 
     private suspend fun startProxy(
         client: WebDavClient,
         size: Long?,
         mimeType: String = "video/mp4",
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
     ): String {
         val localProxy = MuBoxVideoProxy(
             clientProvider = { client },
@@ -436,6 +472,7 @@ class MuBoxVideoProxyTest {
                 lastModified = null,
                 mimeType = mimeType,
             ),
+            proxySettings = proxySettings,
         )
     }
 

@@ -43,6 +43,7 @@ class MuBoxVideoProxy(
     }
 
     private val registry = StreamRegistry()
+    private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope)
     private val closed = AtomicBoolean(false)
     private val nextId = AtomicLong(1)
     private val startMutex = Mutex()
@@ -62,13 +63,17 @@ class MuBoxVideoProxy(
         }
     }
 
-    fun register(request: WebDavVideoOpenRequest): String =
-        register(request) {
+    fun register(
+        request: WebDavVideoOpenRequest,
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
+    ): String =
+        register(request, proxySettings) {
             clientProvider(request.accountId)
         }
 
     fun register(
         request: WebDavVideoOpenRequest,
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
         openClient: suspend () -> WebDavClient?,
     ): String {
         val streamId = nextId.getAndIncrement().toString()
@@ -84,6 +89,7 @@ class MuBoxVideoProxy(
                     etag = request.etag,
                     lastModified = request.lastModified,
                     mimeType = request.mimeType,
+                    proxySettings = proxySettings,
                 ),
                 openClient = openClient,
             ),
@@ -91,7 +97,10 @@ class MuBoxVideoProxy(
         return "$baseUrl/stream/$streamId/${request.displayName.toUrlPathSegment()}"
     }
 
-    fun unregister(streamId: String): Boolean = registry.remove(streamId) != null
+    fun unregister(streamId: String): Boolean {
+        seekOptimizer.removeStream(streamId)
+        return registry.remove(streamId) != null
+    }
 
     private fun bindPort(): ServerSocket {
         var lastError: IOException? = null
@@ -248,6 +257,24 @@ class MuBoxVideoProxy(
         val response = try {
             if (range == null) {
                 client.openFullStream(request.remotePath)
+            } else if (request.proxySettings.seekOptimizationEnabled) {
+                runCatchingCancellable {
+                    seekOptimizer.openRangeStream(
+                        client = client,
+                        request = request,
+                        totalSize = info.size,
+                        start = range.start,
+                        endInclusive = range.endInclusive,
+                        settings = request.proxySettings,
+                    )
+                }.getOrElse { error ->
+                    logProxyFailure("GET optimized stream", request, error)
+                    client.openRangeStream(
+                        path = request.remotePath,
+                        start = range.start,
+                        endInclusive = range.endInclusive,
+                    )
+                }
             } else {
                 client.openRangeStream(
                     path = request.remotePath,
@@ -397,6 +424,7 @@ class MuBoxVideoProxy(
         if (!closed.compareAndSet(false, true)) return
         acceptJob?.cancel()
         serverSocket?.close()
+        seekOptimizer.close()
         registry.close()
     }
 

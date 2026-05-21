@@ -33,6 +33,7 @@ internal class VideoSeekOptimizer(
 
     private val closed = AtomicBoolean(false)
     private val inFlight = ConcurrentHashMap<SegmentKey, Deferred<VideoRangeMemoryCache.Segment>>()
+    private val activeResponses = ConcurrentHashMap<SegmentKey, Closeable>()
     private val prefetchLock = Any()
     private val prefetchJobs = mutableMapOf<String, MutableSet<Job>>()
 
@@ -102,6 +103,12 @@ internal class VideoSeekOptimizer(
                 entry.value.cancel()
                 inFlight.remove(entry.key, entry.value)
             }
+        activeResponses.entries
+            .filter { it.key.streamId == streamId }
+            .forEach { entry ->
+                entry.value.closeQuietly()
+                activeResponses.remove(entry.key, entry.value)
+            }
         cache.removeStream(streamId)
     }
 
@@ -113,6 +120,8 @@ internal class VideoSeekOptimizer(
         jobs.forEach { it.cancel() }
         inFlight.values.forEach { it.cancel() }
         inFlight.clear()
+        activeResponses.values.forEach { it.closeQuietly() }
+        activeResponses.clear()
         cache.clear()
     }
 
@@ -217,6 +226,9 @@ internal class VideoSeekOptimizer(
         }
 
         val response = client.openRangeStream(request.remotePath, segmentStart, segmentEnd)
+        val key = SegmentKey(request.streamId, segmentIndex)
+        val responseCloseable = Closeable { response.close() }
+        activeResponses[key] = responseCloseable
         try {
             coroutineContext.ensureActive()
             val bytes = response.stream.readBytes()
@@ -238,7 +250,8 @@ internal class VideoSeekOptimizer(
             }
             return segment
         } finally {
-            response.close()
+            activeResponses.remove(key, responseCloseable)
+            responseCloseable.closeQuietly()
         }
     }
 
@@ -350,4 +363,8 @@ internal class VideoSeekOptimizer(
         val streamId: String,
         val segmentIndex: Long,
     )
+
+    private fun Closeable.closeQuietly() {
+        runCatching { close() }
+    }
 }

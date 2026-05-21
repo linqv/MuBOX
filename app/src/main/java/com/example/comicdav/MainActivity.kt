@@ -114,6 +114,7 @@ import com.example.comicdav.video.findSidecarSubtitles
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
+import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -657,6 +658,11 @@ fun ComicDavApp() {
                 startWebDavVideoPlayback(
                     request = request,
                     account = account,
+                    proxySettings = VideoProxySettings(
+                        seekOptimizationEnabled = appSettings.videoSeekOptimizationEnabled,
+                        forwardPrefetchMode = appSettings.videoForwardPrefetchMode,
+                        diagnosticsMode = appSettings.videoProxyDiagnosticsMode,
+                    ),
                 ) { session ->
                     context.startActivity(
                         VideoPlayerActivity.webDavIntent(
@@ -1496,6 +1502,15 @@ fun ComicDavApp() {
                                     },
                                     onVideoResumeEnabledChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoResumeEnabled(value) }
+                                    },
+                                    onVideoSeekOptimizationEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(value) }
+                                    },
+                                    onVideoForwardPrefetchModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoForwardPrefetchMode(value) }
+                                    },
+                                    onVideoProxyDiagnosticsModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,

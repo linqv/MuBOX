@@ -20,6 +20,7 @@ object VideoProxyManager {
     suspend fun open(
         request: WebDavVideoOpenRequest,
         account: SavedWebDavAccount,
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
     ): ProxySession {
         val accountSnapshot = account.copy()
         val sessionProxy = synchronized(this) {
@@ -32,12 +33,15 @@ object VideoProxyManager {
         val registeredUrls = mutableListOf<String>()
         try {
             sessionProxy.start()
-            val url = sessionProxy.register(request) {
+            val url = sessionProxy.register(request, proxySettings) {
                 accountSnapshot.client()
             }
             registeredUrls += url
             val subtitleUrls = request.subtitles.map { subtitle ->
-                sessionProxy.register(subtitle.asStreamRequest(accountId = request.accountId)) {
+                sessionProxy.register(
+                    request = subtitle.asStreamRequest(accountId = request.accountId),
+                    proxySettings = proxySettings,
+                ) {
                     accountSnapshot.client()
                 }.also { registeredUrls += it }
             }
