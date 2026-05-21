@@ -4,6 +4,7 @@ import com.example.comicdav.network.ContentRange
 import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.video.WebDavVideoOpenRequest
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.IOException
 import java.io.OutputStream
@@ -24,15 +25,22 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class MuBoxVideoProxy(
-    private val clientProvider: suspend (String) -> WebDavClient?,
+    private val clientProvider: suspend (String) -> WebDavClient? = { null },
     private val coroutineScope: CoroutineScope,
     private val portRange: IntRange = 49152..65535,
+    private val requestHeaderTimeoutMillis: Int = DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS,
+    private val maxRequestHeaderBytes: Int = DEFAULT_MAX_REQUEST_HEADER_BYTES,
     private val serverSocketFactory: (host: String, port: Int) -> ServerSocket = { host, port ->
         ServerSocket().apply {
             bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
         }
     },
 ) : Closeable {
+    init {
+        require(requestHeaderTimeoutMillis > 0) { "requestHeaderTimeoutMillis must be positive" }
+        require(maxRequestHeaderBytes > 0) { "maxRequestHeaderBytes must be positive" }
+    }
+
     private val registry = StreamRegistry()
     private val closed = AtomicBoolean(false)
     private val nextId = AtomicLong(1)
@@ -53,19 +61,30 @@ class MuBoxVideoProxy(
         }
     }
 
-    fun register(request: WebDavVideoOpenRequest): String {
+    fun register(request: WebDavVideoOpenRequest): String =
+        register(request) {
+            clientProvider(request.accountId)
+        }
+
+    fun register(
+        request: WebDavVideoOpenRequest,
+        openClient: suspend () -> WebDavClient?,
+    ): String {
         val streamId = nextId.getAndIncrement().toString()
         registry.put(
             streamId,
-            VideoStreamRequest(
-                streamId = streamId,
-                accountId = request.accountId,
-                remotePath = request.remotePath,
-                displayName = request.displayName,
-                size = request.size,
-                etag = request.etag,
-                lastModified = request.lastModified,
-                mimeType = request.mimeType,
+            RegisteredVideoStream(
+                request = VideoStreamRequest(
+                    streamId = streamId,
+                    accountId = request.accountId,
+                    remotePath = request.remotePath,
+                    displayName = request.displayName,
+                    size = request.size,
+                    etag = request.etag,
+                    lastModified = request.lastModified,
+                    mimeType = request.mimeType,
+                ),
+                openClient = openClient,
             ),
         )
         return "$baseUrl/stream/$streamId"
@@ -105,46 +124,76 @@ class MuBoxVideoProxy(
     }
 
     private suspend fun handleConnection(socket: Socket) {
-        socket.getInputStream().bufferedReader().use { reader ->
-            val requestLine = reader.readLine() ?: return
-            val headers = mutableMapOf<String, String>()
-            while (true) {
-                val line = reader.readLine().orEmpty()
-                if (line.isEmpty()) break
-                val separator = line.indexOf(':')
-                if (separator > 0) {
-                    headers[line.substring(0, separator).trim().lowercase()] = line.substring(separator + 1).trim()
-                }
+        socket.soTimeout = requestHeaderTimeoutMillis
+        val headerBlock = try {
+            readRequestHeader(socket) ?: return
+        } catch (_: RequestHeaderTooLarge) {
+            writeResponse(socket.getOutputStream(), 431, emptyMap(), null)
+            return
+        }
+        val lines = headerBlock.split("\r\n")
+        val requestLine = lines.firstOrNull().orEmpty()
+        val headers = mutableMapOf<String, String>()
+        lines.drop(1).forEach { line ->
+            if (line.isEmpty()) return@forEach
+            val separator = line.indexOf(':')
+            if (separator > 0) {
+                headers[line.substring(0, separator).trim().lowercase()] = line.substring(separator + 1).trim()
             }
-            val parts = requestLine.split(' ')
-            if (parts.size < 2) return
-            val method = parts[0]
-            val path = parts[1]
-            if (!path.startsWith("/stream/")) {
-                writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
-                return
+        }
+        val parts = requestLine.split(' ', limit = 3)
+        if (parts.size < 2) return
+        val method = parts[0]
+        val path = parts[1]
+        if (!path.startsWith("/stream/")) {
+            writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
+            return
+        }
+        val streamId = URLDecoder.decode(path.removePrefix("/stream/"), Charsets.UTF_8.name())
+        val entry = registry.get(streamId) ?: run {
+            writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
+            return
+        }
+        when (method) {
+            "HEAD" -> handleHead(socket.getOutputStream(), entry)
+            "GET" -> handleGet(socket.getOutputStream(), headers["range"], entry)
+            else -> writeResponse(socket.getOutputStream(), 405, emptyMap(), null)
+        }
+    }
+
+    private fun readRequestHeader(socket: Socket): String? {
+        val input = socket.getInputStream()
+        val buffer = ByteArrayOutputStream()
+        var matchedTerminatorBytes = 0
+        while (true) {
+            val next = input.read()
+            if (next == -1) return null
+            buffer.write(next)
+            if (buffer.size() > maxRequestHeaderBytes) {
+                throw RequestHeaderTooLarge()
             }
-            val streamId = URLDecoder.decode(path.removePrefix("/stream/"), Charsets.UTF_8.name())
-            val entry = registry.get(streamId) ?: run {
-                writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
-                return
+            matchedTerminatorBytes = if (next == HEADER_TERMINATOR[matchedTerminatorBytes].toInt()) {
+                matchedTerminatorBytes + 1
+            } else if (next == HEADER_TERMINATOR[0].toInt()) {
+                1
+            } else {
+                0
             }
-            when (method) {
-                "HEAD" -> handleHead(socket.getOutputStream(), entry)
-                "GET" -> handleGet(socket.getOutputStream(), headers["range"], entry)
-                else -> writeResponse(socket.getOutputStream(), 405, emptyMap(), null)
+            if (matchedTerminatorBytes == HEADER_TERMINATOR.size) {
+                return buffer.toString(Charsets.ISO_8859_1.name())
             }
         }
     }
 
-    private suspend fun handleHead(output: OutputStream, entry: VideoStreamRequest) {
+    private suspend fun handleHead(output: OutputStream, entry: RegisteredVideoStream) {
+        val request = entry.request
         val info = runCatchingCancellable {
-            val client = clientProvider(entry.accountId) ?: return@runCatchingCancellable null
-            entry.size?.let {
-                RemoteFileInfo(entry.remotePath, it, entry.etag, entry.lastModified, true)
-            } ?: client.head(entry.remotePath)
+            val client = entry.openClient() ?: return@runCatchingCancellable null
+            request.size?.let {
+                RemoteFileInfo(request.remotePath, it, request.etag, request.lastModified, true)
+            } ?: client.head(request.remotePath)
         }.getOrElse { error ->
-            logProxyFailure("HEAD metadata", entry, error)
+            logProxyFailure("HEAD metadata", request, error)
             writeResponse(output, 502, emptyMap(), null)
             return
         } ?: run {
@@ -156,24 +205,25 @@ class MuBoxVideoProxy(
             200,
             mapOf(
                 "Content-Length" to info.size.toString(),
-                "Content-Type" to (entry.mimeType ?: "application/octet-stream"),
+                "Content-Type" to (request.mimeType ?: "application/octet-stream"),
                 "Accept-Ranges" to "bytes",
             ),
             null,
         )
     }
 
-    private suspend fun handleGet(output: OutputStream, rangeHeader: String?, entry: VideoStreamRequest) {
-        val client = clientProvider(entry.accountId) ?: run {
+    private suspend fun handleGet(output: OutputStream, rangeHeader: String?, entry: RegisteredVideoStream) {
+        val request = entry.request
+        val client = entry.openClient() ?: run {
             writeResponse(output, 404, emptyMap(), null)
             return
         }
         val info = runCatchingCancellable {
-            entry.size?.let {
-                RemoteFileInfo(entry.remotePath, it, entry.etag, entry.lastModified, true)
-            } ?: client.head(entry.remotePath)
+            request.size?.let {
+                RemoteFileInfo(request.remotePath, it, request.etag, request.lastModified, true)
+            } ?: client.head(request.remotePath)
         }.getOrElse { error ->
-            logProxyFailure("GET metadata", entry, error)
+            logProxyFailure("GET metadata", request, error)
             writeResponse(output, 502, emptyMap(), null)
             return
         }
@@ -188,21 +238,34 @@ class MuBoxVideoProxy(
             ParsedRange.Invalid -> null
         }
         val response = try {
-            client.openRangeStream(entry.remotePath, range?.start ?: 0L, range?.endInclusive)
+            client.openRangeStream(
+                path = request.remotePath,
+                start = range?.start ?: 0L,
+                endInclusive = range?.endInclusive ?: fullBodyEndInclusive(info.size),
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            logProxyFailure("GET stream", entry, error)
+            logProxyFailure("GET stream", request, error)
             writeResponse(output, 502, emptyMap(), null)
             return
         }
         val responseCloseable = Closeable { response.close() }
-        if (!registry.addActive(entry.streamId, responseCloseable)) {
+        if (!registry.addActive(request.streamId, responseCloseable)) {
             writeResponse(output, 404, emptyMap(), null)
             return
         }
         try {
             val statusCode = if (range == null) 200 else 206
+            if (range == null && !isCompleteFullBodyResponse(response, info.size)) {
+                logProxyFailure(
+                    "GET full-body validation",
+                    request,
+                    IOException("Remote full-body range did not match known size ${info.size}"),
+                )
+                writeResponse(output, 502, emptyMap(), null)
+                return
+            }
             val contentRange = if (statusCode == 206) {
                 response.contentRange?.withKnownTotalSize(response.totalSize, info.size)
                     ?: ContentRange(
@@ -215,7 +278,7 @@ class MuBoxVideoProxy(
             }
             val headers = linkedMapOf(
                 "Content-Length" to response.contentLength.toString(),
-                "Content-Type" to (response.contentType ?: entry.mimeType ?: "application/octet-stream"),
+                "Content-Type" to (response.contentType ?: request.mimeType ?: "application/octet-stream"),
                 "Accept-Ranges" to "bytes",
             )
             if (contentRange != null) {
@@ -228,7 +291,7 @@ class MuBoxVideoProxy(
                 response.stream,
             )
         } finally {
-            registry.removeActive(entry.streamId, responseCloseable)
+            registry.removeActive(request.streamId, responseCloseable)
             responseCloseable.close()
         }
     }
@@ -259,6 +322,7 @@ class MuBoxVideoProxy(
             404 -> "Not Found"
             405 -> "Method Not Allowed"
             416 -> "Range Not Satisfiable"
+            431 -> "Request Header Fields Too Large"
             502 -> "Bad Gateway"
             else -> "OK"
         }
@@ -276,6 +340,17 @@ class MuBoxVideoProxy(
         } else {
             copy(totalSize = responseTotalSize?.takeIf { it >= 0 } ?: fallbackTotalSize)
         }
+
+    private fun fullBodyEndInclusive(totalSize: Long): Long? =
+        if (totalSize > 0) totalSize - 1 else null
+
+    private fun isCompleteFullBodyResponse(response: com.example.comicdav.network.WebDavStreamResponse, totalSize: Long): Boolean {
+        if (totalSize <= 0) return response.contentLength == 0L
+        val range = response.contentRange ?: return false
+        return response.contentLength == totalSize &&
+            range.start == 0L &&
+            range.endInclusive == totalSize - 1
+    }
 
     private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
         try {
@@ -313,9 +388,14 @@ class MuBoxVideoProxy(
         data object Invalid : ParsedRange()
     }
 
+    private class RequestHeaderTooLarge : IOException()
+
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_CHUNK_BYTES = 8L * 1024L * 1024L
+        private const val DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS = 10_000
+        private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
+        private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         private val RANGE_REGEX = Regex("bytes=(\\d*)-(\\d*)", RegexOption.IGNORE_CASE)
     }
 }

@@ -1,5 +1,7 @@
 package com.example.comicdav.video.proxy
 
+import com.example.comicdav.network.WebDavClient
+
 data class VideoStreamRequest(
     val streamId: String,
     val accountId: String,
@@ -9,4 +11,9 @@ data class VideoStreamRequest(
     val etag: String?,
     val lastModified: Long?,
     val mimeType: String?,
+)
+
+internal data class RegisteredVideoStream(
+    val request: VideoStreamRequest,
+    val openClient: suspend () -> WebDavClient?,
 )

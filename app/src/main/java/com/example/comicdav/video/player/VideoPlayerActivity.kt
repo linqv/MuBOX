@@ -119,6 +119,11 @@ class VideoPlayerActivity : ComponentActivity() {
                 audioFocusController.abandon()
             },
             onCleanupPlayback = ::cleanupPlayer,
+            onBackgroundTimeoutAfterCleanup = {
+                if (!isFinishing) {
+                    finish()
+                }
+            },
         )
         setContent {
             ComicDavTheme {
@@ -139,10 +144,17 @@ class VideoPlayerActivity : ComponentActivity() {
         initializeMpv(uri, displayName)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::playbackLifecyclePolicy.isInitialized) {
+            playbackLifecyclePolicy.returnToForeground()
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isFinishing && !isCleaningUp) {
-            playbackLifecyclePolicy.setPausedForBackground(true)
+            playbackLifecyclePolicy.moveToBackground()
         }
     }
 

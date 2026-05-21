@@ -26,8 +26,17 @@ class VideoPlayerActivityIntegrationTest {
         val source = activitySourceFile().readText()
 
         assertTrue(source.contains("override fun onStop()"))
-        assertTrue(source.contains("playbackLifecyclePolicy.setPausedForBackground(true)"))
+        assertTrue(source.contains("playbackLifecyclePolicy.moveToBackground()"))
         assertTrue(source.contains("audioFocusController.abandon()"))
+    }
+
+    @Test
+    fun activityCancelsBackgroundCleanupOnForegroundWithoutAutoResuming() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("override fun onStart()"))
+        assertTrue(source.contains("playbackLifecyclePolicy.returnToForeground()"))
+        assertTrue(source.contains("onBackgroundTimeoutAfterCleanup"))
     }
 
     private fun activitySourceFile(): File =

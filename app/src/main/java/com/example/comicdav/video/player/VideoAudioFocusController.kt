@@ -5,6 +5,8 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 
 class VideoAudioFocusController private constructor(
     private val onFocusLost: () -> Unit,
@@ -54,25 +56,74 @@ class VideoAudioFocusController private constructor(
     }
 }
 
-class VideoPlaybackLifecyclePolicy(
+internal class VideoPlaybackLifecyclePolicy(
     private val onPausePlayback: () -> Unit,
     private val onCleanupPlayback: () -> Unit,
+    private val onBackgroundTimeoutAfterCleanup: () -> Unit = {},
+    private val backgroundCleanupDelayMillis: Long = DEFAULT_BACKGROUND_CLEANUP_DELAY_MILLIS,
+    private val backgroundCleanupScheduler: BackgroundCleanupScheduler = MainThreadBackgroundCleanupScheduler(),
 ) {
     private var pausedForBackground = false
     private var cleanedUp = false
+    private var backgroundCleanupHandle: BackgroundCleanupHandle? = null
 
-    fun setPausedForBackground(paused: Boolean) {
-        if (cleanedUp || pausedForBackground == paused) return
-        pausedForBackground = paused
-        if (paused) {
+    fun moveToBackground() {
+        if (cleanedUp) return
+        if (!pausedForBackground) {
+            pausedForBackground = true
             onPausePlayback()
         }
+        if (backgroundCleanupHandle == null) {
+            backgroundCleanupHandle = backgroundCleanupScheduler.schedule(backgroundCleanupDelayMillis) {
+                if (!cleanedUp) {
+                    cleanup()
+                    onBackgroundTimeoutAfterCleanup()
+                }
+            }
+        }
+    }
+
+    fun returnToForeground() {
+        if (cleanedUp) return
+        // Returning to foreground keeps playback paused; the user resumes explicitly.
+        pausedForBackground = false
+        cancelBackgroundCleanup()
     }
 
     fun cleanup() {
         if (cleanedUp) return
         cleanedUp = true
+        cancelBackgroundCleanup()
         onCleanupPlayback()
+    }
+
+    private fun cancelBackgroundCleanup() {
+        backgroundCleanupHandle?.cancel()
+        backgroundCleanupHandle = null
+    }
+
+    private companion object {
+        private const val DEFAULT_BACKGROUND_CLEANUP_DELAY_MILLIS = 5L * 60L * 1000L
+    }
+}
+
+internal fun interface BackgroundCleanupHandle {
+    fun cancel()
+}
+
+internal interface BackgroundCleanupScheduler {
+    fun schedule(delayMillis: Long, action: () -> Unit): BackgroundCleanupHandle
+}
+
+private class MainThreadBackgroundCleanupScheduler : BackgroundCleanupScheduler {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun schedule(delayMillis: Long, action: () -> Unit): BackgroundCleanupHandle {
+        val runnable = Runnable(action)
+        handler.postDelayed(runnable, delayMillis)
+        return BackgroundCleanupHandle {
+            handler.removeCallbacks(runnable)
+        }
     }
 }
 

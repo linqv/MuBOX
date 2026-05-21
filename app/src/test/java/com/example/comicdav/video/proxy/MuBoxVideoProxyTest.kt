@@ -88,7 +88,7 @@ class MuBoxVideoProxyTest {
         assertEquals(200, response.code)
         assertEquals("10", response.headers["Content-Length"])
         assertNull(response.headers["Content-Range"])
-        assertEquals(listOf(0L to null), client.openRangeCalls)
+        assertEquals(listOf(0L to 9L), client.openRangeCalls)
         assertArrayEquals("0123456789".toByteArray(), response.body)
     }
 
@@ -273,6 +273,63 @@ class MuBoxVideoProxyTest {
         }
 
         assertEquals(1, boundSockets.size)
+    }
+
+    @Test
+    fun oversizedRequestHeaderReturnsRequestHeaderFieldsTooLarge() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        val response = Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            socket.getOutputStream().write(
+                buildString {
+                    append("GET ${parsed.path} HTTP/1.1\r\n")
+                    append("Host: ${parsed.host}:${parsed.port}\r\n")
+                    append("X-Fill: ")
+                    append("x".repeat(70 * 1024))
+                    append("\r\n\r\n")
+                }.toByteArray(),
+            )
+            socket.getOutputStream().flush()
+            socket.getInputStream().bufferedReader().readLine()
+        }
+
+        assertEquals("HTTP/1.1 431 Request Header Fields Too Large", response)
+    }
+
+    @Test
+    fun idleHeaderConnectionTimesOutAndProxyStaysUsable() = runTest {
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient("0123456789".toByteArray()) },
+            coroutineScope = scope,
+            portRange = 0..0,
+            requestHeaderTimeoutMillis = 100,
+        )
+        proxy = localProxy
+        localProxy.start()
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+        )
+        val parsed = URL(streamUrl)
+
+        val timedOut = Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 1_000
+            socket.getInputStream().read() == -1
+        }
+        val response = httpRequest(streamUrl, method = "GET", range = "bytes=0-2")
+
+        assertTrue(timedOut)
+        assertEquals(206, response.code)
+        assertArrayEquals("012".toByteArray(), response.body)
     }
 
     private suspend fun startProxy(

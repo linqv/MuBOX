@@ -94,9 +94,59 @@ class VideoProxyManagerTest {
         }
     }
 
-    private fun request(size: Long): WebDavVideoOpenRequest =
+    @Test
+    fun sessionsKeepTheirAccountSnapshotWhenSameAccountIdIsOpenedAgain() = runTest {
+        val firstServer = MockWebServer()
+        val secondServer = MockWebServer()
+        firstServer.start()
+        secondServer.start()
+        try {
+            firstServer.enqueue(
+                MockResponse()
+                    .setResponseCode(206)
+                    .setHeader("Content-Range", "bytes 0-0/1")
+                    .setBody("a"),
+            )
+            secondServer.enqueue(
+                MockResponse()
+                    .setResponseCode(206)
+                    .setHeader("Content-Range", "bytes 0-0/1")
+                    .setBody("b"),
+            )
+
+            val first = VideoProxyManager.open(
+                request = request(size = 1, accountId = "account-1"),
+                account = account(
+                    accountId = "account-1",
+                    baseUrl = firstServer.url("/dav/").toString(),
+                    password = "first-pass",
+                ),
+            )
+            val second = VideoProxyManager.open(
+                request = request(size = 1, accountId = "account-1"),
+                account = account(
+                    accountId = "account-1",
+                    baseUrl = secondServer.url("/dav/").toString(),
+                    password = "second-pass",
+                ),
+            )
+
+            assertArrayEquals("a".toByteArray(), httpRequest(first.url, range = "bytes=0-0").body)
+            assertArrayEquals("b".toByteArray(), httpRequest(second.url, range = "bytes=0-0").body)
+            assertEquals(Credentials.basic("user", "first-pass"), firstServer.takeRequest().getHeader("Authorization"))
+            assertEquals(Credentials.basic("user", "second-pass"), secondServer.takeRequest().getHeader("Authorization"))
+
+            VideoProxyManager.close(first.streamId)
+            VideoProxyManager.close(second.streamId)
+        } finally {
+            firstServer.shutdown()
+            secondServer.shutdown()
+        }
+    }
+
+    private fun request(size: Long, accountId: String = account().accountId): WebDavVideoOpenRequest =
         WebDavVideoOpenRequest(
-            accountId = account().accountId,
+            accountId = accountId,
             remotePath = "/movie.mp4",
             displayName = "movie.mp4",
             size = size,
@@ -105,12 +155,16 @@ class VideoProxyManagerTest {
             mimeType = "video/mp4",
         )
 
-    private fun account(): SavedWebDavAccount =
+    private fun account(
+        accountId: String = "account-1",
+        baseUrl: String = server.url("/dav/").toString(),
+        password: String = "pass",
+    ): SavedWebDavAccount =
         SavedWebDavAccount(
-            accountId = "account-1",
-            baseUrl = server.url("/dav/").toString(),
+            accountId = accountId,
+            baseUrl = baseUrl,
             username = "user",
-            password = "pass",
+            password = password,
         )
 
     private fun httpRequest(url: String, range: String): HttpResponse {

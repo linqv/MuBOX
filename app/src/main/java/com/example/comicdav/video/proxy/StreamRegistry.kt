@@ -3,17 +3,17 @@ package com.example.comicdav.video.proxy
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 
-class StreamRegistry : Closeable {
-    private val entries = ConcurrentHashMap<String, VideoStreamRequest>()
+internal class StreamRegistry : Closeable {
+    private val entries = ConcurrentHashMap<String, RegisteredVideoStream>()
     private val activeStreams = ConcurrentHashMap<String, MutableSet<Closeable>>()
 
-    fun put(streamId: String, request: VideoStreamRequest) {
-        entries[streamId] = request
+    fun put(streamId: String, stream: RegisteredVideoStream) {
+        entries[streamId] = stream
     }
 
-    fun get(streamId: String): VideoStreamRequest? = entries[streamId]
+    fun get(streamId: String): RegisteredVideoStream? = entries[streamId]
 
-    fun remove(streamId: String): VideoStreamRequest? {
+    fun remove(streamId: String): RegisteredVideoStream? {
         val removed = entries.remove(streamId)
         closeActive(streamId)
         return removed

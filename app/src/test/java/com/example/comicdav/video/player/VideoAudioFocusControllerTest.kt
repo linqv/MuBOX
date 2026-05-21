@@ -67,12 +67,13 @@ class VideoAudioFocusControllerTest {
         val policy = VideoPlaybackLifecyclePolicy(
             onPausePlayback = { pauseCount += 1 },
             onCleanupPlayback = {},
+            backgroundCleanupScheduler = FakeBackgroundCleanupScheduler(),
         )
 
-        policy.setPausedForBackground(true)
-        policy.setPausedForBackground(true)
-        policy.setPausedForBackground(false)
-        policy.setPausedForBackground(true)
+        policy.moveToBackground()
+        policy.moveToBackground()
+        policy.returnToForeground()
+        policy.moveToBackground()
 
         assertEquals(2, pauseCount)
     }
@@ -83,10 +84,49 @@ class VideoAudioFocusControllerTest {
         val policy = VideoPlaybackLifecyclePolicy(
             onPausePlayback = {},
             onCleanupPlayback = { cleanupCount += 1 },
+            backgroundCleanupScheduler = FakeBackgroundCleanupScheduler(),
         )
 
         policy.cleanup()
         policy.cleanup()
+
+        assertEquals(1, cleanupCount)
+    }
+
+    @Test
+    fun foregroundReturnCancelsBackgroundCleanupWithoutAutoResume() {
+        var pauseCount = 0
+        var cleanupCount = 0
+        val scheduler = FakeBackgroundCleanupScheduler()
+        val policy = VideoPlaybackLifecyclePolicy(
+            onPausePlayback = { pauseCount += 1 },
+            onCleanupPlayback = { cleanupCount += 1 },
+            backgroundCleanupDelayMillis = 100,
+            backgroundCleanupScheduler = scheduler,
+        )
+
+        policy.moveToBackground()
+        policy.returnToForeground()
+        scheduler.runPending()
+
+        assertEquals(1, pauseCount)
+        assertEquals(0, cleanupCount)
+    }
+
+    @Test
+    fun backgroundTimeoutCleansUpPlaybackWhenActivityDoesNotReturn() {
+        var cleanupCount = 0
+        val scheduler = FakeBackgroundCleanupScheduler()
+        val policy = VideoPlaybackLifecyclePolicy(
+            onPausePlayback = {},
+            onCleanupPlayback = { cleanupCount += 1 },
+            backgroundCleanupDelayMillis = 100,
+            backgroundCleanupScheduler = scheduler,
+        )
+
+        policy.moveToBackground()
+        scheduler.runPending()
+        scheduler.runPending()
 
         assertEquals(1, cleanupCount)
     }
@@ -119,5 +159,24 @@ private class FakeAudioFocusGateway(
 
     fun sendDuck() {
         listener?.onAudioFocusChange(VideoAudioFocusChange.Duck)
+    }
+}
+
+private class FakeBackgroundCleanupScheduler : BackgroundCleanupScheduler {
+    private var pending: (() -> Unit)? = null
+
+    override fun schedule(delayMillis: Long, action: () -> Unit): BackgroundCleanupHandle {
+        pending = action
+        return BackgroundCleanupHandle {
+            if (pending === action) {
+                pending = null
+            }
+        }
+    }
+
+    fun runPending() {
+        val action = pending ?: return
+        pending = null
+        action()
     }
 }
