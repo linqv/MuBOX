@@ -258,11 +258,7 @@ class MuBoxVideoProxy(
         val response = try {
             if (range == null) {
                 client.openFullStream(request.remotePath)
-            } else if (
-                request.proxySettings.seekOptimizationEnabled &&
-                range.seekOptimizationEligible &&
-                range.byteCount <= MAX_OPTIMIZED_RESPONSE_BYTES
-            ) {
+            } else if (shouldUseSeekOptimizer(request, range)) {
                 runCatchingCancellable {
                     seekOptimizer.openRangeStream(
                         client = client,
@@ -377,6 +373,19 @@ class MuBoxVideoProxy(
         )
     }
 
+    private fun shouldUseSeekOptimizer(
+        request: VideoStreamRequest,
+        range: ParsedRange.Valid,
+    ): Boolean {
+        if (!request.proxySettings.seekOptimizationEnabled) return false
+        if (!range.seekOptimizationEligible) return false
+        if (range.byteCount > MAX_OPTIMIZED_RESPONSE_BYTES) return false
+        return segmentIndexFor(range.start) == segmentIndexFor(range.endInclusive)
+    }
+
+    private fun segmentIndexFor(byteOffset: Long): Long =
+        byteOffset / OPTIMIZER_SEGMENT_BYTES
+
     private fun writeResponse(output: OutputStream, code: Int, headers: Map<String, String>, body: java.io.InputStream?) {
         val reason = when (code) {
             200 -> "OK"
@@ -468,7 +477,8 @@ class MuBoxVideoProxy(
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_CHUNK_BYTES = 8L * 1024L * 1024L
-        private const val MAX_OPTIMIZED_RESPONSE_BYTES = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
+        private const val OPTIMIZER_SEGMENT_BYTES = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
+        private const val MAX_OPTIMIZED_RESPONSE_BYTES = OPTIMIZER_SEGMENT_BYTES
         private const val DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS = 10_000
         private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
         private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())

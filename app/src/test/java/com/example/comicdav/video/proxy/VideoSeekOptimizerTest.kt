@@ -6,7 +6,9 @@ import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.network.WebDavStreamResponse
 import java.io.ByteArrayInputStream
+import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
@@ -224,7 +226,7 @@ class VideoSeekOptimizerTest {
     }
 
     @Test
-    fun cancellingLastAwaiterClosesActiveRemoteResponse() = runTest {
+    fun cancellingLastAwaiterDoesNotCloseSharedRemoteResponse() = runTest {
         val client = BlockingReadClient()
         val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
         val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
@@ -244,9 +246,89 @@ class VideoSeekOptimizerTest {
 
             job.cancelAndJoin()
 
-            assertTrue("cancelling the only waiter should close the remote response", client.closed.await(2, TimeUnit.SECONDS))
+            assertFalse("awaiter cancellation should not close shared remote response", client.closed.await(100, TimeUnit.MILLISECONDS))
+            optimizer.close()
+            assertTrue("optimizer close should still close the remote response", client.closed.await(2, TimeUnit.SECONDS))
         } finally {
             client.forceClose()
+            optimizer.close()
+        }
+    }
+
+    @Test
+    fun cancellingAwaiterDoesNotCancelSharedInFlightSegmentForLaterJoiners() = runTest {
+        val bytes = numberedBytes(8)
+        val client = GateSegmentClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val first = async(Dispatchers.IO) {
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = bytes.size.toLong()),
+                totalSize = bytes.size.toLong(),
+                start = 0L,
+                endInclusive = 3L,
+                settings = settings,
+            )
+        }
+
+        try {
+            assertTrue("first fetch should start reading", client.readStarted.await(2, TimeUnit.SECONDS))
+
+            first.cancelAndJoin()
+
+            val second = async(Dispatchers.IO) {
+                optimizer.openRangeStream(
+                    client = client,
+                    request = request(size = bytes.size.toLong()),
+                    totalSize = bytes.size.toLong(),
+                    start = 4L,
+                    endInclusive = 7L,
+                    settings = settings,
+                ).stream.readBytes()
+            }
+
+            delay(100)
+            assertEquals("second request should join existing in-flight segment", 1, client.opened.get())
+            assertEquals("awaiter cancellation must not close shared remote response", 0, client.closed.get())
+
+            client.release()
+
+            assertArrayEquals(bytes.copyOfRange(4, 8), second.await())
+            assertEquals(listOf(0L to 7L), client.openRangeCalls)
+        } finally {
+            client.release()
+            optimizer.close()
+        }
+    }
+
+    @Test
+    fun removeStreamCancelsRemoteRequestBeforeResponseIsReturned() = runTest {
+        val client = PreResponseBlockingClient()
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val job = async(Dispatchers.IO) {
+            runCatching {
+                optimizer.openRangeStream(
+                    client = client,
+                    request = request(size = 16L),
+                    totalSize = 16L,
+                    start = 0L,
+                    endInclusive = 3L,
+                    settings = settings,
+                )
+            }
+        }
+
+        try {
+            assertTrue("remote call cancel hook should be registered", client.cancelHookRegistered.await(2, TimeUnit.SECONDS))
+
+            optimizer.removeStream("stream-1")
+
+            assertTrue("removeStream should cancel the remote call before response metadata returns", client.cancelled.await(2, TimeUnit.SECONDS))
+        } finally {
+            client.release()
+            job.cancelAndJoin()
             optimizer.close()
         }
     }
@@ -480,6 +562,114 @@ class VideoSeekOptimizerTest {
         override fun close() {
             isClosed = true
             closed.countDown()
+        }
+    }
+
+    private class GateSegmentClient(
+        private val bytes: ByteArray,
+    ) : WebDavClient {
+        val openRangeCalls: MutableList<Pair<Long, Long>> = Collections.synchronizedList(mutableListOf())
+        val opened = AtomicInteger(0)
+        val closed = AtomicInteger(0)
+        val readStarted = CountDownLatch(1)
+        private val released = CountDownLatch(1)
+
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("not used")
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse {
+            val end = requireNotNull(endInclusive)
+            opened.incrementAndGet()
+            openRangeCalls += start to end
+            val stream = object : InputStream() {
+                private var offset = 0
+                private var isClosed = false
+
+                override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+                    readStarted.countDown()
+                    released.await(2, TimeUnit.SECONDS)
+                    if (isClosed) throw IOException("closed")
+                    if (offset >= bytes.size) return -1
+                    val count = minOf(len, bytes.size - offset)
+                    bytes.copyInto(buffer, off, offset, offset + count)
+                    offset += count
+                    return count
+                }
+
+                override fun read(): Int {
+                    val one = ByteArray(1)
+                    val count = read(one, 0, 1)
+                    return if (count == -1) -1 else one[0].toInt() and 0xff
+                }
+
+                override fun close() {
+                    isClosed = true
+                    closed.incrementAndGet()
+                    released.countDown()
+                }
+            }
+            return WebDavStreamResponse(
+                stream = stream,
+                statusCode = 206,
+                contentLength = bytes.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = stream::close,
+            )
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("not used")
+
+        fun release() {
+            released.countDown()
+        }
+    }
+
+    private class PreResponseBlockingClient : WebDavClient {
+        val cancelHookRegistered = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        private val released = CountDownLatch(1)
+
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 16L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("not used")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+            registerCancellation: (Closeable) -> Unit,
+        ): WebDavStreamResponse {
+            registerCancellation(
+                Closeable {
+                    cancelled.countDown()
+                    released.countDown()
+                },
+            )
+            cancelHookRegistered.countDown()
+            released.await(2, TimeUnit.SECONDS)
+            throw IOException("blocked request was cancelled")
+        }
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse =
+            error("cancellable range API should be used")
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("not used")
+
+        fun release() {
+            released.countDown()
         }
     }
 }

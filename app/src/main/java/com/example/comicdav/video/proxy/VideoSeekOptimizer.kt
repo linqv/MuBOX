@@ -34,7 +34,7 @@ internal class VideoSeekOptimizer(
 
     private val closed = AtomicBoolean(false)
     private val inFlight = ConcurrentHashMap<SegmentKey, InFlightSegment>()
-    private val activeResponses = ConcurrentHashMap<SegmentKey, Closeable>()
+    private val activeResponses = ConcurrentHashMap<SegmentKey, MutableSet<Closeable>>()
     private val prefetchLock = Any()
     private val prefetchJobs = mutableMapOf<String, MutableSet<Job>>()
 
@@ -116,12 +116,9 @@ internal class VideoSeekOptimizer(
                 entry.value.deferred.cancel()
                 inFlight.remove(entry.key, entry.value)
             }
-        activeResponses.entries
-            .filter { it.key.streamId == streamId }
-            .forEach { entry ->
-                entry.value.closeQuietly()
-                activeResponses.remove(entry.key, entry.value)
-            }
+        activeResponses.keys
+            .filter { it.streamId == streamId }
+            .forEach(::closeActiveResponses)
         cache.removeStream(streamId)
     }
 
@@ -133,8 +130,7 @@ internal class VideoSeekOptimizer(
         jobs.forEach { it.cancel() }
         inFlight.values.forEach { it.deferred.cancel() }
         inFlight.clear()
-        activeResponses.values.forEach { it.closeQuietly() }
-        activeResponses.clear()
+        activeResponses.keys.toList().forEach(::closeActiveResponses)
         cache.clear()
     }
 
@@ -211,17 +207,10 @@ internal class VideoSeekOptimizer(
         }
 
         inFlightSegment.waiters.incrementAndGet()
-        var waiterReleased = false
         try {
             return inFlightSegment.deferred.await()
-        } catch (error: CancellationException) {
-            releaseWaiter(key, inFlightSegment, cancelIfLast = true)
-            waiterReleased = true
-            throw error
         } finally {
-            if (!waiterReleased) {
-                releaseWaiter(key, inFlightSegment, cancelIfLast = false)
-            }
+            releaseWaiter(inFlightSegment)
         }
     }
 
@@ -251,10 +240,18 @@ internal class VideoSeekOptimizer(
                 "segment=$segmentIndex range=$segmentStart-$segmentEnd"
         }
 
-        val response = client.openRangeStream(request.remotePath, segmentStart, segmentEnd)
         val key = SegmentKey(request.streamId, segmentIndex)
+        var requestCloseable: Closeable? = null
+        val response = try {
+            client.openRangeStream(request.remotePath, segmentStart, segmentEnd) { closeable ->
+                requestCloseable = closeable
+                addActiveResponse(key, closeable)
+            }
+        } finally {
+            requestCloseable?.let { removeActiveResponse(key, it) }
+        }
         val responseCloseable = Closeable { response.close() }
-        activeResponses[key] = responseCloseable
+        addActiveResponse(key, responseCloseable)
         try {
             coroutineContext.ensureActive()
             val bytes = response.stream.readBytes()
@@ -276,7 +273,7 @@ internal class VideoSeekOptimizer(
             }
             return segment
         } finally {
-            activeResponses.remove(key, responseCloseable)
+            removeActiveResponse(key, responseCloseable)
             responseCloseable.closeQuietly()
         }
     }
@@ -369,15 +366,38 @@ internal class VideoSeekOptimizer(
         jobs.forEach { it.cancel() }
     }
 
-    private fun releaseWaiter(
-        key: SegmentKey,
-        entry: InFlightSegment,
-        cancelIfLast: Boolean,
-    ) {
-        val remainingWaiters = entry.waiters.decrementAndGet()
-        if (cancelIfLast && remainingWaiters <= 0 && inFlight[key] === entry) {
-            entry.deferred.cancel()
-            activeResponses[key]?.closeQuietly()
+    private fun releaseWaiter(entry: InFlightSegment) {
+        entry.waiters.decrementAndGet()
+    }
+
+    private fun addActiveResponse(key: SegmentKey, closeable: Closeable): Boolean {
+        if (closed.get() || !inFlight.containsKey(key)) {
+            closeable.closeQuietly()
+            return false
+        }
+        val responses = activeResponses.computeIfAbsent(key) {
+            ConcurrentHashMap.newKeySet()
+        }
+        responses += closeable
+        if (closed.get() || !inFlight.containsKey(key)) {
+            removeActiveResponse(key, closeable)
+            closeable.closeQuietly()
+            return false
+        }
+        return true
+    }
+
+    private fun removeActiveResponse(key: SegmentKey, closeable: Closeable) {
+        val responses = activeResponses[key] ?: return
+        responses -= closeable
+        if (responses.isEmpty()) {
+            activeResponses.remove(key, responses)
+        }
+    }
+
+    private fun closeActiveResponses(key: SegmentKey) {
+        activeResponses.remove(key)?.forEach { closeable ->
+            closeable.closeQuietly()
         }
     }
 

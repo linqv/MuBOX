@@ -15,6 +15,7 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.ServerSocket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -169,7 +170,7 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
-    fun explicitRangeLargerThanOptimizerLimitUsesDirectRemoteRange() = runTest {
+    fun explicitRangeLargerThanSegmentUsesDirectRemoteRange() = runTest {
         val maxOptimizedBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
         val bytes = ByteArray((maxOptimizedBytes + 2L).toInt()) { (it % 251).toByte() }
         val client = RecordingClient(bytes)
@@ -180,6 +181,20 @@ class MuBoxVideoProxyTest {
         assertEquals(206, response.code)
         assertEquals(maxOptimizedBytes + 1L, response.body.size.toLong())
         assertEquals(listOf(0L to maxOptimizedBytes), client.openRangeCalls)
+    }
+
+    @Test
+    fun explicitRangeCrossingSegmentBoundaryUsesDirectRemoteRange() = runTest {
+        val segmentBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
+        val bytes = ByteArray((segmentBytes + 8L).toInt()) { (it % 251).toByte() }
+        val client = RecordingClient(bytes)
+        val url = startProxy(client = client, size = bytes.size.toLong())
+
+        val response = httpRequest(url, method = "GET", range = "bytes=${segmentBytes - 4}-${segmentBytes + 3}")
+
+        assertEquals(206, response.code)
+        assertArrayEquals(bytes.copyOfRange((segmentBytes - 4).toInt(), (segmentBytes + 4).toInt()), response.body)
+        assertEquals(listOf(segmentBytes - 4 to segmentBytes + 3), client.openRangeCalls)
     }
 
     @Test
@@ -277,6 +292,69 @@ class MuBoxVideoProxyTest {
         assertEquals("bytes 2-9/10", response.headers["Content-Range"])
         assertEquals(listOf(2L to 9L), client.openRangeCalls)
         assertArrayEquals("23456789".toByteArray(), response.body)
+    }
+
+    @Test
+    fun openEndedRangeUsesDirectRemoteRangeToPreserveStreamingStartup() = runTest {
+        val segmentBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES.toInt()
+        val bytes = ByteArray(segmentBytes + 8) { (it % 251).toByte() }
+        val client = RecordingClient(bytes)
+        val url = startProxy(
+            client = client,
+            size = bytes.size.toLong(),
+            proxySettings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF),
+        )
+
+        val first = httpRequest(url, method = "GET", range = "bytes=0-")
+        val second = httpRequest(url, method = "GET", range = "bytes=${segmentBytes - 4}-")
+
+        assertEquals(206, first.code)
+        assertEquals(206, second.code)
+        assertArrayEquals(bytes, first.body)
+        assertArrayEquals(bytes.copyOfRange(segmentBytes - 4, bytes.size), second.body)
+        assertEquals(
+            listOf(
+                0L to bytes.lastIndex.toLong(),
+                (segmentBytes - 4).toLong() to bytes.lastIndex.toLong(),
+            ),
+            client.openRangeCalls,
+        )
+    }
+
+    @Test
+    fun openEndedRangeSendsInitialBodyBytesBeforeLaterRemoteBytesFinish() = runTest {
+        val segmentBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES.toInt()
+        val bytes = ByteArray(segmentBytes + 8) { (it % 251).toByte() }
+        val client = SlowAfterFirstByteRangeClient(bytes)
+        val url = startProxy(
+            client = client,
+            size = bytes.size.toLong(),
+            proxySettings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF),
+        )
+        val parsed = URL(url)
+
+        try {
+            Socket(parsed.host, parsed.port).use { socket ->
+                socket.soTimeout = 500
+                socket.getOutputStream().write(
+                    buildString {
+                        append("GET ${parsed.path} HTTP/1.1\r\n")
+                        append("Host: ${parsed.host}:${parsed.port}\r\n")
+                        append("Range: bytes=0-\r\n")
+                        append("Connection: close\r\n")
+                        append("\r\n")
+                    }.toByteArray(),
+                )
+                socket.getOutputStream().flush()
+
+                val headerAndFirstBodyByte = readHeadersAndFirstBodyByte(socket)
+
+                assertTrue(headerAndFirstBodyByte.startsWith("HTTP/1.1 206 Partial Content"))
+                assertEquals(0, headerAndFirstBodyByte.encodeToByteArray().last().toInt() and 0xff)
+            }
+        } finally {
+            client.release()
+        }
     }
 
     @Test
@@ -612,6 +690,42 @@ class MuBoxVideoProxyTest {
         }
     }
 
+    private fun readHeadersAndFirstBodyByte(socket: Socket): String {
+        val buffer = ByteArrayOutputStream()
+        val terminator = "\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
+        while (true) {
+            val next = try {
+                socket.getInputStream().read()
+            } catch (error: SocketTimeoutException) {
+                throw AssertionError("timed out waiting for initial proxy response bytes", error)
+            }
+            if (next == -1) {
+                throw AssertionError("connection closed before body bytes were received")
+            }
+            buffer.write(next)
+            val bytes = buffer.toByteArray()
+            val headerEnd = bytes.indexOf(terminator)
+            if (headerEnd >= 0 && bytes.size > headerEnd + terminator.size) {
+                return bytes.toString(Charsets.ISO_8859_1)
+            }
+        }
+    }
+
+    private fun ByteArray.indexOf(pattern: ByteArray): Int {
+        if (pattern.isEmpty() || size < pattern.size) return -1
+        for (index in 0..size - pattern.size) {
+            var matched = true
+            for (patternIndex in pattern.indices) {
+                if (this[index + patternIndex] != pattern[patternIndex]) {
+                    matched = false
+                    break
+                }
+            }
+            if (matched) return index
+        }
+        return -1
+    }
+
     private data class HttpResponse(
         val code: Int,
         val headers: Map<String, String>,
@@ -666,6 +780,72 @@ class MuBoxVideoProxyTest {
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by video proxy tests")
+    }
+
+    private class SlowAfterFirstByteRangeClient(
+        private val bytes: ByteArray,
+    ) : WebDavClient {
+        private val released = CountDownLatch(1)
+
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("readRange is not used by video proxy tests")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse {
+            val end = endInclusive ?: bytes.lastIndex.toLong()
+            val chunk = bytes.sliceArray(start.toInt()..end.toInt())
+            return WebDavStreamResponse(
+                stream = SlowAfterFirstByteInputStream(chunk, released),
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = { released.countDown() },
+            )
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+
+        fun release() {
+            released.countDown()
+        }
+    }
+
+    private class SlowAfterFirstByteInputStream(
+        private val bytes: ByteArray,
+        private val released: CountDownLatch,
+    ) : InputStream() {
+        private var offset = 0
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (this.offset >= bytes.size) return -1
+            if (this.offset > 0) {
+                released.await(2, TimeUnit.SECONDS)
+            }
+            buffer[offset] = bytes[this.offset]
+            this.offset += 1
+            return 1
+        }
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            val count = read(one, 0, 1)
+            return if (count == -1) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun close() {
+            released.countDown()
+        }
     }
 
     private class FailingClient(
