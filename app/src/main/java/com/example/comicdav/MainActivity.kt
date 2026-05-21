@@ -107,7 +107,10 @@ import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.MediaKind
+import com.example.comicdav.video.VideoSubtitleOpenRequest
+import com.example.comicdav.video.WebDavSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
+import com.example.comicdav.video.findSidecarSubtitles
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
@@ -230,7 +233,7 @@ fun ComicDavApp() {
     val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
     val webDavAccountStore = remember(context) { WebDavAccountStore(context.webDavAccountDataStore) }
     val downloadRecordStore = remember(context) { DownloadRecordStore(context.downloadRecordsDataStore) }
-    val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings())
+    val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings(videoResumeEnabled = false))
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     fun clearSelection() {
         selectedWebDavFile = null
@@ -418,10 +421,27 @@ fun ComicDavApp() {
             displayName = item.name,
             size = item.size,
             lastModified = item.lastModified,
+            subtitles = findSidecarSubtitles(
+                videoFileName = item.name,
+                candidates = fileDirectoryUiState.entries,
+                nameOf = FileDirectoryBrowserItem::name,
+                isDirectoryOf = FileDirectoryBrowserItem::isDirectory,
+            ).map { subtitle ->
+                VideoSubtitleOpenRequest(
+                    uri = subtitle.uri,
+                    displayName = subtitle.name,
+                )
+            },
         )
         pendingLocalVideoOpen = request
         localOpenError = null
-        context.startActivity(VideoPlayerActivity.localIntent(context, request))
+        context.startActivity(
+            VideoPlayerActivity.localIntent(
+                context = context,
+                request = request,
+                resumeEnabled = appSettings.videoResumeEnabled,
+            ),
+        )
     }
 
     fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
@@ -610,6 +630,21 @@ fun ComicDavApp() {
             etag = item.etag,
             lastModified = item.lastModified,
             mimeType = mimeTypeForMediaFileName(item.name),
+            subtitles = findSidecarSubtitles(
+                videoFileName = item.name,
+                candidates = uiState.items,
+                nameOf = WebDavItem::name,
+                isDirectoryOf = WebDavItem::isDirectory,
+            ).map { subtitle ->
+                WebDavSubtitleOpenRequest(
+                    remotePath = subtitle.path,
+                    displayName = subtitle.name,
+                    size = subtitle.size,
+                    etag = subtitle.etag,
+                    lastModified = subtitle.lastModified,
+                    mimeType = mimeTypeForMediaFileName(subtitle.name),
+                )
+            },
         )
         pendingLocalVideoOpen = null
         pendingWebDavVideoOpen = request
@@ -626,10 +661,11 @@ fun ComicDavApp() {
                     context.startActivity(
                         VideoPlayerActivity.webDavIntent(
                             context = context,
+                            request = request,
                             uri = session.url,
-                            displayName = item.name,
-                            size = item.size,
-                            lastModified = item.lastModified,
+                            subtitleUrls = session.subtitleUrls,
+                            streamIds = session.streamIds,
+                            resumeEnabled = appSettings.videoResumeEnabled,
                         ),
                     )
                 }
@@ -1457,6 +1493,9 @@ fun ComicDavApp() {
                                     },
                                     onLibraryCoversEnabledChange = { value ->
                                         scope.launch { appSettingsStore.updateLibraryCoversEnabled(value) }
+                                    },
+                                    onVideoResumeEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoResumeEnabled(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,

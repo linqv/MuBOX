@@ -130,6 +130,35 @@ class OkHttpWebDavClient(
         }
     }
 
+    override suspend fun openFullStream(path: String): WebDavStreamResponse = withContext(Dispatchers.IO) {
+        val request = requestBuilder(path)
+            .get()
+            .build()
+        val response = httpClient.newCall(request).execute()
+        if (response.code != 200) {
+            response.close()
+            throw WebDavException.HttpStatus(
+                response.code,
+                "GET failed with HTTP ${response.code}: ${request.url}",
+            )
+        }
+        val body = response.body ?: run {
+            response.close()
+            throw WebDavException.MissingMetadata("GET response body is empty")
+        }
+        val contentLength = body.contentLength()
+        val stream = body.byteStream()
+        WebDavStreamResponse(
+            stream = stream,
+            statusCode = response.code,
+            contentLength = contentLength,
+            contentRange = null,
+            contentType = response.header("Content-Type"),
+            totalSize = contentLength.takeIf { it >= 0 },
+            close = { response.close() },
+        )
+    }
+
     override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
         withContext(Dispatchers.IO) {
             val request = requestBuilder(path).get().build()

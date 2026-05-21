@@ -17,7 +17,7 @@ internal suspend fun startWebDavVideoPlayback(
         launched = true
     } finally {
         if (!launched) {
-            closeProxy(session.streamId)
+            session.streamIds.forEach(closeProxy)
         }
     }
 }

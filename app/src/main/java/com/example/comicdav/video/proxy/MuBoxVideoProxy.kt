@@ -131,7 +131,7 @@ class MuBoxVideoProxy(
             writeResponse(socket.getOutputStream(), 431, emptyMap(), null)
             return
         }
-        val lines = headerBlock.split("\r\n")
+        val lines = headerBlock.lineSequence().toList()
         val requestLine = lines.firstOrNull().orEmpty()
         val headers = mutableMapOf<String, String>()
         lines.drop(1).forEach { line ->
@@ -165,6 +165,7 @@ class MuBoxVideoProxy(
         val input = socket.getInputStream()
         val buffer = ByteArrayOutputStream()
         var matchedTerminatorBytes = 0
+        var previousByte = -1
         while (true) {
             val next = input.read()
             if (next == -1) return null
@@ -179,9 +180,12 @@ class MuBoxVideoProxy(
             } else {
                 0
             }
-            if (matchedTerminatorBytes == HEADER_TERMINATOR.size) {
+            if (matchedTerminatorBytes == HEADER_TERMINATOR.size ||
+                (previousByte == '\n'.code && next == '\n'.code)
+            ) {
                 return buffer.toString(Charsets.ISO_8859_1.name())
             }
+            previousByte = next
         }
     }
 
@@ -238,11 +242,15 @@ class MuBoxVideoProxy(
             ParsedRange.Invalid -> null
         }
         val response = try {
-            client.openRangeStream(
-                path = request.remotePath,
-                start = range?.start ?: 0L,
-                endInclusive = range?.endInclusive ?: fullBodyEndInclusive(info.size),
-            )
+            if (range == null) {
+                client.openFullStream(request.remotePath)
+            } else {
+                client.openRangeStream(
+                    path = request.remotePath,
+                    start = range.start,
+                    endInclusive = range.endInclusive,
+                )
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -276,8 +284,13 @@ class MuBoxVideoProxy(
             } else {
                 null
             }
+            val responseContentLength = if (statusCode == 200 && response.contentLength < 0) {
+                info.size
+            } else {
+                response.contentLength
+            }
             val headers = linkedMapOf(
-                "Content-Length" to response.contentLength.toString(),
+                "Content-Length" to responseContentLength.toString(),
                 "Content-Type" to (response.contentType ?: request.mimeType ?: "application/octet-stream"),
                 "Accept-Ranges" to "bytes",
             )
@@ -341,13 +354,13 @@ class MuBoxVideoProxy(
             copy(totalSize = responseTotalSize?.takeIf { it >= 0 } ?: fallbackTotalSize)
         }
 
-    private fun fullBodyEndInclusive(totalSize: Long): Long? =
-        if (totalSize > 0) totalSize - 1 else null
-
     private fun isCompleteFullBodyResponse(response: com.example.comicdav.network.WebDavStreamResponse, totalSize: Long): Boolean {
-        if (totalSize <= 0) return response.contentLength == 0L
+        if (response.statusCode == 200) {
+            return response.contentLength < 0 || response.contentLength == totalSize
+        }
         val range = response.contentRange ?: return false
-        return response.contentLength == totalSize &&
+        return response.statusCode == 206 &&
+            response.contentLength == totalSize &&
             range.start == 0L &&
             range.endInclusive == totalSize - 1
     }

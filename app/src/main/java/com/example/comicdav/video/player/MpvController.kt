@@ -1,5 +1,6 @@
 package com.example.comicdav.video.player
 
+import com.example.comicdav.video.VideoSubtitleOpenRequest
 import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,11 @@ data class MpvPlayerState(
 interface MpvEngine {
     fun loadFile(uri: String) {
         command("loadfile", uri)
+    }
+
+    fun loadFile(uri: String, afterLoadfile: () -> Unit) {
+        loadFile(uri)
+        afterLoadfile()
     }
 
     fun command(vararg args: String)
@@ -43,10 +49,14 @@ object RealMpvEngine : MpvEngine {
 }
 
 class ViewBackedMpvEngine(
-    private val view: MuBoxMpvView,
+    private val view: MpvFileLoader,
 ) : MpvEngine {
     override fun loadFile(uri: String) {
-        view.playFile(uri)
+        view.playFileWhenReady(uri) {}
+    }
+
+    override fun loadFile(uri: String, afterLoadfile: () -> Unit) {
+        view.playFileWhenReady(uri, afterLoadfile)
     }
 
     override fun command(vararg args: String) {
@@ -75,12 +85,39 @@ class MpvController(
     private var isCleaning = false
     @Volatile
     private var isDestroyed = false
+    private var pendingResumeSeekMillis: Long? = null
 
-    fun load(uri: String, displayName: String) {
+    fun load(
+        uri: String,
+        displayName: String,
+        startPositionMillis: Long = 0L,
+        subtitles: List<VideoSubtitleOpenRequest> = emptyList(),
+    ) {
         if (!canWriteEngine()) return
+        pendingResumeSeekMillis = startPositionMillis.takeIf { it > 0L }
         _state.value = _state.value.copy(displayName = displayName, errorMessage = null)
         engine.setPropertyString("force-media-title", displayName)
-        engine.loadFile(uri)
+        engine.loadFile(uri) {
+            addSubtitles(subtitles)
+        }
+        if (startPositionMillis > 0L) {
+            _state.value = _state.value.copy(positionMillis = startPositionMillis)
+        }
+    }
+
+    fun addSubtitles(subtitles: List<VideoSubtitleOpenRequest>) {
+        subtitles.forEachIndexed { index, subtitle ->
+            addSubtitle(
+                subtitle = subtitle,
+                select = index == 0,
+            )
+        }
+    }
+
+    fun addSubtitle(subtitle: VideoSubtitleOpenRequest, select: Boolean) {
+        if (!canWriteEngine()) return
+        val flag = if (select) "select" else "auto"
+        engine.command("sub-add", subtitle.uri, flag, subtitle.displayName)
     }
 
     fun setPaused(paused: Boolean) {
@@ -113,11 +150,16 @@ class MpvController(
     }
 
     fun onPlaybackEnded() {
-        markPaused(true)
+        val durationMillis = _state.value.durationMillis
+        _state.value = _state.value.copy(
+            isPaused = true,
+            positionMillis = if (durationMillis > 0L) durationMillis else 0L,
+        )
     }
 
     fun onDurationChanged(durationSeconds: Double) {
         _state.value = _state.value.copy(durationMillis = secondsToMillis(durationSeconds))
+        seekToPendingResumePosition()
     }
 
     fun onPositionChanged(positionSeconds: Double) {
@@ -157,6 +199,13 @@ class MpvController(
     }
 
     private fun canWriteEngine(): Boolean = !isCleaning && !isDestroyed
+
+    private fun seekToPendingResumePosition() {
+        val pendingPositionMillis = pendingResumeSeekMillis ?: return
+        if (_state.value.durationMillis <= 0L || !canWriteEngine()) return
+        pendingResumeSeekMillis = null
+        seekTo(pendingPositionMillis)
+    }
 
     private fun attemptCleanup(failures: MutableList<Exception>, block: () -> Unit) {
         try {

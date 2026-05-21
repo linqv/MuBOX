@@ -69,6 +69,7 @@ fun SettingsScreen(
     onDiskCacheLimitChange: (Int) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
+    onVideoResumeEnabledChange: (Boolean) -> Unit,
     downloadRecords: List<DownloadRecord> = emptyList(),
     selectedDownloadRecord: DownloadRecord? = null,
     onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
@@ -164,6 +165,15 @@ fun SettingsScreen(
                 subtitle = "从 WebDAV 漫画提取首图并显示在书架",
                 checked = settings.libraryCoversEnabled,
                 onCheckedChange = onLibraryCoversEnabledChange,
+            )
+        }
+
+        SettingsGroup(title = "视频") {
+            SwitchRow(
+                title = "恢复播放位置",
+                subtitle = "再次打开同一视频时从上次退出位置继续",
+                checked = settings.videoResumeEnabled,
+                onCheckedChange = onVideoResumeEnabledChange,
             )
         }
 

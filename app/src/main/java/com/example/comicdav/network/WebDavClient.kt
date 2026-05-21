@@ -14,6 +14,8 @@ interface WebDavClient {
     ): WebDavStreamResponse {
         throw UnsupportedOperationException("Streaming range reads are not supported by this WebDavClient")
     }
+    suspend fun openFullStream(path: String): WebDavStreamResponse =
+        openRangeStream(path = path, start = 0L, endInclusive = null)
     suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long
 }
 

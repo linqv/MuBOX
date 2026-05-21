@@ -55,6 +55,28 @@ class WebDavVideoPlaybackStarterTest {
         assertEquals(emptyList<String>(), closedStreamIds)
     }
 
+    @Test
+    fun closesMainAndSubtitleProxyStreamsWhenStartPlaybackFails() = runTest {
+        val closedStreamIds = mutableListOf<String>()
+        val session = proxySession("stream-1").copy(
+            subtitleUrls = listOf("http://127.0.0.1:1/stream/stream-2"),
+            streamIds = listOf("stream-1", "stream-2"),
+        )
+
+        val result = runCatching {
+            startWebDavVideoPlayback(
+                request = request(),
+                account = account(),
+                openProxy = { _, _ -> session },
+                closeProxy = { closedStreamIds += it },
+                startPlayback = { error("activity launch failed") },
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf("stream-1", "stream-2"), closedStreamIds)
+    }
+
     private fun proxySession(streamId: String): ProxySession =
         ProxySession(
             proxy = MuBoxVideoProxy(clientProvider = { null }, coroutineScope = scope),

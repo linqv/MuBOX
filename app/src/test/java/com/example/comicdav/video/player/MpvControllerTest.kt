@@ -1,5 +1,6 @@
 package com.example.comicdav.video.player
 
+import com.example.comicdav.video.VideoSubtitleOpenRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,6 +17,73 @@ class MpvControllerTest {
         assertEquals("Movie", controller.state.value.displayName)
         assertEquals(listOf(listOf("loadfile", "content://media/movie.mp4")), engine.commands)
         assertEquals(mapOf("force-media-title" to "Movie"), engine.stringProperties)
+    }
+
+    @Test
+    fun loadWithResumePositionLoadsNormallyThenSeeksAfterDurationIsKnown() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+
+        controller.load("http://127.0.0.1:1234/stream/1", "movie.mkv", startPositionMillis = 92_500L)
+
+        assertEquals(listOf(listOf("loadfile", "http://127.0.0.1:1234/stream/1")), engine.commands)
+        assertEquals(92_500L, controller.state.value.positionMillis)
+
+        controller.onDurationChanged(120.0)
+
+        assertEquals(
+            listOf(
+                listOf("loadfile", "http://127.0.0.1:1234/stream/1"),
+                listOf("seek", "92.5", "absolute"),
+            ),
+            engine.commands,
+        )
+        assertEquals(92_500L, controller.state.value.positionMillis)
+    }
+
+    @Test
+    fun loadWithSubtitlesAddsTracksAfterLoadfile() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+
+        controller.load(
+            uri = "fd://10",
+            displayName = "movie.mkv",
+            subtitles = listOf(
+                VideoSubtitleOpenRequest(uri = "fd://11", displayName = "movie.srt"),
+                VideoSubtitleOpenRequest(uri = "fd://12", displayName = "movie.zh.ass"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                listOf("loadfile", "fd://10"),
+                listOf("sub-add", "fd://11", "select", "movie.srt"),
+                listOf("sub-add", "fd://12", "auto", "movie.zh.ass"),
+            ),
+            engine.commands,
+        )
+    }
+
+    @Test
+    fun addSubtitlesSelectsFirstTrackAndKeepsAdditionalTracksAuto() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+
+        controller.addSubtitles(
+            listOf(
+                VideoSubtitleOpenRequest(uri = "fd://11", displayName = "movie.srt"),
+                VideoSubtitleOpenRequest(uri = "fd://12", displayName = "movie.zh.ass"),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                listOf("sub-add", "fd://11", "select", "movie.srt"),
+                listOf("sub-add", "fd://12", "auto", "movie.zh.ass"),
+            ),
+            engine.commands,
+        )
     }
 
     @Test
@@ -116,6 +184,29 @@ class MpvControllerTest {
         assertTrue(controller.state.value.isPaused)
         assertEquals(emptyMap<String, Boolean>(), engine.booleanProperties)
         assertEquals(emptyList<List<String>>(), engine.commands)
+    }
+
+    @Test
+    fun playbackEndedMarksPositionAtDuration() {
+        val controller = MpvController(FakeMpvEngine())
+
+        controller.onDurationChanged(60.0)
+        controller.onPositionChanged(58.0)
+        controller.onPlaybackEnded()
+
+        assertEquals(true, controller.state.value.isPaused)
+        assertEquals(60_000L, controller.state.value.positionMillis)
+    }
+
+    @Test
+    fun playbackEndedClearsPositionWhenDurationIsUnknown() {
+        val controller = MpvController(FakeMpvEngine())
+
+        controller.onPositionChanged(58.0)
+        controller.onPlaybackEnded()
+
+        assertEquals(true, controller.state.value.isPaused)
+        assertEquals(0L, controller.state.value.positionMillis)
     }
 }
 

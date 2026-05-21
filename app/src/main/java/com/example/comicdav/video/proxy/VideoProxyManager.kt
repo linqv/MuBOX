@@ -2,6 +2,7 @@ package com.example.comicdav.video.proxy
 
 import com.example.comicdav.data.SavedWebDavAccount
 import com.example.comicdav.network.OkHttpWebDavClient
+import com.example.comicdav.video.WebDavSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -22,27 +23,56 @@ object VideoProxyManager {
     ): ProxySession {
         val accountSnapshot = account.copy()
         val sessionProxy = synchronized(this) {
+            activeSessions.incrementAndGet()
             proxy ?: MuBoxVideoProxy(
                 coroutineScope = scope,
             ).also { proxy = it }
         }
-        sessionProxy.start()
-        val url = sessionProxy.register(request) {
-            OkHttpWebDavClient(
-                baseUrl = accountSnapshot.baseUrl,
-                username = accountSnapshot.username,
-                password = accountSnapshot.password,
+        var registeredStreamCount = 1
+        val registeredUrls = mutableListOf<String>()
+        try {
+            sessionProxy.start()
+            val url = sessionProxy.register(request) {
+                accountSnapshot.client()
+            }
+            registeredUrls += url
+            val subtitleUrls = request.subtitles.map { subtitle ->
+                sessionProxy.register(subtitle.asStreamRequest(accountId = request.accountId)) {
+                    accountSnapshot.client()
+                }.also { registeredUrls += it }
+            }
+            val streamIds = registeredUrls.map { it.substringAfterLast('/') }
+            registeredStreamCount = streamIds.size
+            if (streamIds.size > 1) {
+                activeSessions.addAndGet(streamIds.size - 1)
+            }
+            return ProxySession(
+                proxy = sessionProxy,
+                streamId = streamIds.first(),
+                url = url,
+                subtitleUrls = subtitleUrls,
+                streamIds = streamIds,
             )
+        } catch (error: Throwable) {
+            registeredUrls
+                .map { it.substringAfterLast('/') }
+                .forEach(sessionProxy::unregister)
+            releaseStreams(registeredStreamCount)
+            throw error
         }
-        activeSessions.incrementAndGet()
-        return ProxySession(proxy = sessionProxy, streamId = url.substringAfterLast('/'), url = url)
     }
 
     fun close(streamId: String) {
         val removed = proxy?.unregister(streamId) == true
-        if (removed && activeSessions.updateAndGet { current -> (current - 1).coerceAtLeast(0) } <= 0) {
-            shutdown()
-        }
+        if (removed) releaseStreams(1)
+    }
+
+    fun close(streamIds: Iterable<String>) {
+        streamIds.forEach(::close)
+    }
+
+    fun close(session: ProxySession) {
+        close(session.streamIds)
     }
 
     fun shutdown() {
@@ -56,10 +86,36 @@ object VideoProxyManager {
     }
 
     private fun newScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private fun releaseStreams(count: Int) {
+        if (activeSessions.updateAndGet { current -> (current - count).coerceAtLeast(0) } <= 0) {
+            shutdown()
+        }
+    }
+
+    private fun SavedWebDavAccount.client(): OkHttpWebDavClient =
+        OkHttpWebDavClient(
+            baseUrl = baseUrl,
+            username = username,
+            password = password,
+        )
+
+    private fun WebDavSubtitleOpenRequest.asStreamRequest(accountId: String): WebDavVideoOpenRequest =
+        WebDavVideoOpenRequest(
+            accountId = accountId,
+            remotePath = remotePath,
+            displayName = displayName,
+            size = size,
+            etag = etag,
+            lastModified = lastModified,
+            mimeType = mimeType,
+        )
 }
 
 data class ProxySession(
     val proxy: MuBoxVideoProxy,
     val streamId: String,
     val url: String,
+    val subtitleUrls: List<String> = emptyList(),
+    val streamIds: List<String> = listOf(streamId),
 )

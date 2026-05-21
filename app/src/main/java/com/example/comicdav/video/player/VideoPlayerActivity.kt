@@ -8,6 +8,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,21 +39,53 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
+import com.example.comicdav.video.VideoSubtitleOpenRequest
+import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.proxy.VideoProxyManager
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
+
+private val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
+
+internal suspend fun loadVideoStartPosition(
+    resumeEnabled: Boolean,
+    playbackKey: String?,
+    loadPosition: suspend (String?) -> Long,
+    onFailure: (Throwable) -> Unit = {},
+): Long {
+    if (!resumeEnabled) return 0L
+    return runCatching {
+        loadPosition(playbackKey)
+    }.getOrElse { error ->
+        onFailure(error)
+        0L
+    }.coerceAtLeast(0L)
+}
 
 class VideoPlayerActivity : ComponentActivity() {
     private lateinit var mpvView: MuBoxMpvView
     private lateinit var controller: MpvController
     private lateinit var audioFocusController: VideoAudioFocusController
     private lateinit var playbackLifecyclePolicy: VideoPlaybackLifecyclePolicy
+    private lateinit var playbackStateStore: VideoPlaybackStateStore
+    private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mpvObserverRegistered = false
     private var mpvInitialized = false
     private var isCleaningUp = false
-    private var webDavStreamId: String? = null
+    private var webDavStreamIds: List<String> = emptyList()
+    private var playbackKey: String? = null
+    private var resumeEnabled = true
+    private var loadJob: Job? = null
 
     private val mpvObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) = Unit
@@ -100,12 +133,19 @@ class VideoPlayerActivity : ComponentActivity() {
         val uri = intent.getStringExtra(EXTRA_URI)
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: intent.data?.lastPathSegment ?: "视频"
         val source = intent.getStringExtra(EXTRA_SOURCE)
+        val subtitles = intent.subtitleRequests()
+        playbackKey = intent.getStringExtra(EXTRA_PLAYBACK_KEY)
+        resumeEnabled = intent.getBooleanExtra(EXTRA_RESUME_ENABLED, true)
+        playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
         if (uri.isNullOrBlank()) {
             finish()
             return
         }
         if (source == SOURCE_WEB_DAV) {
-            webDavStreamId = uri.substringAfterLast('/').takeIf { it.isNotBlank() }
+            val explicitStreamIds = intent.getStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS).orEmpty()
+            webDavStreamIds = explicitStreamIds.ifEmpty {
+                listOfNotNull(uri.substringAfterLast('/').takeIf { it.isNotBlank() })
+            }
         }
 
         mpvView = MuBoxMpvView.create(this)
@@ -125,6 +165,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 }
             },
         )
+        val mpvPrepared = prepareMpv()
         setContent {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
@@ -141,7 +182,29 @@ class VideoPlayerActivity : ComponentActivity() {
             }
         }
 
-        initializeMpv(uri, displayName)
+        if (mpvPrepared) {
+            loadJob = activityScope.launch {
+                val startPositionMillis = loadVideoStartPosition(
+                    resumeEnabled = resumeEnabled,
+                    playbackKey = playbackKey,
+                    loadPosition = { key ->
+                        withContext(Dispatchers.IO) {
+                            playbackStateStore.loadPosition(key)
+                        }
+                    },
+                    onFailure = { error ->
+                        System.err.println("Failed to load video resume position: ${error.message ?: error::class.java.simpleName}")
+                    },
+                )
+                if (!canLoadMpv()) return@launch
+                loadMpv(
+                    uri = uri,
+                    displayName = displayName,
+                    startPositionMillis = startPositionMillis,
+                    subtitles = subtitles,
+                )
+            }
+        }
     }
 
     override fun onStart() {
@@ -153,33 +216,39 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (!isFinishing && !isCleaningUp) {
+        if (::playbackLifecyclePolicy.isInitialized && !isFinishing && !isCleaningUp) {
             playbackLifecyclePolicy.moveToBackground()
         }
     }
 
     override fun onDestroy() {
-        playbackLifecyclePolicy.cleanup()
+        if (::playbackLifecyclePolicy.isInitialized) {
+            playbackLifecyclePolicy.cleanup()
+        }
+        activityScope.cancel()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
 
     private fun closePlayer() {
+        cancelPendingLoad()
         playbackLifecyclePolicy.cleanup()
         finish()
     }
 
     private fun cleanupPlayer() {
         if (isCleaningUp) return
+        cancelPendingLoad()
         isCleaningUp = true
         try {
+            savePlaybackPositionNow()
             runCatching {
                 if (::audioFocusController.isInitialized) {
                     audioFocusController.abandon()
                 }
             }
-            webDavStreamId?.let { VideoProxyManager.close(it) }
-            webDavStreamId = null
+            webDavStreamIds.forEach(VideoProxyManager::close)
+            webDavStreamIds = emptyList()
             if (mpvObserverRegistered) {
                 MPVLib.removeObserver(mpvObserver)
                 mpvObserverRegistered = false
@@ -193,20 +262,47 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeMpv(uri: String, displayName: String) {
+    private fun prepareMpv(): Boolean =
         runCatching {
             Utils.copyAssets(this)
             mpvView.initialize(filesDir.path, cacheDir.path)
             mpvInitialized = true
             MPVLib.addObserver(mpvObserver)
             mpvObserverRegistered = true
+        }.onFailure { error ->
+            controller.onError(error.message ?: "视频播放器初始化失败")
+        }.isSuccess
+
+    private fun loadMpv(
+        uri: String,
+        displayName: String,
+        startPositionMillis: Long,
+        subtitles: List<VideoSubtitleOpenRequest>,
+    ) {
+        if (!canLoadMpv()) return
+        runCatching {
+            val isWebDav = intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV
+            val localUriResolver = LocalVideoUriResolver(this)
             val playableUri = if (intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV) {
                 uri
             } else {
-                LocalVideoUriResolver(this).resolve(uri)
+                localUriResolver.resolve(uri)
             }
+            val playableSubtitles = subtitles.map { subtitle ->
+                if (isWebDav) {
+                    subtitle
+                } else {
+                    subtitle.copy(uri = localUriResolver.resolve(subtitle.uri))
+                }
+            }
+            if (!canLoadMpv()) return
             if (audioFocusController.request()) {
-                controller.load(playableUri, displayName)
+                controller.load(
+                    playableUri,
+                    displayName,
+                    startPositionMillis = startPositionMillis,
+                    subtitles = playableSubtitles,
+                )
             } else {
                 controller.markPaused(true)
                 controller.onError("无法获取音频焦点，已暂停播放")
@@ -216,37 +312,117 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private fun canLoadMpv(): Boolean =
+        mpvInitialized && !isCleaningUp && !isFinishing
+
+    private fun savePlaybackPositionNow() {
+        if (!resumeEnabled || !::playbackStateStore.isInitialized || !::controller.isInitialized) return
+        val key = playbackKey?.takeIf { it.isNotBlank() } ?: return
+        val state = controller.state.value
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                playbackStateStore.savePosition(
+                    playbackKey = key,
+                    positionMillis = state.positionMillis,
+                    durationMillis = state.durationMillis,
+                )
+            }
+        }
+    }
+
+    private fun cancelPendingLoad() {
+        loadJob?.cancel()
+        loadJob = null
+    }
+
+    private fun Intent.subtitleRequests(): List<VideoSubtitleOpenRequest> {
+        val uris = getStringArrayListExtra(EXTRA_SUBTITLE_URIS).orEmpty()
+        val names = getStringArrayListExtra(EXTRA_SUBTITLE_NAMES).orEmpty()
+        return uris.mapIndexed { index, uri ->
+            VideoSubtitleOpenRequest(
+                uri = uri,
+                displayName = names.getOrNull(index) ?: uri.substringAfterLast('/'),
+            )
+        }
+    }
+
     companion object {
         const val EXTRA_SOURCE = "com.example.comicdav.video.extra.SOURCE"
         const val EXTRA_URI = "com.example.comicdav.video.extra.URI"
         const val EXTRA_DISPLAY_NAME = "com.example.comicdav.video.extra.DISPLAY_NAME"
         const val EXTRA_SIZE = "com.example.comicdav.video.extra.SIZE"
         const val EXTRA_LAST_MODIFIED = "com.example.comicdav.video.extra.LAST_MODIFIED"
+        const val EXTRA_SUBTITLE_URIS = "com.example.comicdav.video.extra.SUBTITLE_URIS"
+        const val EXTRA_SUBTITLE_NAMES = "com.example.comicdav.video.extra.SUBTITLE_NAMES"
+        const val EXTRA_WEB_DAV_STREAM_IDS = "com.example.comicdav.video.extra.WEB_DAV_STREAM_IDS"
+        const val EXTRA_PLAYBACK_KEY = "com.example.comicdav.video.extra.PLAYBACK_KEY"
+        const val EXTRA_RESUME_ENABLED = "com.example.comicdav.video.extra.RESUME_ENABLED"
         const val SOURCE_LOCAL = "local"
 
-        fun localIntent(context: Context, request: LocalVideoOpenRequest): Intent =
+        fun localIntent(
+            context: Context,
+            request: LocalVideoOpenRequest,
+            resumeEnabled: Boolean = true,
+        ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .putExtra(EXTRA_SOURCE, SOURCE_LOCAL)
                 .putExtra(EXTRA_URI, request.uri)
                 .putExtra(EXTRA_DISPLAY_NAME, request.displayName)
                 .putExtra(EXTRA_SIZE, request.size ?: -1L)
                 .putExtra(EXTRA_LAST_MODIFIED, request.lastModified ?: -1L)
+                .putExtra(
+                    EXTRA_PLAYBACK_KEY,
+                    localVideoPlaybackKey(
+                        uri = request.uri,
+                        size = request.size,
+                        lastModified = request.lastModified,
+                    ),
+                )
+                .putExtra(EXTRA_RESUME_ENABLED, resumeEnabled)
+                .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
             context: Context,
+            request: WebDavVideoOpenRequest,
             uri: String,
-            displayName: String,
-            size: Long?,
-            lastModified: Long?,
+            subtitleUrls: List<String>,
+            streamIds: List<String>,
+            resumeEnabled: Boolean = true,
         ): Intent =
+            request.subtitles.zip(subtitleUrls)
+                .map { (subtitle, subtitleUrl) ->
+                    VideoSubtitleOpenRequest(
+                        uri = subtitleUrl,
+                        displayName = subtitle.displayName,
+                    )
+                }
+                .let { subtitles ->
             Intent(context, VideoPlayerActivity::class.java)
                 .putExtra(EXTRA_SOURCE, SOURCE_WEB_DAV)
                 .putExtra(EXTRA_URI, uri)
-                .putExtra(EXTRA_DISPLAY_NAME, displayName)
-                .putExtra(EXTRA_SIZE, size ?: -1L)
-                .putExtra(EXTRA_LAST_MODIFIED, lastModified ?: -1L)
+                    .putExtra(EXTRA_DISPLAY_NAME, request.displayName)
+                    .putExtra(EXTRA_SIZE, request.size ?: -1L)
+                    .putExtra(EXTRA_LAST_MODIFIED, request.lastModified ?: -1L)
+                    .putExtra(
+                        EXTRA_PLAYBACK_KEY,
+                        webDavVideoPlaybackKey(
+                            accountId = request.accountId,
+                            remotePath = request.remotePath,
+                            size = request.size,
+                            etag = request.etag,
+                            lastModified = request.lastModified,
+                        ),
+                    )
+                    .putExtra(EXTRA_RESUME_ENABLED, resumeEnabled)
+                    .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
+                    .putSubtitleExtras(subtitles)
+                }
 
         private const val SOURCE_WEB_DAV = "webdav"
+
+        private fun Intent.putSubtitleExtras(subtitles: List<VideoSubtitleOpenRequest>): Intent =
+            putStringArrayListExtra(EXTRA_SUBTITLE_URIS, ArrayList(subtitles.map { it.uri }))
+                .putStringArrayListExtra(EXTRA_SUBTITLE_NAMES, ArrayList(subtitles.map { it.displayName }))
     }
 }
 

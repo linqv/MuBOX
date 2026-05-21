@@ -40,6 +40,7 @@ data class AppSettings(
     val diskCacheLimitMb: Int = 1024,
     val webDavPrefetchPageCount: Int = 4,
     val libraryCoversEnabled: Boolean = true,
+    val videoResumeEnabled: Boolean = true,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -61,6 +62,7 @@ class AppSettingsStore(
             diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
             webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
             libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
+            videoResumeEnabled = preferences[VIDEO_RESUME_ENABLED] ?: true,
         )
     }
 
@@ -129,6 +131,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoResumeEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_RESUME_ENABLED] = enabled
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -141,6 +149,7 @@ class AppSettingsStore(
         val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
         val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
         val LIBRARY_COVERS_ENABLED = booleanPreferencesKey("library_covers_enabled")
+        val VIDEO_RESUME_ENABLED = booleanPreferencesKey("video_resume_enabled")
     }
 }
 

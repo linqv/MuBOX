@@ -1,6 +1,7 @@
 package com.example.comicdav.video.proxy
 
 import com.example.comicdav.data.SavedWebDavAccount
+import com.example.comicdav.video.WebDavSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.net.HttpURLConnection
 import java.net.URL
@@ -11,6 +12,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -50,6 +52,30 @@ class VideoProxyManagerTest {
         assertEquals("GET", remoteRequest.method)
         assertEquals("bytes=0-2", remoteRequest.getHeader("Range"))
         assertEquals(Credentials.basic("user", "pass"), remoteRequest.getHeader("Authorization"))
+    }
+
+    @Test
+    fun getWithoutLocalRangeUsesFullRemoteGetWithoutRangeHeader() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "video/mp4")
+                .setHeader("Content-Length", "3")
+                .setBody("abc"),
+        )
+
+        val session = VideoProxyManager.open(
+            request = request(size = 3),
+            account = account(),
+        )
+        val response = httpRequest(session.url, range = null)
+
+        assertEquals(200, response.code)
+        assertArrayEquals("abc".toByteArray(), response.body)
+        val remoteRequest = server.takeRequest()
+        assertEquals("GET", remoteRequest.method)
+        assertEquals(null, remoteRequest.getHeader("Range"))
+        VideoProxyManager.close(session.streamId)
     }
 
     @Test
@@ -144,7 +170,94 @@ class VideoProxyManagerTest {
         }
     }
 
-    private fun request(size: Long, accountId: String = account().accountId): WebDavVideoOpenRequest =
+    @Test
+    fun openRegistersSidecarSubtitleStreamsWithSameAccountSnapshot() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-2/3")
+                .setBody("vid"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-3/4")
+                .setBody("sub!"),
+        )
+
+        val session = VideoProxyManager.open(
+            request = request(
+                size = 3,
+                subtitles = listOf(
+                    WebDavSubtitleOpenRequest(
+                        remotePath = "/movie.zh.srt",
+                        displayName = "movie.zh.srt",
+                        size = 4L,
+                        etag = null,
+                        lastModified = null,
+                        mimeType = "application/x-subrip",
+                    ),
+                ),
+            ),
+            account = account(),
+        )
+
+        assertEquals(1, session.subtitleUrls.size)
+        assertEquals(listOf(session.streamId, session.subtitleUrls.single().substringAfterLast('/')), session.streamIds)
+        assertArrayEquals("vid".toByteArray(), httpRequest(session.url, range = "bytes=0-2").body)
+        assertArrayEquals("sub!".toByteArray(), httpRequest(session.subtitleUrls.single(), range = "bytes=0-3").body)
+
+        val videoRequest = server.takeRequest()
+        val subtitleRequest = server.takeRequest()
+        assertEquals("/dav/movie.mp4", videoRequest.path?.substringBefore('?'))
+        assertEquals("/dav/movie.zh.srt", subtitleRequest.path?.substringBefore('?'))
+        assertEquals(Credentials.basic("user", "pass"), subtitleRequest.getHeader("Authorization"))
+
+        session.streamIds.forEach(VideoProxyManager::close)
+    }
+
+    @Test
+    fun closeSessionClosesMainAndSubtitleStreams() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-2/3")
+                .setBody("vid"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-3/4")
+                .setBody("sub!"),
+        )
+        val session = VideoProxyManager.open(
+            request = request(
+                size = 3,
+                subtitles = listOf(
+                    WebDavSubtitleOpenRequest(
+                        remotePath = "/movie.zh.srt",
+                        displayName = "movie.zh.srt",
+                        size = 4L,
+                        etag = null,
+                        lastModified = null,
+                        mimeType = "application/x-subrip",
+                    ),
+                ),
+            ),
+            account = account(),
+        )
+
+        VideoProxyManager.close(session)
+
+        assertTrue(runCatching { httpRequest(session.url, range = "bytes=0-2") }.isFailure)
+        assertTrue(runCatching { httpRequest(session.subtitleUrls.single(), range = "bytes=0-3") }.isFailure)
+    }
+
+    private fun request(
+        size: Long,
+        accountId: String = account().accountId,
+        subtitles: List<WebDavSubtitleOpenRequest> = emptyList(),
+    ): WebDavVideoOpenRequest =
         WebDavVideoOpenRequest(
             accountId = accountId,
             remotePath = "/movie.mp4",
@@ -153,6 +266,7 @@ class VideoProxyManagerTest {
             etag = null,
             lastModified = null,
             mimeType = "video/mp4",
+            subtitles = subtitles,
         )
 
     private fun account(
@@ -167,12 +281,12 @@ class VideoProxyManagerTest {
             password = password,
         )
 
-    private fun httpRequest(url: String, range: String): HttpResponse {
+    private fun httpRequest(url: String, range: String?): HttpResponse {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 2_000
             readTimeout = 2_000
-            setRequestProperty("Range", range)
+            range?.let { setRequestProperty("Range", it) }
         }
         val code = connection.responseCode
         val body = (if (code >= 400) connection.errorStream else connection.inputStream)?.readBytes()

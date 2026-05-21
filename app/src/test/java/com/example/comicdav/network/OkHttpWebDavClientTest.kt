@@ -89,6 +89,56 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
+    fun openFullStreamDoesNotSendRangeHeader() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "video/mp4")
+                .setHeader("Content-Length", "3")
+                .setBody("abc"),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val response = client.openFullStream("/movie.mp4")
+        val bytes = try {
+            response.stream.readBytes()
+        } finally {
+            response.close()
+        }
+
+        assertEquals(200, response.statusCode)
+        assertEquals(3L, response.contentLength)
+        assertEquals("video/mp4", response.contentType)
+        assertArrayEquals("abc".toByteArray(), bytes)
+        assertEquals(null, server.takeRequest().getHeader("Range"))
+    }
+
+    @Test
+    fun openFullStreamRejectsPartialContentResponse() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-2/3")
+                .setBody("abc"),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val result = runCatching {
+            client.openFullStream("/movie.mp4")
+        }
+
+        assertTrue(result.exceptionOrNull() is WebDavException.HttpStatus)
+    }
+
+    @Test
     fun contentRangeEndMustBeInsideTotalSize() = runTest {
         server.enqueue(
             MockResponse()

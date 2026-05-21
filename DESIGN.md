@@ -243,8 +243,7 @@ object HttpClients {
 
 - 同目录 sidecar 字幕发现。
 - 字幕也通过 proxy URL 给 mpv `sub-add`。
-- 新增视频播放历史表/store。
-- 打开同一视频自动恢复位置。
+- 打开同一视频自动恢复位置(可从设置开关)。
 
 ### 阶段 5：seek 优化
 

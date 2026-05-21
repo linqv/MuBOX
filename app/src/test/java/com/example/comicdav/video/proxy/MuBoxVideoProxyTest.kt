@@ -88,7 +88,8 @@ class MuBoxVideoProxyTest {
         assertEquals(200, response.code)
         assertEquals("10", response.headers["Content-Length"])
         assertNull(response.headers["Content-Range"])
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(listOf("/video.mp4"), client.fullStreamCalls)
+        assertEquals(emptyList<Pair<Long, Long?>>(), client.openRangeCalls)
         assertArrayEquals("0123456789".toByteArray(), response.body)
     }
 
@@ -104,6 +105,51 @@ class MuBoxVideoProxyTest {
         assertEquals("bytes 2-4/10", response.headers["Content-Range"])
         assertEquals(listOf(2L to 4L), client.openRangeCalls)
         assertArrayEquals("234".toByteArray(), response.body)
+    }
+
+    @Test
+    fun getWithLfOnlyHeadersReturnsPartialContent() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { client },
+            coroutineScope = scope,
+            portRange = 0..0,
+            requestHeaderTimeoutMillis = 100,
+        )
+        proxy = localProxy
+        localProxy.start()
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+        )
+        val parsed = URL(streamUrl)
+
+        val response = Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 1_000
+            socket.getOutputStream().write(
+                buildString {
+                    append("GET ${parsed.path} HTTP/1.1\n")
+                    append("Host: ${parsed.host}:${parsed.port}\n")
+                    append("Range: bytes=2-4\n")
+                    append("\n")
+                }.toByteArray(),
+            )
+            socket.getOutputStream().flush()
+            socket.getInputStream().readBytes()
+        }
+
+        val headerBlock = response.toString(Charsets.ISO_8859_1).substringBefore("\r\n\r\n")
+        assertTrue(headerBlock.startsWith("HTTP/1.1 206 Partial Content"))
+        val body = response.copyOfRange(response.size - 3, response.size)
+        assertEquals(listOf(2L to 4L), client.openRangeCalls)
+        assertArrayEquals("234".toByteArray(), body)
     }
 
     @Test
@@ -423,6 +469,7 @@ class MuBoxVideoProxyTest {
         private val bytes: ByteArray,
     ) : WebDavClient {
         val openRangeCalls = mutableListOf<Pair<Long, Long?>>()
+        val fullStreamCalls = mutableListOf<String>()
 
         override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
 
@@ -431,6 +478,19 @@ class MuBoxVideoProxyTest {
 
         override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
             bytes.sliceArray(start.toInt()..endInclusive.toInt())
+
+        override suspend fun openFullStream(path: String): WebDavStreamResponse {
+            fullStreamCalls += path
+            return WebDavStreamResponse(
+                stream = ByteArrayInputStream(bytes),
+                statusCode = 200,
+                contentLength = bytes.size.toLong(),
+                contentRange = null,
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = {},
+            )
+        }
 
         override suspend fun openRangeStream(
             path: String,
