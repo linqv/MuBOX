@@ -18,22 +18,24 @@ internal class VideoProxyDiagnostics(
         }
     }
 
-    fun streamId(raw: String): String = "stream:${shortHash(raw)}"
+    fun streamId(raw: String): String = redactedStreamId(raw)
 
-    private fun shortHash(raw: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
-        return digest.take(6).joinToString("") { byte -> "%02x".format(byte) }
-    }
+    internal companion object {
+        fun redactedStreamId(raw: String): String = "stream:${shortHash(raw)}"
 
-    private fun redactCredentials(message: String): String =
-        message
-            .replace(USER_INFO_URL_REGEX, "://<redacted>@")
-            .replace(AUTHORIZATION_REGEX) { match -> "${match.groupValues[1]}<redacted>" }
-            .replace(SECRET_QUERY_REGEX) { match -> "${match.groupValues[1]}=<redacted>" }
+        fun redactCredentials(message: String): String =
+            message
+                .replace(USER_INFO_URL_REGEX, "://<redacted>@")
+                .replace(AUTHORIZATION_REGEX) { match -> "${match.groupValues[1]}<redacted>" }
+                .replace(SECRET_QUERY_REGEX) { match -> "${match.groupValues[1]}=<redacted>" }
 
-    private companion object {
+        private fun shortHash(raw: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+            return digest.take(6).joinToString("") { byte -> "%02x".format(byte) }
+        }
+
         private val USER_INFO_URL_REGEX = Regex("://[^/@\\s]+@")
-        private val AUTHORIZATION_REGEX = Regex("(?i)(authorization\\s*[:=]\\s*)[^\\s,]+")
+        private val AUTHORIZATION_REGEX = Regex("(?i)(authorization\\s*[:=]\\s*)[^\\n,]+")
         private val SECRET_QUERY_REGEX = Regex("(?i)\\b(password|passwd|token|access_token|refresh_token|secret)=([^\\s&]+)")
     }
 }

@@ -98,8 +98,9 @@ class MuBoxVideoProxy(
     }
 
     fun unregister(streamId: String): Boolean {
+        val removed = registry.remove(streamId) != null
         seekOptimizer.removeStream(streamId)
-        return registry.remove(streamId) != null
+        return removed
     }
 
     private fun bindPort(): ServerSocket {
@@ -257,7 +258,7 @@ class MuBoxVideoProxy(
         val response = try {
             if (range == null) {
                 client.openFullStream(request.remotePath)
-            } else if (request.proxySettings.seekOptimizationEnabled) {
+            } else if (request.proxySettings.seekOptimizationEnabled && range.byteCount <= MAX_OPTIMIZED_RESPONSE_BYTES) {
                 runCatchingCancellable {
                     seekOptimizer.openRangeStream(
                         client = client,
@@ -406,9 +407,14 @@ class MuBoxVideoProxy(
         }
 
     private fun logProxyFailure(operation: String, entry: VideoStreamRequest, error: Throwable) {
+        val message = error.message
+            ?.let(VideoProxyDiagnostics::redactCredentials)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ": $it" }
+            .orEmpty()
         System.err.println(
-            "Video proxy $operation failed accountId=${entry.accountId} path=${entry.remotePath}: " +
-                (error.message ?: error::class.java.simpleName),
+            "Video proxy $operation failed stream=${VideoProxyDiagnostics.redactedStreamId(entry.streamId)} " +
+                "error=${error.javaClass.simpleName}$message",
         )
     }
 
@@ -429,7 +435,10 @@ class MuBoxVideoProxy(
     }
 
     private sealed class ParsedRange {
-        data class Valid(val start: Long, val endInclusive: Long) : ParsedRange()
+        data class Valid(val start: Long, val endInclusive: Long) : ParsedRange() {
+            val byteCount: Long
+                get() = endInclusive - start + 1L
+        }
         data object Invalid : ParsedRange()
     }
 
@@ -438,6 +447,7 @@ class MuBoxVideoProxy(
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_CHUNK_BYTES = 8L * 1024L * 1024L
+        private const val MAX_OPTIMIZED_RESPONSE_BYTES = DEFAULT_STREAM_CHUNK_BYTES
         private const val DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS = 10_000
         private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
         private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())

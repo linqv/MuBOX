@@ -7,8 +7,10 @@ import com.example.comicdav.network.WebDavException
 import com.example.comicdav.network.WebDavStreamResponse
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.io.PrintStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -164,6 +166,33 @@ class MuBoxVideoProxyTest {
         httpRequest(url, method = "GET", range = "bytes=1-3")
 
         assertEquals(listOf(0L to 2L, 1L to 3L), client.openRangeCalls)
+    }
+
+    @Test
+    fun explicitRangeLargerThanOptimizerLimitUsesDirectRemoteRange() = runTest {
+        val maxOptimizedBytes = 8L * 1024L * 1024L
+        val bytes = ByteArray((maxOptimizedBytes + 2L).toInt()) { (it % 251).toByte() }
+        val client = RecordingClient(bytes)
+        val url = startProxy(client = client, size = bytes.size.toLong())
+
+        val response = httpRequest(url, method = "GET", range = "bytes=0-$maxOptimizedBytes")
+
+        assertEquals(206, response.code)
+        assertEquals(maxOptimizedBytes + 1L, response.body.size.toLong())
+        assertEquals(listOf(0L to maxOptimizedBytes), client.openRangeCalls)
+    }
+
+    @Test
+    fun optimizedRangeFailureFallsBackToDirectRange() = runTest {
+        val client = OptimizedRangeFailingClient("0123456789".toByteArray())
+        val url = startProxy(client = client, size = 10L)
+
+        val response = httpRequest(url, method = "GET", range = "bytes=2-4")
+
+        assertEquals(206, response.code)
+        assertEquals("bytes 2-4/10", response.headers["Content-Range"])
+        assertArrayEquals("234".toByteArray(), response.body)
+        assertEquals(listOf(0L to 9L, 2L to 4L), client.openRangeCalls)
     }
 
     @Test
@@ -343,6 +372,37 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun proxyFailureLogRedactsSensitiveDetails() = runTest {
+        val originalErr = System.err
+        val errorBytes = ByteArrayOutputStream()
+        System.setErr(PrintStream(errorBytes))
+        try {
+            val client = FailingClient(
+                streamError = WebDavException.Network(
+                    "failed https://user:pass@example.test/video.mp4?token=abc Authorization: Bearer secret",
+                ),
+            )
+            val url = startProxy(
+                client = client,
+                size = 10L,
+                remotePath = "/private/password-hunter2/movie.mp4",
+            )
+
+            val response = httpRequest(url, method = "GET", range = "bytes=0-2")
+
+            assertEquals(502, response.code)
+        } finally {
+            System.setErr(originalErr)
+        }
+        val logs = errorBytes.toString(Charsets.UTF_8.name())
+        assertFalse(logs.contains("/private/password-hunter2/movie.mp4"))
+        assertFalse(logs.contains("user:pass"))
+        assertFalse(logs.contains("token=abc"))
+        assertFalse(logs.contains("Bearer secret"))
+        assertTrue(logs.contains("<redacted>"))
+    }
+
+    @Test
     fun responseContentRangeWithUnknownTotalFallsBackToKnownSize() = runTest {
         val client = UnknownTotalRangeClient()
         val url = startProxy(client = client, size = 10L)
@@ -454,6 +514,7 @@ class MuBoxVideoProxyTest {
         size: Long?,
         mimeType: String = "video/mp4",
         proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
+        remotePath: String = "/video.mp4",
     ): String {
         val localProxy = MuBoxVideoProxy(
             clientProvider = { client },
@@ -465,7 +526,7 @@ class MuBoxVideoProxyTest {
         return localProxy.register(
             WebDavVideoOpenRequest(
                 accountId = "account-1",
-                remotePath = "/video.mp4",
+                remotePath = remotePath,
                 displayName = "video.mp4",
                 size = size,
                 etag = null,
@@ -609,6 +670,45 @@ class MuBoxVideoProxyTest {
                 contentRange = ContentRange(start, endInclusive ?: start + chunk.lastIndex, 10L),
                 contentType = "video/mp4",
                 totalSize = 10L,
+                close = {},
+            )
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+    }
+
+    private class OptimizedRangeFailingClient(
+        private val bytes: ByteArray,
+    ) : WebDavClient {
+        val openRangeCalls = mutableListOf<Pair<Long, Long?>>()
+
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            bytes.sliceArray(start.toInt()..endInclusive.toInt())
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse {
+            val end = endInclusive ?: bytes.lastIndex.toLong()
+            openRangeCalls += start to end
+            if (start == 0L && end == bytes.lastIndex.toLong()) {
+                throw WebDavException.Network("optimized segment failed")
+            }
+            val chunk = bytes.sliceArray(start.toInt()..end.toInt())
+            return WebDavStreamResponse(
+                stream = ByteArrayInputStream(chunk),
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
                 close = {},
             )
         }
