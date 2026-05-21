@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- `app/src/main/java/com/example/comicdav/video/proxy/VideoProxySettings.kt`: User-facing proxy setting enums and immutable runtime settings.
+- `app/src/main/java/com/example/comicdav/video/proxy/VideoProxySettings.kt`: User-facing proxy setting enums and immutable runtime settings. This shared contract is already present before parallel workers start.
 - `app/src/main/java/com/example/comicdav/video/proxy/VideoProxyDiagnostics.kt`: Small diagnostics helper with OFF/SUMMARY/DETAIL gating and redacted stream ids.
 - `app/src/main/java/com/example/comicdav/video/proxy/VideoRangeMemoryCache.kt`: Byte-aware, stream-scoped, 2 MiB segment LRU cache.
 - `app/src/main/java/com/example/comicdav/video/proxy/VideoSeekOptimizer.kt`: Segment alignment, cache lookup, in-flight coalescing, foreground fetch, and prefetch scheduling.
@@ -31,14 +31,13 @@
 
 ## Parallelization
 
-- Parallel Worker A owns proxy core only: `VideoProxySettings.kt`, `VideoProxyDiagnostics.kt`, `VideoRangeMemoryCache.kt`, `VideoSeekOptimizer.kt`, `VideoRangeMemoryCacheTest.kt`, `VideoSeekOptimizerTest.kt`.
+- Parallel Worker A owns proxy core only: `VideoProxyDiagnostics.kt`, `VideoRangeMemoryCache.kt`, `VideoSeekOptimizer.kt`, `VideoStreamRequest.kt`, `VideoRangeMemoryCacheTest.kt`, `VideoSeekOptimizerTest.kt`.
 - Parallel Worker B owns settings UI only: `AppSettingsStore.kt`, `SettingsScreen.kt`.
 - Integration is a follow-up task after both workers return: `VideoStreamRequest.kt`, `MuBoxVideoProxy.kt`, `VideoProxyManager.kt`, `WebDavVideoPlaybackStarter.kt`, `MainActivity.kt`, and existing proxy tests.
 
-### Task 1: Proxy Settings, Diagnostics, Cache
+### Task 1: Proxy Diagnostics And Cache
 
 **Files:**
-- Create: `app/src/main/java/com/example/comicdav/video/proxy/VideoProxySettings.kt`
 - Create: `app/src/main/java/com/example/comicdav/video/proxy/VideoProxyDiagnostics.kt`
 - Modify: `app/src/main/java/com/example/comicdav/video/proxy/VideoRangeMemoryCache.kt`
 - Test: `app/src/test/java/com/example/comicdav/video/proxy/VideoRangeMemoryCacheTest.kt`
@@ -119,35 +118,7 @@ Run:
 
 Expected: FAIL because `VideoRangeMemoryCache` has no constructor with `maxBytes`, no `putSegment`, no `getSegment`, no `removeStream`, and no `totalBytes`.
 
-- [ ] **Step 3: Implement settings, diagnostics, and cache**
-
-Create `VideoProxySettings.kt`:
-
-```kotlin
-package com.example.comicdav.video.proxy
-
-enum class VideoForwardPrefetchMode(val segmentCount: Int) {
-    OFF(0),
-    STANDARD(1),
-    AGGRESSIVE(2),
-}
-
-enum class VideoProxyDiagnosticsMode {
-    OFF,
-    SUMMARY,
-    DETAIL,
-}
-
-data class VideoProxySettings(
-    val seekOptimizationEnabled: Boolean = true,
-    val forwardPrefetchMode: VideoForwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
-    val diagnosticsMode: VideoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.OFF,
-) {
-    companion object {
-        val DEFAULT = VideoProxySettings()
-    }
-}
-```
+- [ ] **Step 3: Implement diagnostics and cache**
 
 Create `VideoProxyDiagnostics.kt`:
 
@@ -301,8 +272,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/example/comicdav/video/proxy/VideoProxySettings.kt \
-    app/src/main/java/com/example/comicdav/video/proxy/VideoProxyDiagnostics.kt \
+git add app/src/main/java/com/example/comicdav/video/proxy/VideoProxyDiagnostics.kt \
     app/src/main/java/com/example/comicdav/video/proxy/VideoRangeMemoryCache.kt \
     app/src/test/java/com/example/comicdav/video/proxy/VideoRangeMemoryCacheTest.kt
 git commit -m "feat: add video range segment cache"
