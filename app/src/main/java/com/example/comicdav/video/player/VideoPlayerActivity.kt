@@ -41,6 +41,7 @@ import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.VideoSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
+import com.example.comicdav.video.proxy.MuBoxVideoProxy
 import com.example.comicdav.video.proxy.VideoProxyManager
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
@@ -144,7 +145,7 @@ class VideoPlayerActivity : ComponentActivity() {
         if (source == SOURCE_WEB_DAV) {
             val explicitStreamIds = intent.getStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS).orEmpty()
             webDavStreamIds = explicitStreamIds.ifEmpty {
-                listOfNotNull(uri.substringAfterLast('/').takeIf { it.isNotBlank() })
+                listOfNotNull(MuBoxVideoProxy.streamIdFromUrl(uri).takeIf { it.isNotBlank() })
             }
         }
 
@@ -292,7 +293,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 if (isWebDav) {
                     subtitle
                 } else {
-                    subtitle.copy(uri = localUriResolver.resolve(subtitle.uri))
+                    subtitle.copy(uri = localUriResolver.resolveSubtitle(subtitle.uri, subtitle.displayName))
                 }
             }
             if (!canLoadMpv()) return

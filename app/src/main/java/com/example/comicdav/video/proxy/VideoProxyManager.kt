@@ -41,7 +41,7 @@ object VideoProxyManager {
                     accountSnapshot.client()
                 }.also { registeredUrls += it }
             }
-            val streamIds = registeredUrls.map { it.substringAfterLast('/') }
+            val streamIds = registeredUrls.map(MuBoxVideoProxy::streamIdFromUrl)
             registeredStreamCount = streamIds.size
             if (streamIds.size > 1) {
                 activeSessions.addAndGet(streamIds.size - 1)
@@ -55,7 +55,7 @@ object VideoProxyManager {
             )
         } catch (error: Throwable) {
             registeredUrls
-                .map { it.substringAfterLast('/') }
+                .map(MuBoxVideoProxy::streamIdFromUrl)
                 .forEach(sessionProxy::unregister)
             releaseStreams(registeredStreamCount)
             throw error

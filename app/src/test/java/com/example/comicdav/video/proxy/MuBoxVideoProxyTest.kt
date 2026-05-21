@@ -66,6 +66,32 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun registeredUrlIncludesDisplayNameExtensionForFormatDetection() = runTest {
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient("subtitle".toByteArray()) },
+            coroutineScope = scope,
+            portRange = 0..0,
+        )
+        proxy = localProxy
+        localProxy.start()
+
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/anime.ass",
+                displayName = "anime.ass",
+                size = 8L,
+                etag = null,
+                lastModified = null,
+                mimeType = "text/x-ass",
+            ),
+        )
+
+        assertTrue(streamUrl, streamUrl.endsWith("/anime.ass"))
+        assertEquals(200, httpRequest(streamUrl, method = "HEAD").code)
+    }
+
+    @Test
     fun proxyBindsOnlyToLoopback() = runTest {
         startProxy(
             bytes = "0123456789".toByteArray(),
@@ -194,7 +220,7 @@ class MuBoxVideoProxyTest {
     fun unregisteredStreamReturnsNotFound() = runTest {
         val client = RecordingClient("0123456789".toByteArray())
         val streamUrl = startProxy(client = client, size = 10L)
-        val streamId = streamUrl.substringAfterLast('/')
+        val streamId = streamIdFromUrl(streamUrl)
         proxy?.unregister(streamId)
 
         val response = httpRequest(streamUrl, method = "GET")
@@ -207,7 +233,7 @@ class MuBoxVideoProxyTest {
         val input = BlockingInputStream()
         val client = BlockingStreamClient(input)
         val streamUrl = startProxy(client = client, size = 10L)
-        val streamId = streamUrl.substringAfterLast('/')
+        val streamId = streamIdFromUrl(streamUrl)
         val requestThread = thread(start = true) {
             runCatching {
                 httpRequest(streamUrl, method = "GET", range = "bytes=0-")
@@ -418,6 +444,9 @@ class MuBoxVideoProxyTest {
         field.isAccessible = true
         return field.get(this) as ServerSocket
     }
+
+    private fun streamIdFromUrl(url: String): String =
+        URL(url).path.removePrefix("/stream/").substringBefore('/')
 
     private fun httpRequest(url: String, method: String, range: String? = null): HttpResponse {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {

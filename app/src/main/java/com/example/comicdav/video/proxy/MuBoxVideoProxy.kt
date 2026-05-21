@@ -13,6 +13,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
@@ -87,7 +88,7 @@ class MuBoxVideoProxy(
                 openClient = openClient,
             ),
         )
-        return "$baseUrl/stream/$streamId"
+        return "$baseUrl/stream/$streamId/${request.displayName.toUrlPathSegment()}"
     }
 
     fun unregister(streamId: String): Boolean = registry.remove(streamId) != null
@@ -149,7 +150,10 @@ class MuBoxVideoProxy(
             writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
             return
         }
-        val streamId = URLDecoder.decode(path.removePrefix("/stream/"), Charsets.UTF_8.name())
+        val streamId = URLDecoder.decode(
+            path.removePrefix("/stream/").substringBefore('/').substringBefore('?'),
+            Charsets.UTF_8.name(),
+        )
         val entry = registry.get(streamId) ?: run {
             writeResponse(socket.getOutputStream(), 404, emptyMap(), null)
             return
@@ -410,5 +414,13 @@ class MuBoxVideoProxy(
         private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
         private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         private val RANGE_REGEX = Regex("bytes=(\\d*)-(\\d*)", RegexOption.IGNORE_CASE)
+
+        fun streamIdFromUrl(url: String): String =
+            url.substringAfter("/stream/").substringBefore('/').substringBefore('?')
+
+        private fun String.toUrlPathSegment(): String {
+            val fileName = substringAfterLast('/').substringAfterLast('\\').takeIf { it.isNotBlank() } ?: "stream"
+            return URLEncoder.encode(fileName, Charsets.UTF_8.name()).replace("+", "%20")
+        }
     }
 }

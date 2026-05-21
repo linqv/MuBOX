@@ -75,6 +75,36 @@ class LocalVideoUriResolverTest {
         assertTrue(fd > 0)
     }
 
+    @Test
+    fun resolveSubtitleCopiesContentUriFallbackToCacheFileWithDisplayNameExtension() {
+        val subtitle = temp.newFile("source.ass").apply {
+            writeText("[Script Info]\nTitle: demo\n")
+        }
+        val uri = Uri.parse("content://$authority/subtitle")
+        registerProvider(TestVideoProvider(openFile = subtitle))
+        val resolver = LocalVideoUriResolver(context)
+
+        val resolved = resolver.resolveSubtitle(uri.toString(), displayName = "anime.ass")
+
+        assertTrue(resolved, resolved.endsWith(".ass"))
+        assertEquals("[Script Info]\nTitle: demo\n", File(resolved).readText())
+    }
+
+    @Test
+    fun resolveSubtitlePreservesExtensionWhenDisplayNameHasNoAsciiBaseName() {
+        val subtitle = temp.newFile("source.sub").apply {
+            writeText("[SUBTITLE]\n00:00:01.00,00:00:02.00\n你好\n")
+        }
+        val uri = Uri.parse("content://$authority/non-ascii-subtitle")
+        registerProvider(TestVideoProvider(openFile = subtitle))
+        val resolver = LocalVideoUriResolver(context)
+
+        val resolved = resolver.resolveSubtitle(uri.toString(), displayName = "中文字幕.sub")
+
+        assertTrue(resolved, resolved.endsWith(".sub"))
+        assertEquals("[SUBTITLE]\n00:00:01.00,00:00:02.00\n你好\n", File(resolved).readText())
+    }
+
     private fun registerProvider(provider: ContentProvider) {
         provider.attachInfo(
             context,

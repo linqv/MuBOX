@@ -12,7 +12,10 @@ class MediaKindTest {
         assertEquals(MediaKind.Video, mediaKindForFileName("movie.mkv"))
         assertEquals(MediaKind.Video, mediaKindForFileName("clip.MP4"))
         assertEquals(MediaKind.Audio, mediaKindForFileName("track.flac"))
+        assertEquals(MediaKind.Subtitle, mediaKindForFileName("movie.srt"))
         assertEquals(MediaKind.Subtitle, mediaKindForFileName("movie.ass"))
+        assertEquals(MediaKind.Subtitle, mediaKindForFileName("movie.vtt"))
+        assertEquals(MediaKind.Subtitle, mediaKindForFileName("movie.sub"))
         assertEquals(MediaKind.Unknown, mediaKindForFileName("notes.txt"))
         assertEquals(MediaKind.Unknown, mediaKindForFileName("archive"))
     }
@@ -53,6 +56,9 @@ class MediaKindTest {
         assertEquals("video/x-matroska", mimeTypeForMediaFileName("movie.mkv"))
         assertEquals("audio/flac", mimeTypeForMediaFileName("track.flac"))
         assertEquals("application/x-subrip", mimeTypeForMediaFileName("movie.srt"))
+        assertEquals("text/x-ass", mimeTypeForMediaFileName("movie.ass"))
+        assertEquals("text/vtt", mimeTypeForMediaFileName("movie.vtt"))
+        assertEquals("text/plain", mimeTypeForMediaFileName("movie.sub"))
         assertEquals(null, mimeTypeForMediaFileName("notes.txt"))
     }
 }

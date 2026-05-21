@@ -8,12 +8,17 @@ class SidecarSubtitleFinderTest {
     fun findsMatchingSubtitleFilesNextToVideo() {
         val candidates = listOf(
             Candidate("Movie.srt"),
+            Candidate("Movie-en.srt"),
+            Candidate("Movie_en.srt"),
+            Candidate("Movie.zh-Hans.srt"),
             Candidate("Movie.zh-Hans.ass"),
+            Candidate("Movie.sub"),
+            Candidate("Movie.vtt"),
             Candidate("Movie Trailer.srt"),
             Candidate("Movie-Trailer.srt"),
             Candidate("Other.srt"),
             Candidate("Movie.nfo"),
-            Candidate("Movie.vtt", isDirectory = true),
+            Candidate("Movie.en.vtt", isDirectory = true),
         )
 
         val matches = findSidecarSubtitles(
@@ -23,7 +28,10 @@ class SidecarSubtitleFinderTest {
             isDirectoryOf = Candidate::isDirectory,
         )
 
-        assertEquals(listOf("Movie.srt", "Movie.zh-Hans.ass"), matches.map { it.name })
+        assertEquals(
+            listOf("Movie.srt", "Movie.sub", "Movie.vtt", "Movie-en.srt", "Movie.zh-Hans.ass", "Movie.zh-Hans.srt", "Movie_en.srt"),
+            matches.map { it.name },
+        )
     }
 
     @Test

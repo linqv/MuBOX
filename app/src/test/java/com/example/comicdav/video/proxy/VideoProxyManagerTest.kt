@@ -203,7 +203,8 @@ class VideoProxyManagerTest {
         )
 
         assertEquals(1, session.subtitleUrls.size)
-        assertEquals(listOf(session.streamId, session.subtitleUrls.single().substringAfterLast('/')), session.streamIds)
+        assertTrue(session.subtitleUrls.single().endsWith("/movie.zh.srt"))
+        assertEquals(listOf(session.streamId, MuBoxVideoProxy.streamIdFromUrl(session.subtitleUrls.single())), session.streamIds)
         assertArrayEquals("vid".toByteArray(), httpRequest(session.url, range = "bytes=0-2").body)
         assertArrayEquals("sub!".toByteArray(), httpRequest(session.subtitleUrls.single(), range = "bytes=0-3").body)
 
