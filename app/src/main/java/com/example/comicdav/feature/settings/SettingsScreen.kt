@@ -45,6 +45,8 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
+import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,6 +72,9 @@ fun SettingsScreen(
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
     onVideoResumeEnabledChange: (Boolean) -> Unit,
+    onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit = {},
+    onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit = {},
+    onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit = {},
     downloadRecords: List<DownloadRecord> = emptyList(),
     selectedDownloadRecord: DownloadRecord? = null,
     onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
@@ -174,6 +179,26 @@ fun SettingsScreen(
                 subtitle = "再次打开同一视频时从上次退出位置继续",
                 checked = settings.videoResumeEnabled,
                 onCheckedChange = onVideoResumeEnabledChange,
+            )
+            SwitchRow(
+                title = "WebDAV 视频 seek 优化",
+                subtitle = "缓存小段视频并合并重复 seek 请求",
+                checked = settings.videoSeekOptimizationEnabled,
+                onCheckedChange = onVideoSeekOptimizationEnabledChange,
+            )
+            DropdownRow(
+                title = "向前预读",
+                selected = settings.videoForwardPrefetchMode,
+                options = VideoForwardPrefetchMode.entries,
+                label = VideoForwardPrefetchMode::label,
+                onSelected = onVideoForwardPrefetchModeChange,
+            )
+            DropdownRow(
+                title = "视频代理诊断日志",
+                selected = settings.videoProxyDiagnosticsMode,
+                options = VideoProxyDiagnosticsMode.entries,
+                label = VideoProxyDiagnosticsMode::label,
+                onSelected = onVideoProxyDiagnosticsModeChange,
             )
         }
 
@@ -392,6 +417,20 @@ private fun ReaderLoggingMode.label(): String =
         ReaderLoggingMode.OFF -> "关闭"
         ReaderLoggingMode.SUMMARY -> "摘要"
         ReaderLoggingMode.DETAIL -> "详细"
+    }
+
+private fun VideoForwardPrefetchMode.label(): String =
+    when (this) {
+        VideoForwardPrefetchMode.OFF -> "关闭"
+        VideoForwardPrefetchMode.STANDARD -> "标准"
+        VideoForwardPrefetchMode.AGGRESSIVE -> "积极"
+    }
+
+private fun VideoProxyDiagnosticsMode.label(): String =
+    when (this) {
+        VideoProxyDiagnosticsMode.OFF -> "关闭"
+        VideoProxyDiagnosticsMode.SUMMARY -> "摘要"
+        VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
 
 private fun formatDownloadTime(downloadedAtMillis: Long): String =
