@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
+import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -41,6 +43,9 @@ data class AppSettings(
     val webDavPrefetchPageCount: Int = 4,
     val libraryCoversEnabled: Boolean = true,
     val videoResumeEnabled: Boolean = true,
+    val videoSeekOptimizationEnabled: Boolean = true,
+    val videoForwardPrefetchMode: VideoForwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
+    val videoProxyDiagnosticsMode: VideoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.OFF,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -63,6 +68,11 @@ class AppSettingsStore(
             webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
             libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
             videoResumeEnabled = preferences[VIDEO_RESUME_ENABLED] ?: true,
+            videoSeekOptimizationEnabled = preferences[VIDEO_SEEK_OPTIMIZATION_ENABLED] ?: true,
+            videoForwardPrefetchMode = preferences[VIDEO_FORWARD_PREFETCH_MODE]
+                .toEnumOrDefault(VideoForwardPrefetchMode.STANDARD),
+            videoProxyDiagnosticsMode = preferences[VIDEO_PROXY_DIAGNOSTICS_MODE]
+                .toEnumOrDefault(VideoProxyDiagnosticsMode.OFF),
         )
     }
 
@@ -137,6 +147,24 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoSeekOptimizationEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_SEEK_OPTIMIZATION_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateVideoForwardPrefetchMode(mode: VideoForwardPrefetchMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_FORWARD_PREFETCH_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateVideoProxyDiagnosticsMode(mode: VideoProxyDiagnosticsMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_PROXY_DIAGNOSTICS_MODE] = mode.name
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -150,6 +178,9 @@ class AppSettingsStore(
         val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
         val LIBRARY_COVERS_ENABLED = booleanPreferencesKey("library_covers_enabled")
         val VIDEO_RESUME_ENABLED = booleanPreferencesKey("video_resume_enabled")
+        val VIDEO_SEEK_OPTIMIZATION_ENABLED = booleanPreferencesKey("video_seek_optimization_enabled")
+        val VIDEO_FORWARD_PREFETCH_MODE = stringPreferencesKey("video_forward_prefetch_mode")
+        val VIDEO_PROXY_DIAGNOSTICS_MODE = stringPreferencesKey("video_proxy_diagnostics_mode")
     }
 }
 

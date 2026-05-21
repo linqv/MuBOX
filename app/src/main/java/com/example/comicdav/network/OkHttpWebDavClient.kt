@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.Closeable
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
@@ -72,12 +73,22 @@ class OkHttpWebDavClient(
         path: String,
         start: Long,
         endInclusive: Long?,
+    ): WebDavStreamResponse =
+        openRangeStream(path, start, endInclusive, registerCancellation = {})
+
+    override suspend fun openRangeStream(
+        path: String,
+        start: Long,
+        endInclusive: Long?,
+        registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse = withContext(Dispatchers.IO) {
         val request = requestBuilder(path)
             .get()
             .header("Range", buildRangeHeader(start, endInclusive))
             .build()
-        val response = httpClient.newCall(request).execute()
+        val call = httpClient.newCall(request)
+        registerCancellation(Closeable { call.cancel() })
+        val response = call.execute()
         when (response.code) {
             206 -> {
                 val body = response.body ?: run {

@@ -43,6 +43,7 @@ class MuBoxVideoProxy(
     }
 
     private val registry = StreamRegistry()
+    private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope)
     private val closed = AtomicBoolean(false)
     private val nextId = AtomicLong(1)
     private val startMutex = Mutex()
@@ -62,13 +63,17 @@ class MuBoxVideoProxy(
         }
     }
 
-    fun register(request: WebDavVideoOpenRequest): String =
-        register(request) {
+    fun register(
+        request: WebDavVideoOpenRequest,
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
+    ): String =
+        register(request, proxySettings) {
             clientProvider(request.accountId)
         }
 
     fun register(
         request: WebDavVideoOpenRequest,
+        proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
         openClient: suspend () -> WebDavClient?,
     ): String {
         val streamId = nextId.getAndIncrement().toString()
@@ -84,6 +89,7 @@ class MuBoxVideoProxy(
                     etag = request.etag,
                     lastModified = request.lastModified,
                     mimeType = request.mimeType,
+                    proxySettings = proxySettings,
                 ),
                 openClient = openClient,
             ),
@@ -91,7 +97,11 @@ class MuBoxVideoProxy(
         return "$baseUrl/stream/$streamId/${request.displayName.toUrlPathSegment()}"
     }
 
-    fun unregister(streamId: String): Boolean = registry.remove(streamId) != null
+    fun unregister(streamId: String): Boolean {
+        val removed = registry.remove(streamId) != null
+        seekOptimizer.removeStream(streamId)
+        return removed
+    }
 
     private fun bindPort(): ServerSocket {
         var lastError: IOException? = null
@@ -248,6 +258,28 @@ class MuBoxVideoProxy(
         val response = try {
             if (range == null) {
                 client.openFullStream(request.remotePath)
+            } else if (shouldUseSeekOptimizer(request, range)) {
+                runCatchingCancellable {
+                    seekOptimizer.openRangeStream(
+                        client = client,
+                        request = request,
+                        totalSize = info.size,
+                        start = range.start,
+                        endInclusive = range.endInclusive,
+                        settings = request.proxySettings,
+                    )
+                }.getOrElse { error ->
+                    VideoProxyDiagnostics(request.proxySettings.diagnosticsMode).summary {
+                        "fallback stream=${VideoProxyDiagnostics.redactedStreamId(request.streamId)} reason=optimized_range_failed " +
+                            "error=${error.javaClass.simpleName}"
+                    }
+                    logProxyFailure("GET optimized stream", request, error)
+                    client.openRangeStream(
+                        path = request.remotePath,
+                        start = range.start,
+                        endInclusive = range.endInclusive,
+                    )
+                }
             } else {
                 client.openRangeStream(
                     path = request.remotePath,
@@ -322,15 +354,37 @@ class MuBoxVideoProxy(
             val suffixLength = endValue.toLongOrNull() ?: return ParsedRange.Invalid
             if (suffixLength <= 0 || totalSize <= 0) return ParsedRange.Invalid
             val start = (totalSize - suffixLength).coerceAtLeast(0L)
-            return ParsedRange.Valid(start = start, endInclusive = totalSize - 1)
+            return ParsedRange.Valid(
+                start = start,
+                endInclusive = totalSize - 1,
+                seekOptimizationEligible = false,
+            )
         }
         val start = startValue.toLongOrNull() ?: return ParsedRange.Invalid
-        val end = endValue.takeIf { it.isNotBlank() }?.toLongOrNull()
+        val hasExplicitEnd = endValue.isNotBlank()
+        val end = endValue.takeIf { hasExplicitEnd }?.toLongOrNull()
         if (start < 0 || start >= totalSize) return ParsedRange.Invalid
         if (end != null && end < start) return ParsedRange.Invalid
         val boundedEnd = (end ?: (start + DEFAULT_STREAM_CHUNK_BYTES - 1)).coerceAtMost(totalSize - 1)
-        return ParsedRange.Valid(start = start, endInclusive = boundedEnd)
+        return ParsedRange.Valid(
+            start = start,
+            endInclusive = boundedEnd,
+            seekOptimizationEligible = hasExplicitEnd,
+        )
     }
+
+    private fun shouldUseSeekOptimizer(
+        request: VideoStreamRequest,
+        range: ParsedRange.Valid,
+    ): Boolean {
+        if (!request.proxySettings.seekOptimizationEnabled) return false
+        if (!range.seekOptimizationEligible) return false
+        if (range.byteCount > MAX_OPTIMIZED_RESPONSE_BYTES) return false
+        return segmentIndexFor(range.start) == segmentIndexFor(range.endInclusive)
+    }
+
+    private fun segmentIndexFor(byteOffset: Long): Long =
+        byteOffset / OPTIMIZER_SEGMENT_BYTES
 
     private fun writeResponse(output: OutputStream, code: Int, headers: Map<String, String>, body: java.io.InputStream?) {
         val reason = when (code) {
@@ -379,9 +433,14 @@ class MuBoxVideoProxy(
         }
 
     private fun logProxyFailure(operation: String, entry: VideoStreamRequest, error: Throwable) {
+        val message = error.message
+            ?.let(VideoProxyDiagnostics::redactCredentials)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ": $it" }
+            .orEmpty()
         System.err.println(
-            "Video proxy $operation failed accountId=${entry.accountId} path=${entry.remotePath}: " +
-                (error.message ?: error::class.java.simpleName),
+            "Video proxy $operation failed stream=${VideoProxyDiagnostics.redactedStreamId(entry.streamId)} " +
+                "error=${error.javaClass.simpleName}$message",
         )
     }
 
@@ -397,11 +456,19 @@ class MuBoxVideoProxy(
         if (!closed.compareAndSet(false, true)) return
         acceptJob?.cancel()
         serverSocket?.close()
+        seekOptimizer.close()
         registry.close()
     }
 
     private sealed class ParsedRange {
-        data class Valid(val start: Long, val endInclusive: Long) : ParsedRange()
+        data class Valid(
+            val start: Long,
+            val endInclusive: Long,
+            val seekOptimizationEligible: Boolean,
+        ) : ParsedRange() {
+            val byteCount: Long
+                get() = endInclusive - start + 1L
+        }
         data object Invalid : ParsedRange()
     }
 
@@ -410,6 +477,8 @@ class MuBoxVideoProxy(
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_CHUNK_BYTES = 8L * 1024L * 1024L
+        private const val OPTIMIZER_SEGMENT_BYTES = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
+        private const val MAX_OPTIMIZED_RESPONSE_BYTES = OPTIMIZER_SEGMENT_BYTES
         private const val DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS = 10_000
         private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
         private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())

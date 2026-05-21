@@ -6,11 +6,12 @@ import com.example.comicdav.video.WebDavVideoOpenRequest
 internal suspend fun startWebDavVideoPlayback(
     request: WebDavVideoOpenRequest,
     account: SavedWebDavAccount,
-    openProxy: suspend (WebDavVideoOpenRequest, SavedWebDavAccount) -> ProxySession = VideoProxyManager::open,
+    proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
+    openProxy: suspend (WebDavVideoOpenRequest, SavedWebDavAccount, VideoProxySettings) -> ProxySession = VideoProxyManager::open,
     closeProxy: (String) -> Unit = VideoProxyManager::close,
     startPlayback: (ProxySession) -> Unit,
 ) {
-    val session = openProxy(request, account)
+    val session = openProxy(request, account, proxySettings)
     var launched = false
     try {
         startPlayback(session)

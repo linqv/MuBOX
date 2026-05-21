@@ -29,7 +29,7 @@ class WebDavVideoPlaybackStarterTest {
             startWebDavVideoPlayback(
                 request = request(),
                 account = account(),
-                openProxy = { _, _ -> session },
+                openProxy = { _, _, _ -> session },
                 closeProxy = { closedStreamIds += it },
                 startPlayback = { error("activity launch failed") },
             )
@@ -47,7 +47,7 @@ class WebDavVideoPlaybackStarterTest {
         startWebDavVideoPlayback(
             request = request(),
             account = account(),
-            openProxy = { _, _ -> session },
+            openProxy = { _, _, _ -> session },
             closeProxy = { closedStreamIds += it },
             startPlayback = {},
         )
@@ -67,7 +67,7 @@ class WebDavVideoPlaybackStarterTest {
             startWebDavVideoPlayback(
                 request = request(),
                 account = account(),
-                openProxy = { _, _ -> session },
+                openProxy = { _, _, _ -> session },
                 closeProxy = { closedStreamIds += it },
                 startPlayback = { error("activity launch failed") },
             )
@@ -75,6 +75,26 @@ class WebDavVideoPlaybackStarterTest {
 
         assertTrue(result.isFailure)
         assertEquals(listOf("stream-1", "stream-2"), closedStreamIds)
+    }
+
+    @Test
+    fun forwardsProxySettingsWhenOpeningProxy() = runTest {
+        val session = proxySession("stream-1")
+        var capturedSettings: VideoProxySettings? = null
+        val proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false)
+
+        startWebDavVideoPlayback(
+            request = request(),
+            account = account(),
+            proxySettings = proxySettings,
+            openProxy = { _, _, settings ->
+                capturedSettings = settings
+                session
+            },
+            startPlayback = {},
+        )
+
+        assertEquals(proxySettings, capturedSettings)
     }
 
     private fun proxySession(streamId: String): ProxySession =

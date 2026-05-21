@@ -79,6 +79,35 @@ class VideoProxyManagerTest {
     }
 
     @Test
+    fun openPassesDisabledSeekOptimizationToRegisteredStream() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-2/10")
+                .setBody("012"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 1-3/10")
+                .setBody("123"),
+        )
+
+        val session = VideoProxyManager.open(
+            request = request(size = 10),
+            account = account(),
+            proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false),
+        )
+
+        assertArrayEquals("012".toByteArray(), httpRequest(session.url, range = "bytes=0-2").body)
+        assertArrayEquals("123".toByteArray(), httpRequest(session.url, range = "bytes=1-3").body)
+        assertEquals("bytes=0-2", server.takeRequest().getHeader("Range"))
+        assertEquals("bytes=1-3", server.takeRequest().getHeader("Range"))
+
+        VideoProxyManager.close(session.streamId)
+    }
+
+    @Test
     fun closeThenOpenAgainStartsUsableProxy() = runTest {
         server.enqueue(
             MockResponse()
