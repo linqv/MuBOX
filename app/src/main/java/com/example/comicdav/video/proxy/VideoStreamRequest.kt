@@ -11,6 +11,7 @@ data class VideoStreamRequest(
     val etag: String?,
     val lastModified: Long?,
     val mimeType: String?,
+    val proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
 )
 
 internal data class RegisteredVideoStream(

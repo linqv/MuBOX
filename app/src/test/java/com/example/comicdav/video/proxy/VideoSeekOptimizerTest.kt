@@ -1,0 +1,336 @@
+package com.example.comicdav.video.proxy
+
+import com.example.comicdav.network.ContentRange
+import com.example.comicdav.network.RemoteFileInfo
+import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.network.WebDavStreamResponse
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class VideoSeekOptimizerTest {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @After
+    fun tearDown() {
+        scope.cancel()
+    }
+
+    @Test
+    fun openRangeReturnsExactSliceFromAlignedSegments() = runTest {
+        val bytes = numberedBytes(24)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+
+        val response = optimizer.openRangeStream(
+            client = client,
+            request = request(size = bytes.size.toLong()),
+            totalSize = bytes.size.toLong(),
+            start = 6L,
+            endInclusive = 17L,
+            settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF),
+        )
+
+        assertEquals(206, response.statusCode)
+        assertEquals(12L, response.contentLength)
+        assertEquals(ContentRange(6L, 17L, 24L), response.contentRange)
+        assertEquals("video/mp4", response.contentType)
+        assertEquals(24L, response.totalSize)
+        assertArrayEquals(bytes.copyOfRange(6, 18), response.stream.readBytes())
+        assertEquals(listOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls)
+        assertEquals(3, client.closedResponses.get())
+    }
+
+    @Test
+    fun cachedSegmentAvoidsSecondRemoteFetch() = runTest {
+        val bytes = numberedBytes(16)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val req = request(size = bytes.size.toLong())
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+
+        optimizer.openRangeStream(client, req, bytes.size.toLong(), 0L, 3L, settings).close()
+        val second = optimizer.openRangeStream(client, req, bytes.size.toLong(), 4L, 7L, settings)
+
+        assertArrayEquals(bytes.copyOfRange(4, 8), second.stream.readBytes())
+        assertEquals(listOf(0L to 7L), client.openRangeCalls)
+    }
+
+    @Test
+    fun disabledSeekOptimizationBypassesSegmentCacheAndFetchesExactRange() = runTest {
+        val bytes = numberedBytes(16)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val req = request(size = bytes.size.toLong())
+        val settings = VideoProxySettings.DEFAULT.copy(
+            seekOptimizationEnabled = false,
+            forwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
+        )
+
+        val first = optimizer.openRangeStream(client, req, bytes.size.toLong(), 2L, 4L, settings)
+        val second = optimizer.openRangeStream(client, req, bytes.size.toLong(), 2L, 4L, settings)
+
+        assertArrayEquals(bytes.copyOfRange(2, 5), first.stream.readBytes())
+        assertArrayEquals(bytes.copyOfRange(2, 5), second.stream.readBytes())
+        assertEquals(listOf(2L to 4L, 2L to 4L), client.openRangeCalls)
+    }
+
+    @Test
+    fun concurrentSameSegmentRequestsShareOneRemoteFetch() = runTest {
+        val bytes = numberedBytes(16)
+        val gate = CompletableDeferred<Unit>()
+        val client = BlockingRecordingClient(bytes, gate)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val req = request(size = bytes.size.toLong())
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val requestStarted = AtomicInteger(0)
+
+        val first = async(Dispatchers.IO) {
+            requestStarted.incrementAndGet()
+            optimizer.openRangeStream(client, req, bytes.size.toLong(), 0L, 3L, settings).stream.readBytes()
+        }
+        val second = async(Dispatchers.IO) {
+            requestStarted.incrementAndGet()
+            optimizer.openRangeStream(client, req, bytes.size.toLong(), 4L, 7L, settings).stream.readBytes()
+        }
+
+        eventually { assertEquals(2, requestStarted.get()) }
+        eventually { assertEquals(1, client.started.get()) }
+        delay(100)
+        assertEquals(1, client.started.get())
+        gate.complete(Unit)
+
+        val results = listOf(first, second).awaitAll()
+        assertArrayEquals(bytes.copyOfRange(0, 4), results[0])
+        assertArrayEquals(bytes.copyOfRange(4, 8), results[1])
+        assertEquals(listOf(0L to 7L), client.openRangeCalls)
+    }
+
+    @Test
+    fun standardPrefetchFetchesNextSegmentInBackground() = runTest {
+        val bytes = numberedBytes(24)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+
+        optimizer.openRangeStream(
+            client = client,
+            request = request(size = bytes.size.toLong()),
+            totalSize = bytes.size.toLong(),
+            start = 0L,
+            endInclusive = 3L,
+            settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.STANDARD),
+        ).close()
+
+        eventually {
+            assertEquals(listOf(0L to 7L, 8L to 15L), client.openRangeCalls)
+        }
+    }
+
+    @Test
+    fun aggressivePrefetchFetchesTwoForwardSegmentsInBackground() = runTest {
+        val bytes = numberedBytes(32)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+
+        optimizer.openRangeStream(
+            client = client,
+            request = request(size = bytes.size.toLong()),
+            totalSize = bytes.size.toLong(),
+            start = 0L,
+            endInclusive = 3L,
+            settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE),
+        ).close()
+
+        eventually {
+            assertEquals(listOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls)
+        }
+    }
+
+    @Test
+    fun offPrefetchSchedulesNothingBeyondForegroundSegments() = runTest {
+        val bytes = numberedBytes(24)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+
+        optimizer.openRangeStream(
+            client = client,
+            request = request(size = bytes.size.toLong()),
+            totalSize = bytes.size.toLong(),
+            start = 0L,
+            endInclusive = 3L,
+            settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF),
+        ).close()
+
+        delay(100)
+        assertEquals(listOf(0L to 7L), client.openRangeCalls)
+    }
+
+    @Test
+    fun removeStreamDropsCacheAndCancelsFutureReuseForThatStreamOnly() = runTest {
+        val bytes = numberedBytes(16)
+        val client = RecordingClient(bytes)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+
+        optimizer.openRangeStream(client, request("stream-1", bytes.size.toLong()), bytes.size.toLong(), 0L, 3L, settings).close()
+        optimizer.openRangeStream(client, request("stream-2", bytes.size.toLong()), bytes.size.toLong(), 0L, 3L, settings).close()
+
+        optimizer.removeStream("stream-1")
+        optimizer.openRangeStream(client, request("stream-1", bytes.size.toLong()), bytes.size.toLong(), 0L, 3L, settings).close()
+        optimizer.openRangeStream(client, request("stream-2", bytes.size.toLong()), bytes.size.toLong(), 0L, 3L, settings).close()
+
+        assertEquals(listOf(0L to 7L, 0L to 7L, 0L to 7L), client.openRangeCalls)
+    }
+
+    @Test
+    fun foregroundFetchFailureIsPropagated() = runTest {
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val client = FailingRangeClient()
+
+        val result = runCatching {
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = 16L),
+                totalSize = 16L,
+                start = 0L,
+                endInclusive = 3L,
+                settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF),
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals("range failed", result.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun diagnosticsAreGatedAndUseRedactedStreamIds() {
+        val offMessages = mutableListOf<String>()
+        val off = VideoProxyDiagnostics(VideoProxyDiagnosticsMode.OFF, sink = offMessages::add)
+        off.summary { "cache_hit stream=${off.streamId("secret-stream")}" }
+        off.detail { "detail" }
+        assertEquals(emptyList<String>(), offMessages)
+
+        val summaryMessages = mutableListOf<String>()
+        val summary = VideoProxyDiagnostics(VideoProxyDiagnosticsMode.SUMMARY, sink = summaryMessages::add)
+        val redactedStreamId = summary.streamId("secret-stream")
+        summary.summary { "cache_hit stream=$redactedStreamId" }
+        summary.detail { "range=0-7" }
+
+        assertEquals(1, summaryMessages.size)
+        assertTrue(summaryMessages.single().contains("cache_hit"))
+        assertTrue(summaryMessages.single().contains(redactedStreamId))
+        assertFalse(summaryMessages.single().contains("secret-stream"))
+        assertFalse(redactedStreamId.contains("secret-stream"))
+    }
+
+    private fun numberedBytes(size: Int): ByteArray =
+        ByteArray(size) { it.toByte() }
+
+    private fun request(
+        streamId: String = "stream-1",
+        size: Long,
+    ): VideoStreamRequest =
+        VideoStreamRequest(
+            streamId = streamId,
+            accountId = "account-1",
+            remotePath = "/movie.mp4",
+            displayName = "movie.mp4",
+            size = size,
+            etag = null,
+            lastModified = null,
+            mimeType = "video/mp4",
+            proxySettings = VideoProxySettings.DEFAULT,
+        )
+
+    private suspend fun eventually(assertion: () -> Unit) {
+        val deadline = System.currentTimeMillis() + 2_000
+        var lastError: AssertionError? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                assertion()
+                return
+            } catch (error: AssertionError) {
+                lastError = error
+                delay(20)
+            }
+        }
+        throw lastError ?: AssertionError("condition was not met")
+    }
+
+    private open class RecordingClient(private val bytes: ByteArray) : WebDavClient {
+        val openRangeCalls: MutableList<Pair<Long, Long>> = Collections.synchronizedList(mutableListOf())
+        val closedResponses = AtomicInteger(0)
+
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, bytes.size.toLong(), etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            bytes.copyOfRange(start.toInt(), endInclusive.toInt() + 1)
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse {
+            val end = requireNotNull(endInclusive)
+            openRangeCalls += start to end
+            val chunk = readRange(path, start, end)
+            return WebDavStreamResponse(
+                stream = ByteArrayInputStream(chunk),
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = { closedResponses.incrementAndGet() },
+            )
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("not used")
+    }
+
+    private class BlockingRecordingClient(
+        bytes: ByteArray,
+        private val gate: CompletableDeferred<Unit>,
+    ) : RecordingClient(bytes) {
+        val started = AtomicInteger(0)
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse {
+            started.incrementAndGet()
+            gate.await()
+            return super.openRangeStream(path, start, endInclusive)
+        }
+    }
+
+    private class FailingRangeClient : WebDavClient {
+        override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 16L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            throw IllegalStateException("range failed")
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse =
+            throw IllegalStateException("range failed")
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("not used")
+    }
+}
