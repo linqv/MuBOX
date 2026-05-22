@@ -1,6 +1,7 @@
 package com.example.comicdav.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import kotlinx.coroutines.flow.first
@@ -26,6 +27,7 @@ class AppSettingsStoreTest {
         assertTrue(settings.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.STANDARD, settings.videoForwardPrefetchMode)
         assertEquals(VideoProxyDiagnosticsMode.OFF, settings.videoProxyDiagnosticsMode)
+        assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
     }
 
     @Test
@@ -41,6 +43,17 @@ class AppSettingsStoreTest {
         assertFalse(settings.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.AGGRESSIVE, settings.videoForwardPrefetchMode)
         assertEquals(VideoProxyDiagnosticsMode.DETAIL, settings.videoProxyDiagnosticsMode)
+    }
+
+    @Test
+    fun mpvProfileModeCanBeUpdatedAndReadBack() = runTest {
+        val store = createStore("mpv_profile.preferences_pb")
+
+        store.updateMpvProfileMode(MpvProfileMode.HIGH_QUALITY)
+
+        val settings = store.settings.first()
+
+        assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
     }
 
     private fun TestScope.createStore(fileName: String): AppSettingsStore {

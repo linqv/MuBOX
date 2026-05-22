@@ -221,6 +221,8 @@ class VideoPlayerActivity : ComponentActivity() {
             .toEnumOrDefault(GpuApiMode.AUTO)
         val initialVideoDecoderMode = intent.getStringExtra(EXTRA_VIDEO_DECODER_MODE)
             .toEnumOrDefault(VideoDecoderMode.AUTO)
+        val initialMpvProfileMode = intent.getStringExtra(EXTRA_MPV_PROFILE_MODE)
+            .toEnumOrDefault(MpvProfileMode.FAST)
         val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
         playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
         if (uri.isNullOrBlank()) {
@@ -235,6 +237,7 @@ class VideoPlayerActivity : ComponentActivity() {
         }
 
         mpvView = MuBoxMpvView.create(this)
+        mpvView.mpvProfileMode = initialMpvProfileMode
         controller = MpvController(ViewBackedMpvEngine(mpvView))
         audioFocusController = VideoAudioFocusController(this) {
             controller.setPaused(true)
@@ -582,6 +585,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_VIDEO_OUTPUT_MODE = "com.example.comicdav.video.extra.VIDEO_OUTPUT_MODE"
         const val EXTRA_GPU_API_MODE = "com.example.comicdav.video.extra.GPU_API_MODE"
         const val EXTRA_VIDEO_DECODER_MODE = "com.example.comicdav.video.extra.VIDEO_DECODER_MODE"
+        const val EXTRA_MPV_PROFILE_MODE = "com.example.comicdav.video.extra.MPV_PROFILE_MODE"
         const val EXTRA_CONTROLS_AUTO_HIDE_MILLIS = "com.example.comicdav.video.extra.CONTROLS_AUTO_HIDE_MILLIS"
         const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
         const val SOURCE_LOCAL = "local"
@@ -593,6 +597,7 @@ class VideoPlayerActivity : ComponentActivity() {
             videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
+            mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
         ): Intent =
@@ -615,6 +620,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_VIDEO_OUTPUT_MODE, videoOutputMode.name)
                 .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
                 .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
+                .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
                 .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                 .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                 .putSubtitleExtras(request.subtitles)
@@ -629,6 +635,7 @@ class VideoPlayerActivity : ComponentActivity() {
             videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
+            mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
         ): Intent =
@@ -661,6 +668,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_VIDEO_OUTPUT_MODE, videoOutputMode.name)
                     .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
                     .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
+                    .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
                     .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                     .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))

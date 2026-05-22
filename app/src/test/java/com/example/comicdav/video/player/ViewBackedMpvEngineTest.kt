@@ -46,6 +46,19 @@ class ViewBackedMpvEngineTest {
         assertTrue(source.contains("playFile(uri)"))
     }
 
+    @Test
+    fun muboxMpvViewAppliesConfiguredMpvProfileBeforeOtherVideoOptions() {
+        val source = mpvViewSourceFile().readText()
+
+        assertTrue(source.contains("var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST"))
+        val profileOptionIndex = source.indexOf("MPVLib.setOptionString(\"profile\", mpvProfileMode.profile)")
+        val videoOutputIndex = source.indexOf("setVo(\"gpu\")")
+
+        assertTrue(profileOptionIndex >= 0)
+        assertTrue(videoOutputIndex >= 0)
+        assertTrue(profileOptionIndex < videoOutputIndex)
+    }
+
     private fun activitySourceFile(): File =
         listOf(
             File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),

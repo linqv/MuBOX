@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.video.player.GpuApiMode
+import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoDecoderMode
 import com.example.comicdav.video.player.VideoOutputMode
 import com.example.comicdav.video.player.VideoPlayerOrientationMode
@@ -54,6 +55,7 @@ data class AppSettings(
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
+    val mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
     val videoControlsAutoHideMillis: Int = 5_000,
     val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
 ) {
@@ -86,6 +88,7 @@ class AppSettingsStore(
             videoOutputMode = preferences[VIDEO_OUTPUT_MODE].toEnumOrDefault(VideoOutputMode.AUTO),
             gpuApiMode = preferences[GPU_API_MODE].toEnumOrDefault(GpuApiMode.AUTO),
             videoDecoderMode = preferences[VIDEO_DECODER_MODE].toEnumOrDefault(VideoDecoderMode.AUTO),
+            mpvProfileMode = preferences[MPV_PROFILE_MODE].toEnumOrDefault(MpvProfileMode.FAST),
             videoControlsAutoHideMillis = coerceVideoControlsAutoHideMillis(
                 preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] ?: 5_000,
             ),
@@ -201,6 +204,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateMpvProfileMode(mode: MpvProfileMode) {
+        dataStore.edit { preferences ->
+            preferences[MPV_PROFILE_MODE] = mode.name
+        }
+    }
+
     suspend fun updateVideoControlsAutoHideMillis(millis: Int) {
         dataStore.edit { preferences ->
             preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] = coerceVideoControlsAutoHideMillis(millis)
@@ -232,6 +241,7 @@ class AppSettingsStore(
         val VIDEO_OUTPUT_MODE = stringPreferencesKey("video_output_mode")
         val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
         val VIDEO_DECODER_MODE = stringPreferencesKey("video_decoder_mode")
+        val MPV_PROFILE_MODE = stringPreferencesKey("mpv_profile_mode")
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
         val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
     }

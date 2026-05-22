@@ -444,6 +444,7 @@ fun ComicDavApp() {
                 videoOutputMode = appSettings.videoOutputMode,
                 gpuApiMode = appSettings.gpuApiMode,
                 videoDecoderMode = appSettings.videoDecoderMode,
+                mpvProfileMode = appSettings.mpvProfileMode,
                 controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                 playerOrientationMode = appSettings.videoPlayerOrientationMode,
             ),
@@ -680,6 +681,7 @@ fun ComicDavApp() {
                             videoOutputMode = appSettings.videoOutputMode,
                             gpuApiMode = appSettings.gpuApiMode,
                             videoDecoderMode = appSettings.videoDecoderMode,
+                            mpvProfileMode = appSettings.mpvProfileMode,
                             controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                             playerOrientationMode = appSettings.videoPlayerOrientationMode,
                         ),
@@ -1530,6 +1532,9 @@ fun ComicDavApp() {
                                     },
                                     onVideoDecoderModeChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoDecoderMode(value) }
+                                    },
+                                    onMpvProfileModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateMpvProfileMode(value) }
                                     },
                                     onVideoControlsAutoHideMillisChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(value) }

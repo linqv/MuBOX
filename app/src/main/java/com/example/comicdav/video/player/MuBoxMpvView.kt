@@ -17,10 +17,13 @@ class MuBoxMpvView(
     context: Context,
     attrs: AttributeSet,
 ) : BaseMPVView(context, attrs), MpvFileLoader {
+    var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST
+
     private var surfaceAttached = false
     private val pendingAfterLoadfileActions = mutableListOf<() -> Unit>()
 
     override fun initOptions() {
+        MPVLib.setOptionString("profile", mpvProfileMode.profile)
         setVo("gpu")
         MPVLib.setOptionString("hwdec", "mediacodec,mediacodec-copy,no")
         MPVLib.setOptionString("hwdec-codecs", "all")

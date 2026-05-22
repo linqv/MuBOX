@@ -46,10 +46,12 @@ import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.video.player.GpuApiMode
+import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoDecoderMode
 import com.example.comicdav.video.player.VideoOutputMode
 import com.example.comicdav.video.player.VideoPlayerOrientationMode
 import com.example.comicdav.video.player.gpuApiModeLabel
+import com.example.comicdav.video.player.mpvProfileModeLabel
 import com.example.comicdav.video.player.playerControlAutoHideLabel
 import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
 import com.example.comicdav.video.player.videoDecoderModeLabel
@@ -88,6 +90,7 @@ fun SettingsScreen(
     onVideoOutputModeChange: (VideoOutputMode) -> Unit = {},
     onGpuApiModeChange: (GpuApiMode) -> Unit = {},
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
+    onMpvProfileModeChange: (MpvProfileMode) -> Unit = {},
     onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
     onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit = {},
     downloadRecords: List<DownloadRecord> = emptyList(),
@@ -235,6 +238,13 @@ fun SettingsScreen(
                 options = VideoDecoderMode.entries,
                 label = ::videoDecoderModeLabel,
                 onSelected = onVideoDecoderModeChange,
+            )
+            DropdownRow(
+                title = "MPV Profile",
+                selected = settings.mpvProfileMode,
+                options = MpvProfileMode.entries,
+                label = ::mpvProfileModeLabel,
+                onSelected = onMpvProfileModeChange,
             )
             DropdownRow(
                 title = "控制自动隐藏",

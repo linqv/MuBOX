@@ -69,6 +69,15 @@ enum class VideoDecoderMode(val hwdec: String) {
     HARDWARE_PLUS("mediacodec"),
 }
 
+enum class MpvProfileMode(val profile: String) {
+    FAST("fast"),
+    DEFAULT("default"),
+    HIGH_QUALITY("high-quality"),
+    GPU_HQ("gpu-hq"),
+    LOW_LATENCY("low-latency"),
+    SW_FAST("sw-fast"),
+}
+
 internal fun videoDecoderModeLabel(mode: VideoDecoderMode): String =
     when (mode) {
         VideoDecoderMode.AUTO -> "auto"
@@ -97,6 +106,16 @@ internal fun gpuApiModeLabel(mode: GpuApiMode): String =
     when (mode) {
         GpuApiMode.AUTO -> "auto"
         GpuApiMode.VULKAN -> "vulkan"
+    }
+
+internal fun mpvProfileModeLabel(mode: MpvProfileMode): String =
+    when (mode) {
+        MpvProfileMode.FAST -> "Fast"
+        MpvProfileMode.DEFAULT -> "Default"
+        MpvProfileMode.HIGH_QUALITY -> "High Quality"
+        MpvProfileMode.GPU_HQ -> "GPU HQ"
+        MpvProfileMode.LOW_LATENCY -> "Low Latency"
+        MpvProfileMode.SW_FAST -> "SW Fast"
     }
 
 internal fun playerControlAutoHideOptionsMillis(): List<Int> = listOf(0, 3_000, 5_000, 8_000, 10_000)

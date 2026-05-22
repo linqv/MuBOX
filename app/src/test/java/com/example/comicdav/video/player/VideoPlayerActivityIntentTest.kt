@@ -20,6 +20,7 @@ class VideoPlayerActivityIntentTest {
         assertEquals(VideoOutputMode.AUTO, settings.videoOutputMode)
         assertEquals(GpuApiMode.AUTO, settings.gpuApiMode)
         assertEquals(VideoDecoderMode.AUTO, settings.videoDecoderMode)
+        assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
         assertEquals(5000, settings.videoControlsAutoHideMillis)
     }
 
@@ -59,6 +60,7 @@ class VideoPlayerActivityIntentTest {
             videoOutputMode = VideoOutputMode.GPU_NEXT,
             gpuApiMode = GpuApiMode.VULKAN,
             videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
+            mpvProfileMode = MpvProfileMode.LOW_LATENCY,
             controlsAutoHideMillis = 8000,
         )
 
@@ -73,6 +75,10 @@ class VideoPlayerActivityIntentTest {
         assertEquals(
             VideoDecoderMode.HARDWARE_PLUS.name,
             intent.getStringExtra(VideoPlayerActivity.EXTRA_VIDEO_DECODER_MODE),
+        )
+        assertEquals(
+            MpvProfileMode.LOW_LATENCY.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_MPV_PROFILE_MODE),
         )
         assertEquals(
             8000,
