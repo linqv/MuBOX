@@ -22,12 +22,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +51,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
@@ -608,39 +616,23 @@ private fun VideoPlayerScreen(
                 )
             }
 
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .size(48.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "关闭",
-                    tint = Color.White,
-                )
-            }
-
-            IconButton(
-                onClick = {
+            PlayerTopBar(
+                title = state.displayName,
+                source = mediaContext.source,
+                controlsLocked = state.gestureState.controlsLocked,
+                onClose = onClose,
+                onControlsLockedChanged = {
                     onControlsLockedChanged(!state.gestureState.controlsLocked)
                     openPanel = null
                 },
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(48.dp),
-            ) {
-                Icon(
-                    imageVector = if (state.gestureState.controlsLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                    contentDescription = if (state.gestureState.controlsLocked) "解锁控制" else "锁定控制",
-                    tint = Color.White,
-                )
-            }
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            )
 
             if (!state.gestureState.controlsLocked) {
                 EdgeFloatingControls(
+                    state = state,
                     activePanel = openPanel,
                     onPanelSelected = { panel ->
                         openPanel = if (openPanel == panel) null else panel
@@ -677,70 +669,12 @@ private fun VideoPlayerScreen(
                 modifier = Modifier.align(Alignment.Center),
             )
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.72f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = state.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (state.errorMessage != null) {
-                    Text(
-                        text = state.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    IconButton(
-                        onClick = onPlayPause,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (state.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (state.isPaused) "播放" else "暂停",
-                            tint = Color.White,
-                        )
-                    }
-                    Text(
-                        text = formatVideoTime(state.positionMillis),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                    )
-                    Slider(
-                        value = state.positionMillis.toFloat(),
-                        onValueChange = { if (!state.gestureState.controlsLocked) onSeek(it.roundToLong()) },
-                        valueRange = 0f..state.durationMillis.coerceAtLeast(1L).toFloat(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = formatVideoTime(state.durationMillis),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                    )
-                }
-                if (state.gestureState.controlsLocked) {
-                    Text(
-                        text = "控制已锁定",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                    )
-                }
-            }
+            PlayerBottomControls(
+                state = state,
+                onPlayPause = onPlayPause,
+                onSeek = onSeek,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
@@ -807,6 +741,152 @@ private fun dispatchVerticalGesture(
 }
 
 @Composable
+private fun PlayerTopBar(
+    title: String,
+    source: String,
+    controlsLocked: Boolean,
+    onClose: () -> Unit,
+    onControlsLockedChanged: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PlayerOverlayIconButton(
+            icon = Icons.Filled.Close,
+            contentDescription = "关闭",
+            onClick = onClose,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = source.videoSourceLabel(),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PlayerOverlayIconButton(
+            icon = if (controlsLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+            contentDescription = if (controlsLocked) "解锁控制" else "锁定控制",
+            onClick = onControlsLockedChanged,
+        )
+    }
+}
+
+@Composable
+private fun PlayerOverlayIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+) {
+    val backgroundColor = if (selected) PlayerAccentColor else PlayerOverlayColor
+    val contentColor = if (selected) PlayerOnAccentColor else Color.White
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(50.dp)
+            .background(backgroundColor, MaterialTheme.shapes.small),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = contentColor,
+        )
+    }
+}
+
+@Composable
+private fun PlayerBottomControls(
+    state: MpvPlayerState,
+    onPlayPause: () -> Unit,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.84f),
+                        Color.Black.copy(alpha = 0.94f),
+                    ),
+                ),
+            )
+            .padding(start = 16.dp, top = 44.dp, end = 16.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Slider(
+            value = state.positionMillis.toFloat(),
+            onValueChange = { if (!state.gestureState.controlsLocked) onSeek(it.roundToLong()) },
+            valueRange = 0f..state.durationMillis.coerceAtLeast(1L).toFloat(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconButton(
+                onClick = onPlayPause,
+                modifier = Modifier
+                    .size(width = 54.dp, height = 50.dp)
+                    .background(PlayerAccentColor, MaterialTheme.shapes.small),
+            ) {
+                Icon(
+                    imageVector = if (state.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = if (state.isPaused) "播放" else "暂停",
+                    tint = PlayerOnAccentColor,
+                )
+            }
+            Text(
+                text = "${formatVideoTime(state.positionMillis)} / ${formatVideoTime(state.durationMillis)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                maxLines = 1,
+            )
+            Text(
+                text = state.bottomStatusText(),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (state.errorMessage != null) {
+            Text(
+                text = state.errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (state.gestureState.controlsLocked) {
+            Text(
+                text = "控制已锁定",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.84f),
+            )
+        }
+    }
+}
+
+@Composable
 private fun GestureHud(
     message: String?,
     onTimeout: () -> Unit,
@@ -833,7 +913,7 @@ private fun GestureHud(
     }
 }
 
-private enum class PlayerOptionPanel {
+internal enum class PlayerOptionPanel {
     SPEED,
     TRACKS,
     DELAYS,
@@ -842,8 +922,43 @@ private enum class PlayerOptionPanel {
     QUEUE,
 }
 
+internal data class PlayerOptionPanelDescriptor(
+    val icon: ImageVector,
+    val contentDescription: String,
+    val visibleText: String = "",
+)
+
+internal fun PlayerOptionPanel.sideRailDescriptor(): PlayerOptionPanelDescriptor =
+    when (this) {
+        PlayerOptionPanel.SPEED -> PlayerOptionPanelDescriptor(
+            icon = Icons.Filled.Speed,
+            contentDescription = "倍速",
+        )
+        PlayerOptionPanel.TRACKS -> PlayerOptionPanelDescriptor(
+            icon = Icons.Filled.Subtitles,
+            contentDescription = "音轨与字幕",
+        )
+        PlayerOptionPanel.DELAYS -> PlayerOptionPanelDescriptor(
+            icon = Icons.Filled.Sync,
+            contentDescription = "音画同步",
+        )
+        PlayerOptionPanel.VIDEO -> PlayerOptionPanelDescriptor(
+            icon = Icons.Filled.AspectRatio,
+            contentDescription = "画面模式",
+        )
+        PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(
+            icon = Icons.Filled.Info,
+            contentDescription = "播放信息",
+        )
+        PlayerOptionPanel.QUEUE -> PlayerOptionPanelDescriptor(
+            icon = Icons.AutoMirrored.Filled.QueueMusic,
+            contentDescription = "播放队列",
+        )
+    }
+
 @Composable
 private fun EdgeFloatingControls(
+    state: MpvPlayerState,
     activePanel: PlayerOptionPanel?,
     onPanelSelected: (PlayerOptionPanel) -> Unit,
     modifier: Modifier = Modifier,
@@ -853,36 +968,49 @@ private fun EdgeFloatingControls(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.End,
     ) {
-        FloatingPanelButton("速", activePanel == PlayerOptionPanel.SPEED) { onPanelSelected(PlayerOptionPanel.SPEED) }
-        FloatingPanelButton("轨", activePanel == PlayerOptionPanel.TRACKS) { onPanelSelected(PlayerOptionPanel.TRACKS) }
-        FloatingPanelButton("延", activePanel == PlayerOptionPanel.DELAYS) { onPanelSelected(PlayerOptionPanel.DELAYS) }
-        FloatingPanelButton("画", activePanel == PlayerOptionPanel.VIDEO) { onPanelSelected(PlayerOptionPanel.VIDEO) }
-        FloatingPanelButton("信", activePanel == PlayerOptionPanel.INFO) { onPanelSelected(PlayerOptionPanel.INFO) }
-        FloatingPanelButton("队", activePanel == PlayerOptionPanel.QUEUE) { onPanelSelected(PlayerOptionPanel.QUEUE) }
+        PlayerOptionPanel.entries.forEach { panel ->
+            FloatingPanelButton(
+                panel = panel,
+                state = state,
+                selected = activePanel == panel,
+                onClick = { onPanelSelected(panel) },
+            )
+        }
     }
 }
 
 @Composable
 private fun FloatingPanelButton(
-    text: String,
+    panel: PlayerOptionPanel,
+    state: MpvPlayerState,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    if (selected) {
-        OutlinedButton(
+    val descriptor = panel.sideRailDescriptor()
+    Box {
+        PlayerOverlayIconButton(
+            icon = descriptor.icon,
+            contentDescription = descriptor.contentDescription,
             onClick = onClick,
-            modifier = Modifier.size(48.dp),
-        ) {
-            Text(text = text, style = MaterialTheme.typography.labelMedium)
-        }
-    } else {
-        TextButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(48.dp)
-                .background(Color.Black.copy(alpha = 0.52f)),
-        ) {
-            Text(text = text, style = MaterialTheme.typography.labelMedium, color = Color.White)
+            selected = selected,
+        )
+        panel.statusBadgeText(state)?.let { badge ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(width = 24.dp, height = 18.dp),
+                color = if (selected) PlayerOnAccentColor else PlayerAccentColor,
+                contentColor = if (selected) PlayerAccentColor else PlayerOnAccentColor,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
@@ -911,8 +1039,8 @@ private fun PlayerOptionSheet(
     Column(
         modifier = modifier
             .widthIn(min = 260.dp, max = 360.dp)
-            .background(Color.Black.copy(alpha = 0.82f))
-            .padding(12.dp),
+            .background(PlayerSheetColor, MaterialTheme.shapes.medium)
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -925,8 +1053,17 @@ private fun PlayerOptionSheet(
                 style = MaterialTheme.typography.titleSmall,
                 color = Color.White,
             )
-            TextButton(onClick = onDismiss, modifier = Modifier.size(width = 56.dp, height = 36.dp)) {
-                Text("收起", style = MaterialTheme.typography.labelSmall, color = Color.White)
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.White.copy(alpha = 0.08f), MaterialTheme.shapes.small),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "收起",
+                    tint = Color.White,
+                )
             }
         }
         when (panel) {
@@ -1141,14 +1278,16 @@ private fun CompactTextButton(
     if (selected) {
         OutlinedButton(
             onClick = onClick,
-            modifier = Modifier.size(width = 72.dp, height = 36.dp),
+            modifier = Modifier.size(width = 78.dp, height = 38.dp),
         ) {
             Text(text = text, maxLines = 1, style = MaterialTheme.typography.labelSmall)
         }
     } else {
         TextButton(
             onClick = onClick,
-            modifier = Modifier.size(width = 72.dp, height = 36.dp),
+            modifier = Modifier
+                .size(width = 78.dp, height = 38.dp)
+                .background(Color.White.copy(alpha = 0.06f), MaterialTheme.shapes.small),
         ) {
             Text(text = text, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = Color.White)
         }
@@ -1156,6 +1295,10 @@ private fun CompactTextButton(
 }
 
 private val playbackSpeedPresets = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+private val PlayerOverlayColor = Color.Black.copy(alpha = 0.58f)
+private val PlayerSheetColor = Color(0xE60C0F14)
+private val PlayerAccentColor = Color(0xFFE9F7EF)
+private val PlayerOnAccentColor = Color(0xFF0B2418)
 private const val MAX_VISIBLE_TRACK_BUTTONS = 4
 private const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 8
 private const val PLAYER_GESTURE_TOP_PADDING_DP = 72
@@ -1202,6 +1345,47 @@ private val PlayerOptionPanel.title: String
         PlayerOptionPanel.VIDEO -> "画面 / 解码"
         PlayerOptionPanel.INFO -> "信息"
         PlayerOptionPanel.QUEUE -> "播放队列"
+    }
+
+private fun PlayerOptionPanel.statusBadgeText(state: MpvPlayerState): String? =
+    when (this) {
+        PlayerOptionPanel.SPEED -> state.playbackSpeed
+            .takeIf { it != 1.0 }
+            ?.let { "${it.trimmedSpeed()}x" }
+        PlayerOptionPanel.TRACKS -> state.subtitleTracks
+            .size
+            .takeIf { it > 1 }
+            ?.toString()
+        PlayerOptionPanel.DELAYS -> listOf(state.subtitleDelayMillis, state.audioDelayMillis)
+            .firstOrNull { it != 0L }
+            ?.let { if (it > 0L) "+${it}" else it.toString() }
+        PlayerOptionPanel.VIDEO -> state.scaleMode
+            .takeIf { it != VideoScaleMode.FIT }
+            ?.label
+        PlayerOptionPanel.INFO -> null
+        PlayerOptionPanel.QUEUE -> null
+    }
+
+private fun Double.trimmedSpeed(): String =
+    if (this % 1.0 == 0.0) roundToInt().toString() else toString()
+
+private fun MpvPlayerState.bottomStatusText(): String {
+    if (gestureState.controlsLocked) return "防误触观看"
+    val parts = listOfNotNull(
+        decoderMode.label.takeIf { it.isNotBlank() },
+        videoOutputMode.label.takeIf { it.isNotBlank() },
+        scaleMode.label.takeIf { it.isNotBlank() },
+        selectedSubtitleTrackId?.let { "字幕开启" },
+        gestureState.brightnessPercent?.let { "亮度 $it%" },
+    )
+    return parts.joinToString(" · ").ifBlank { "准备播放" }
+}
+
+private fun String.videoSourceLabel(): String =
+    when (lowercase()) {
+        VideoPlayerActivity.SOURCE_LOCAL -> "本地视频"
+        "webdav" -> "WebDAV"
+        else -> this.ifBlank { "视频" }
     }
 
 private fun MpvTrack.shortLabel(): String =

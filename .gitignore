@@ -28,6 +28,7 @@ app/src/test/**
 !app/src/test/java/com/example/comicdav/video/player/MpvControllerGestureTest.kt
 !app/src/test/java/com/example/comicdav/video/player/MpvEndFileEventTest.kt
 !app/src/test/java/com/example/comicdav/video/player/MainActivityVideoQueueIntegrationTest.kt
+!app/src/test/java/com/example/comicdav/video/player/PlayerOptionPanelUiTest.kt
 !app/src/test/java/com/example/comicdav/video/player/VideoPlaybackQueueTest.kt
 !app/src/test/java/com/example/comicdav/video/player/VideoPlayerStatisticsTest.kt
 !app/src/test/java/com/example/comicdav/video/proxy/

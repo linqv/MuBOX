@@ -114,7 +114,8 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("buildVideoPlayerStatisticsSnapshot("))
         assertTrue(source.contains("StatisticsControls("))
         assertTrue(source.contains("PlayerOptionPanel.INFO -> \"信息\""))
-        assertTrue(source.contains("FloatingPanelButton(\"信\""))
+        assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor("))
+        assertTrue(source.contains("contentDescription = \"播放信息\""))
         assertTrue(source.contains("snapshot.redacted().debugLines()"))
     }
 
