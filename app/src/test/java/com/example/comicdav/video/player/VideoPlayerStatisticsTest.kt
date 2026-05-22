@@ -11,6 +11,8 @@ class VideoPlayerStatisticsTest {
         val state = MpvPlayerState(
             displayName = "ignored.mp4",
             currentHwdec = "mediacodec-copy",
+            activeHwdec = "mediacodec-copy",
+            activeVideoDecoder = "h264_mediacodec",
             currentVideoOutput = "gpu-next",
             currentGpuApi = "vulkan",
             videoParams = VideoParams(
@@ -47,9 +49,31 @@ class VideoPlayerStatisticsTest {
         assertEquals("h264", snapshot.media.videoCodec)
         assertEquals("1280x720", snapshot.media.resolution)
         assertEquals("movie.zh.ass", snapshot.media.subtitleSource)
-        assertEquals("mediacodec-copy", snapshot.runtime.decoder)
+        assertEquals("h264_mediacodec / mediacodec-copy", snapshot.runtime.decoder)
         assertEquals("gpu-next / vulkan", snapshot.runtime.renderer)
         assertEquals(23.976, snapshot.runtime.estimatedFps)
+    }
+
+    @Test
+    fun snapshotBuilderPrefersActualSoftwareDecoderOverRequestedHardwareMode() {
+        val state = MpvPlayerState(
+            decoderMode = VideoDecoderMode.HARDWARE_PLUS,
+            currentHwdec = "mediacodec",
+            activeHwdec = "no",
+            activeVideoDecoder = "libdav1d",
+            videoParams = VideoParams(codec = "av1", width = 1920, height = 1080),
+        )
+
+        val snapshot = buildVideoPlayerStatisticsSnapshot(
+            mediaContext = VideoPlayerMediaContext(
+                displayName = "Movie.av1.mkv",
+                source = "local",
+            ),
+            state = state,
+        )
+
+        assertEquals("libdav1d", snapshot.runtime.decoder)
+        assertTrue(snapshot.debugLines().contains("decoder=libdav1d"))
     }
 
     @Test

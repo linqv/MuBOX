@@ -20,6 +20,18 @@ class MpvControllerTest {
     }
 
     @Test
+    fun loadClearsObservedRuntimeDecoderState() {
+        val controller = MpvController(FakeMpvEngine())
+        controller.onActiveHwdecChanged("no")
+        controller.onActiveVideoDecoderChanged("libdav1d")
+
+        controller.load(uri = "content://media/other.mp4", displayName = "Other")
+
+        assertEquals(null, controller.state.value.activeHwdec)
+        assertEquals(null, controller.state.value.activeVideoDecoder)
+    }
+
+    @Test
     fun loadWithResumePositionLoadsNormallyThenSeeksAfterDurationIsKnown() {
         val engine = FakeMpvEngine()
         val controller = MpvController(engine)

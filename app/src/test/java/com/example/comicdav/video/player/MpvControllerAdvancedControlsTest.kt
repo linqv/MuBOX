@@ -157,6 +157,8 @@ class MpvControllerAdvancedControlsTest {
         controller.onSubtitleTrackChanged(null)
         controller.onAudioDelayChanged(-0.2)
         controller.onHwdecChanged("mediacodec-copy")
+        controller.onActiveHwdecChanged("no")
+        controller.onActiveVideoDecoderChanged("libdav1d")
         controller.onVoChanged("gpu-next")
         controller.onGpuApiChanged("vulkan")
 
@@ -166,6 +168,8 @@ class MpvControllerAdvancedControlsTest {
         assertEquals(null, state.selectedSubtitleTrackId)
         assertEquals(-200L, state.audioDelayMillis)
         assertEquals("mediacodec-copy", state.currentHwdec)
+        assertEquals("no", state.activeHwdec)
+        assertEquals("libdav1d", state.activeVideoDecoder)
         assertEquals("gpu-next", state.currentVideoOutput)
         assertEquals("vulkan", state.currentGpuApi)
     }

@@ -152,6 +152,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     "aid" -> controller.onAudioTrackChanged(value.toIntOrNull())
                     "sid" -> controller.onSubtitleTrackChanged(value.toIntOrNull())
                     "hwdec" -> controller.onHwdecChanged(value)
+                    "hwdec-current" -> controller.onActiveHwdecChanged(value)
+                    "current-tracks/video/decoder" -> controller.onActiveVideoDecoderChanged(value)
                     "vo" -> controller.onVoChanged(value)
                     "gpu-api" -> controller.onGpuApiChanged(value)
                 }

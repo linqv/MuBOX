@@ -27,6 +27,8 @@ data class MpvPlayerState(
     val selectedSubtitleTrackId: Int? = null,
     val audioDelayMillis: Long = 0L,
     val currentHwdec: String? = null,
+    val activeHwdec: String? = null,
+    val activeVideoDecoder: String? = null,
     val currentVideoOutput: String? = null,
     val currentGpuApi: String? = null,
     val videoParams: VideoParams = VideoParams(),
@@ -51,6 +53,7 @@ data class MpvTrack(
     val type: MpvTrackType,
     val title: String,
     val language: String? = null,
+    val decoder: String? = null,
     val isSelected: Boolean = false,
     val isExternal: Boolean = false,
 )
@@ -252,6 +255,8 @@ class MpvController(
         _state.value = _state.value.copy(
             displayName = displayName,
             errorMessage = null,
+            activeHwdec = null,
+            activeVideoDecoder = null,
             videoParams = VideoParams(),
             videoOutParams = VideoParams(),
         )
@@ -492,11 +497,14 @@ class MpvController(
         val tracks = parseTrackList(trackList)
         val selectedAudioId = tracks.firstOrNull { it.type == MpvTrackType.AUDIO && it.isSelected }?.id
         val selectedSubtitleId = tracks.firstOrNull { it.type == MpvTrackType.SUBTITLE && it.isSelected }?.id
+        val selectedVideoDecoder = tracks.firstOrNull { it.type == MpvTrackType.VIDEO && it.isSelected }
+            ?.decoder
         _state.value = _state.value.copy(
             audioTracks = tracks.filter { it.type == MpvTrackType.AUDIO },
             subtitleTracks = tracks.filter { it.type == MpvTrackType.SUBTITLE },
             selectedAudioTrackId = selectedAudioId ?: _state.value.selectedAudioTrackId,
             selectedSubtitleTrackId = selectedSubtitleId ?: _state.value.selectedSubtitleTrackId,
+            activeVideoDecoder = selectedVideoDecoder ?: _state.value.activeVideoDecoder,
         )
     }
 
@@ -518,6 +526,14 @@ class MpvController(
 
     fun onHwdecChanged(value: String) {
         _state.value = _state.value.copy(currentHwdec = value)
+    }
+
+    fun onActiveHwdecChanged(value: String) {
+        _state.value = _state.value.copy(activeHwdec = value.takeIf { it.isNotBlank() })
+    }
+
+    fun onActiveVideoDecoderChanged(value: String) {
+        _state.value = _state.value.copy(activeVideoDecoder = value.takeIf { it.isNotBlank() })
     }
 
     fun onVoChanged(value: String) {
@@ -663,6 +679,7 @@ class MpvController(
             type = type,
             title = title,
             language = node.nodeString("lang"),
+            decoder = node.nodeString("decoder"),
             isSelected = node.nodeBoolean("selected") == true,
             isExternal = node.nodeBoolean("external") == true,
         )

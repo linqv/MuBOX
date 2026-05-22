@@ -64,7 +64,7 @@ fun buildVideoPlayerStatisticsSnapshot(
             subtitleSource = selectedSubtitle?.title,
         ),
         runtime = MpvRuntimeStatistics(
-            decoder = state.currentHwdec ?: state.decoderMode.hwdec,
+            decoder = activeDecoderLabel(state),
             renderer = listOfNotNull(
                 state.currentVideoOutput ?: state.videoOutputMode.videoOutput,
                 state.currentGpuApi?.takeIf { it != "auto" } ?: state.gpuApiMode.gpuApi.takeIf { it != "auto" },
@@ -76,6 +76,17 @@ fun buildVideoPlayerStatisticsSnapshot(
         ),
         proxy = proxy,
     )
+}
+
+private fun activeDecoderLabel(state: MpvPlayerState): String {
+    val decoder = state.activeVideoDecoder.takeUnless { it.isNullOrBlank() }
+    val hwdec = state.activeHwdec.takeUnless { it.isNullOrBlank() }
+    return when {
+        decoder != null && hwdec != null && hwdec != "no" -> "$decoder / $hwdec"
+        decoder != null -> decoder
+        hwdec != null -> if (hwdec == "no") "software" else hwdec
+        else -> state.currentHwdec ?: state.decoderMode.hwdec
+    }
 }
 
 data class MediaInfoSnapshot(

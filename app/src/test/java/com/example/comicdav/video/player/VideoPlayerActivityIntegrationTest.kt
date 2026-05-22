@@ -78,6 +78,8 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-params\""))
         assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-out-params\""))
         assertTrue(viewSource.contains("MPVLib.observeProperty(\"hwdec\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"hwdec-current\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"current-tracks/video/decoder\""))
         assertTrue(viewSource.contains("MPVLib.observeProperty(\"vo\""))
         assertTrue(viewSource.contains("MPVLib.observeProperty(\"gpu-api\""))
         assertTrue(activitySource.contains("controller.onTrackListChanged(value)"))
@@ -86,6 +88,8 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(activitySource.contains("controller.onSpeedChanged(value)"))
         assertTrue(activitySource.contains("controller.onVideoParamsChanged(value)"))
         assertTrue(activitySource.contains("controller.onVideoOutParamsChanged(value)"))
+        assertTrue(activitySource.contains("controller.onActiveHwdecChanged(value)"))
+        assertTrue(activitySource.contains("controller.onActiveVideoDecoderChanged(value)"))
     }
 
     @Test
