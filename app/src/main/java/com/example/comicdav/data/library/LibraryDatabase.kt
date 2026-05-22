@@ -10,6 +10,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.comicdav.data.filedirectory.FileDirectoryDao
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectoryTypeConverters
+import com.example.comicdav.data.videolibrary.LocalVideoSourceEntity
+import com.example.comicdav.data.videolibrary.VideoLibraryDao
+import com.example.comicdav.data.videolibrary.VideoLibraryItemEntity
+import com.example.comicdav.data.videolibrary.VideoLibraryTypeConverters
+import com.example.comicdav.data.videolibrary.WebDavVideoSourceEntity
 
 const val LIBRARY_DATABASE_NAME = "comicdav-library.db"
 
@@ -19,14 +24,18 @@ const val LIBRARY_DATABASE_NAME = "comicdav-library.db"
         LocalComicSourceEntity::class,
         WebDavComicSourceEntity::class,
         FileDirectorySourceEntity::class,
+        VideoLibraryItemEntity::class,
+        LocalVideoSourceEntity::class,
+        WebDavVideoSourceEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
-@TypeConverters(LibraryTypeConverters::class, FileDirectoryTypeConverters::class)
+@TypeConverters(LibraryTypeConverters::class, FileDirectoryTypeConverters::class, VideoLibraryTypeConverters::class)
 abstract class LibraryDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun fileDirectoryDao(): FileDirectoryDao
+    abstract fun videoLibraryDao(): VideoLibraryDao
 }
 
 fun createLibraryDatabase(
@@ -38,7 +47,7 @@ fun createLibraryDatabase(
         LibraryDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .build()
 }
 
@@ -100,5 +109,66 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
         )
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_local_comic_sources_uri` ON `local_comic_sources` (`uri`)")
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_webdav_comic_sources_accountId_remotePath` ON `webdav_comic_sources` (`accountId`, `remotePath`)")
+    }
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `video_library_items` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `title` TEXT NOT NULL,
+                `displayName` TEXT NOT NULL,
+                `sourceType` TEXT NOT NULL,
+                `thumbnailPath` TEXT,
+                `addedAt` INTEGER NOT NULL,
+                `lastOpenedAt` INTEGER
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `local_video_sources` (
+                `videoLibraryItemId` INTEGER NOT NULL,
+                `uri` TEXT NOT NULL,
+                `fileName` TEXT NOT NULL,
+                `size` INTEGER,
+                `lastModified` INTEGER,
+                PRIMARY KEY(`videoLibraryItemId`),
+                FOREIGN KEY(`videoLibraryItemId`) REFERENCES `video_library_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_local_video_sources_videoLibraryItemId` " +
+                "ON `local_video_sources` (`videoLibraryItemId`)",
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_video_sources_uri` ON `local_video_sources` (`uri`)",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `webdav_video_sources` (
+                `videoLibraryItemId` INTEGER NOT NULL,
+                `accountId` TEXT NOT NULL,
+                `remotePath` TEXT NOT NULL,
+                `fileName` TEXT NOT NULL,
+                `size` INTEGER,
+                `etag` TEXT,
+                `lastModified` INTEGER,
+                PRIMARY KEY(`videoLibraryItemId`),
+                FOREIGN KEY(`videoLibraryItemId`) REFERENCES `video_library_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_webdav_video_sources_videoLibraryItemId` " +
+                "ON `webdav_video_sources` (`videoLibraryItemId`)",
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_webdav_video_sources_accountId_remotePath` " +
+                "ON `webdav_video_sources` (`accountId`, `remotePath`)",
+        )
     }
 }

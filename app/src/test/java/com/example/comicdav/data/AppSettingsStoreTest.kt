@@ -56,6 +56,22 @@ class AppSettingsStoreTest {
         assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
     }
 
+    @Test
+    fun videoLibraryThumbnailsEnabledDefaultsToTrue() = runTest {
+        val store = createStore("video_library_thumbnail_default.preferences_pb")
+
+        assertTrue(store.settings.first().videoLibraryThumbnailsEnabled)
+    }
+
+    @Test
+    fun videoLibraryThumbnailsEnabledCanBeUpdatedAndReadBack() = runTest {
+        val store = createStore("video_library_thumbnail_update.preferences_pb")
+
+        store.updateVideoLibraryThumbnailsEnabled(false)
+
+        assertFalse(store.settings.first().videoLibraryThumbnailsEnabled)
+    }
+
     private fun TestScope.createStore(fileName: String): AppSettingsStore {
         val preferencesFile = temporaryFolder.newFile(fileName)
         val dataStore = PreferenceDataStoreFactory.create(

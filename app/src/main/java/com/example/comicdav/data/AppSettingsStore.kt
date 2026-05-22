@@ -58,6 +58,7 @@ data class AppSettings(
     val mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
     val videoControlsAutoHideMillis: Int = 5_000,
     val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
+    val videoLibraryThumbnailsEnabled: Boolean = true,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -94,6 +95,7 @@ class AppSettingsStore(
             ),
             videoPlayerOrientationMode = preferences[VIDEO_PLAYER_ORIENTATION_MODE]
                 .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO),
+            videoLibraryThumbnailsEnabled = preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] ?: true,
         )
     }
 
@@ -222,6 +224,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoLibraryThumbnailsEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] = enabled
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -244,6 +252,7 @@ class AppSettingsStore(
         val MPV_PROFILE_MODE = stringPreferencesKey("mpv_profile_mode")
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
         val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
+        val VIDEO_LIBRARY_THUMBNAILS_ENABLED = booleanPreferencesKey("video_library_thumbnails_enabled")
     }
 }
 
