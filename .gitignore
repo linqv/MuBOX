@@ -24,7 +24,12 @@ app/src/test/**
 !app/src/test/java/com/example/comicdav/
 !app/src/test/java/com/example/comicdav/video/
 !app/src/test/java/com/example/comicdav/video/player/
+!app/src/test/java/com/example/comicdav/video/player/MpvControllerAdvancedControlsTest.kt
+!app/src/test/java/com/example/comicdav/video/player/MpvControllerGestureTest.kt
 !app/src/test/java/com/example/comicdav/video/player/MpvEndFileEventTest.kt
+!app/src/test/java/com/example/comicdav/video/player/MainActivityVideoQueueIntegrationTest.kt
+!app/src/test/java/com/example/comicdav/video/player/VideoPlaybackQueueTest.kt
+!app/src/test/java/com/example/comicdav/video/player/VideoPlayerStatisticsTest.kt
 !app/src/test/java/com/example/comicdav/video/proxy/
 !app/src/test/java/com/example/comicdav/video/proxy/MuBoxVideoProxyTest.kt
 !app/src/test/java/com/example/comicdav/video/proxy/VideoProxyManagerTest.kt

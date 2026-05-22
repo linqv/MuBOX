@@ -59,6 +59,97 @@ class VideoPlayerActivityIntegrationTest {
     }
 
     @Test
+    fun activityObservesAdvancedMpvPlaybackProperties() {
+        val activitySource = activitySourceFile().readText()
+        val viewSource = mpvViewSourceFile().readText()
+
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"track-list\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"aid\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"sid\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"speed\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-params\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-out-params\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"hwdec\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"vo\""))
+        assertTrue(viewSource.contains("MPVLib.observeProperty(\"gpu-api\""))
+        assertTrue(activitySource.contains("controller.onTrackListChanged(value)"))
+        assertTrue(activitySource.contains("controller.onAudioTrackChanged(value.toInt())"))
+        assertTrue(activitySource.contains("controller.onSubtitleTrackChanged(value.toInt().takeIf { it > 0 })"))
+        assertTrue(activitySource.contains("controller.onSpeedChanged(value)"))
+        assertTrue(activitySource.contains("controller.onVideoParamsChanged(value)"))
+        assertTrue(activitySource.contains("controller.onVideoOutParamsChanged(value)"))
+    }
+
+    @Test
+    fun screenExposesVisibleAlternativesForAdvancedPlaybackControls() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("onSpeedSelected = controller::setPlaybackSpeed"))
+        assertTrue(source.contains("onAudioTrackSelected = controller::selectAudioTrack"))
+        assertTrue(source.contains("onSubtitleTrackSelected = controller::selectSubtitleTrack"))
+        assertTrue(source.contains("onSubtitlesDisabled = controller::disableSubtitles"))
+        assertTrue(source.contains("onSubtitleDelayChanged = controller::adjustSubtitleDelay"))
+        assertTrue(source.contains("onAudioDelayChanged = controller::adjustAudioDelay"))
+        assertTrue(source.contains("onScaleModeSelected = controller::setScaleMode"))
+        assertTrue(source.contains("onDecoderModeSelected = controller::setDecoderMode"))
+        assertTrue(source.contains("onVideoOutputModeSelected = controller::setVideoOutputMode"))
+        assertTrue(source.contains("onGpuApiModeSelected = controller::setGpuApiMode"))
+        assertTrue(source.contains("onControlsLockedChanged = controller::setControlsLocked"))
+        assertTrue(source.contains("EdgeFloatingControls("))
+        assertTrue(source.contains("PlayerOptionSheet("))
+        assertTrue(source.contains("PlayerOptionPanel.SPEED"))
+        assertTrue(source.contains("PlayerOptionPanel.TRACKS"))
+        assertTrue(source.contains("PlayerOptionPanel.DELAYS"))
+        assertTrue(source.contains("PlayerOptionPanel.VIDEO"))
+        assertTrue(source.contains("PlayerOptionPanel.INFO"))
+        assertTrue(source.contains("PlayerOptionPanel.QUEUE"))
+        assertTrue("advanced controls should be in popup sheets, not always-on bottom rows", !source.contains("if (!state.gestureState.controlsLocked) {\n                    PlaybackSpeedControls("))
+    }
+
+    @Test
+    fun screenExposesStatisticsInFloatingOptionPanel() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("VideoPlayerMediaContext("))
+        assertTrue(source.contains("buildVideoPlayerStatisticsSnapshot("))
+        assertTrue(source.contains("StatisticsControls("))
+        assertTrue(source.contains("PlayerOptionPanel.INFO -> \"信息\""))
+        assertTrue(source.contains("FloatingPanelButton(\"信\""))
+        assertTrue(source.contains("snapshot.redacted().debugLines()"))
+    }
+
+    @Test
+    fun screenShowsPlaybackQueueFromIntentInFloatingOptionPanel() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("val playbackQueue = intent.playbackQueue()"))
+        assertTrue(source.contains("queue = playbackQueue"))
+        assertTrue(source.contains("QueueControls(queue = queue)"))
+        assertTrue(source.contains("queue?.previousItem()?.displayName"))
+        assertTrue(source.contains("queue?.currentItem?.displayName"))
+        assertTrue(source.contains("queue?.nextItem()?.displayName"))
+    }
+
+    @Test
+    fun screenConnectsGestureOverlayToControllerGestureActions() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("PlayerGestureOverlay("))
+        assertTrue(source.contains("onVolumeDelta = controller::adjustGestureVolume"))
+        assertTrue(source.contains("onBrightnessDelta = ::handleBrightnessGesture"))
+        assertTrue(source.contains("controller.adjustGestureBrightness(deltaPercent)"))
+        assertTrue(source.contains("applyScreenBrightnessPercent"))
+        assertTrue(source.contains("onDoubleTapSeek = controller::handleDoubleTapSeek"))
+        assertTrue(source.contains("onZoomDelta = controller::adjustGestureZoom"))
+        assertTrue(source.contains("onClearHud = controller::clearGestureHud"))
+        assertTrue(source.contains("detectTapGestures("))
+        assertTrue(source.contains("detectTransformGestures("))
+        assertTrue(source.contains("GestureHud("))
+        assertTrue(source.contains("LaunchedEffect(message)"))
+        assertTrue(source.contains("delay(GESTURE_HUD_TIMEOUT_MILLIS)"))
+    }
+
+    @Test
     fun activityPausesAndReleasesAudioFocusWhenStoppedInBackground() {
         val source = activitySourceFile().readText()
 
@@ -80,5 +171,11 @@ class VideoPlayerActivityIntegrationTest {
         listOf(
             File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
             File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
+        ).first { it.isFile }
+
+    private fun mpvViewSourceFile(): File =
+        listOf(
+            File("src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
+            File("app/src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
         ).first { it.isFile }
 }

@@ -36,6 +36,17 @@ class MuBoxMpvView(
         MPVLib.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
         MPVLib.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
         MPVLib.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
+        MPVLib.observeProperty("track-list", MPVLib.MpvFormat.MPV_FORMAT_NODE_ARRAY)
+        MPVLib.observeProperty("aid", MPVLib.MpvFormat.MPV_FORMAT_INT64)
+        MPVLib.observeProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_INT64)
+        MPVLib.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        MPVLib.observeProperty("sub-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        MPVLib.observeProperty("audio-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        MPVLib.observeProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
+        MPVLib.observeProperty("video-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
+        MPVLib.observeProperty("hwdec", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+        MPVLib.observeProperty("vo", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+        MPVLib.observeProperty("gpu-api", MPVLib.MpvFormat.MPV_FORMAT_STRING)
     }
 
     override fun postInitOptions() = Unit

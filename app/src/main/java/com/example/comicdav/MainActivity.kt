@@ -114,6 +114,11 @@ import com.example.comicdav.video.findSidecarSubtitles
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
+import com.example.comicdav.video.player.VideoPlaybackQueue
+import com.example.comicdav.video.player.VideoQueueItem
+import com.example.comicdav.video.player.VideoQueueSource
+import com.example.comicdav.video.player.localVideoPlaybackKey
+import com.example.comicdav.video.player.webDavVideoPlaybackKey
 import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
@@ -417,6 +422,10 @@ fun ComicDavApp() {
 
     fun openLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
         pendingWebDavVideoOpen = null
+        val localPlaybackQueue = buildLocalDirectoryPlaybackQueue(
+            entries = fileDirectoryUiState.entries,
+            currentItem = item,
+        )
         val request = LocalVideoOpenRequest(
             uri = item.uri,
             displayName = item.name,
@@ -441,6 +450,7 @@ fun ComicDavApp() {
                 context = context,
                 request = request,
                 resumeEnabled = appSettings.videoResumeEnabled,
+                queue = localPlaybackQueue,
             ),
         )
     }
@@ -623,6 +633,11 @@ fun ComicDavApp() {
 
     fun openWebDavVideo(item: WebDavItem) {
         val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val webDavPlaybackQueue = buildWebDavPlaybackQueue(
+            accountId = accountId,
+            items = uiState.items,
+            currentItem = item,
+        )
         val request = WebDavVideoOpenRequest(
             accountId = accountId,
             remotePath = item.path,
@@ -672,6 +687,7 @@ fun ComicDavApp() {
                             subtitleUrls = session.subtitleUrls,
                             streamIds = session.streamIds,
                             resumeEnabled = appSettings.videoResumeEnabled,
+                            queue = webDavPlaybackQueue,
                         ),
                     )
                 }
@@ -1813,6 +1829,53 @@ private fun startReaderLogFile(
 
 private fun DownloadProgressUi.toReaderLoadingProgress(): ReaderLoadingProgress =
     ReaderLoadingProgress(downloadedBytes = downloadedBytes, totalBytes = totalBytes)
+
+private fun buildLocalDirectoryPlaybackQueue(
+    entries: List<FileDirectoryBrowserItem>,
+    currentItem: FileDirectoryBrowserItem,
+): VideoPlaybackQueue? {
+    val videoItems = entries.filter { it.mediaKind == MediaKind.Video }
+    if (videoItems.isEmpty()) return null
+    val queueItems = videoItems.map { entry ->
+        VideoQueueItem(
+            playbackKey = localVideoPlaybackKey(
+                uri = entry.uri,
+                size = entry.size,
+                lastModified = entry.lastModified,
+            ),
+            displayName = entry.name,
+            sourceUri = entry.uri,
+            source = VideoQueueSource.LOCAL,
+        )
+    }
+    val currentIndex = videoItems.indexOfFirst { it.uri == currentItem.uri }.coerceAtLeast(0)
+    return VideoPlaybackQueue(items = queueItems, currentIndex = currentIndex)
+}
+
+private fun buildWebDavPlaybackQueue(
+    accountId: String,
+    items: List<WebDavItem>,
+    currentItem: WebDavItem,
+): VideoPlaybackQueue? {
+    val videoItems = items.filter { mediaKindFor(name = it.name, isDirectory = it.isDirectory) == MediaKind.Video }
+    if (videoItems.isEmpty()) return null
+    val queueItems = videoItems.map { item ->
+        VideoQueueItem(
+            playbackKey = webDavVideoPlaybackKey(
+                accountId = accountId,
+                remotePath = item.path,
+                size = item.size,
+                etag = item.etag,
+                lastModified = item.lastModified,
+            ),
+            displayName = item.name,
+            sourceUri = item.path,
+            source = VideoQueueSource.WEB_DAV,
+        )
+    }
+    val currentIndex = videoItems.indexOfFirst { it.path == currentItem.path }.coerceAtLeast(0)
+    return VideoPlaybackQueue(items = queueItems, currentIndex = currentIndex)
+}
 
 private const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
 private const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"
