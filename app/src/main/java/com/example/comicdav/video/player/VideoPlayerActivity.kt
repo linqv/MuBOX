@@ -258,8 +258,16 @@ class VideoPlayerActivity : ComponentActivity() {
         setContent {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
-                LaunchedEffect(state.videoParams.width, state.videoParams.height) {
-                    orientationSession.requestForVideoParams(state.videoParams)?.let { orientation ->
+                LaunchedEffect(
+                    state.videoParams.width,
+                    state.videoParams.height,
+                    state.videoParams.rotationDegrees,
+                    state.videoOutParams.width,
+                    state.videoOutParams.height,
+                    state.videoOutParams.rotationDegrees,
+                ) {
+                    val orientationVideoParams = preferredVideoParamsForOrientation(state)
+                    orientationSession.requestForVideoParams(orientationVideoParams)?.let { orientation ->
                         requestedOrientation = orientation
                     }
                 }

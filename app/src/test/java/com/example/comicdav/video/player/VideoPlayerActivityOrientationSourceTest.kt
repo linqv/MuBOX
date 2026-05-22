@@ -19,8 +19,9 @@ class VideoPlayerActivityOrientationSourceTest {
     fun playerActivityAppliesVideoParamsThroughOrientationSession() {
         val source = playerActivitySourceFile().readText()
 
-        assertTrue(source.contains("LaunchedEffect(state.videoParams.width, state.videoParams.height)"))
-        assertTrue(source.contains("orientationSession.requestForVideoParams(state.videoParams)"))
+        assertTrue(source.contains("state.videoOutParams.width"))
+        assertTrue(source.contains("preferredVideoParamsForOrientation(state)"))
+        assertTrue(source.contains("orientationSession.requestForVideoParams(orientationVideoParams)"))
     }
 
     private fun playerActivitySourceFile(): File =

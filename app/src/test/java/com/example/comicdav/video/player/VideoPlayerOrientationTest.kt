@@ -56,6 +56,37 @@ class VideoPlayerOrientationTest {
     }
 
     @Test
+    fun videoModeUsesRotationMetadataWhenChoosingOrientation() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            requestedOrientationForVideoPlayerMode(
+                VideoPlayerOrientationMode.VIDEO,
+                VideoParams(width = 1920, height = 1080, rotationDegrees = 90),
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            requestedOrientationForVideoPlayerMode(
+                VideoPlayerOrientationMode.VIDEO,
+                VideoParams(width = 1080, height = 1920, rotationDegrees = 90),
+            ),
+        )
+    }
+
+    @Test
+    fun orientationUsesVideoOutParamsBeforeRawVideoParams() {
+        val state = MpvPlayerState(
+            videoParams = VideoParams(width = 1920, height = 1080),
+            videoOutParams = VideoParams(width = 1080, height = 1920),
+        )
+
+        assertEquals(
+            VideoParams(width = 1080, height = 1920),
+            preferredVideoParamsForOrientation(state),
+        )
+    }
+
+    @Test
     fun fixedAndSensorModesMapToActivityOrientationConstants() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,

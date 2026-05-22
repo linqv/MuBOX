@@ -117,6 +117,7 @@ data class VideoParams(
     val width: Int? = null,
     val height: Int? = null,
     val frameRate: Double? = null,
+    val rotationDegrees: Int? = null,
 )
 
 interface MpvEngine {
@@ -626,6 +627,7 @@ class MpvController(
             width = node.nodeInt("w")?.toInt() ?: node.nodeInt("dw")?.toInt(),
             height = node.nodeInt("h")?.toInt() ?: node.nodeInt("dh")?.toInt(),
             frameRate = node.nodeDouble("fps"),
+            rotationDegrees = node.nodeInt("rotate")?.toInt(),
         )
 
     private fun MPVNode.nodeString(key: String): String? = this[key]?.asString()

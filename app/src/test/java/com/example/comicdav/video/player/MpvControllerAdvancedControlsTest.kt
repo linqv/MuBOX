@@ -171,6 +171,26 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun observedVideoParamsIncludeRotationMetadata() {
+        val controller = MpvController(AdvancedFakeMpvEngine())
+
+        controller.onVideoParamsChanged(
+            MPVNode.MapNode(
+                mapOf(
+                    "w" to MPVNode.IntNode(1920L),
+                    "h" to MPVNode.IntNode(1080L),
+                    "rotate" to MPVNode.IntNode(90L),
+                ),
+            ),
+        )
+
+        assertEquals(
+            VideoParams(width = 1920, height = 1080, rotationDegrees = 90),
+            controller.state.value.videoParams,
+        )
+    }
+
+    @Test
     fun lockControlsGesturesWithoutPausingPlayback() {
         val engine = AdvancedFakeMpvEngine()
         val controller = MpvController(engine)
