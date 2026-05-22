@@ -36,10 +36,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Source
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,9 +54,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
@@ -64,6 +69,8 @@ import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.DownloadRecordStore
+import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.data.VideoDownloadStore
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.ReadingProgressStore
@@ -82,6 +89,9 @@ import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.LibraryRepository
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.data.library.createLibraryDatabase
+import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.data.videolibrary.VideoLibraryRepository
+import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryViewModel
 import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
@@ -96,12 +106,16 @@ import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForMb
+import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
+import com.example.comicdav.feature.videolibrary.VideoLibraryViewModel
+import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
 import com.example.comicdav.network.RemoteFileInfo
+import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
@@ -114,9 +128,12 @@ import com.example.comicdav.video.findSidecarSubtitles
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
+import com.example.comicdav.video.proxy.VideoProxyManager
 import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -126,6 +143,7 @@ private val Context.appDataFolderDataStore by preferencesDataStore(name = "app_d
 private val Context.appSettingsDataStore by preferencesDataStore(name = "app_settings")
 private val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
 private val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
+private val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
 
 class MainActivity : ComponentActivity() {
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
@@ -170,6 +188,9 @@ fun ComicDavApp() {
     val libraryRepository = remember(libraryDatabase) {
         LibraryRepository(libraryDatabase.libraryDao())
     }
+    val videoLibraryRepository = remember(libraryDatabase) {
+        VideoLibraryRepository(libraryDatabase.videoLibraryDao())
+    }
     val fileDirectoryRepository = remember(libraryDatabase) {
         FileDirectoryRepository(libraryDatabase.fileDirectoryDao())
     }
@@ -187,6 +208,14 @@ fun ComicDavApp() {
             }
         },
     )
+    val videoLibraryViewModel: VideoLibraryViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return VideoLibraryViewModel(videoLibraryRepository) as T
+            }
+        },
+    )
     val fileDirectoryViewModel: FileDirectoryViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -198,7 +227,9 @@ fun ComicDavApp() {
     val uiState = webDavViewModel.uiState
     val readerUiState = readerViewModel.uiState
     val libraryUiState = libraryViewModel.uiState
+    val videoLibraryUiState = videoLibraryViewModel.uiState
     val fileDirectoryUiState = fileDirectoryViewModel.uiState
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
@@ -210,7 +241,9 @@ fun ComicDavApp() {
     }
     var selectedWebDavFile by remember { mutableStateOf<WebDavItem?>(null) }
     var selectedDirectoryComic by remember { mutableStateOf<FileDirectoryBrowserItem?>(null) }
+    var selectedDirectoryVideo by remember { mutableStateOf<FileDirectoryBrowserItem?>(null) }
     var selectedLibraryItem by remember { mutableStateOf<LibraryItemWithSources?>(null) }
+    var selectedVideoLibraryItem by remember { mutableStateOf<VideoLibraryItemWithSources?>(null) }
     var selectedDownloadRecord by remember { mutableStateOf<DownloadRecord?>(null) }
     var pendingLocalVideoOpen by remember { mutableStateOf<LocalVideoOpenRequest?>(null) }
     var pendingWebDavVideoOpen by remember { mutableStateOf<WebDavVideoOpenRequest?>(null) }
@@ -229,17 +262,23 @@ fun ComicDavApp() {
             remoteCacheDir = remoteCache.cacheDir,
         )
     }
+    val videoThumbnailExtractor = remember(context) {
+        VideoThumbnailExtractor(cacheDir = context.cacheDir)
+    }
     val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
     val dataFolderStore = remember(context) { AppDataFolderStore(context.appDataFolderDataStore) }
     val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
     val webDavAccountStore = remember(context) { WebDavAccountStore(context.webDavAccountDataStore) }
     val downloadRecordStore = remember(context) { DownloadRecordStore(context.downloadRecordsDataStore) }
+    val videoDownloadStore = remember(context) { VideoDownloadStore(context.videoDownloadRecordsDataStore) }
     val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings(videoResumeEnabled = false))
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     fun clearSelection() {
         selectedWebDavFile = null
         selectedDirectoryComic = null
+        selectedDirectoryVideo = null
         selectedLibraryItem = null
+        selectedVideoLibraryItem = null
         selectedDownloadRecord = null
     }
     fun refreshCacheAnalysis() {
@@ -309,10 +348,20 @@ fun ComicDavApp() {
     }
 
     LaunchedEffect(appSettings.screenRotationLockEnabled) {
-        (context as? Activity)?.requestedOrientation = if (appSettings.screenRotationLockEnabled) {
-            ActivityInfo.SCREEN_ORIENTATION_LOCKED
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        (context as? Activity)?.requestedOrientation =
+            mainAppRequestedOrientation(appSettings.screenRotationLockEnabled)
+    }
+
+    DisposableEffect(context, lifecycleOwner, appSettings.screenRotationLockEnabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                (context as? Activity)?.requestedOrientation =
+                    mainAppRequestedOrientation(appSettings.screenRotationLockEnabled)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -451,6 +500,55 @@ fun ComicDavApp() {
         )
     }
 
+    suspend fun resolveWebDavAccountForPlayback(accountId: String): SavedWebDavAccount? {
+        webDavAccountStore.loadAccount(accountId)?.let { return it }
+        val activeAccountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val baseUrl = uiState.baseUrl.trim()
+        if (activeAccountId != accountId || baseUrl.isBlank()) return null
+        return SavedWebDavAccount(
+            accountId = accountId,
+            baseUrl = baseUrl,
+            username = uiState.username,
+            password = uiState.password,
+        )
+    }
+
+    fun currentVideoProxySettings(): VideoProxySettings =
+        VideoProxySettings(
+            seekOptimizationEnabled = appSettings.videoSeekOptimizationEnabled,
+            forwardPrefetchMode = appSettings.videoForwardPrefetchMode,
+            diagnosticsMode = appSettings.videoProxyDiagnosticsMode,
+        )
+
+    suspend fun extractLocalVideoThumbnail(
+        uri: String,
+        size: Long?,
+        lastModified: Long?,
+    ): String? =
+        videoThumbnailExtractor.extractFromContentUri(
+            context = context,
+            uri = Uri.parse(uri),
+            stableKey = "local:$uri:${size ?: -1}:${lastModified ?: -1}",
+        )
+
+    suspend fun extractWebDavVideoThumbnail(request: WebDavVideoOpenRequest): String? {
+        val account = resolveWebDavAccountForPlayback(request.accountId)
+            ?: error("缺少 WebDAV 账号，请重新连接后再提取缩略图")
+        val session = VideoProxyManager.open(
+            request = request.copy(subtitles = emptyList()),
+            account = account,
+            proxySettings = currentVideoProxySettings(),
+        )
+        return try {
+            videoThumbnailExtractor.extractFromUrl(
+                url = session.url,
+                stableKey = "webdav:${request.accountId}:${request.remotePath}:${request.size ?: -1}:${request.etag.orEmpty()}:${request.lastModified ?: -1}",
+            )
+        } finally {
+            VideoProxyManager.close(session.streamIds)
+        }
+    }
+
     fun favoriteLocalDirectoryComic(item: FileDirectoryBrowserItem) {
         scope.launch {
             runCatching {
@@ -467,6 +565,44 @@ fun ComicDavApp() {
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("favorite_local_directory_comic_failed uri=${item.uri}", error)
                     fileDirectoryViewModel.showError(error.message ?: "加入书架失败")
+                },
+            )
+        }
+    }
+
+    fun favoriteLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
+        scope.launch {
+            runCatching {
+                val thumbnailPath = if (appSettings.videoLibraryThumbnailsEnabled) {
+                    runCatching {
+                        extractLocalVideoThumbnail(
+                            uri = item.uri,
+                            size = item.size,
+                            lastModified = item.lastModified,
+                        )
+                    }.onFailure { error ->
+                        ReaderDiagnosticLog.error("extract_local_video_thumbnail_failed uri=${item.uri}", error)
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                videoLibraryRepository.addLocalVideo(
+                    uri = item.uri,
+                    fileName = item.name,
+                    size = item.size,
+                    lastModified = item.lastModified,
+                    thumbnailPath = thumbnailPath,
+                )
+            }.fold(
+                onSuccess = {
+                    selectedDirectoryVideo = null
+                    videoLibraryViewModel.showMessage("已将 ${item.name} 加入影视库")
+                    fileDirectoryViewModel.showMessage("已将 ${item.name} 加入影视库")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("favorite_local_directory_video_failed uri=${item.uri}", error)
+                    videoLibraryViewModel.showError(error.message ?: "加入影视库失败")
+                    fileDirectoryViewModel.showError(error.message ?: "加入影视库失败")
                 },
             )
         }
@@ -528,6 +664,67 @@ fun ComicDavApp() {
                     ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
                     libraryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
                     fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 漫画失败")
+                },
+            )
+        }
+    }
+
+    fun webDavVideoRequestForItem(item: WebDavItem): WebDavVideoOpenRequest {
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        return WebDavVideoOpenRequest(
+            accountId = accountId,
+            remotePath = item.path,
+            displayName = item.name,
+            size = item.size,
+            etag = item.etag,
+            lastModified = item.lastModified,
+            mimeType = mimeTypeForMediaFileName(item.name),
+            subtitles = emptyList(),
+        )
+    }
+
+    fun favoriteWebDavVideo(item: WebDavItem) {
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        if (accountId.substringBefore("|").isBlank()) {
+            webDavActionMessage = null
+            localOpenError = "请先连接 WebDAV，再加入影视库"
+            return
+        }
+        localOpenError = null
+        webDavActionMessage = null
+        scope.launch {
+            runCatching {
+                val request = webDavVideoRequestForItem(item)
+                val thumbnailPath = if (appSettings.videoLibraryThumbnailsEnabled) {
+                    runCatching {
+                        extractWebDavVideoThumbnail(request)
+                    }.onFailure { error ->
+                        ReaderDiagnosticLog.error("extract_webdav_video_thumbnail_failed path=${item.path}", error)
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                videoLibraryRepository.addWebDavVideo(
+                    accountId = accountId,
+                    remotePath = item.path,
+                    fileName = item.name,
+                    size = item.size,
+                    etag = item.etag,
+                    lastModified = item.lastModified,
+                    thumbnailPath = thumbnailPath,
+                )
+            }.fold(
+                onSuccess = {
+                    selectedWebDavFile = null
+                    webDavActionMessage = "已将 ${item.name} 加入影视库"
+                    videoLibraryViewModel.showMessage("已将 ${item.name} 加入影视库")
+                    fileDirectoryViewModel.showMessage("已将 ${item.name} 加入影视库")
+                },
+                onFailure = { error ->
+                    localOpenError = error.message ?: "添加 WebDAV 视频失败"
+                    ReaderDiagnosticLog.error("add_webdav_video_library_failed path=${item.path}", error)
+                    videoLibraryViewModel.showError(error.message ?: "添加 WebDAV 视频失败")
+                    fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 视频失败")
                 },
             )
         }
@@ -599,6 +796,74 @@ fun ComicDavApp() {
         }
     }
 
+    fun downloadWebDavVideoToLocal(item: WebDavItem) {
+        val client = webDavViewModel.activeClient()
+        val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val folderUriText = dataFolderUriText
+        if (client == null) {
+            localOpenError = "请先连接 WebDAV，再下载视频"
+            webDavActionMessage = null
+            return
+        }
+        if (folderUriText.isNullOrBlank()) {
+            localOpenError = "请先选择 MuBOX 数据文件夹，再下载视频"
+            webDavActionMessage = null
+            return
+        }
+        downloadProgress = null
+        localOpenError = null
+        webDavActionMessage = null
+        scope.launch {
+            runCatching {
+                val info = item.size?.let { knownSize ->
+                    RemoteFileInfo(
+                        path = item.path,
+                        size = knownSize,
+                        etag = item.etag,
+                        lastModified = item.lastModified,
+                        supportsRange = true,
+                    )
+                } ?: client.head(item.path)
+                val localUri = downloadWebDavVideoToDataFolder(
+                    context = context,
+                    folderTreeUri = Uri.parse(folderUriText),
+                    client = client,
+                    remotePath = item.path,
+                    fileName = item.name,
+                    expectedSize = info.size,
+                ) { downloaded, total ->
+                    scope.launch {
+                        downloadProgress = DownloadProgressUi(downloaded, total)
+                    }
+                }
+                videoDownloadStore.addRecord(
+                    VideoDownloadRecord(
+                        fileName = item.name,
+                        accountId = accountId,
+                        remotePath = item.path,
+                        localUri = localUri,
+                        sizeBytes = info.size,
+                        downloadedAtMillis = System.currentTimeMillis(),
+                    ),
+                )
+                info.size
+            }.fold(
+                onSuccess = {
+                    downloadProgress = null
+                    selectedWebDavFile = null
+                    webDavActionMessage = "已下载 ${item.name} 到数据文件夹"
+                    fileDirectoryViewModel.showMessage("已下载 ${item.name} 到数据文件夹")
+                },
+                onFailure = { error ->
+                    downloadProgress = null
+                    localOpenError = error.message ?: "下载视频失败"
+                    ReaderDiagnosticLog.error("download_webdav_video_failed path=${item.path}", error)
+                    fileDirectoryViewModel.showError(error.message ?: "下载视频失败")
+                },
+            )
+        }
+    }
+
     suspend fun resolveWebDavClientForAccount(accountId: String): com.example.comicdav.network.WebDavClient? {
         val activeClient = webDavViewModel.activeClient()
         if (activeClient != null && webDavViewModel.activeAccountId() == accountId) {
@@ -612,19 +877,6 @@ fun ComicDavApp() {
             path = "/",
         )
         return webDavViewModel.activeClient()
-    }
-
-    suspend fun resolveWebDavAccountForPlayback(accountId: String): SavedWebDavAccount? {
-        webDavAccountStore.loadAccount(accountId)?.let { return it }
-        val activeAccountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-        val baseUrl = uiState.baseUrl.trim()
-        if (activeAccountId != accountId || baseUrl.isBlank()) return null
-        return SavedWebDavAccount(
-            accountId = accountId,
-            baseUrl = baseUrl,
-            username = uiState.username,
-            password = uiState.password,
-        )
     }
 
     fun openWebDavVideo(item: WebDavItem) {
@@ -664,11 +916,7 @@ fun ComicDavApp() {
                 startWebDavVideoPlayback(
                     request = request,
                     account = account,
-                    proxySettings = VideoProxySettings(
-                        seekOptimizationEnabled = appSettings.videoSeekOptimizationEnabled,
-                        forwardPrefetchMode = appSettings.videoForwardPrefetchMode,
-                        diagnosticsMode = appSettings.videoProxyDiagnosticsMode,
-                    ),
+                    proxySettings = currentVideoProxySettings(),
                 ) { session ->
                     context.startActivity(
                         VideoPlayerActivity.webDavIntent(
@@ -793,6 +1041,166 @@ fun ComicDavApp() {
                 },
                 onFailure = { error ->
                     libraryViewModel.showError(error.message ?: "移出书架失败")
+                },
+            )
+        }
+    }
+
+    fun openVideoLibraryItem(item: VideoLibraryItemWithSources) {
+        when (item.item.sourceType) {
+            VideoSourceType.LOCAL -> {
+                val source = item.localSource ?: run {
+                    videoLibraryViewModel.showError("缺少本地视频来源")
+                    return
+                }
+                val request = LocalVideoOpenRequest(
+                    uri = source.uri,
+                    displayName = source.fileName,
+                    size = source.size,
+                    lastModified = source.lastModified,
+                )
+                videoLibraryViewModel.markOpened(item.item.id)
+                context.startActivity(
+                    VideoPlayerActivity.localIntent(
+                        context = context,
+                        request = request,
+                        resumeEnabled = appSettings.videoResumeEnabled,
+                        videoOutputMode = appSettings.videoOutputMode,
+                        gpuApiMode = appSettings.gpuApiMode,
+                        videoDecoderMode = appSettings.videoDecoderMode,
+                        mpvProfileMode = appSettings.mpvProfileMode,
+                        controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
+                        playerOrientationMode = appSettings.videoPlayerOrientationMode,
+                    ),
+                )
+            }
+            VideoSourceType.WEBDAV -> {
+                val source = item.webDavSource ?: run {
+                    videoLibraryViewModel.showError("缺少 WebDAV 视频来源")
+                    return
+                }
+                val request = WebDavVideoOpenRequest(
+                    accountId = source.accountId,
+                    remotePath = source.remotePath,
+                    displayName = source.fileName,
+                    size = source.size,
+                    etag = source.etag,
+                    lastModified = source.lastModified,
+                    mimeType = mimeTypeForMediaFileName(source.fileName),
+                )
+                scope.launch {
+                    runCatching {
+                        val account = resolveWebDavAccountForPlayback(source.accountId)
+                            ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
+                        startWebDavVideoPlayback(
+                            request = request,
+                            account = account,
+                            proxySettings = currentVideoProxySettings(),
+                        ) { session ->
+                            videoLibraryViewModel.markOpened(item.item.id)
+                            context.startActivity(
+                                VideoPlayerActivity.webDavIntent(
+                                    context = context,
+                                    request = request,
+                                    uri = session.url,
+                                    subtitleUrls = session.subtitleUrls,
+                                    streamIds = session.streamIds,
+                                    resumeEnabled = appSettings.videoResumeEnabled,
+                                    videoOutputMode = appSettings.videoOutputMode,
+                                    gpuApiMode = appSettings.gpuApiMode,
+                                    videoDecoderMode = appSettings.videoDecoderMode,
+                                    mpvProfileMode = appSettings.mpvProfileMode,
+                                    controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
+                                    playerOrientationMode = appSettings.videoPlayerOrientationMode,
+                                ),
+                            )
+                        }
+                    }.onFailure { error ->
+                        videoLibraryViewModel.showError(error.message ?: "打开视频失败")
+                    }
+                }
+            }
+        }
+    }
+
+    fun removeVideoLibraryItem(item: VideoLibraryItemWithSources) {
+        scope.launch {
+            runCatching {
+                item.item.thumbnailPath?.let { path ->
+                    withContext(Dispatchers.IO) {
+                        File(path).takeIf { it.isFile }?.delete()
+                    }
+                }
+                videoLibraryRepository.removeVideo(item.item.id)
+            }.fold(
+                onSuccess = {
+                    selectedVideoLibraryItem = null
+                    videoLibraryViewModel.showMessage("已将 ${item.item.displayName} 移出影视库")
+                },
+                onFailure = { error ->
+                    videoLibraryViewModel.showError(error.message ?: "移出影视库失败")
+                },
+            )
+        }
+    }
+
+    fun refreshVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
+        scope.launch {
+            runCatching {
+                when (item.item.sourceType) {
+                    VideoSourceType.LOCAL -> {
+                        val source = item.localSource ?: error("缺少本地视频来源")
+                        extractLocalVideoThumbnail(
+                            uri = source.uri,
+                            size = source.size,
+                            lastModified = source.lastModified,
+                        ) ?: error("未能提取视频缩略图")
+                    }
+                    VideoSourceType.WEBDAV -> {
+                        val source = item.webDavSource ?: error("缺少 WebDAV 视频来源")
+                        extractWebDavVideoThumbnail(
+                            WebDavVideoOpenRequest(
+                                accountId = source.accountId,
+                                remotePath = source.remotePath,
+                                displayName = source.fileName,
+                                size = source.size,
+                                etag = source.etag,
+                                lastModified = source.lastModified,
+                                mimeType = mimeTypeForMediaFileName(source.fileName),
+                            ),
+                        ) ?: error("未能提取视频缩略图")
+                    }
+                }
+            }.fold(
+                onSuccess = { thumbnailPath ->
+                    videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                    selectedVideoLibraryItem = null
+                    videoLibraryViewModel.showMessage("已重新提取 ${item.item.displayName} 的缩略图")
+                },
+                onFailure = { error ->
+                    ReaderDiagnosticLog.error("refresh_video_thumbnail_failed id=${item.item.id}", error)
+                    videoLibraryViewModel.showError(error.message ?: "重新提取缩略图失败")
+                },
+            )
+        }
+    }
+
+    fun deleteVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
+        scope.launch {
+            runCatching {
+                item.item.thumbnailPath?.let { path ->
+                    withContext(Dispatchers.IO) {
+                        File(path).takeIf { it.isFile }?.delete()
+                    }
+                }
+                videoLibraryRepository.updateThumbnailPath(item.item.id, null)
+            }.fold(
+                onSuccess = {
+                    selectedVideoLibraryItem = null
+                    videoLibraryViewModel.showMessage("已删除 ${item.item.displayName} 的缩略图")
+                },
+                onFailure = { error ->
+                    videoLibraryViewModel.showError(error.message ?: "删除缩略图失败")
                 },
             )
         }
@@ -973,7 +1381,9 @@ fun ComicDavApp() {
     BackHandler(
         enabled = selectedWebDavFile != null ||
             selectedDirectoryComic != null ||
+            selectedDirectoryVideo != null ||
             selectedLibraryItem != null ||
+            selectedVideoLibraryItem != null ||
             selectedDownloadRecord != null ||
             isReaderOpen ||
             isWebDavOpen ||
@@ -983,7 +1393,9 @@ fun ComicDavApp() {
         when {
             selectedWebDavFile != null ||
                 selectedDirectoryComic != null ||
+                selectedDirectoryVideo != null ||
                 selectedLibraryItem != null ||
+                selectedVideoLibraryItem != null ||
                 selectedDownloadRecord != null -> clearSelection()
             isReaderOpen -> closeReaderFromNavigation()
             isWebDavOpen -> {
@@ -1076,19 +1488,33 @@ fun ComicDavApp() {
                         bottomBar = selectionBottomBar(
                             selectedWebDavFile = selectedWebDavFile,
                             selectedDirectoryComic = selectedDirectoryComic,
+                            selectedDirectoryVideo = selectedDirectoryVideo,
                             selectedLibraryItem = selectedLibraryItem,
+                            selectedVideoLibraryItem = selectedVideoLibraryItem,
                             selectedDownloadRecord = selectedDownloadRecord,
                             onDownloadWebDavFile = { item ->
                                 clearSelection()
                                 downloadWebDavComicToLocal(item)
                             },
+                            onDownloadWebDavVideo = { item ->
+                                clearSelection()
+                                downloadWebDavVideoToLocal(item)
+                            },
                             onAddWebDavFileToLibrary = { item ->
                                 clearSelection()
                                 favoriteWebDavComic(item)
                             },
+                            onAddWebDavVideoToVideoLibrary = { item ->
+                                clearSelection()
+                                favoriteWebDavVideo(item)
+                            },
                             onAddDirectoryComicToLibrary = { item ->
                                 clearSelection()
                                 favoriteLocalDirectoryComic(item)
+                            },
+                            onAddDirectoryVideoToVideoLibrary = { item ->
+                                clearSelection()
+                                favoriteLocalDirectoryVideo(item)
                             },
                             onRemoveLibraryItem = ::removeLibraryItem,
                             onRefreshLibraryCover = ::refreshLibraryCover,
@@ -1096,6 +1522,9 @@ fun ComicDavApp() {
                                 selectedLibraryItem = null
                                 downloadLibraryWebDavComic(item)
                             },
+                            onRemoveVideoLibraryItem = ::removeVideoLibraryItem,
+                            onRefreshVideoLibraryThumbnail = ::refreshVideoLibraryThumbnail,
+                            onDeleteVideoLibraryThumbnail = ::deleteVideoLibraryThumbnail,
                             onDeleteDownloadRecord = ::deleteDownloadRecord,
                             onAddDownloadRecordToLibrary = ::addDownloadRecordToLibrary,
                             onCancel = ::clearSelection,
@@ -1129,7 +1558,9 @@ fun ComicDavApp() {
                                             onSelectFile = { item ->
                                                 selectedWebDavFile = item
                                                 selectedDirectoryComic = null
+                                                selectedDirectoryVideo = null
                                                 selectedLibraryItem = null
+                                                selectedVideoLibraryItem = null
                                                 selectedDownloadRecord = null
                                             },
                                             onSaveDirectory = {
@@ -1294,7 +1725,17 @@ fun ComicDavApp() {
                                             onSelectComic = { item ->
                                                 selectedDirectoryComic = item
                                                 selectedWebDavFile = null
+                                                selectedDirectoryVideo = null
                                                 selectedLibraryItem = null
+                                                selectedVideoLibraryItem = null
+                                                selectedDownloadRecord = null
+                                            },
+                                            onSelectVideo = { item ->
+                                                selectedDirectoryVideo = item
+                                                selectedWebDavFile = null
+                                                selectedDirectoryComic = null
+                                                selectedLibraryItem = null
+                                                selectedVideoLibraryItem = null
                                                 selectedDownloadRecord = null
                                             },
                                             onGoUp = fileDirectoryViewModel::goUp,
@@ -1325,6 +1766,7 @@ fun ComicDavApp() {
                                                 webDavActionMessage = null
                                             },
                                             selectedComic = selectedDirectoryComic,
+                                            selectedVideo = selectedDirectoryVideo,
                                             modifier = contentModifier,
                                         )
                                     }
@@ -1400,7 +1842,17 @@ fun ComicDavApp() {
                                         onSelectComic = { item ->
                                             selectedDirectoryComic = item
                                             selectedWebDavFile = null
+                                            selectedDirectoryVideo = null
                                             selectedLibraryItem = null
+                                            selectedVideoLibraryItem = null
+                                            selectedDownloadRecord = null
+                                        },
+                                        onSelectVideo = { item ->
+                                            selectedDirectoryVideo = item
+                                            selectedWebDavFile = null
+                                            selectedDirectoryComic = null
+                                            selectedLibraryItem = null
+                                            selectedVideoLibraryItem = null
                                             selectedDownloadRecord = null
                                         },
                                         onGoUp = fileDirectoryViewModel::goUp,
@@ -1431,6 +1883,7 @@ fun ComicDavApp() {
                                             webDavActionMessage = null
                                         },
                                         selectedComic = selectedDirectoryComic,
+                                        selectedVideo = selectedDirectoryVideo,
                                         modifier = contentModifier,
                                     )
                                 }
@@ -1476,6 +1929,31 @@ fun ComicDavApp() {
                                     },
                                     coversEnabled = appSettings.libraryCoversEnabled,
                                     selectedItemId = selectedLibraryItem?.item?.id,
+                                    modifier = contentModifier,
+                                )
+                            }
+                            AppTab.VIDEO_LIBRARY -> {
+                                VideoLibraryScreen(
+                                    uiState = videoLibraryUiState.copy(error = videoLibraryUiState.error ?: localOpenError),
+                                    onOpenItem = ::openVideoLibraryItem,
+                                    onSelectItem = { item ->
+                                        selectedVideoLibraryItem = item
+                                        selectedWebDavFile = null
+                                        selectedDirectoryComic = null
+                                        selectedDirectoryVideo = null
+                                        selectedLibraryItem = null
+                                        selectedDownloadRecord = null
+                                    },
+                                    onOpenDirectories = {
+                                        localOpenError = null
+                                        selectedTabName = AppTab.SOURCES.name
+                                    },
+                                    onDismissMessage = {
+                                        localOpenError = null
+                                        videoLibraryViewModel.clearMessage()
+                                    },
+                                    thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
+                                    selectedItemId = selectedVideoLibraryItem?.item?.id,
                                     modifier = contentModifier,
                                 )
                             }
@@ -1542,13 +2020,18 @@ fun ComicDavApp() {
                                     onVideoPlayerOrientationModeChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(value) }
                                     },
+                                    onVideoLibraryThumbnailsEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(value) }
+                                    },
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,
                                     onSelectDownloadRecord = { record ->
                                         selectedDownloadRecord = record
                                         selectedWebDavFile = null
                                         selectedDirectoryComic = null
+                                        selectedDirectoryVideo = null
                                         selectedLibraryItem = null
+                                        selectedVideoLibraryItem = null
                                     },
                                     onClearSelectedDownloadRecord = {
                                         selectedDownloadRecord = null
@@ -1593,15 +2076,36 @@ internal fun shouldShowWebDavAccountForm(
 ): Boolean =
     webDavStatus != WEB_DAV_STATUS_CONNECTED && (isAddingWebDavPath || editingWebDavSourceId != null)
 
+internal fun mainAppRequestedOrientation(screenRotationLockEnabled: Boolean): Int =
+    if (screenRotationLockEnabled) {
+        ActivityInfo.SCREEN_ORIENTATION_LOCKED
+    } else {
+        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+internal fun appTabLabels(): List<String> =
+    AppTab.values().map { it.label }
+
+internal fun selectionActionLabelsForLocalVideo(): List<String> =
+    listOf("加入影视库", "取消")
+
+internal fun selectionActionLabelsForWebDavVideo(): List<String> =
+    listOf("加入影视库", "下载", "取消")
+
+internal fun selectionActionLabelsForVideoLibraryItem(): List<String> =
+    listOf("重新提取缩略图", "移除", "删除缩略图", "取消")
+
 private enum class AppTab {
     SOURCES,
     LIBRARY,
+    VIDEO_LIBRARY,
     SETTINGS;
 
     val label: String
         get() = when (this) {
             SOURCES -> ComicDavCopy.sourcesTab
             LIBRARY -> ComicDavCopy.libraryTab
+            VIDEO_LIBRARY -> ComicDavCopy.videoLibraryTab
             SETTINGS -> ComicDavCopy.settingsTab
         }
 
@@ -1609,6 +2113,7 @@ private enum class AppTab {
         get() = when (this) {
             SOURCES -> Icons.Filled.Folder
             LIBRARY -> Icons.AutoMirrored.Filled.LibraryBooks
+            VIDEO_LIBRARY -> Icons.Filled.PlayArrow
             SETTINGS -> Icons.Filled.Settings
         }
 }
@@ -1669,26 +2174,45 @@ private data class SelectionAction(
 private fun selectionBottomBar(
     selectedWebDavFile: WebDavItem?,
     selectedDirectoryComic: FileDirectoryBrowserItem?,
+    selectedDirectoryVideo: FileDirectoryBrowserItem?,
     selectedLibraryItem: LibraryItemWithSources?,
+    selectedVideoLibraryItem: VideoLibraryItemWithSources?,
     selectedDownloadRecord: DownloadRecord?,
     onDownloadWebDavFile: (WebDavItem) -> Unit,
+    onDownloadWebDavVideo: (WebDavItem) -> Unit,
     onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
+    onAddWebDavVideoToVideoLibrary: (WebDavItem) -> Unit,
     onAddDirectoryComicToLibrary: (FileDirectoryBrowserItem) -> Unit,
+    onAddDirectoryVideoToVideoLibrary: (FileDirectoryBrowserItem) -> Unit,
     onRemoveLibraryItem: (LibraryItemWithSources) -> Unit,
     onRefreshLibraryCover: (LibraryItemWithSources) -> Unit,
     onDownloadLibraryItem: (LibraryItemWithSources) -> Unit,
+    onRemoveVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
+    onRefreshVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
+    onDeleteVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
     onDeleteDownloadRecord: (DownloadRecord) -> Unit,
     onAddDownloadRecordToLibrary: (DownloadRecord) -> Unit,
     onCancel: () -> Unit,
 ): (@Composable () -> Unit)? {
     val actions = when {
-        selectedWebDavFile != null -> listOf(
-            SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavFile(selectedWebDavFile) },
-            SelectionAction("加入书架", Icons.Filled.Book) { onAddWebDavFileToLibrary(selectedWebDavFile) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
+        selectedWebDavFile != null -> when (mediaKindFor(name = selectedWebDavFile.name, isDirectory = selectedWebDavFile.isDirectory)) {
+            MediaKind.Video -> listOf(
+                SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddWebDavVideoToVideoLibrary(selectedWebDavFile) },
+                SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavVideo(selectedWebDavFile) },
+                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+            )
+            else -> listOf(
+                SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavFile(selectedWebDavFile) },
+                SelectionAction("加入书架", Icons.Filled.Book) { onAddWebDavFileToLibrary(selectedWebDavFile) },
+                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+            )
+        }
         selectedDirectoryComic != null -> listOf(
             SelectionAction("加入书架", Icons.Filled.Book) { onAddDirectoryComicToLibrary(selectedDirectoryComic) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+        )
+        selectedDirectoryVideo != null -> listOf(
+            SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddDirectoryVideoToVideoLibrary(selectedDirectoryVideo) },
             SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
         )
         selectedLibraryItem != null -> {
@@ -1704,6 +2228,14 @@ private fun selectionBottomBar(
                 SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
             )
         }
+        selectedVideoLibraryItem != null -> listOf(
+            SelectionAction("重新提取缩略图", Icons.Filled.Refresh) {
+                onRefreshVideoLibraryThumbnail(selectedVideoLibraryItem)
+            },
+            SelectionAction("移除", Icons.Filled.Delete) { onRemoveVideoLibraryItem(selectedVideoLibraryItem) },
+            SelectionAction("删除缩略图", Icons.Filled.Delete) { onDeleteVideoLibraryThumbnail(selectedVideoLibraryItem) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+        )
         selectedDownloadRecord != null -> listOf(
             SelectionAction("删除", Icons.Filled.Delete) { onDeleteDownloadRecord(selectedDownloadRecord) },
             SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
@@ -1801,6 +2333,155 @@ private fun deleteLocalSourceTree(context: Context, treeUri: Uri) {
     )
     val deleted = DocumentsContract.deleteDocument(context.contentResolver, rootDocumentUri)
     check(deleted) { "系统未允许删除这个本地文件夹" }
+}
+
+private suspend fun downloadWebDavVideoToDataFolder(
+    context: Context,
+    folderTreeUri: Uri,
+    client: WebDavClient,
+    remotePath: String,
+    fileName: String,
+    expectedSize: Long,
+    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+): String = withContext(Dispatchers.IO) {
+    val resolver = context.applicationContext.contentResolver
+    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+        folderTreeUri,
+        DocumentsContract.getTreeDocumentId(folderTreeUri),
+    )
+    val videosDirectoryUri = findOrCreateChildDocument(
+        context = context,
+        parentDocumentUri = rootDocumentUri,
+        displayName = "videos",
+        mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
+    )
+    val safeName = sanitizeDownloadedVideoFileName(fileName)
+    findChildDocumentUri(context, videosDirectoryUri, "$safeName.tmp")?.let { tmp ->
+        DocumentsContract.deleteDocument(resolver, tmp)
+    }
+    val tmpUri = requireNotNull(
+        DocumentsContract.createDocument(
+            resolver,
+            videosDirectoryUri,
+            mimeTypeForMediaFileName(fileName) ?: "application/octet-stream",
+            "$safeName.tmp",
+        ),
+    ) { "无法在数据文件夹创建视频临时文件" }
+
+    try {
+        val response = client.openFullStream(remotePath)
+        var downloaded = 0L
+        try {
+            response.stream.use { input ->
+                resolver.openOutputStream(tmpUri, "w").use { output ->
+                    requireNotNull(output) { "无法写入视频文件" }
+                    downloaded = copyStreamWithProgress(
+                        input = input,
+                        output = output,
+                        totalBytes = expectedSize.takeIf { it > 0L }
+                            ?: response.totalSize
+                            ?: response.contentLength.takeIf { it > 0L }
+                            ?: 0L,
+                        onProgress = onProgress,
+                    )
+                }
+            }
+        } finally {
+            response.close()
+        }
+        if (expectedSize > 0L && downloaded != expectedSize) {
+            error("Downloaded $downloaded bytes, expected $expectedSize")
+        }
+        findChildDocumentUri(context, videosDirectoryUri, safeName)?.let { existing ->
+            check(DocumentsContract.deleteDocument(resolver, existing)) { "无法替换已有视频文件" }
+        }
+        val finalUri = requireNotNull(
+            DocumentsContract.renameDocument(resolver, tmpUri, safeName),
+        ) { "无法保存视频文件" }
+        finalUri.toString()
+    } catch (error: Throwable) {
+        runCatching { DocumentsContract.deleteDocument(resolver, tmpUri) }
+        throw error
+    }
+}
+
+private fun findOrCreateChildDocument(
+    context: Context,
+    parentDocumentUri: Uri,
+    displayName: String,
+    mimeType: String,
+): Uri {
+    findChildDocumentUri(context, parentDocumentUri, displayName)?.let { return it }
+    return requireNotNull(
+        DocumentsContract.createDocument(
+            context.contentResolver,
+            parentDocumentUri,
+            mimeType,
+            displayName,
+        ),
+    ) { "无法创建 $displayName 文件夹" }
+}
+
+private fun findChildDocumentUri(
+    context: Context,
+    parentDocumentUri: Uri,
+    displayName: String,
+): Uri? {
+    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+        parentDocumentUri,
+        DocumentsContract.getDocumentId(parentDocumentUri),
+    )
+    context.contentResolver.query(
+        childrenUri,
+        arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+        ),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        val idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        while (cursor.moveToNext()) {
+            if (idColumn < 0 || nameColumn < 0 || cursor.isNull(idColumn) || cursor.isNull(nameColumn)) continue
+            if (cursor.getString(nameColumn) == displayName) {
+                return DocumentsContract.buildDocumentUriUsingTree(
+                    parentDocumentUri,
+                    cursor.getString(idColumn),
+                )
+            }
+        }
+    }
+    return null
+}
+
+private fun copyStreamWithProgress(
+    input: InputStream,
+    output: OutputStream,
+    totalBytes: Long,
+    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+): Long {
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var downloaded = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read == -1) break
+        output.write(buffer, 0, read)
+        downloaded += read
+        onProgress(downloaded, totalBytes)
+    }
+    output.flush()
+    return downloaded
+}
+
+private fun sanitizeDownloadedVideoFileName(fileName: String): String {
+    val sanitized = fileName
+        .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
+        .trim()
+        .trim('.')
+        .take(180)
+    return sanitized.ifBlank { "video-download" }
 }
 
 private fun loadReaderLogFolderUri(context: Context): String? {
