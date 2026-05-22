@@ -2,7 +2,6 @@ package com.example.comicdav.video.player
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -116,6 +115,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private lateinit var audioFocusController: VideoAudioFocusController
     private lateinit var playbackLifecyclePolicy: VideoPlaybackLifecyclePolicy
     private lateinit var playbackStateStore: VideoPlaybackStateStore
+    private lateinit var orientationSession: VideoPlayerOrientationSession
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mpvObserverRegistered = false
     private var mpvInitialized = false
@@ -194,7 +194,10 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        val initialPlayerOrientationMode = intent.getStringExtra(EXTRA_PLAYER_ORIENTATION_MODE)
+            .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO)
+        orientationSession = VideoPlayerOrientationSession(initialPlayerOrientationMode)
+        requestedOrientation = orientationSession.initialRequestedOrientation()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         configurePlayerSystemBars()
 
@@ -254,6 +257,11 @@ class VideoPlayerActivity : ComponentActivity() {
         setContent {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
+                LaunchedEffect(state.videoParams.width, state.videoParams.height) {
+                    orientationSession.requestForVideoParams(state.videoParams)?.let { orientation ->
+                        requestedOrientation = orientation
+                    }
+                }
                 BackHandler {
                     closePlayer()
                 }

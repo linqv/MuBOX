@@ -153,4 +153,12 @@ class VideoPlayerOrientationTest {
             intent.getStringExtra(VideoPlayerActivity.EXTRA_PLAYER_ORIENTATION_MODE),
         )
     }
+
+    @Test
+    fun nonVideoModeSessionDoesNotReactToVideoParams() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.SENSOR)
+
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR, session.initialRequestedOrientation())
+        assertNull(session.requestForVideoParams(VideoParams(width = 720, height = 1280)))
+    }
 }
