@@ -37,12 +37,15 @@ class WebDavMediaFilterTest {
     }
 
     @Test
-    fun longPressActionsOnlyExposeComicLibraryActionsForComics() {
+    fun longPressActionsExposeMediaSpecificActionsForComicsAndVideos() {
         assertEquals(
             listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal),
             webDavItemLongPressActions(item("comic.cbz")),
         )
-        assertEquals(emptyList<WebDavFileMenuAction>(), webDavItemLongPressActions(item("movie.mp4")))
+        assertEquals(
+            listOf(WebDavFileMenuAction.AddToVideoLibrary, WebDavFileMenuAction.DownloadToLocal),
+            webDavItemLongPressActions(item("movie.mp4")),
+        )
         assertEquals(emptyList<WebDavFileMenuAction>(), webDavItemLongPressActions(item("folder", isDirectory = true)))
     }
 

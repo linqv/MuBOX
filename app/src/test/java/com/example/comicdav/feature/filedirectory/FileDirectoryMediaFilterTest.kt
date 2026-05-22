@@ -33,12 +33,15 @@ class FileDirectoryMediaFilterTest {
     }
 
     @Test
-    fun longPressActionsOnlyExposeLibraryActionForComics() {
+    fun longPressActionsExposeLibraryActionsForComicsAndVideos() {
         assertEquals(
             listOf(FileDirectoryEntryMenuAction.AddToLibrary),
             fileDirectoryEntryLongPressActions(item("comic.cbz")),
         )
-        assertEquals(emptyList<FileDirectoryEntryMenuAction>(), fileDirectoryEntryLongPressActions(item("movie.mp4")))
+        assertEquals(
+            listOf(FileDirectoryEntryMenuAction.AddToVideoLibrary),
+            fileDirectoryEntryLongPressActions(item("movie.mp4")),
+        )
         assertEquals(emptyList<FileDirectoryEntryMenuAction>(), fileDirectoryEntryLongPressActions(item("folder", true)))
     }
 
