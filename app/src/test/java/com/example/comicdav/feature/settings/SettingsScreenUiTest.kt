@@ -10,7 +10,7 @@ class SettingsScreenUiTest {
         val layout = settingsGroupLayout()
 
         assertEquals(
-            listOf("显示", "漫画", "视频", "自动翻页", "下载记录", "缓存"),
+            listOf("显示", "漫画", "视频", "下载记录", "缓存"),
             layout.map { it.title },
         )
     }
@@ -28,6 +28,7 @@ class SettingsScreenUiTest {
         val comicRows = settingsGroupLayout().rowsInGroup("漫画")
 
         assertTrue(comicRows.contains("阅读方向"))
+        assertTrue(comicRows.contains("启用自动翻页"))
         assertTrue(comicRows.contains("书架封面"))
     }
 
@@ -36,6 +37,7 @@ class SettingsScreenUiTest {
         val displayRows = settingsGroupLayout().rowsInGroup("显示")
 
         assertTrue(displayRows.contains("配色方案"))
+        assertTrue(displayRows.contains("屏幕旋转锁定"))
     }
 
     private fun List<SettingsGroupLayout>.rowsInGroup(title: String): List<String> =

@@ -59,6 +59,7 @@ import com.example.comicdav.video.player.videoOutputModeLabel
 import com.example.comicdav.video.player.videoPlayerOrientationModeLabel
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -79,11 +80,19 @@ internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
     listOf(
         SettingsGroupLayout(
             title = "显示",
-            rows = listOf("配色方案"),
+            rows = listOf("配色方案", "屏幕旋转锁定"),
         ),
         SettingsGroupLayout(
             title = "漫画",
-            rows = listOf("阅读方向", "音量键翻页", "屏幕旋转锁定", "WebDAV 预取页数", "诊断日志", "书架封面"),
+            rows = listOf(
+                "阅读方向",
+                "音量键翻页",
+                "WebDAV 预取页数",
+                "诊断日志",
+                "书架封面",
+                "启用自动翻页",
+                "翻页速度",
+            ),
         ),
         SettingsGroupLayout(
             title = "视频",
@@ -100,10 +109,6 @@ internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
                 "播放器方向",
                 "提取加入影视库的视频缩略图作为封面",
             ),
-        ),
-        SettingsGroupLayout(
-            title = "自动翻页",
-            rows = listOf("启用自动翻页", "翻页速度"),
         ),
         SettingsGroupLayout(
             title = "下载记录",
@@ -193,6 +198,12 @@ fun SettingsScreen(
                 label = AppColorPalette::label,
                 onSelected = onColorPaletteChange,
             )
+            SwitchRow(
+                title = "屏幕旋转锁定",
+                subtitle = "锁定当前屏幕方向",
+                checked = settings.screenRotationLockEnabled,
+                onCheckedChange = onScreenRotationLockChange,
+            )
         }
 
         SettingsGroup(title = "漫画") {
@@ -208,12 +219,6 @@ fun SettingsScreen(
                 subtitle = "使用音量键向前或向后翻页",
                 checked = settings.volumeKeysTurnPagesEnabled,
                 onCheckedChange = onVolumeKeysTurnPagesChange,
-            )
-            SwitchRow(
-                title = "屏幕旋转锁定",
-                subtitle = "阅读时锁定当前屏幕方向",
-                checked = settings.screenRotationLockEnabled,
-                onCheckedChange = onScreenRotationLockChange,
             )
             DropdownRow(
                 title = "WebDAV 预取页数",
@@ -234,6 +239,16 @@ fun SettingsScreen(
                 subtitle = "从 WebDAV 漫画提取首图并显示在书架",
                 checked = settings.libraryCoversEnabled,
                 onCheckedChange = onLibraryCoversEnabledChange,
+            )
+            SwitchRow(
+                title = "启用自动翻页",
+                subtitle = "按固定间隔前进到下一页",
+                checked = settings.autoPageEnabled,
+                onCheckedChange = onAutoPageEnabledChange,
+            )
+            AutoPageSpeedRow(
+                speedMillis = settings.autoPageSpeedMillis,
+                onSpeedChange = onAutoPageSpeedChange,
             )
         }
 
@@ -311,19 +326,6 @@ fun SettingsScreen(
                 subtitle = "收藏视频时自动提取一帧作为影视库封面",
                 checked = settings.videoLibraryThumbnailsEnabled,
                 onCheckedChange = onVideoLibraryThumbnailsEnabledChange,
-            )
-        }
-
-        SettingsGroup(title = "自动翻页") {
-            SwitchRow(
-                title = "启用自动翻页",
-                subtitle = "按固定间隔前进到下一页",
-                checked = settings.autoPageEnabled,
-                onCheckedChange = onAutoPageEnabledChange,
-            )
-            AutoPageSpeedRow(
-                speedMillis = settings.autoPageSpeedMillis,
-                onSpeedChange = onAutoPageSpeedChange,
             )
         }
 
@@ -475,7 +477,8 @@ private fun DownloadRecordRow(
     ) {
         StaticInfoRow(
             title = record.fileName,
-            subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n${record.remotePath}",
+            subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
+                decodeWebDavPathForDisplay(record.remotePath),
         )
     }
 }

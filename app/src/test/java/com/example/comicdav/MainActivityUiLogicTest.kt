@@ -48,4 +48,23 @@ class MainActivityUiLogicTest {
             mainAppRequestedOrientation(screenRotationLockEnabled = true),
         )
     }
+
+    @Test
+    fun downloadProgressThrottlerCoalescesSmallFrequentUpdates() {
+        val throttler = DownloadProgressThrottler(
+            minIntervalMillis = 250L,
+            minByteDelta = 1024L,
+        )
+
+        assertEquals(true, throttler.shouldReport(downloadedBytes = 512L, totalBytes = 4096L, nowMillis = 0L))
+        assertEquals(false, throttler.shouldReport(downloadedBytes = 768L, totalBytes = 4096L, nowMillis = 100L))
+        assertEquals(true, throttler.shouldReport(downloadedBytes = 1600L, totalBytes = 4096L, nowMillis = 120L))
+        assertEquals(true, throttler.shouldReport(downloadedBytes = 1700L, totalBytes = 4096L, nowMillis = 400L))
+    }
+
+    @Test
+    fun webDavParentDirectoryKeepsEncodedPathForRemoteRequests() {
+        assertEquals("/", parentWebDavDirectoryPath("/movie.mp4"))
+        assertEquals("/%E8%A7%86%E9%A2%91/", parentWebDavDirectoryPath("/%E8%A7%86%E9%A2%91/movie.mp4"))
+    }
 }

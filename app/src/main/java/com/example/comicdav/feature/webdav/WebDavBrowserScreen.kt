@@ -43,8 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.video.MediaKind
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
+import com.example.comicdav.webdav.webDavDisplayPathLabel
 
 internal enum class WebDavItemClickAction {
     OpenDirectory,
@@ -395,13 +394,6 @@ internal fun webDavItemSupportingLabel(item: WebDavItem): String =
     if (item.isDirectory) "" else item.size?.let(::formatByteSize) ?: "大小未知"
 
 internal fun shouldShowSaveDirectoryAction(isAddingPath: Boolean): Boolean = isAddingPath
-
-internal fun webDavDisplayPathLabel(path: String): String {
-    val displayPath = runCatching {
-        URLDecoder.decode(path, StandardCharsets.UTF_8.name())
-    }.getOrDefault(path)
-    return "路径 ${displayPath.ifBlank { "/" }}"
-}
 
 internal fun formatByteSize(bytes: Long): String {
     val kib = 1024L

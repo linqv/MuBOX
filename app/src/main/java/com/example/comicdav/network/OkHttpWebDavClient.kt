@@ -141,11 +141,19 @@ class OkHttpWebDavClient(
         }
     }
 
-    override suspend fun openFullStream(path: String): WebDavStreamResponse = withContext(Dispatchers.IO) {
+    override suspend fun openFullStream(path: String): WebDavStreamResponse =
+        openFullStream(path, registerCancellation = {})
+
+    override suspend fun openFullStream(
+        path: String,
+        registerCancellation: (Closeable) -> Unit,
+    ): WebDavStreamResponse = withContext(Dispatchers.IO) {
         val request = requestBuilder(path)
             .get()
             .build()
-        val response = httpClient.newCall(request).execute()
+        val call = httpClient.newCall(request)
+        registerCancellation(Closeable { call.cancel() })
+        val response = call.execute()
         if (response.code != 200) {
             response.close()
             throw WebDavException.HttpStatus(

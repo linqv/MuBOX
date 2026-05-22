@@ -6,7 +6,6 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.data.videolibrary.WebDavVideoSourceEntity
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoLibraryScreenTest {
@@ -39,13 +38,13 @@ class VideoLibraryScreenTest {
     }
 
     @Test
-    fun sourceMetaShowsWebDavRemotePath() {
+    fun sourceMetaDecodesWebDavRemotePath() {
         val item = videoLibraryItem(
             sourceType = VideoSourceType.WEBDAV,
             webDavSource = WebDavVideoSourceEntity(
                 videoLibraryItemId = 1L,
                 accountId = "account",
-                remotePath = "/视频/remote-movie.mp4",
+                remotePath = "/%E8%A7%86%E9%A2%91/remote-movie.mp4",
                 fileName = "remote-movie.mp4",
                 size = 100L,
                 etag = "etag",
@@ -53,7 +52,7 @@ class VideoLibraryScreenTest {
             ),
         )
 
-        assertTrue(videoSourceMeta(item).contains("/视频/remote-movie.mp4"))
+        assertEquals("/视频/remote-movie.mp4", videoSourceMeta(item))
     }
 
     private fun videoLibraryItem(

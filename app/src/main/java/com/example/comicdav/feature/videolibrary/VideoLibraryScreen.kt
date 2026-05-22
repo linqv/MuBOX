@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
 @Composable
@@ -329,6 +330,6 @@ internal fun videoSourceLabel(sourceType: VideoSourceType): String {
 internal fun videoSourceMeta(item: VideoLibraryItemWithSources): String {
     return when (item.item.sourceType) {
         VideoSourceType.LOCAL -> item.localSource?.fileName ?: "本地视频"
-        VideoSourceType.WEBDAV -> item.webDavSource?.remotePath ?: "WebDAV"
+        VideoSourceType.WEBDAV -> item.webDavSource?.remotePath?.let(::decodeWebDavPathForDisplay) ?: "WebDAV"
     }
 }

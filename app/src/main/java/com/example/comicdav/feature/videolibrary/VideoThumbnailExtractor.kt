@@ -61,7 +61,7 @@ class VideoThumbnailExtractor(
             val frame = frameProvider.frameFor(source) ?: return@withContext null
             val thumbnailDir = cacheDir.resolve("video-library-thumbnails")
             thumbnailDir.mkdirs()
-            val finalFile = thumbnailDir.resolve("${stableKey.sanitizeThumbnailKey()}.jpg")
+            val finalFile = thumbnailDir.resolve(thumbnailFileNameForStableKey(stableKey))
             val tmpFile = thumbnailDir.resolve("${finalFile.name}.tmp")
             tmpFile.delete()
             try {
@@ -119,10 +119,19 @@ private class AndroidVideoThumbnailFrameProvider : VideoThumbnailFrameProvider {
     }
 }
 
+internal fun thumbnailFileNameForStableKey(stableKey: String): String {
+    val readablePrefix = stableKey.sanitizeThumbnailKey().take(48)
+    val hash = stableKey.sha256Hex()
+    return if (readablePrefix.isBlank()) {
+        "$hash.jpg"
+    } else {
+        "$readablePrefix-$hash.jpg"
+    }
+}
+
 private fun String.sanitizeThumbnailKey(): String {
     val sanitized = replace(Regex("[^A-Za-z0-9._-]"), "_")
         .trim('_', '.', '-')
-        .take(96)
     return sanitized.ifBlank { sha256Hex() }
 }
 

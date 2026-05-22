@@ -3,7 +3,9 @@ package com.example.comicdav.feature.videolibrary
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -24,5 +26,17 @@ class VideoThumbnailExtractorTest {
 
         assertNull(result)
         assertFalse(cacheDir.resolve("video-library-thumbnails").exists())
+    }
+
+    @Test
+    fun thumbnailFileNameUsesFullStableKeyHashToAvoidPrefixCollisions() {
+        val commonPrefix = "webdav:account:/very/long/path/".padEnd(140, 'a')
+
+        val first = thumbnailFileNameForStableKey("${commonPrefix}1")
+        val second = thumbnailFileNameForStableKey("${commonPrefix}2")
+
+        assertNotEquals(first, second)
+        assertTrue(first.endsWith(".jpg"))
+        assertTrue(second.endsWith(".jpg"))
     }
 }

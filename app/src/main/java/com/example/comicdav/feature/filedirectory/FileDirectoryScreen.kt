@@ -53,6 +53,7 @@ import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.video.MediaKind
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 
 internal enum class FileDirectoryEntryClickAction {
     OpenDirectory,
@@ -107,6 +108,22 @@ internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<So
         )
     }
 }
+
+internal fun fileDirectorySourceTitle(source: FileDirectorySourceEntity): String =
+    if (source.sourceType == FileDirectorySourceType.WEBDAV) {
+        decodeWebDavPathForDisplay(source.displayName)
+    } else {
+        source.displayName
+    }
+
+internal fun fileDirectorySourceSubtitle(source: FileDirectorySourceEntity): String =
+    when (source.sourceType) {
+        FileDirectorySourceType.LOCAL -> "本地文件夹"
+        FileDirectorySourceType.WEBDAV -> source.webDavPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::decodeWebDavPathForDisplay)
+            ?: "WebDAV 目录"
+    }
 
 @Composable
 fun FileDirectoryScreen(
@@ -458,17 +475,14 @@ private fun DirectorySourceRow(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = source.displayName,
+                    text = fileDirectorySourceTitle(source),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = when (source.sourceType) {
-                        FileDirectorySourceType.LOCAL -> "本地文件夹"
-                        FileDirectorySourceType.WEBDAV -> source.webDavPath?.takeIf { it.isNotBlank() } ?: "WebDAV 目录"
-                    },
+                    text = fileDirectorySourceSubtitle(source),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
