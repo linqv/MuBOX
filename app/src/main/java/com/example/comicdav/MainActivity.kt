@@ -450,6 +450,10 @@ fun ComicDavApp() {
                 context = context,
                 request = request,
                 resumeEnabled = appSettings.videoResumeEnabled,
+                videoOutputMode = appSettings.videoOutputMode,
+                gpuApiMode = appSettings.gpuApiMode,
+                videoDecoderMode = appSettings.videoDecoderMode,
+                controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                 queue = localPlaybackQueue,
             ),
         )
@@ -687,6 +691,10 @@ fun ComicDavApp() {
                             subtitleUrls = session.subtitleUrls,
                             streamIds = session.streamIds,
                             resumeEnabled = appSettings.videoResumeEnabled,
+                            videoOutputMode = appSettings.videoOutputMode,
+                            gpuApiMode = appSettings.gpuApiMode,
+                            videoDecoderMode = appSettings.videoDecoderMode,
+                            controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                             queue = webDavPlaybackQueue,
                         ),
                     )
@@ -1527,6 +1535,18 @@ fun ComicDavApp() {
                                     },
                                     onVideoProxyDiagnosticsModeChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(value) }
+                                    },
+                                    onVideoOutputModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoOutputMode(value) }
+                                    },
+                                    onGpuApiModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateGpuApiMode(value) }
+                                    },
+                                    onVideoDecoderModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoDecoderMode(value) }
+                                    },
+                                    onVideoControlsAutoHideMillisChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,

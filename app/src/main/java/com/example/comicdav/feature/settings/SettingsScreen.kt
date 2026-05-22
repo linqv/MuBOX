@@ -45,6 +45,14 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.video.player.GpuApiMode
+import com.example.comicdav.video.player.VideoDecoderMode
+import com.example.comicdav.video.player.VideoOutputMode
+import com.example.comicdav.video.player.gpuApiModeLabel
+import com.example.comicdav.video.player.playerControlAutoHideLabel
+import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
+import com.example.comicdav.video.player.videoDecoderModeLabel
+import com.example.comicdav.video.player.videoOutputModeLabel
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import java.text.SimpleDateFormat
@@ -75,6 +83,10 @@ fun SettingsScreen(
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit = {},
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit = {},
     onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit = {},
+    onVideoOutputModeChange: (VideoOutputMode) -> Unit = {},
+    onGpuApiModeChange: (GpuApiMode) -> Unit = {},
+    onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
+    onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
     downloadRecords: List<DownloadRecord> = emptyList(),
     selectedDownloadRecord: DownloadRecord? = null,
     onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
@@ -199,6 +211,34 @@ fun SettingsScreen(
                 options = VideoProxyDiagnosticsMode.entries,
                 label = VideoProxyDiagnosticsMode::label,
                 onSelected = onVideoProxyDiagnosticsModeChange,
+            )
+            DropdownRow(
+                title = "视频输出 (VO)",
+                selected = settings.videoOutputMode,
+                options = VideoOutputMode.entries,
+                label = ::videoOutputModeLabel,
+                onSelected = onVideoOutputModeChange,
+            )
+            DropdownRow(
+                title = "GPU API",
+                selected = settings.gpuApiMode,
+                options = GpuApiMode.entries,
+                label = ::gpuApiModeLabel,
+                onSelected = onGpuApiModeChange,
+            )
+            DropdownRow(
+                title = "默认解码器",
+                selected = settings.videoDecoderMode,
+                options = VideoDecoderMode.entries,
+                label = ::videoDecoderModeLabel,
+                onSelected = onVideoDecoderModeChange,
+            )
+            DropdownRow(
+                title = "控制自动隐藏",
+                selected = settings.videoControlsAutoHideMillis,
+                options = playerControlAutoHideOptionsMillis(),
+                label = ::playerControlAutoHideLabel,
+                onSelected = onVideoControlsAutoHideMillisChange,
             )
         }
 

@@ -70,6 +70,14 @@ enum class VideoDecoderMode(val hwdec: String) {
     HARDWARE_PLUS("mediacodec"),
 }
 
+internal fun videoDecoderModeLabel(mode: VideoDecoderMode): String =
+    when (mode) {
+        VideoDecoderMode.AUTO -> "auto"
+        VideoDecoderMode.SOFTWARE -> "SW"
+        VideoDecoderMode.HARDWARE -> "HW"
+        VideoDecoderMode.HARDWARE_PLUS -> "HW+"
+    }
+
 enum class VideoOutputMode(val videoOutput: String) {
     AUTO("gpu"),
     GPU_NEXT("gpu-next"),
@@ -79,6 +87,23 @@ enum class GpuApiMode(val gpuApi: String) {
     AUTO("auto"),
     VULKAN("vulkan"),
 }
+
+internal fun videoOutputModeLabel(mode: VideoOutputMode): String =
+    when (mode) {
+        VideoOutputMode.AUTO -> "auto"
+        VideoOutputMode.GPU_NEXT -> "gpu-next"
+    }
+
+internal fun gpuApiModeLabel(mode: GpuApiMode): String =
+    when (mode) {
+        GpuApiMode.AUTO -> "auto"
+        GpuApiMode.VULKAN -> "vulkan"
+    }
+
+internal fun playerControlAutoHideOptionsMillis(): List<Int> = listOf(0, 3_000, 5_000, 8_000, 10_000)
+
+internal fun playerControlAutoHideLabel(millis: Int): String =
+    if (millis <= 0) "不自动隐藏" else "${millis / 1_000} 秒"
 
 enum class VideoScaleMode {
     FIT,

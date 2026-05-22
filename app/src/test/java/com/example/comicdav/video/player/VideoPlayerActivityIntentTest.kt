@@ -2,6 +2,7 @@ package com.example.comicdav.video.player
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.comicdav.data.AppSettings
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import org.junit.Assert.assertEquals
@@ -11,6 +12,16 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class VideoPlayerActivityIntentTest {
+    @Test
+    fun appSettingsDefaultToAutomaticVideoBackendModes() {
+        val settings = AppSettings()
+
+        assertEquals(VideoOutputMode.AUTO, settings.videoOutputMode)
+        assertEquals(GpuApiMode.AUTO, settings.gpuApiMode)
+        assertEquals(VideoDecoderMode.AUTO, settings.videoDecoderMode)
+        assertEquals(5000, settings.videoControlsAutoHideMillis)
+    }
+
     @Test
     fun localIntentCarriesLocalVideoRequestExtras() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -29,6 +40,43 @@ class VideoPlayerActivityIntentTest {
         assertEquals(1024L, intent.getLongExtra(VideoPlayerActivity.EXTRA_SIZE, -1L))
         assertEquals(12345L, intent.getLongExtra(VideoPlayerActivity.EXTRA_LAST_MODIFIED, -1L))
         assertEquals(VideoPlayerActivity.SOURCE_LOCAL, intent.getStringExtra(VideoPlayerActivity.EXTRA_SOURCE))
+    }
+
+    @Test
+    fun localIntentCarriesConfiguredVideoBackendModes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val request = LocalVideoOpenRequest(
+            uri = "content://videos/movie.mkv",
+            displayName = "movie.mkv",
+            size = null,
+            lastModified = null,
+        )
+
+        val intent = VideoPlayerActivity.localIntent(
+            context = context,
+            request = request,
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.VULKAN,
+            videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
+            controlsAutoHideMillis = 8000,
+        )
+
+        assertEquals(
+            VideoOutputMode.GPU_NEXT.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_VIDEO_OUTPUT_MODE),
+        )
+        assertEquals(
+            GpuApiMode.VULKAN.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_GPU_API_MODE),
+        )
+        assertEquals(
+            VideoDecoderMode.HARDWARE_PLUS.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_VIDEO_DECODER_MODE),
+        )
+        assertEquals(
+            8000,
+            intent.getIntExtra(VideoPlayerActivity.EXTRA_CONTROLS_AUTO_HIDE_MILLIS, -1),
+        )
     }
 
     @Test

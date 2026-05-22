@@ -2,9 +2,7 @@ package com.example.comicdav.video.player
 
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Sync
 import org.junit.Assert.assertEquals
@@ -18,10 +16,8 @@ class PlayerOptionPanelUiTest {
 
         assertEquals(
             listOf(
-                "倍速",
                 "音轨与字幕",
                 "音画同步",
-                "画面模式",
                 "播放信息",
                 "播放队列",
             ),
@@ -29,15 +25,45 @@ class PlayerOptionPanelUiTest {
         )
         assertEquals(
             listOf(
-                Icons.Filled.Speed,
                 Icons.Filled.Subtitles,
                 Icons.Filled.Sync,
-                Icons.Filled.AspectRatio,
                 Icons.Filled.Info,
                 Icons.AutoMirrored.Filled.QueueMusic,
             ),
             descriptors.map { it.icon },
         )
         assertFalse(descriptors.any { it.visibleText.isNotBlank() })
+    }
+
+    @Test
+    fun bottomQuickControlsExposeSpeedScaleAndDecoder() {
+        assertEquals(
+            listOf("倍速", "画面", "解码"),
+            bottomQuickControlLabels(),
+        )
+    }
+
+    @Test
+    fun scalePanelOnlyContainsPerPlaybackVisualControls() {
+        assertEquals(
+            listOf("画面"),
+            scaleModeControlGroupLabels(),
+        )
+    }
+
+    @Test
+    fun playerControlSizingKeepsPrimaryPlaybackButtonCompact() {
+        assertEquals(44, PLAYER_PRIMARY_CONTROL_TOUCH_SIZE_DP)
+        assertEquals(38, PLAYER_PRIMARY_CONTROL_VISUAL_SIZE_DP)
+        assertEquals(44, PLAYER_OVERLAY_BUTTON_SIZE_DP)
+        assertEquals(8, PLAYER_OPTION_SHEET_RAIL_GAP_DP)
+    }
+
+    @Test
+    fun controlAutoHideOptionsProvideOffAndCommonTimeouts() {
+        assertEquals(
+            listOf(0, 3000, 5000, 8000, 10000),
+            playerControlAutoHideOptionsMillis(),
+        )
     }
 }

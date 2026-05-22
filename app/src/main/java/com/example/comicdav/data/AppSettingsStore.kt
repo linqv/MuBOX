@@ -6,6 +6,10 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.comicdav.video.player.GpuApiMode
+import com.example.comicdav.video.player.VideoDecoderMode
+import com.example.comicdav.video.player.VideoOutputMode
+import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import kotlinx.coroutines.flow.Flow
@@ -46,6 +50,10 @@ data class AppSettings(
     val videoSeekOptimizationEnabled: Boolean = true,
     val videoForwardPrefetchMode: VideoForwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
     val videoProxyDiagnosticsMode: VideoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.OFF,
+    val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
+    val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
+    val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
+    val videoControlsAutoHideMillis: Int = 5_000,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -73,6 +81,12 @@ class AppSettingsStore(
                 .toEnumOrDefault(VideoForwardPrefetchMode.STANDARD),
             videoProxyDiagnosticsMode = preferences[VIDEO_PROXY_DIAGNOSTICS_MODE]
                 .toEnumOrDefault(VideoProxyDiagnosticsMode.OFF),
+            videoOutputMode = preferences[VIDEO_OUTPUT_MODE].toEnumOrDefault(VideoOutputMode.AUTO),
+            gpuApiMode = preferences[GPU_API_MODE].toEnumOrDefault(GpuApiMode.AUTO),
+            videoDecoderMode = preferences[VIDEO_DECODER_MODE].toEnumOrDefault(VideoDecoderMode.AUTO),
+            videoControlsAutoHideMillis = coerceVideoControlsAutoHideMillis(
+                preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] ?: 5_000,
+            ),
         )
     }
 
@@ -165,6 +179,30 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoOutputMode(mode: VideoOutputMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_OUTPUT_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateGpuApiMode(mode: GpuApiMode) {
+        dataStore.edit { preferences ->
+            preferences[GPU_API_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateVideoDecoderMode(mode: VideoDecoderMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_DECODER_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateVideoControlsAutoHideMillis(millis: Int) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] = coerceVideoControlsAutoHideMillis(millis)
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -181,6 +219,10 @@ class AppSettingsStore(
         val VIDEO_SEEK_OPTIMIZATION_ENABLED = booleanPreferencesKey("video_seek_optimization_enabled")
         val VIDEO_FORWARD_PREFETCH_MODE = stringPreferencesKey("video_forward_prefetch_mode")
         val VIDEO_PROXY_DIAGNOSTICS_MODE = stringPreferencesKey("video_proxy_diagnostics_mode")
+        val VIDEO_OUTPUT_MODE = stringPreferencesKey("video_output_mode")
+        val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
+        val VIDEO_DECODER_MODE = stringPreferencesKey("video_decoder_mode")
+        val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
     }
 }
 
@@ -199,6 +241,9 @@ private fun coerceDiskCacheLimitMb(limitMb: Int): Int =
 
 private fun coerceWebDavPrefetchPageCount(pageCount: Int): Int =
     SupportedWebDavPrefetchPageCounts.minBy { kotlin.math.abs(it - pageCount) }
+
+private fun coerceVideoControlsAutoHideMillis(millis: Int): Int =
+    playerControlAutoHideOptionsMillis().minBy { kotlin.math.abs(it - millis) }
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T {
     return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default
