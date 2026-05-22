@@ -56,6 +56,24 @@ class VideoPlayerOrientationTest {
     }
 
     @Test
+    fun videoModeUsesAspectRatioBeforeDimensionsWhenChoosingOrientation() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            requestedOrientationForVideoPlayerMode(
+                VideoPlayerOrientationMode.VIDEO,
+                VideoParams(aspectRatio = 1080.0 / 1920.0),
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            requestedOrientationForVideoPlayerMode(
+                VideoPlayerOrientationMode.VIDEO,
+                VideoParams(aspectRatio = 1920.0 / 1080.0, width = 1080, height = 1920),
+            ),
+        )
+    }
+
+    @Test
     fun videoModeUsesRotationMetadataWhenChoosingOrientation() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
@@ -77,11 +95,11 @@ class VideoPlayerOrientationTest {
     fun orientationUsesVideoOutParamsBeforeRawVideoParams() {
         val state = MpvPlayerState(
             videoParams = VideoParams(width = 1920, height = 1080),
-            videoOutParams = VideoParams(width = 1080, height = 1920),
+            videoOutParams = VideoParams(width = 1080, height = 1920, aspectRatio = 1080.0 / 1920.0),
         )
 
         assertEquals(
-            VideoParams(width = 1080, height = 1920),
+            VideoParams(width = 1080, height = 1920, aspectRatio = 1080.0 / 1920.0),
             preferredVideoParamsForOrientation(state),
         )
     }
@@ -136,6 +154,17 @@ class VideoPlayerOrientationTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
             session.requestForVideoParams(VideoParams(width = 720, height = 1280)),
+        )
+    }
+
+    @Test
+    fun videoModeSessionUpdatesWhenOnlyAspectRatioIsKnown() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.VIDEO)
+
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, session.initialRequestedOrientation())
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            session.requestForVideoParams(VideoParams(aspectRatio = 1080.0 / 1920.0)),
         )
     }
 

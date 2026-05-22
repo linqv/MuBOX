@@ -118,6 +118,7 @@ data class VideoParams(
     val height: Int? = null,
     val frameRate: Double? = null,
     val rotationDegrees: Int? = null,
+    val aspectRatio: Double? = null,
 )
 
 interface MpvEngine {
@@ -229,7 +230,12 @@ class MpvController(
     ) {
         if (!canWriteEngine()) return
         pendingResumeSeekMillis = startPositionMillis.takeIf { it > 0L }
-        _state.value = _state.value.copy(displayName = displayName, errorMessage = null)
+        _state.value = _state.value.copy(
+            displayName = displayName,
+            errorMessage = null,
+            videoParams = VideoParams(),
+            videoOutParams = VideoParams(),
+        )
         engine.setPropertyString("force-media-title", displayName)
         engine.loadFile(uri) {
             addSubtitles(subtitles)
@@ -504,11 +510,33 @@ class MpvController(
     }
 
     fun onVideoParamsChanged(params: MPVNode) {
-        _state.value = _state.value.copy(videoParams = parseVideoParams(params))
+        val parsedParams = parseVideoParams(params)
+        _state.value = _state.value.let { state ->
+            state.copy(videoParams = parsedParams.withAspectFrom(state.videoParams))
+        }
     }
 
     fun onVideoOutParamsChanged(params: MPVNode) {
-        _state.value = _state.value.copy(videoOutParams = parseVideoParams(params))
+        val parsedParams = parseVideoParams(params)
+        _state.value = _state.value.let { state ->
+            state.copy(videoOutParams = parsedParams.withAspectFrom(state.videoOutParams))
+        }
+    }
+
+    fun onVideoAspectChanged(aspectRatio: Double) {
+        _state.value = _state.value.let { state ->
+            state.copy(
+                videoParams = state.videoParams.copy(aspectRatio = aspectRatio.validAspectRatio()),
+            )
+        }
+    }
+
+    fun onVideoOutAspectChanged(aspectRatio: Double) {
+        _state.value = _state.value.let { state ->
+            state.copy(
+                videoOutParams = state.videoOutParams.copy(aspectRatio = aspectRatio.validAspectRatio()),
+            )
+        }
     }
 
     fun onPauseChanged(paused: Boolean) {
@@ -628,7 +656,14 @@ class MpvController(
             height = node.nodeInt("h")?.toInt() ?: node.nodeInt("dh")?.toInt(),
             frameRate = node.nodeDouble("fps"),
             rotationDegrees = node.nodeInt("rotate")?.toInt(),
+            aspectRatio = node.nodeDouble("aspect")?.validAspectRatio(),
         )
+
+    private fun VideoParams.withAspectFrom(previous: VideoParams): VideoParams =
+        if (aspectRatio == null) copy(aspectRatio = previous.aspectRatio) else this
+
+    private fun Double.validAspectRatio(): Double? =
+        takeIf { it > 0.0 && !it.isNaN() && !it.isInfinite() }
 
     private fun MPVNode.nodeString(key: String): String? = this[key]?.asString()
 

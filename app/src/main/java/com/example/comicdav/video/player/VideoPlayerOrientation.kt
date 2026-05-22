@@ -30,7 +30,7 @@ internal fun requestedOrientationForVideoPlayerMode(
     }
 
 internal fun preferredVideoParamsForOrientation(state: MpvPlayerState): VideoParams =
-    state.videoOutParams.takeIf { it.hasDimensions } ?: state.videoParams
+    state.videoOutParams.takeIf { it.hasOrientationSignal } ?: state.videoParams
 
 internal class VideoPlayerOrientationSession(
     private val initialMode: VideoPlayerOrientationMode,
@@ -44,7 +44,7 @@ internal class VideoPlayerOrientationSession(
 
     fun requestForVideoParams(videoParams: VideoParams): Int? {
         if (initialMode != VideoPlayerOrientationMode.VIDEO || manualOverride) return null
-        if (videoParams.width == null || videoParams.height == null) return null
+        if (!videoParams.hasOrientationSignal) return null
         return requestedOrientationForVideoParams(videoParams)
             .also(::rememberFixedOrientation)
     }
@@ -72,6 +72,13 @@ internal class VideoPlayerOrientationSession(
 }
 
 private fun requestedOrientationForVideoParams(videoParams: VideoParams): Int {
+    videoParams.displayAspectRatio()?.let { aspectRatio ->
+        return if (aspectRatio < 1.0) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
     val (width, height) = videoParams.displayDimensions()
     return if (width != null && height != null && height > width) {
         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -80,8 +87,17 @@ private fun requestedOrientationForVideoParams(videoParams: VideoParams): Int {
     }
 }
 
-private val VideoParams.hasDimensions: Boolean
-    get() = width != null && height != null
+private val VideoParams.hasOrientationSignal: Boolean
+    get() = displayAspectRatio() != null || (width != null && height != null)
+
+private fun VideoParams.displayAspectRatio(): Double? {
+    val aspectRatio = aspectRatio?.takeIf { it > 0.0 && !it.isNaN() && !it.isInfinite() } ?: return null
+    return if (rotationDegrees?.floorMod360() in setOf(90, 270)) {
+        1.0 / aspectRatio
+    } else {
+        aspectRatio
+    }
+}
 
 private fun VideoParams.displayDimensions(): Pair<Int?, Int?> {
     val width = width

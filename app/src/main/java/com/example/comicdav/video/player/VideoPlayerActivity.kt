@@ -165,6 +165,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     "time-pos" -> controller.onPositionChanged(value)
                     "speed" -> controller.onSpeedChanged(value)
                     "audio-delay" -> controller.onAudioDelayChanged(value)
+                    "video-params/aspect" -> controller.onVideoAspectChanged(value)
+                    "video-out-params/aspect" -> controller.onVideoOutAspectChanged(value)
                 }
             }
         }
@@ -262,9 +264,11 @@ class VideoPlayerActivity : ComponentActivity() {
                     state.videoParams.width,
                     state.videoParams.height,
                     state.videoParams.rotationDegrees,
+                    state.videoParams.aspectRatio,
                     state.videoOutParams.width,
                     state.videoOutParams.height,
                     state.videoOutParams.rotationDegrees,
+                    state.videoOutParams.aspectRatio,
                 ) {
                     val orientationVideoParams = preferredVideoParamsForOrientation(state)
                     orientationSession.requestForVideoParams(orientationVideoParams)?.let { orientation ->

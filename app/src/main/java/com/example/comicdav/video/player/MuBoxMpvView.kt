@@ -43,6 +43,8 @@ class MuBoxMpvView(
         MPVLib.observeProperty("audio-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
         MPVLib.observeProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
         MPVLib.observeProperty("video-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
+        MPVLib.observeProperty("video-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        MPVLib.observeProperty("video-out-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
         MPVLib.observeProperty("hwdec", MPVLib.MpvFormat.MPV_FORMAT_STRING)
         MPVLib.observeProperty("vo", MPVLib.MpvFormat.MPV_FORMAT_STRING)
         MPVLib.observeProperty("gpu-api", MPVLib.MpvFormat.MPV_FORMAT_STRING)

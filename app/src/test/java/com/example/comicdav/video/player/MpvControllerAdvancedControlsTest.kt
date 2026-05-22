@@ -191,6 +191,18 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun observedVideoAspectUpdatesStateWithoutDimensionMap() {
+        val controller = MpvController(AdvancedFakeMpvEngine())
+
+        controller.onVideoAspectChanged(1080.0 / 1920.0)
+
+        assertEquals(
+            VideoParams(aspectRatio = 1080.0 / 1920.0),
+            controller.state.value.videoParams,
+        )
+    }
+
+    @Test
     fun lockControlsGesturesWithoutPausingPlayback() {
         val engine = AdvancedFakeMpvEngine()
         val controller = MpvController(engine)
