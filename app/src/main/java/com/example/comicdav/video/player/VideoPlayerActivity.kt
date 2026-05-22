@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -277,6 +278,11 @@ class VideoPlayerActivity : ComponentActivity() {
                     onSubtitlesDisabled = controller::disableSubtitles,
                     onScaleModeSelected = controller::setScaleMode,
                     onDecoderModeSelected = controller::setDecoderMode,
+                    onOrientationToggle = {
+                        requestedOrientation = orientationSession.toggleFixedOrientation(
+                            resources.configuration.orientation,
+                        )
+                    },
                     onControlsLockedChanged = controller::setControlsLocked,
                     onVolumeDelta = controller::adjustGestureVolume,
                     onBrightnessDelta = ::handleBrightnessGesture,
@@ -670,6 +676,7 @@ private fun VideoPlayerScreen(
     onSubtitlesDisabled: () -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
+    onOrientationToggle: () -> Unit,
     onControlsLockedChanged: (Boolean) -> Unit,
     onVolumeDelta: (Int) -> Unit,
     onBrightnessDelta: (Int) -> Unit,
@@ -794,6 +801,7 @@ private fun VideoPlayerScreen(
                     onAudioTrackSelected = onAudioTrackSelected,
                     onSubtitleTrackSelected = onSubtitleTrackSelected,
                     onSubtitlesDisabled = onSubtitlesDisabled,
+                    onOrientationToggle = onOrientationToggle,
                     mediaContext = mediaContext,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -1327,6 +1335,12 @@ internal data class PlayerOptionPanelDescriptor(
     val visibleText: String = "",
 )
 
+private const val PLAYER_ORIENTATION_TOGGLE_CONTENT_DESCRIPTION = "切换横竖屏"
+
+internal fun rightSideControlDescriptions(): List<String> =
+    listOf(PLAYER_ORIENTATION_TOGGLE_CONTENT_DESCRIPTION) +
+        PlayerOptionPanel.entries.map { it.sideRailDescriptor().contentDescription }
+
 internal fun PlayerOptionPanel.sideRailDescriptor(): PlayerOptionPanelDescriptor =
     when (this) {
         PlayerOptionPanel.TRACKS -> PlayerOptionPanelDescriptor(
@@ -1348,6 +1362,7 @@ private fun PlayerSideControls(
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
+    onOrientationToggle: () -> Unit,
     mediaContext: VideoPlayerMediaContext,
     modifier: Modifier = Modifier,
 ) {
@@ -1380,6 +1395,7 @@ private fun PlayerSideControls(
                 state = state,
                 activePanel = activePanel,
                 compact = isLandscape,
+                onOrientationToggle = onOrientationToggle,
                 onPanelSelected = onPanelSelected,
             )
         }
@@ -1391,6 +1407,7 @@ private fun EdgeFloatingControls(
     state: MpvPlayerState,
     activePanel: PlayerOptionPanel?,
     compact: Boolean,
+    onOrientationToggle: () -> Unit,
     onPanelSelected: (PlayerOptionPanel) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1401,6 +1418,11 @@ private fun EdgeFloatingControls(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             maxItemsInEachRow = PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS,
         ) {
+            PlayerOverlayIconButton(
+                icon = Icons.Filled.ScreenRotation,
+                contentDescription = PLAYER_ORIENTATION_TOGGLE_CONTENT_DESCRIPTION,
+                onClick = onOrientationToggle,
+            )
             PlayerOptionPanel.entries.forEach { panel ->
                 FloatingPanelButton(
                     panel = panel,
@@ -1418,6 +1440,11 @@ private fun EdgeFloatingControls(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.End,
     ) {
+        PlayerOverlayIconButton(
+            icon = Icons.Filled.ScreenRotation,
+            contentDescription = PLAYER_ORIENTATION_TOGGLE_CONTENT_DESCRIPTION,
+            onClick = onOrientationToggle,
+        )
         PlayerOptionPanel.entries.forEach { panel ->
             FloatingPanelButton(
                 panel = panel,

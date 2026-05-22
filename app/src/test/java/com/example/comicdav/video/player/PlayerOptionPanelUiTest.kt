@@ -30,6 +30,14 @@ class PlayerOptionPanelUiTest {
     }
 
     @Test
+    fun rightSideControlsIncludeOrientationBeforePanels() {
+        assertEquals(
+            listOf("切换横竖屏", "音轨与字幕", "播放信息"),
+            rightSideControlDescriptions(),
+        )
+    }
+
+    @Test
     fun bottomQuickControlsExposeSpeedScaleAndDecoder() {
         assertEquals(
             listOf("倍速", "画面", "解码"),
