@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.VideoDecoderMode
 import com.example.comicdav.video.player.VideoOutputMode
+import com.example.comicdav.video.player.VideoPlayerOrientationMode
 import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
@@ -54,6 +55,7 @@ data class AppSettings(
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
     val videoControlsAutoHideMillis: Int = 5_000,
+    val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF
@@ -87,6 +89,8 @@ class AppSettingsStore(
             videoControlsAutoHideMillis = coerceVideoControlsAutoHideMillis(
                 preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] ?: 5_000,
             ),
+            videoPlayerOrientationMode = preferences[VIDEO_PLAYER_ORIENTATION_MODE]
+                .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO),
         )
     }
 
@@ -203,6 +207,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoPlayerOrientationMode(mode: VideoPlayerOrientationMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_PLAYER_ORIENTATION_MODE] = mode.name
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -223,6 +233,7 @@ class AppSettingsStore(
         val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
         val VIDEO_DECODER_MODE = stringPreferencesKey("video_decoder_mode")
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
+        val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
     }
 }
 

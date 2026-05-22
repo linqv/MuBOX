@@ -557,6 +557,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_GPU_API_MODE = "com.example.comicdav.video.extra.GPU_API_MODE"
         const val EXTRA_VIDEO_DECODER_MODE = "com.example.comicdav.video.extra.VIDEO_DECODER_MODE"
         const val EXTRA_CONTROLS_AUTO_HIDE_MILLIS = "com.example.comicdav.video.extra.CONTROLS_AUTO_HIDE_MILLIS"
+        const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
@@ -567,6 +568,7 @@ class VideoPlayerActivity : ComponentActivity() {
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
             controlsAutoHideMillis: Int = 5_000,
+            playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .putExtra(EXTRA_SOURCE, SOURCE_LOCAL)
@@ -588,6 +590,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
                 .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
                 .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
+                .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                 .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
@@ -601,6 +604,7 @@ class VideoPlayerActivity : ComponentActivity() {
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
             controlsAutoHideMillis: Int = 5_000,
+            playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -632,6 +636,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
                     .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
                     .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
+                    .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
                 }

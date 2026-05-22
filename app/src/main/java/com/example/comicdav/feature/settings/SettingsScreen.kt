@@ -48,11 +48,13 @@ import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.VideoDecoderMode
 import com.example.comicdav.video.player.VideoOutputMode
+import com.example.comicdav.video.player.VideoPlayerOrientationMode
 import com.example.comicdav.video.player.gpuApiModeLabel
 import com.example.comicdav.video.player.playerControlAutoHideLabel
 import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
 import com.example.comicdav.video.player.videoDecoderModeLabel
 import com.example.comicdav.video.player.videoOutputModeLabel
+import com.example.comicdav.video.player.videoPlayerOrientationModeLabel
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
 import java.text.SimpleDateFormat
@@ -87,6 +89,7 @@ fun SettingsScreen(
     onGpuApiModeChange: (GpuApiMode) -> Unit = {},
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
     onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
+    onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit = {},
     downloadRecords: List<DownloadRecord> = emptyList(),
     selectedDownloadRecord: DownloadRecord? = null,
     onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
@@ -239,6 +242,13 @@ fun SettingsScreen(
                 options = playerControlAutoHideOptionsMillis(),
                 label = ::playerControlAutoHideLabel,
                 onSelected = onVideoControlsAutoHideMillisChange,
+            )
+            DropdownRow(
+                title = "播放器方向",
+                selected = settings.videoPlayerOrientationMode,
+                options = VideoPlayerOrientationMode.entries,
+                label = ::videoPlayerOrientationModeLabel,
+                onSelected = onVideoPlayerOrientationModeChange,
             )
         }
 

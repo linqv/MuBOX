@@ -445,6 +445,7 @@ fun ComicDavApp() {
                 gpuApiMode = appSettings.gpuApiMode,
                 videoDecoderMode = appSettings.videoDecoderMode,
                 controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
+                playerOrientationMode = appSettings.videoPlayerOrientationMode,
             ),
         )
     }
@@ -680,6 +681,7 @@ fun ComicDavApp() {
                             gpuApiMode = appSettings.gpuApiMode,
                             videoDecoderMode = appSettings.videoDecoderMode,
                             controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
+                            playerOrientationMode = appSettings.videoPlayerOrientationMode,
                         ),
                     )
                 }
@@ -1531,6 +1533,9 @@ fun ComicDavApp() {
                                     },
                                     onVideoControlsAutoHideMillisChange = { value ->
                                         scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(value) }
+                                    },
+                                    onVideoPlayerOrientationModeChange = { value ->
+                                        scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(value) }
                                     },
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,
