@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.video.MediaKind
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 internal enum class WebDavItemClickAction {
     OpenDirectory,
@@ -53,6 +55,7 @@ internal enum class WebDavItemClickAction {
 
 internal enum class WebDavFileMenuAction {
     AddToLibrary,
+    AddToVideoLibrary,
     DownloadToLocal,
 }
 
@@ -68,10 +71,14 @@ internal fun webDavItemClickAction(item: WebDavItem): WebDavItemClickAction =
     }
 
 internal fun webDavItemLongPressActions(item: WebDavItem): List<WebDavFileMenuAction> =
-    if (item.mediaKind == MediaKind.Comic) {
-        listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal)
-    } else {
-        emptyList()
+    when (item.mediaKind) {
+        MediaKind.Comic -> listOf(WebDavFileMenuAction.AddToLibrary, WebDavFileMenuAction.DownloadToLocal)
+        MediaKind.Video -> listOf(WebDavFileMenuAction.AddToVideoLibrary, WebDavFileMenuAction.DownloadToLocal)
+        MediaKind.Directory,
+        MediaKind.Audio,
+        MediaKind.Subtitle,
+        MediaKind.Unknown,
+        -> emptyList()
     }
 
 @Composable
@@ -204,7 +211,7 @@ private fun WebDavBrowserAppBar(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        text = pathLabel(currentPath),
+                        text = webDavDisplayPathLabel(currentPath),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -389,7 +396,12 @@ internal fun webDavItemSupportingLabel(item: WebDavItem): String =
 
 internal fun shouldShowSaveDirectoryAction(isAddingPath: Boolean): Boolean = isAddingPath
 
-private fun pathLabel(path: String): String = "路径 ${path.ifBlank { "/" }}"
+internal fun webDavDisplayPathLabel(path: String): String {
+    val displayPath = runCatching {
+        URLDecoder.decode(path, StandardCharsets.UTF_8.name())
+    }.getOrDefault(path)
+    return "路径 ${displayPath.ifBlank { "/" }}"
+}
 
 internal fun formatByteSize(bytes: Long): String {
     val kib = 1024L

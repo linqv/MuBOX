@@ -63,6 +63,7 @@ internal enum class FileDirectoryEntryClickAction {
 
 internal enum class FileDirectoryEntryMenuAction {
     AddToLibrary,
+    AddToVideoLibrary,
 }
 
 internal enum class SourceManagementAction {
@@ -84,7 +85,15 @@ internal fun fileDirectoryEntryClickAction(entry: FileDirectoryBrowserItem): Fil
     }
 
 internal fun fileDirectoryEntryLongPressActions(entry: FileDirectoryBrowserItem): List<FileDirectoryEntryMenuAction> =
-    if (entry.mediaKind == MediaKind.Comic) listOf(FileDirectoryEntryMenuAction.AddToLibrary) else emptyList()
+    when (entry.mediaKind) {
+        MediaKind.Comic -> listOf(FileDirectoryEntryMenuAction.AddToLibrary)
+        MediaKind.Video -> listOf(FileDirectoryEntryMenuAction.AddToVideoLibrary)
+        MediaKind.Directory,
+        MediaKind.Audio,
+        MediaKind.Subtitle,
+        MediaKind.Unknown,
+        -> emptyList()
+    }
 
 internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<SourceManagementAction> {
     return when (source.sourceType) {
@@ -115,6 +124,8 @@ fun FileDirectoryScreen(
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
     selectedComic: FileDirectoryBrowserItem? = null,
+    selectedVideo: FileDirectoryBrowserItem? = null,
+    onSelectVideo: (FileDirectoryBrowserItem) -> Unit = onSelectComic,
     onDeleteSource: (FileDirectorySourceEntity) -> Unit = {},
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit = {},
     onEditWebDavSource: (FileDirectorySourceEntity) -> Unit = {},
@@ -187,7 +198,8 @@ fun FileDirectoryScreen(
                         onOpenComic = onOpenComic,
                         onOpenVideo = onOpenVideo,
                         onSelectComic = onSelectComic,
-                        selectedComic = selectedComic,
+                        onSelectVideo = onSelectVideo,
+                        selectedEntry = selectedVideo ?: selectedComic,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -557,7 +569,8 @@ private fun EntryList(
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
     onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
-    selectedComic: FileDirectoryBrowserItem?,
+    onSelectVideo: (FileDirectoryBrowserItem) -> Unit,
+    selectedEntry: FileDirectoryBrowserItem?,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -574,7 +587,8 @@ private fun EntryList(
                 onOpenComic = { onOpenComic(entry) },
                 onOpenVideo = { onOpenVideo(entry) },
                 onSelectComic = { onSelectComic(entry) },
-                isSelected = selectedComic?.uri == entry.uri,
+                onSelectVideo = { onSelectVideo(entry) },
+                isSelected = selectedEntry?.uri == entry.uri,
             )
         }
     }
@@ -588,6 +602,7 @@ private fun FileDirectoryEntryRow(
     onOpenComic: () -> Unit,
     onOpenVideo: () -> Unit,
     onSelectComic: () -> Unit,
+    onSelectVideo: () -> Unit,
     isSelected: Boolean,
 ) {
     val longPressActions = fileDirectoryEntryLongPressActions(entry)
@@ -607,7 +622,12 @@ private fun FileDirectoryEntryRow(
                     }
                 },
                 onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
-                    { onSelectComic() }
+                    {
+                        when (longPressActions.first()) {
+                            FileDirectoryEntryMenuAction.AddToLibrary -> onSelectComic()
+                            FileDirectoryEntryMenuAction.AddToVideoLibrary -> onSelectVideo()
+                        }
+                    }
                 },
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),

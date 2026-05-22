@@ -70,6 +70,51 @@ private const val MaxAutoPageSpeedSeconds = 60
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
+internal data class SettingsGroupLayout(
+    val title: String,
+    val rows: List<String>,
+)
+
+internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
+    listOf(
+        SettingsGroupLayout(
+            title = "显示",
+            rows = listOf("配色方案"),
+        ),
+        SettingsGroupLayout(
+            title = "漫画",
+            rows = listOf("阅读方向", "音量键翻页", "屏幕旋转锁定", "WebDAV 预取页数", "诊断日志", "书架封面"),
+        ),
+        SettingsGroupLayout(
+            title = "视频",
+            rows = listOf(
+                "恢复播放位置",
+                "WebDAV 视频 seek 优化",
+                "向前预读",
+                "视频代理诊断日志",
+                "视频输出 (VO)",
+                "GPU API",
+                "默认解码器",
+                "MPV Profile",
+                "控制自动隐藏",
+                "播放器方向",
+                "提取加入影视库的视频缩略图作为封面",
+            ),
+        ),
+        SettingsGroupLayout(
+            title = "自动翻页",
+            rows = listOf("启用自动翻页", "翻页速度"),
+        ),
+        SettingsGroupLayout(
+            title = "下载记录",
+            rows = listOf("下载记录"),
+        ),
+        SettingsGroupLayout(
+            title = "缓存",
+            rows = listOf("缓存占用", "远程整本缓存", "WebDAV 索引缓存", "页面图片缓存", "书架封面缓存", "磁盘缓存上限"),
+        ),
+    )
+
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
@@ -93,6 +138,7 @@ fun SettingsScreen(
     onMpvProfileModeChange: (MpvProfileMode) -> Unit = {},
     onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
     onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit = {},
+    onVideoLibraryThumbnailsEnabledChange: (Boolean) -> Unit = {},
     downloadRecords: List<DownloadRecord> = emptyList(),
     selectedDownloadRecord: DownloadRecord? = null,
     onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
@@ -139,7 +185,17 @@ fun SettingsScreen(
             )
         }
 
-        SettingsGroup(title = "阅读") {
+        SettingsGroup(title = "显示") {
+            DropdownRow(
+                title = "配色方案",
+                selected = settings.colorPalette,
+                options = AppColorPalette.entries,
+                label = AppColorPalette::label,
+                onSelected = onColorPaletteChange,
+            )
+        }
+
+        SettingsGroup(title = "漫画") {
             ChoiceRow(
                 title = "阅读方向",
                 options = ReadingDirection.entries,
@@ -165,16 +221,6 @@ fun SettingsScreen(
                 options = SupportedWebDavPrefetchPageCounts,
                 label = ::webDavPrefetchPageCountLabel,
                 onSelected = onWebDavPrefetchPageCountChange,
-            )
-        }
-
-        SettingsGroup(title = "显示") {
-            DropdownRow(
-                title = "配色方案",
-                selected = settings.colorPalette,
-                options = AppColorPalette.entries,
-                label = AppColorPalette::label,
-                onSelected = onColorPaletteChange,
             )
             ChoiceRow(
                 title = "诊断日志",
@@ -259,6 +305,12 @@ fun SettingsScreen(
                 options = VideoPlayerOrientationMode.entries,
                 label = ::videoPlayerOrientationModeLabel,
                 onSelected = onVideoPlayerOrientationModeChange,
+            )
+            SwitchRow(
+                title = "提取加入影视库的视频缩略图作为封面",
+                subtitle = "收藏视频时自动提取一帧作为影视库封面",
+                checked = settings.videoLibraryThumbnailsEnabled,
+                onCheckedChange = onVideoLibraryThumbnailsEnabledChange,
             )
         }
 
@@ -566,6 +618,8 @@ private fun SwitchRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = subtitle,
