@@ -59,6 +59,14 @@ class VideoPlayerActivityIntegrationTest {
     }
 
     @Test
+    fun activityUsesDecorViewInsetsControllerForPlayerSystemBars() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("decorView.windowInsetsController"))
+        assertTrue(!source.contains("window.insetsController"))
+    }
+
+    @Test
     fun activityObservesAdvancedMpvPlaybackProperties() {
         val activitySource = activitySourceFile().readText()
         val viewSource = mpvViewSourceFile().readText()
@@ -88,8 +96,8 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("onAudioTrackSelected = controller::selectAudioTrack"))
         assertTrue(source.contains("onSubtitleTrackSelected = controller::selectSubtitleTrack"))
         assertTrue(source.contains("onSubtitlesDisabled = controller::disableSubtitles"))
-        assertTrue(source.contains("onSubtitleDelayChanged = controller::adjustSubtitleDelay"))
-        assertTrue(source.contains("onAudioDelayChanged = controller::adjustAudioDelay"))
+        assertTrue(!source.contains("onSubtitleDelayChanged = controller::adjustSubtitleDelay"))
+        assertTrue(!source.contains("onAudioDelayChanged = controller::adjustAudioDelay"))
         assertTrue(source.contains("onScaleModeSelected = controller::setScaleMode"))
         assertTrue(source.contains("onDecoderModeSelected = controller::setDecoderMode"))
         assertTrue(!source.contains("onVideoOutputModeSelected = controller::setVideoOutputMode"))
@@ -102,13 +110,17 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("PlayerBottomQuickControls("))
         assertTrue(source.contains("PlayerOptionSheet("))
         assertTrue(source.contains("PlayerOptionPanel.TRACKS"))
-        assertTrue(source.contains("PlayerOptionPanel.DELAYS"))
         assertTrue(source.contains("PlayerOptionPanel.INFO"))
-        assertTrue(source.contains("PlayerOptionPanel.QUEUE"))
+        assertTrue(!source.contains("PlayerOptionPanel.DELAYS"))
+        assertTrue(!source.contains("PlayerOptionPanel.QUEUE"))
         assertTrue(!source.contains("PlayerOptionPanel.SPEED"))
         assertTrue(!source.contains("PlayerOptionPanel.VIDEO"))
         assertTrue(source.contains("onOverlayTap"))
         assertTrue(source.contains("controlsAutoHideMillis"))
+        assertTrue(source.contains("lockButtonRevealSignal"))
+        assertTrue(source.contains("delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)"))
+        assertTrue(source.contains("horizontalArrangement = Arrangement.Start"))
+        assertTrue(source.contains("maxItemsInEachRow = PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS"))
     }
 
     @Test
@@ -125,15 +137,15 @@ class VideoPlayerActivityIntegrationTest {
     }
 
     @Test
-    fun screenShowsPlaybackQueueFromIntentInFloatingOptionPanel() {
+    fun screenDoesNotExposePlaybackQueueInFloatingOptionPanel() {
         val source = activitySourceFile().readText()
 
-        assertTrue(source.contains("val playbackQueue = intent.playbackQueue()"))
-        assertTrue(source.contains("queue = playbackQueue"))
-        assertTrue(source.contains("QueueControls(queue = queue)"))
-        assertTrue(source.contains("queue?.previousItem()?.displayName"))
-        assertTrue(source.contains("queue?.currentItem?.displayName"))
-        assertTrue(source.contains("queue?.nextItem()?.displayName"))
+        assertTrue(!source.contains("val playbackQueue = intent.playbackQueue()"))
+        assertTrue(!source.contains("queue = playbackQueue"))
+        assertTrue(!source.contains("QueueControls(queue = queue)"))
+        assertTrue(!source.contains("queue?.previousItem()?.displayName"))
+        assertTrue(!source.contains("queue?.currentItem?.displayName"))
+        assertTrue(!source.contains("queue?.nextItem()?.displayName"))
     }
 
     @Test
@@ -147,9 +159,13 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("applyScreenBrightnessPercent"))
         assertTrue(source.contains("onDoubleTapSeek = controller::handleDoubleTapSeek"))
         assertTrue(source.contains("onZoomDelta = controller::adjustGestureZoom"))
+        assertTrue(source.contains("onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) }"))
+        assertTrue(source.contains("onTemporarySpeedDelta = controller::adjustTemporarySpeed"))
+        assertTrue(source.contains("onTemporarySpeedEnded = controller::endTemporarySpeed"))
         assertTrue(source.contains("onClearHud = controller::clearGestureHud"))
         assertTrue(source.contains("detectTapGestures("))
         assertTrue(source.contains("detectTransformGestures("))
+        assertTrue(source.contains("detectDragGesturesAfterLongPress("))
         assertTrue(source.contains("GestureHud("))
         assertTrue(source.contains("LaunchedEffect(message)"))
         assertTrue(source.contains("delay(GESTURE_HUD_TIMEOUT_MILLIS)"))

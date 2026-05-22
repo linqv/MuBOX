@@ -3,16 +3,27 @@ package com.example.comicdav.video.player
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,7 +36,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -34,12 +44,10 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -115,6 +124,8 @@ class VideoPlayerActivity : ComponentActivity() {
     private var playbackKey: String? = null
     private var resumeEnabled = true
     private var loadJob: Job? = null
+    private val systemBarsHandler = Handler(Looper.getMainLooper())
+    private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
 
     private val mpvObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) = Unit
@@ -152,7 +163,6 @@ class VideoPlayerActivity : ComponentActivity() {
                     "duration" -> controller.onDurationChanged(value)
                     "time-pos" -> controller.onPositionChanged(value)
                     "speed" -> controller.onSpeedChanged(value)
-                    "sub-delay" -> controller.onSubtitleDelayChanged(value)
                     "audio-delay" -> controller.onAudioDelayChanged(value)
                 }
             }
@@ -186,6 +196,7 @@ class VideoPlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        configurePlayerSystemBars()
 
         val uri = intent.getStringExtra(EXTRA_URI)
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: intent.data?.lastPathSegment ?: "视频"
@@ -195,7 +206,6 @@ class VideoPlayerActivity : ComponentActivity() {
             source = source ?: SOURCE_LOCAL,
             remotePath = intent.getStringExtra(EXTRA_REMOTE_PATH),
         )
-        val playbackQueue = intent.playbackQueue()
         val subtitles = intent.subtitleRequests()
         playbackKey = intent.getStringExtra(EXTRA_PLAYBACK_KEY)
         resumeEnabled = intent.getBooleanExtra(EXTRA_RESUME_ENABLED, true)
@@ -257,8 +267,6 @@ class VideoPlayerActivity : ComponentActivity() {
                     onAudioTrackSelected = controller::selectAudioTrack,
                     onSubtitleTrackSelected = controller::selectSubtitleTrack,
                     onSubtitlesDisabled = controller::disableSubtitles,
-                    onSubtitleDelayChanged = controller::adjustSubtitleDelay,
-                    onAudioDelayChanged = controller::adjustAudioDelay,
                     onScaleModeSelected = controller::setScaleMode,
                     onDecoderModeSelected = controller::setDecoderMode,
                     onControlsLockedChanged = controller::setControlsLocked,
@@ -266,9 +274,11 @@ class VideoPlayerActivity : ComponentActivity() {
                     onBrightnessDelta = ::handleBrightnessGesture,
                     onDoubleTapSeek = controller::handleDoubleTapSeek,
                     onZoomDelta = controller::adjustGestureZoom,
+                    onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) },
+                    onTemporarySpeedDelta = controller::adjustTemporarySpeed,
+                    onTemporarySpeedEnded = controller::endTemporarySpeed,
                     onClearHud = controller::clearGestureHud,
                     mediaContext = mediaContext,
-                    queue = playbackQueue,
                     controlsAutoHideMillis = controlsAutoHideMillis,
                 )
             }
@@ -313,13 +323,94 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hidePlayerStatusBar()
+        }
+    }
+
     override fun onDestroy() {
         if (::playbackLifecyclePolicy.isInitialized) {
             playbackLifecyclePolicy.cleanup()
         }
         activityScope.cancel()
+        restorePlayerSystemBars()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
+    }
+
+    private fun configurePlayerSystemBars() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            @Suppress("DEPRECATION")
+            window.setDecorFitsSystemWindows(false)
+            val decorView = window.decorView
+            decorView.windowInsetsController?.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            decorView.setOnApplyWindowInsetsListener { _, insets ->
+                if (insets.isVisible(WindowInsets.Type.statusBars())) {
+                    scheduleStatusBarRehide()
+                }
+                insets
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+                if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                    scheduleStatusBarRehide()
+                }
+            }
+        }
+        hidePlayerStatusBar()
+    }
+
+    private fun scheduleStatusBarRehide() {
+        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
+        systemBarsHandler.postDelayed(hideStatusBarRunnable, PLAYER_STATUS_BAR_REHIDE_MILLIS)
+    }
+
+    private fun hidePlayerStatusBar() {
+        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val decorView = window.decorView
+            val controller = decorView.windowInsetsController
+            if (controller == null) {
+                decorView.post {
+                    if (!isFinishing && !isDestroyed) {
+                        hidePlayerStatusBar()
+                    }
+                }
+                return
+            }
+            controller.hide(WindowInsets.Type.statusBars())
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                window.decorView.systemUiVisibility or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        }
+    }
+
+    private fun restorePlayerSystemBars() {
+        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val decorView = window.decorView
+            decorView.setOnApplyWindowInsetsListener(null)
+            decorView.windowInsetsController?.show(WindowInsets.Type.statusBars())
+            @Suppress("DEPRECATION")
+            window.setDecorFitsSystemWindows(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.setOnSystemUiVisibilityChangeListener(null)
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                window.decorView.systemUiVisibility and
+                    View.SYSTEM_UI_FLAG_FULLSCREEN.inv() and
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN.inv() and
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY.inv()
+        }
     }
 
     private fun closePlayer() {
@@ -450,32 +541,6 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun Intent.playbackQueue(): VideoPlaybackQueue? {
-        val keys = getStringArrayListExtra(EXTRA_QUEUE_KEYS).orEmpty()
-        val names = getStringArrayListExtra(EXTRA_QUEUE_NAMES).orEmpty()
-        val uris = getStringArrayListExtra(EXTRA_QUEUE_URIS).orEmpty()
-        if (keys.isEmpty() || keys.size != names.size || keys.size != uris.size) return null
-        val source = when (getStringExtra(EXTRA_QUEUE_SOURCE)) {
-            QUEUE_SOURCE_WEB_DAV -> VideoQueueSource.WEB_DAV
-            QUEUE_SOURCE_LOCAL -> VideoQueueSource.LOCAL
-            else -> return null
-        }
-        val items = keys.indices.map { index ->
-            VideoQueueItem(
-                playbackKey = keys[index],
-                displayName = names[index],
-                sourceUri = uris[index],
-                source = source,
-            )
-        }
-        return runCatching {
-            VideoPlaybackQueue(
-                items = items,
-                currentIndex = getIntExtra(EXTRA_QUEUE_INDEX, 0),
-            )
-        }.getOrNull()
-    }
-
     companion object {
         const val EXTRA_SOURCE = "com.example.comicdav.video.extra.SOURCE"
         const val EXTRA_URI = "com.example.comicdav.video.extra.URI"
@@ -488,11 +553,6 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_PLAYBACK_KEY = "com.example.comicdav.video.extra.PLAYBACK_KEY"
         const val EXTRA_RESUME_ENABLED = "com.example.comicdav.video.extra.RESUME_ENABLED"
         const val EXTRA_REMOTE_PATH = "com.example.comicdav.video.extra.REMOTE_PATH"
-        const val EXTRA_QUEUE_KEYS = "com.example.comicdav.video.extra.QUEUE_KEYS"
-        const val EXTRA_QUEUE_NAMES = "com.example.comicdav.video.extra.QUEUE_NAMES"
-        const val EXTRA_QUEUE_URIS = "com.example.comicdav.video.extra.QUEUE_URIS"
-        const val EXTRA_QUEUE_SOURCE = "com.example.comicdav.video.extra.QUEUE_SOURCE"
-        const val EXTRA_QUEUE_INDEX = "com.example.comicdav.video.extra.QUEUE_INDEX"
         const val EXTRA_VIDEO_OUTPUT_MODE = "com.example.comicdav.video.extra.VIDEO_OUTPUT_MODE"
         const val EXTRA_GPU_API_MODE = "com.example.comicdav.video.extra.GPU_API_MODE"
         const val EXTRA_VIDEO_DECODER_MODE = "com.example.comicdav.video.extra.VIDEO_DECODER_MODE"
@@ -507,7 +567,6 @@ class VideoPlayerActivity : ComponentActivity() {
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
             controlsAutoHideMillis: Int = 5_000,
-            queue: VideoPlaybackQueue? = null,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .putExtra(EXTRA_SOURCE, SOURCE_LOCAL)
@@ -529,7 +588,6 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
                 .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
                 .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
-                .putQueueExtras(queue)
                 .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
@@ -543,7 +601,6 @@ class VideoPlayerActivity : ComponentActivity() {
             gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
             videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
             controlsAutoHideMillis: Int = 5_000,
-            queue: VideoPlaybackQueue? = null,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -576,32 +633,14 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
                     .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
-                    .putQueueExtras(queue)
                     .putSubtitleExtras(subtitles)
                 }
 
         private const val SOURCE_WEB_DAV = "webdav"
-        private const val QUEUE_SOURCE_LOCAL = "local"
-        private const val QUEUE_SOURCE_WEB_DAV = "webdav"
 
         private fun Intent.putSubtitleExtras(subtitles: List<VideoSubtitleOpenRequest>): Intent =
             putStringArrayListExtra(EXTRA_SUBTITLE_URIS, ArrayList(subtitles.map { it.uri }))
                 .putStringArrayListExtra(EXTRA_SUBTITLE_NAMES, ArrayList(subtitles.map { it.displayName }))
-
-        private fun Intent.putQueueExtras(queue: VideoPlaybackQueue?): Intent {
-            if (queue == null) return this
-            return putStringArrayListExtra(EXTRA_QUEUE_KEYS, ArrayList(queue.items.map { it.playbackKey }))
-                .putStringArrayListExtra(EXTRA_QUEUE_NAMES, ArrayList(queue.items.map { it.displayName }))
-                .putStringArrayListExtra(EXTRA_QUEUE_URIS, ArrayList(queue.items.map { it.sourceUri }))
-                .putExtra(EXTRA_QUEUE_SOURCE, queue.currentItem?.source?.extraValue())
-                .putExtra(EXTRA_QUEUE_INDEX, queue.currentIndex)
-        }
-
-        private fun VideoQueueSource.extraValue(): String =
-            when (this) {
-                VideoQueueSource.LOCAL -> QUEUE_SOURCE_LOCAL
-                VideoQueueSource.WEB_DAV -> QUEUE_SOURCE_WEB_DAV
-            }
     }
 }
 
@@ -616,8 +655,6 @@ private fun VideoPlayerScreen(
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
-    onSubtitleDelayChanged: (Long) -> Unit,
-    onAudioDelayChanged: (Long) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
     onControlsLockedChanged: (Boolean) -> Unit,
@@ -625,28 +662,50 @@ private fun VideoPlayerScreen(
     onBrightnessDelta: (Int) -> Unit,
     onDoubleTapSeek: (Boolean) -> Unit,
     onZoomDelta: (Float) -> Unit,
+    onTemporarySpeedStarted: () -> Unit,
+    onTemporarySpeedDelta: (Double) -> Unit,
+    onTemporarySpeedEnded: () -> Unit,
     onClearHud: () -> Unit,
     mediaContext: VideoPlayerMediaContext,
-    queue: VideoPlaybackQueue?,
     controlsAutoHideMillis: Int,
 ) {
     var openPanel by remember { mutableStateOf<PlayerOptionPanel?>(null) }
     var activeBottomControl by remember { mutableStateOf<PlayerBottomQuickControl?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }
-    val showControls = controlsVisible || state.gestureState.controlsLocked
+    var lockButtonVisible by remember { mutableStateOf(true) }
+    var lockButtonRevealSignal by remember { mutableStateOf(0) }
+    val controlsLocked = state.gestureState.controlsLocked
 
     LaunchedEffect(
         controlsVisible,
         activeBottomControl,
         openPanel,
-        state.gestureState.controlsLocked,
+        controlsLocked,
         controlsAutoHideMillis,
     ) {
-        if (!controlsVisible || state.gestureState.controlsLocked || controlsAutoHideMillis <= 0) return@LaunchedEffect
+        if (!controlsVisible || controlsLocked || controlsAutoHideMillis <= 0) return@LaunchedEffect
         delay(controlsAutoHideMillis.toLong())
         activeBottomControl = null
         openPanel = null
         controlsVisible = false
+    }
+
+    LaunchedEffect(controlsLocked) {
+        if (controlsLocked) {
+            activeBottomControl = null
+            openPanel = null
+            controlsVisible = false
+            lockButtonVisible = false
+        } else {
+            controlsVisible = true
+            lockButtonVisible = true
+        }
+    }
+
+    LaunchedEffect(lockButtonVisible, controlsLocked, lockButtonRevealSignal) {
+        if (!controlsLocked || !lockButtonVisible) return@LaunchedEffect
+        delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)
+        lockButtonVisible = false
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
@@ -656,12 +715,23 @@ private fun VideoPlayerScreen(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (!state.gestureState.controlsLocked) {
+            if (controlsLocked) {
+                LockedPlayerGestureOverlay(
+                    onTap = {
+                        lockButtonVisible = true
+                        lockButtonRevealSignal += 1
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
                 PlayerGestureOverlay(
                     onVolumeDelta = onVolumeDelta,
                     onBrightnessDelta = onBrightnessDelta,
                     onDoubleTapSeek = onDoubleTapSeek,
                     onZoomDelta = onZoomDelta,
+                    onTemporarySpeedStarted = onTemporarySpeedStarted,
+                    onTemporarySpeedDelta = onTemporarySpeedDelta,
+                    onTemporarySpeedEnded = onTemporarySpeedEnded,
                     onClearHud = onClearHud,
                     onOverlayTap = {
                         activeBottomControl = null
@@ -672,25 +742,35 @@ private fun VideoPlayerScreen(
                 )
             }
 
-            if (showControls) {
+            if (!controlsLocked && controlsVisible) {
                 PlayerTopBar(
                     title = state.displayName,
                     source = mediaContext.source,
-                    controlsLocked = state.gestureState.controlsLocked,
                     onClose = onClose,
-                    onControlsLockedChanged = {
-                        onControlsLockedChanged(!state.gestureState.controlsLocked)
-                        openPanel = null
-                        activeBottomControl = null
-                        controlsVisible = true
-                    },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 )
             }
 
-            if (!state.gestureState.controlsLocked && controlsVisible) {
+            if ((controlsVisible && !controlsLocked) || (controlsLocked && lockButtonVisible)) {
+                PlayerLockButton(
+                    controlsLocked = controlsLocked,
+                    onClick = {
+                        val nextLocked = !controlsLocked
+                        onControlsLockedChanged(nextLocked)
+                        openPanel = null
+                        activeBottomControl = null
+                        controlsVisible = !nextLocked
+                        lockButtonVisible = !nextLocked
+                    },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = PLAYER_LOCK_BUTTON_START_PADDING_DP.dp),
+                )
+            }
+
+            if (!controlsLocked && controlsVisible) {
                 PlayerSideControls(
                     state = state,
                     activePanel = openPanel,
@@ -701,10 +781,7 @@ private fun VideoPlayerScreen(
                     onAudioTrackSelected = onAudioTrackSelected,
                     onSubtitleTrackSelected = onSubtitleTrackSelected,
                     onSubtitlesDisabled = onSubtitlesDisabled,
-                    onSubtitleDelayChanged = onSubtitleDelayChanged,
-                    onAudioDelayChanged = onAudioDelayChanged,
                     mediaContext = mediaContext,
-                    queue = queue,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxWidth(),
@@ -717,7 +794,15 @@ private fun VideoPlayerScreen(
                 modifier = Modifier.align(Alignment.Center),
             )
 
-            if (showControls) {
+            if (!controlsLocked && controlsVisible) {
+                PlayerCenterPlayPauseButton(
+                    isPaused = state.isPaused,
+                    onClick = {
+                        controlsVisible = true
+                        onPlayPause()
+                    },
+                    modifier = Modifier.align(Alignment.Center),
+                )
                 PlayerBottomControls(
                     state = state,
                     activeControl = activeBottomControl,
@@ -725,10 +810,6 @@ private fun VideoPlayerScreen(
                         activeBottomControl = if (activeBottomControl == control) null else control
                         openPanel = null
                         controlsVisible = true
-                    },
-                    onPlayPause = {
-                        controlsVisible = true
-                        onPlayPause()
                     },
                     onSeek = {
                         controlsVisible = true
@@ -750,10 +831,14 @@ private fun PlayerGestureOverlay(
     onBrightnessDelta: (Int) -> Unit,
     onDoubleTapSeek: (Boolean) -> Unit,
     onZoomDelta: (Float) -> Unit,
+    onTemporarySpeedStarted: () -> Unit,
+    onTemporarySpeedDelta: (Double) -> Unit,
+    onTemporarySpeedEnded: () -> Unit,
     onClearHud: () -> Unit,
     onOverlayTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var temporarySpeedActive by remember { mutableStateOf(false) }
     Box(
         modifier = modifier
             .padding(
@@ -773,9 +858,10 @@ private fun PlayerGestureOverlay(
                     },
                 )
             }
-            .pointerInput(Unit) {
+            .pointerInput(temporarySpeedActive) {
                 detectTransformGestures(
                     onGesture = { centroid, pan, zoom, _ ->
+                        if (temporarySpeedActive) return@detectTransformGestures
                         if (zoom != 1f) {
                             onZoomDelta((zoom - 1f) * PINCH_ZOOM_STEP_SCALE)
                             return@detectTransformGestures
@@ -789,7 +875,46 @@ private fun PlayerGestureOverlay(
                         )
                     },
                 )
+            }
+            .pointerInput(Unit) {
+                var pendingVerticalDragPx = 0f
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        pendingVerticalDragPx = 0f
+                        temporarySpeedActive = true
+                        onTemporarySpeedStarted()
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        pendingVerticalDragPx += dragAmount.y
+                        val steps = (pendingVerticalDragPx / TEMPORARY_SPEED_PIXELS_PER_STEP).toInt()
+                        if (steps != 0) {
+                            pendingVerticalDragPx -= steps * TEMPORARY_SPEED_PIXELS_PER_STEP
+                            onTemporarySpeedDelta(-steps * TEMPORARY_SPEED_STEP)
+                        }
+                    },
+                    onDragEnd = {
+                        temporarySpeedActive = false
+                        onTemporarySpeedEnded()
+                    },
+                    onDragCancel = {
+                        temporarySpeedActive = false
+                        onTemporarySpeedEnded()
+                    },
+                )
             },
+    )
+}
+
+@Composable
+private fun LockedPlayerGestureOverlay(
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.pointerInput(Unit) {
+            detectTapGestures(onTap = { onTap() })
+        },
     )
 }
 
@@ -813,9 +938,7 @@ private fun dispatchVerticalGesture(
 private fun PlayerTopBar(
     title: String,
     source: String,
-    controlsLocked: Boolean,
     onClose: () -> Unit,
-    onControlsLockedChanged: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -844,11 +967,48 @@ private fun PlayerTopBar(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PlayerOverlayIconButton(
-            icon = if (controlsLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-            contentDescription = if (controlsLocked) "解锁控制" else "锁定控制",
-            onClick = onControlsLockedChanged,
-        )
+    }
+}
+
+@Composable
+private fun PlayerLockButton(
+    controlsLocked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PlayerOverlayIconButton(
+        icon = if (controlsLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+        contentDescription = if (controlsLocked) "解锁控制" else "锁定控制",
+        onClick = onClick,
+        modifier = modifier,
+        selected = controlsLocked,
+        sizeDp = PLAYER_LOCK_BUTTON_SIZE_DP,
+    )
+}
+
+@Composable
+private fun PlayerCenterPlayPauseButton(
+    isPaused: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.size(PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP.dp)
+                .background(PlayerCenterPlayButtonColor, MaterialTheme.shapes.small)
+                .clickable(role = Role.Button, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                contentDescription = if (isPaused) "播放" else "暂停",
+                tint = Color.White,
+            )
+        }
     }
 }
 
@@ -859,13 +1019,14 @@ private fun PlayerOverlayIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    sizeDp: Int = PLAYER_OVERLAY_BUTTON_SIZE_DP,
 ) {
     val backgroundColor = if (selected) PlayerAccentColor else PlayerOverlayColor
     val contentColor = if (selected) PlayerOnAccentColor else Color.White
     IconButton(
         onClick = onClick,
         modifier = modifier
-            .size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)
+            .size(sizeDp.dp)
             .background(backgroundColor, MaterialTheme.shapes.small),
     ) {
         Icon(
@@ -881,7 +1042,6 @@ private fun PlayerBottomControls(
     state: MpvPlayerState,
     activeControl: PlayerBottomQuickControl?,
     onActiveControlChanged: (PlayerBottomQuickControl) -> Unit,
-    onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSpeedSelected: (Double) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
@@ -900,39 +1060,14 @@ private fun PlayerBottomControls(
                     ),
                 ),
             )
-            .padding(start = 16.dp, top = 44.dp, end = 16.dp, bottom = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(
+                start = 16.dp,
+                top = 46.dp,
+                end = 16.dp,
+                bottom = PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = formatVideoTime(state.positionMillis),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-                maxLines = 1,
-            )
-            Text(
-                text = formatVideoTime(state.durationMillis),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-                maxLines = 1,
-            )
-        }
-        Slider(
-            value = state.positionMillis.toFloat(),
-            onValueChange = { if (!state.gestureState.controlsLocked) onSeek(it.roundToLong()) },
-            valueRange = 0f..state.durationMillis.coerceAtLeast(1L).toFloat(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        PlayerBottomQuickControls(
-            state = state,
-            activeControl = activeControl,
-            onActiveControlChanged = onActiveControlChanged,
-            onPlayPause = onPlayPause,
-        )
         activeControl?.let { control ->
             PlayerBottomQuickSelectionPanel(
                 control = control,
@@ -942,14 +1077,6 @@ private fun PlayerBottomControls(
                 onDecoderModeSelected = onDecoderModeSelected,
             )
         }
-        Text(
-            text = state.bottomStatusText(),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.72f),
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
         if (state.errorMessage != null) {
             Text(
                 text = state.errorMessage,
@@ -959,13 +1086,15 @@ private fun PlayerBottomControls(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (state.gestureState.controlsLocked) {
-            Text(
-                text = "控制已锁定",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.84f),
-            )
-        }
+        PlayerBottomQuickControls(
+            state = state,
+            activeControl = activeControl,
+            onActiveControlChanged = onActiveControlChanged,
+        )
+        PlayerProgressControls(
+            state = state,
+            onSeek = onSeek,
+        )
     }
 }
 
@@ -974,62 +1103,117 @@ private fun PlayerBottomQuickControls(
     state: MpvPlayerState,
     activeControl: PlayerBottomQuickControl?,
     onActiveControlChanged: (PlayerBottomQuickControl) -> Unit,
-    onPlayPause: () -> Unit,
 ) {
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = PLAYER_PRIMARY_CONTROL_TOUCH_SIZE_DP.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP.dp),
+        horizontalArrangement = Arrangement.Start,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        maxItemsInEachRow = 3,
     ) {
-        FlowRow(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            maxItemsInEachRow = 2,
+        BottomQuickButton(
+            text = state.playbackSpeed.trimmedSpeed() + "x",
+            contentDescription = "倍速",
+            selected = activeControl == PlayerBottomQuickControl.SPEED,
+            onClick = { onActiveControlChanged(PlayerBottomQuickControl.SPEED) },
+        )
+        BottomQuickButton(
+            text = state.scaleMode.label,
+            contentDescription = "画面",
+            selected = activeControl == PlayerBottomQuickControl.SCALE,
+            onClick = { onActiveControlChanged(PlayerBottomQuickControl.SCALE) },
+        )
+        BottomQuickButton(
+            text = state.decoderMode.label,
+            contentDescription = "解码",
+            selected = activeControl == PlayerBottomQuickControl.DECODER,
+            onClick = { onActiveControlChanged(PlayerBottomQuickControl.DECODER) },
+        )
+    }
+}
+
+@Composable
+private fun PlayerProgressControls(
+    state: MpvPlayerState,
+    onSeek: (Long) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            BottomQuickButton(
-                text = state.playbackSpeed.trimmedSpeed() + "x",
-                contentDescription = "倍速",
-                selected = activeControl == PlayerBottomQuickControl.SPEED,
-                onClick = { onActiveControlChanged(PlayerBottomQuickControl.SPEED) },
+            Text(
+                text = formatVideoTime(state.positionMillis),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.84f),
+                maxLines = 1,
             )
-            BottomQuickButton(
-                text = state.scaleMode.label,
-                contentDescription = "画面",
-                selected = activeControl == PlayerBottomQuickControl.SCALE,
-                onClick = { onActiveControlChanged(PlayerBottomQuickControl.SCALE) },
-            )
-        }
-        Box(
-            modifier = Modifier.size(PLAYER_PRIMARY_CONTROL_TOUCH_SIZE_DP.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(PLAYER_PRIMARY_CONTROL_VISUAL_SIZE_DP.dp)
-                    .background(PlayerAccentColor, MaterialTheme.shapes.small)
-                    .clickable(role = Role.Button, onClick = onPlayPause),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (state.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = if (state.isPaused) "播放" else "暂停",
-                    tint = PlayerOnAccentColor,
-                )
-            }
-        }
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            BottomQuickButton(
-                text = state.decoderMode.label,
-                contentDescription = "解码",
-                selected = activeControl == PlayerBottomQuickControl.DECODER,
-                onClick = { onActiveControlChanged(PlayerBottomQuickControl.DECODER) },
+            Text(
+                text = formatVideoTime(state.durationMillis),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.84f),
+                maxLines = 1,
             )
         }
+        ThinSeekBar(
+            positionMillis = state.positionMillis,
+            durationMillis = state.durationMillis,
+            onSeek = onSeek,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun ThinSeekBar(
+    positionMillis: Long,
+    durationMillis: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val duration = durationMillis.coerceAtLeast(1L)
+    val progress = (positionMillis.toFloat() / duration).coerceIn(0f, 1f)
+    Canvas(
+        modifier = modifier
+            .heightIn(
+                min = PLAYER_PROGRESS_TOUCH_HEIGHT_DP.dp,
+                max = PLAYER_PROGRESS_TOUCH_HEIGHT_DP.dp,
+            )
+            .pointerInput(durationMillis) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    onSeek(seekMillisForOffset(down.position.x, size.width, durationMillis))
+                    drag(down.id) { change ->
+                        onSeek(seekMillisForOffset(change.position.x, size.width, durationMillis))
+                        change.consume()
+                    }
+                }
+            },
+    ) {
+        val trackY = size.height / 2f
+        val strokeWidth = PLAYER_PROGRESS_TRACK_HEIGHT_DP.dp.toPx()
+        val progressX = size.width * progress
+        drawLine(
+            color = PlayerProgressTrackColor,
+            start = Offset(0f, trackY),
+            end = Offset(size.width, trackY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = PlayerProgressColor,
+            start = Offset(0f, trackY),
+            end = Offset(progressX, trackY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(
+            color = PlayerProgressColor,
+            radius = PLAYER_PROGRESS_THUMB_RADIUS_DP.dp.toPx(),
+            center = Offset(progressX, trackY),
+        )
     }
 }
 
@@ -1115,9 +1299,7 @@ private fun GestureHud(
 
 internal enum class PlayerOptionPanel {
     TRACKS,
-    DELAYS,
     INFO,
-    QUEUE,
 }
 
 internal enum class PlayerBottomQuickControl {
@@ -1138,17 +1320,9 @@ internal fun PlayerOptionPanel.sideRailDescriptor(): PlayerOptionPanelDescriptor
             icon = Icons.Filled.Subtitles,
             contentDescription = "音轨与字幕",
         )
-        PlayerOptionPanel.DELAYS -> PlayerOptionPanelDescriptor(
-            icon = Icons.Filled.Sync,
-            contentDescription = "音画同步",
-        )
         PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(
             icon = Icons.Filled.Info,
             contentDescription = "播放信息",
-        )
-        PlayerOptionPanel.QUEUE -> PlayerOptionPanelDescriptor(
-            icon = Icons.AutoMirrored.Filled.QueueMusic,
-            contentDescription = "播放队列",
         )
     }
 
@@ -1161,10 +1335,7 @@ private fun PlayerSideControls(
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
-    onSubtitleDelayChanged: (Long) -> Unit,
-    onAudioDelayChanged: (Long) -> Unit,
     mediaContext: VideoPlayerMediaContext,
-    queue: VideoPlaybackQueue?,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier) {
@@ -1185,13 +1356,10 @@ private fun PlayerSideControls(
                     panel = activePanel,
                     state = state,
                     mediaContext = mediaContext,
-                    queue = queue,
                     onDismiss = onDismiss,
                     onAudioTrackSelected = onAudioTrackSelected,
                     onSubtitleTrackSelected = onSubtitleTrackSelected,
                     onSubtitlesDisabled = onSubtitlesDisabled,
-                    onSubtitleDelayChanged = onSubtitleDelayChanged,
-                    onAudioDelayChanged = onAudioDelayChanged,
                     modifier = Modifier.widthIn(min = 220.dp, max = sheetMaxWidth),
                 )
             }
@@ -1215,10 +1383,10 @@ private fun EdgeFloatingControls(
 ) {
     if (compact) {
         FlowRow(
-            modifier = modifier.widthIn(max = (PLAYER_OVERLAY_BUTTON_SIZE_DP * 2 + 6).dp),
+            modifier = modifier.widthIn(max = PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            maxItemsInEachRow = 2,
+            maxItemsInEachRow = PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS,
         ) {
             PlayerOptionPanel.entries.forEach { panel ->
                 FloatingPanelButton(
@@ -1289,13 +1457,10 @@ private fun PlayerOptionSheet(
     panel: PlayerOptionPanel?,
     state: MpvPlayerState,
     mediaContext: VideoPlayerMediaContext,
-    queue: VideoPlaybackQueue?,
     onDismiss: () -> Unit,
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
-    onSubtitleDelayChanged: (Long) -> Unit,
-    onAudioDelayChanged: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (panel == null) return
@@ -1340,19 +1505,12 @@ private fun PlayerOptionSheet(
                 onSubtitleTrackSelected = onSubtitleTrackSelected,
                 onSubtitlesDisabled = onSubtitlesDisabled,
             )
-            PlayerOptionPanel.DELAYS -> DelayControls(
-                subtitleDelayMillis = state.subtitleDelayMillis,
-                audioDelayMillis = state.audioDelayMillis,
-                onSubtitleDelayChanged = onSubtitleDelayChanged,
-                onAudioDelayChanged = onAudioDelayChanged,
-            )
             PlayerOptionPanel.INFO -> StatisticsControls(
                 snapshot = buildVideoPlayerStatisticsSnapshot(
                     mediaContext = mediaContext,
                     state = state,
                 ),
             )
-            PlayerOptionPanel.QUEUE -> QueueControls(queue = queue)
         }
     }
 }
@@ -1411,25 +1569,6 @@ private fun TrackSelectionControls(
     }
 }
 
-@Composable
-private fun DelayControls(
-    subtitleDelayMillis: Long,
-    audioDelayMillis: Long,
-    onSubtitleDelayChanged: (Long) -> Unit,
-    onAudioDelayChanged: (Long) -> Unit,
-) {
-    ControlGroup(label = "字幕延迟 ${subtitleDelayMillis}ms") {
-        CompactTextButton("-250", false) { onSubtitleDelayChanged(-250L) }
-        CompactTextButton("+250", false) { onSubtitleDelayChanged(250L) }
-        CompactTextButton("归零", subtitleDelayMillis == 0L) { onSubtitleDelayChanged(-subtitleDelayMillis) }
-    }
-    ControlGroup(label = "音频延迟 ${audioDelayMillis}ms") {
-        CompactTextButton("-100", false) { onAudioDelayChanged(-100L) }
-        CompactTextButton("+100", false) { onAudioDelayChanged(100L) }
-        CompactTextButton("归零", audioDelayMillis == 0L) { onAudioDelayChanged(-audioDelayMillis) }
-    }
-}
-
 internal fun bottomQuickControlLabels(): List<String> = listOf("倍速", "画面", "解码")
 
 internal fun scaleModeControlGroupLabels(): List<String> = listOf("画面")
@@ -1448,18 +1587,6 @@ private fun StatisticsControls(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-@Composable
-private fun QueueControls(queue: VideoPlaybackQueue?) {
-    ControlGroup(label = "队列") {
-        val previousName = queue?.previousItem()?.displayName
-        val currentName = queue?.currentItem?.displayName
-        val nextName = queue?.nextItem()?.displayName
-        CompactTextButton(previousName?.shortQueueLabel() ?: "无上一集", selected = false, onClick = {})
-        CompactTextButton(currentName?.shortQueueLabel() ?: "当前", selected = true, onClick = {})
-        CompactTextButton(nextName?.shortQueueLabel() ?: "无下一集", selected = false, onClick = {})
     }
 }
 
@@ -1520,18 +1647,33 @@ private val PlayerOverlayColor = Color.Black.copy(alpha = 0.58f)
 private val PlayerSheetColor = Color(0xE60C0F14)
 private val PlayerAccentColor = Color(0xFFE9F7EF)
 private val PlayerOnAccentColor = Color(0xFF0B2418)
-internal const val PLAYER_PRIMARY_CONTROL_TOUCH_SIZE_DP = 44
-internal const val PLAYER_PRIMARY_CONTROL_VISUAL_SIZE_DP = 38
+private val PlayerCenterPlayButtonColor = Color.Black.copy(alpha = 0.46f)
+private val PlayerProgressTrackColor = Color.White.copy(alpha = 0.26f)
+private val PlayerProgressColor = Color.White.copy(alpha = 0.92f)
+internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 72
+internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 56
+internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 36
+internal const val PLAYER_LOCK_BUTTON_START_PADDING_DP = 18
+internal const val PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS = 3_000L
 internal const val PLAYER_OVERLAY_BUTTON_SIZE_DP = 44
+internal const val PLAYER_PROGRESS_TRACK_HEIGHT_DP = 2
 internal const val PLAYER_OPTION_SHEET_RAIL_GAP_DP = 8
+internal const val PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP = 3
+internal const val PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS = 1
+private const val PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP = 38
+private const val PLAYER_PROGRESS_TOUCH_HEIGHT_DP = 18
+private const val PLAYER_PROGRESS_THUMB_RADIUS_DP = 4
 private const val MAX_VISIBLE_TRACK_BUTTONS = 4
 private const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 8
 private const val PLAYER_GESTURE_TOP_PADDING_DP = 72
 private const val PLAYER_GESTURE_END_PADDING_DP = 64
 private const val PLAYER_GESTURE_BOTTOM_PADDING_DP = 116
 private const val VERTICAL_GESTURE_PIXELS_PER_PERCENT = 8f
+private const val TEMPORARY_SPEED_PIXELS_PER_STEP = 48f
+private const val TEMPORARY_SPEED_STEP = 0.25
 private const val PINCH_ZOOM_STEP_SCALE = 1.2f
 private const val GESTURE_HUD_TIMEOUT_MILLIS = 900L
+private const val PLAYER_STATUS_BAR_REHIDE_MILLIS = 3_000L
 
 private val VideoScaleMode.label: String
     get() = when (this) {
@@ -1548,9 +1690,7 @@ private val VideoDecoderMode.label: String
 private val PlayerOptionPanel.title: String
     get() = when (this) {
         PlayerOptionPanel.TRACKS -> "音轨 / 字幕"
-        PlayerOptionPanel.DELAYS -> "延迟"
         PlayerOptionPanel.INFO -> "信息"
-        PlayerOptionPanel.QUEUE -> "播放队列"
     }
 
 private val PlayerBottomQuickControl.label: String
@@ -1566,11 +1706,7 @@ private fun PlayerOptionPanel.statusBadgeText(state: MpvPlayerState): String? =
             .size
             .takeIf { it > 1 }
             ?.toString()
-        PlayerOptionPanel.DELAYS -> listOf(state.subtitleDelayMillis, state.audioDelayMillis)
-            .firstOrNull { it != 0L }
-            ?.let { if (it > 0L) "+${it}" else it.toString() }
         PlayerOptionPanel.INFO -> null
-        PlayerOptionPanel.QUEUE -> null
     }
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =
@@ -1578,18 +1714,6 @@ private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T 
 
 private fun Double.trimmedSpeed(): String =
     if (this % 1.0 == 0.0) roundToInt().toString() else toString()
-
-private fun MpvPlayerState.bottomStatusText(): String {
-    if (gestureState.controlsLocked) return "防误触观看"
-    val parts = listOfNotNull(
-        decoderMode.label.takeIf { it.isNotBlank() },
-        videoOutputModeLabel(videoOutputMode).takeIf { it.isNotBlank() },
-        scaleMode.label.takeIf { it.isNotBlank() },
-        selectedSubtitleTrackId?.let { "字幕开启" },
-        gestureState.brightnessPercent?.let { "亮度 $it%" },
-    )
-    return parts.joinToString(" · ").ifBlank { "准备播放" }
-}
 
 private fun String.videoSourceLabel(): String =
     when (lowercase()) {
@@ -1603,8 +1727,11 @@ private fun MpvTrack.shortLabel(): String =
         if (raw.length <= 8) raw else raw.take(7) + "..."
     } ?: "#$id"
 
-private fun String.shortQueueLabel(): String =
-    if (length <= 8) this else take(7) + "..."
+private fun seekMillisForOffset(offsetX: Float, widthPx: Int, durationMillis: Long): Long {
+    if (durationMillis <= 0L || widthPx <= 0) return 0L
+    val fraction = (offsetX / widthPx).coerceIn(0f, 1f)
+    return (durationMillis * fraction).roundToLong()
+}
 
 private fun formatVideoTime(millis: Long): String {
     val totalSeconds = millis.coerceAtLeast(0L) / 1000

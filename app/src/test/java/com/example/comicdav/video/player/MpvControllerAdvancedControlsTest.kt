@@ -33,6 +33,22 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun temporarySpeedCanBeAdjustedWhileHeldAndStillRestoresPreviousSpeed() {
+        val engine = AdvancedFakeMpvEngine()
+        val controller = MpvController(engine)
+        controller.setPlaybackSpeed(1.25)
+
+        controller.beginTemporarySpeed(2.0)
+        controller.adjustTemporarySpeed(0.25)
+        controller.adjustTemporarySpeed(-0.5)
+        controller.endTemporarySpeed()
+
+        assertEquals(1.25, controller.state.value.playbackSpeed, 0.0)
+        assertFalse(controller.state.value.gestureState.isTemporarySpeedActive)
+        assertEquals(listOf(1.25, 2.0, 2.25, 1.75, 1.25), engine.doublePropertyHistory("speed"))
+    }
+
+    @Test
     fun audioAndSubtitleTrackSelectionUseAidAndSidProperties() {
         val engine = AdvancedFakeMpvEngine()
         val controller = MpvController(engine)
@@ -49,18 +65,14 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
-    fun delayControlsUseSmallStepsAndResetToZero() {
+    fun audioDelayControlsUseSmallStepsAndResetToZero() {
         val engine = AdvancedFakeMpvEngine()
         val controller = MpvController(engine)
 
-        controller.adjustSubtitleDelay(250)
         controller.adjustAudioDelay(-100)
-        controller.resetSubtitleDelay()
         controller.resetAudioDelay()
 
-        assertEquals(0L, controller.state.value.subtitleDelayMillis)
         assertEquals(0L, controller.state.value.audioDelayMillis)
-        assertEquals(listOf(0.25, 0.0), engine.doublePropertyHistory("sub-delay"))
         assertEquals(listOf(-0.1, 0.0), engine.doublePropertyHistory("audio-delay"))
     }
 
@@ -143,7 +155,6 @@ class MpvControllerAdvancedControlsTest {
         controller.onSpeedChanged(1.75)
         controller.onAudioTrackChanged(7)
         controller.onSubtitleTrackChanged(null)
-        controller.onSubtitleDelayChanged(0.35)
         controller.onAudioDelayChanged(-0.2)
         controller.onHwdecChanged("mediacodec-copy")
         controller.onVoChanged("gpu-next")
@@ -153,7 +164,6 @@ class MpvControllerAdvancedControlsTest {
         assertEquals(1.75, state.playbackSpeed, 0.0)
         assertEquals(7, state.selectedAudioTrackId)
         assertEquals(null, state.selectedSubtitleTrackId)
-        assertEquals(350L, state.subtitleDelayMillis)
         assertEquals(-200L, state.audioDelayMillis)
         assertEquals("mediacodec-copy", state.currentHwdec)
         assertEquals("gpu-next", state.currentVideoOutput)

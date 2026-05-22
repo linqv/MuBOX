@@ -25,7 +25,6 @@ data class MpvPlayerState(
     val subtitleTracks: List<MpvTrack> = emptyList(),
     val selectedAudioTrackId: Int? = null,
     val selectedSubtitleTrackId: Int? = null,
-    val subtitleDelayMillis: Long = 0L,
     val audioDelayMillis: Long = 0L,
     val currentHwdec: String? = null,
     val currentVideoOutput: String? = null,
@@ -285,16 +284,27 @@ class MpvController(
 
     fun beginTemporarySpeed(speed: Double) {
         if (!canWriteEngine()) return
+        val clampedSpeed = speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
         if (speedBeforeTemporary == null) {
             speedBeforeTemporary = _state.value.playbackSpeed
         }
         _state.value = _state.value.copy(
             gestureState = _state.value.gestureState.copy(
                 isTemporarySpeedActive = true,
-                hudMessage = "${speed}x",
+                hudMessage = speedHudText(clampedSpeed),
             ),
         )
-        applyPlaybackSpeed(speed)
+        applyPlaybackSpeed(clampedSpeed)
+    }
+
+    fun adjustTemporarySpeed(delta: Double) {
+        if (!canWriteEngine() || !_state.value.gestureState.isTemporarySpeedActive) return
+        val nextSpeed = (_state.value.playbackSpeed + delta)
+            .coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
+        _state.value = _state.value.copy(
+            gestureState = _state.value.gestureState.copy(hudMessage = speedHudText(nextSpeed)),
+        )
+        applyPlaybackSpeed(nextSpeed)
     }
 
     fun endTemporarySpeed() {
@@ -326,14 +336,6 @@ class MpvController(
         if (!canWriteEngine()) return
         engine.setPropertyString("sid", "no")
         _state.value = _state.value.copy(selectedSubtitleTrackId = null)
-    }
-
-    fun adjustSubtitleDelay(deltaMillis: Long) {
-        setSubtitleDelay(_state.value.subtitleDelayMillis + deltaMillis)
-    }
-
-    fun resetSubtitleDelay() {
-        setSubtitleDelay(0L)
     }
 
     fun adjustAudioDelay(deltaMillis: Long) {
@@ -484,10 +486,6 @@ class MpvController(
         _state.value = _state.value.copy(selectedSubtitleTrackId = trackId)
     }
 
-    fun onSubtitleDelayChanged(delaySeconds: Double) {
-        _state.value = _state.value.copy(subtitleDelayMillis = secondsToMillisSigned(delaySeconds))
-    }
-
     fun onAudioDelayChanged(delaySeconds: Double) {
         _state.value = _state.value.copy(audioDelayMillis = secondsToMillisSigned(delaySeconds))
     }
@@ -580,10 +578,14 @@ class MpvController(
         _state.value = _state.value.copy(playbackSpeed = clampedSpeed)
     }
 
-    private fun setSubtitleDelay(delayMillis: Long) {
-        if (!canWriteEngine()) return
-        engine.setPropertyDouble("sub-delay", delayMillis / 1000.0)
-        _state.value = _state.value.copy(subtitleDelayMillis = delayMillis)
+    private fun speedHudText(speed: Double): String {
+        val roundedSpeed = (speed * 100).roundToInt() / 100.0
+        val text = if (roundedSpeed % 1.0 == 0.0) {
+            roundedSpeed.roundToInt().toString()
+        } else {
+            roundedSpeed.toString().trimEnd('0').trimEnd('.')
+        }
+        return "${text}x"
     }
 
     private fun setAudioDelay(delayMillis: Long) {
