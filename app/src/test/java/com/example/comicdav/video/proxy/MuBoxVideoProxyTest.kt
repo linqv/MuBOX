@@ -32,6 +32,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -132,7 +133,7 @@ class MuBoxVideoProxyTest {
         assertEquals(206, response.code)
         assertEquals("3", response.headers["Content-Length"])
         assertEquals("bytes 2-4/10", response.headers["Content-Range"])
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(2L to 4L, client.openRangeCalls.first())
         assertArrayEquals("234".toByteArray(), response.body)
     }
 
@@ -149,9 +150,10 @@ class MuBoxVideoProxyTest {
         )
 
         assertArrayEquals("012".toByteArray(), httpRequest(url, method = "GET", range = "bytes=0-2").body)
+        eventually { assertTrue(client.openRangeCalls.contains(0L to 9L)) }
         assertArrayEquals("123".toByteArray(), httpRequest(url, method = "GET", range = "bytes=1-3").body)
 
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(listOf(0L to 2L, 0L to 9L), client.openRangeCalls)
     }
 
     @Test
@@ -199,15 +201,16 @@ class MuBoxVideoProxyTest {
 
     @Test
     fun optimizedRangeFailureFallsBackToDirectRange() = runTest {
-        val client = OptimizedRangeFailingClient("0123456789".toByteArray())
-        val url = startProxy(client = client, size = 10L)
+        val bytes = ByteArray((256 * 1024) + 2) { (it % 251).toByte() }
+        val client = OptimizedRangeFailingClient(bytes)
+        val url = startProxy(client = client, size = bytes.size.toLong())
 
-        val response = httpRequest(url, method = "GET", range = "bytes=2-4")
+        val response = httpRequest(url, method = "GET", range = "bytes=0-${256 * 1024}")
 
         assertEquals(206, response.code)
-        assertEquals("bytes 2-4/10", response.headers["Content-Range"])
-        assertArrayEquals("234".toByteArray(), response.body)
-        assertEquals(listOf(0L to 9L, 2L to 4L), client.openRangeCalls)
+        assertEquals("bytes 0-${256 * 1024}/${bytes.size}", response.headers["Content-Range"])
+        assertArrayEquals(bytes.copyOfRange(0, (256 * 1024) + 1), response.body)
+        assertEquals(listOf(0L to bytes.lastIndex.toLong(), 0L to 256L * 1024L), client.openRangeCalls)
     }
 
     @Test
@@ -216,16 +219,17 @@ class MuBoxVideoProxyTest {
         val errorBytes = ByteArrayOutputStream()
         System.setErr(PrintStream(errorBytes))
         try {
-            val client = OptimizedRangeFailingClient("0123456789".toByteArray())
+            val bytes = ByteArray((256 * 1024) + 2) { (it % 251).toByte() }
+            val client = OptimizedRangeFailingClient(bytes)
             val url = startProxy(
                 client = client,
-                size = 10L,
+                size = bytes.size.toLong(),
                 proxySettings = VideoProxySettings.DEFAULT.copy(
                     diagnosticsMode = VideoProxyDiagnosticsMode.SUMMARY,
                 ),
             )
 
-            val response = httpRequest(url, method = "GET", range = "bytes=2-4")
+            val response = httpRequest(url, method = "GET", range = "bytes=0-${256 * 1024}")
 
             assertEquals(206, response.code)
         } finally {
@@ -277,7 +281,7 @@ class MuBoxVideoProxyTest {
         val headerBlock = response.toString(Charsets.ISO_8859_1).substringBefore("\r\n\r\n")
         assertTrue(headerBlock.startsWith("HTTP/1.1 206 Partial Content"))
         val body = response.copyOfRange(response.size - 3, response.size)
-        assertEquals(listOf(0L to 9L), client.openRangeCalls)
+        assertEquals(2L to 4L, client.openRangeCalls.first())
         assertArrayEquals("234".toByteArray(), body)
     }
 
@@ -688,6 +692,21 @@ class MuBoxVideoProxyTest {
             val buffer = ByteArray(256)
             socket.getInputStream().read(buffer)
         }
+    }
+
+    private suspend fun eventually(assertion: () -> Unit) {
+        val deadline = System.currentTimeMillis() + 2_000
+        var lastError: AssertionError? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                assertion()
+                return
+            } catch (error: AssertionError) {
+                lastError = error
+                delay(20)
+            }
+        }
+        throw lastError ?: AssertionError("condition was not met")
     }
 
     private fun readHeadersAndFirstBodyByte(socket: Socket): String {

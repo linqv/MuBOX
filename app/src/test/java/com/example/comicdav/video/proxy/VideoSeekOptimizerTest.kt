@@ -99,6 +99,46 @@ class VideoSeekOptimizerTest {
     }
 
     @Test
+    fun smallUncachedRangeStreamsDirectlyBeforeWarmingSegment() = runTest {
+        val bytes = numberedBytes(2_048)
+        val client = SmallRangeWarmupClient(bytes, warmupStart = 0L, warmupEndInclusive = 1_023L)
+        val optimizer = VideoSeekOptimizer(
+            coroutineScope = scope,
+            segmentBytes = 1_024,
+            smallRangeDirectThresholdBytes = 128,
+        )
+        val req = request(size = bytes.size.toLong())
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.OFF)
+        val responseDeferred = async(Dispatchers.IO) {
+            optimizer.openRangeStream(client, req, bytes.size.toLong(), 16L, 31L, settings)
+        }
+
+        try {
+            eventually { assertTrue(client.openRangeCalls.isNotEmpty()) }
+
+            assertEquals("small range should open the exact remote range first", 16L to 31L, client.openRangeCalls.first())
+            val response = responseDeferred.await()
+            assertArrayEquals(bytes.copyOfRange(16, 32), response.stream.readBytes())
+
+            assertTrue("background warmup should fetch the containing segment", client.warmupReadStarted.await(2, TimeUnit.SECONDS))
+            client.releaseWarmup()
+            eventually { assertTrue(client.openRangeCalls.contains(0L to 1_023L)) }
+
+            optimizer.openRangeStream(client, req, bytes.size.toLong(), 32L, 47L, settings).close()
+
+            assertEquals(
+                "warmed segment should satisfy later small ranges without another exact remote request",
+                listOf(16L to 31L, 0L to 1_023L),
+                client.openRangeCalls,
+            )
+        } finally {
+            client.releaseWarmup()
+            responseDeferred.cancelAndJoin()
+            optimizer.close()
+        }
+    }
+
+    @Test
     fun concurrentSameSegmentRequestsShareOneRemoteFetch() = runTest {
         val bytes = numberedBytes(16)
         val gate = CompletableDeferred<Unit>()
@@ -166,6 +206,69 @@ class VideoSeekOptimizerTest {
 
         eventually {
             assertEquals(setOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls.toSet())
+        }
+    }
+
+    @Test
+    fun aggressivePrefetchFetchesForwardSegmentsSequentially() = runTest {
+        val bytes = numberedBytes(32)
+        val client = SequentialPrefetchClient(bytes, blockedStart = 8L, blockedEndInclusive = 15L)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+
+        try {
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = bytes.size.toLong()),
+                totalSize = bytes.size.toLong(),
+                start = 0L,
+                endInclusive = 3L,
+                settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE),
+            ).close()
+
+            assertTrue("first prefetch should start", client.blockedReadStarted.await(2, TimeUnit.SECONDS))
+            delay(100)
+            assertFalse("second prefetch should wait for first prefetch to finish", client.openRangeCalls.contains(16L to 23L))
+
+            client.releaseBlocked()
+
+            eventually { assertTrue(client.openRangeCalls.contains(16L to 23L)) }
+        } finally {
+            client.releaseBlocked()
+            optimizer.close()
+        }
+    }
+
+    @Test
+    fun newForegroundRequestCancelsStalePrefetchGeneration() = runTest {
+        val bytes = numberedBytes(64)
+        val client = SequentialPrefetchClient(bytes, blockedStart = 8L, blockedEndInclusive = 15L)
+        val optimizer = VideoSeekOptimizer(coroutineScope = scope, segmentBytes = 8)
+        val settings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE)
+
+        try {
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = bytes.size.toLong()),
+                totalSize = bytes.size.toLong(),
+                start = 0L,
+                endInclusive = 3L,
+                settings = settings,
+            ).close()
+            assertTrue("stale prefetch should start", client.blockedReadStarted.await(2, TimeUnit.SECONDS))
+
+            optimizer.openRangeStream(
+                client = client,
+                request = request(size = bytes.size.toLong()),
+                totalSize = bytes.size.toLong(),
+                start = 24L,
+                endInclusive = 27L,
+                settings = settings,
+            ).close()
+
+            assertTrue("new foreground request should close stale prefetch", client.blockedClosed.await(2, TimeUnit.SECONDS))
+        } finally {
+            client.releaseBlocked()
+            optimizer.close()
         }
     }
 
@@ -494,6 +597,73 @@ class VideoSeekOptimizerTest {
         }
     }
 
+    private class SmallRangeWarmupClient(
+        private val bytes: ByteArray,
+        private val warmupStart: Long,
+        private val warmupEndInclusive: Long,
+    ) : RecordingClient(bytes) {
+        val warmupReadStarted = CountDownLatch(1)
+        private val warmupReleased = CountDownLatch(1)
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse {
+            val end = requireNotNull(endInclusive)
+            openRangeCalls += start to end
+            val chunk = readRange(path, start, end)
+            val stream = if (start == warmupStart && end == warmupEndInclusive) {
+                BlockingByteArrayInputStream(chunk, warmupReadStarted, warmupReleased)
+            } else {
+                ByteArrayInputStream(chunk)
+            }
+            return WebDavStreamResponse(
+                stream = stream,
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = stream::close,
+            )
+        }
+
+        fun releaseWarmup() {
+            warmupReleased.countDown()
+        }
+    }
+
+    private class SequentialPrefetchClient(
+        private val bytes: ByteArray,
+        private val blockedStart: Long,
+        private val blockedEndInclusive: Long,
+    ) : RecordingClient(bytes) {
+        val blockedReadStarted = CountDownLatch(1)
+        val blockedClosed = CountDownLatch(1)
+        private val blockedReleased = CountDownLatch(1)
+
+        override suspend fun openRangeStream(path: String, start: Long, endInclusive: Long?): WebDavStreamResponse {
+            val end = requireNotNull(endInclusive)
+            openRangeCalls += start to end
+            val chunk = readRange(path, start, end)
+            val stream = if (start == blockedStart && end == blockedEndInclusive) {
+                BlockingByteArrayInputStream(chunk, blockedReadStarted, blockedReleased, blockedClosed)
+            } else {
+                ByteArrayInputStream(chunk)
+            }
+            return WebDavStreamResponse(
+                stream = stream,
+                statusCode = 206,
+                contentLength = chunk.size.toLong(),
+                contentRange = ContentRange(start, end, bytes.size.toLong()),
+                contentType = "video/mp4",
+                totalSize = bytes.size.toLong(),
+                close = stream::close,
+            )
+        }
+
+        fun releaseBlocked() {
+            blockedReleased.countDown()
+        }
+    }
+
     private class FailingRangeClient : WebDavClient {
         override suspend fun list(path: String): List<WebDavItem> = emptyList()
 
@@ -561,6 +731,40 @@ class VideoSeekOptimizerTest {
 
         override fun close() {
             isClosed = true
+            closed.countDown()
+        }
+    }
+
+    private class BlockingByteArrayInputStream(
+        private val bytes: ByteArray,
+        private val readStarted: CountDownLatch,
+        private val released: CountDownLatch,
+        private val closed: CountDownLatch = CountDownLatch(0),
+    ) : InputStream() {
+        private var offset = 0
+        @Volatile
+        private var isClosed = false
+
+        override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+            readStarted.countDown()
+            released.await(2, TimeUnit.SECONDS)
+            if (isClosed) throw IOException("closed")
+            if (offset >= bytes.size) return -1
+            val count = minOf(len, bytes.size - offset)
+            bytes.copyInto(buffer, off, offset, offset + count)
+            offset += count
+            return count
+        }
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            val count = read(one, 0, 1)
+            return if (count == -1) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun close() {
+            isClosed = true
+            released.countDown()
             closed.countDown()
         }
     }

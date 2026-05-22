@@ -4,15 +4,15 @@ import com.example.comicdav.network.ContentRange
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavStreamResponse
 import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -27,16 +27,19 @@ internal class VideoSeekOptimizer(
     private val coroutineScope: CoroutineScope,
     private val cache: VideoRangeMemoryCache = VideoRangeMemoryCache(),
     private val segmentBytes: Long = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES,
+    private val smallRangeDirectThresholdBytes: Long =
+        (segmentBytes / 8L).coerceAtMost(DEFAULT_SMALL_RANGE_DIRECT_THRESHOLD_BYTES),
 ) : Closeable {
     init {
         require(segmentBytes > 0L) { "segmentBytes must be positive" }
+        require(smallRangeDirectThresholdBytes >= 0L) { "smallRangeDirectThresholdBytes must not be negative" }
     }
 
     private val closed = AtomicBoolean(false)
     private val inFlight = ConcurrentHashMap<SegmentKey, InFlightSegment>()
     private val activeResponses = ConcurrentHashMap<SegmentKey, MutableSet<Closeable>>()
     private val prefetchLock = Any()
-    private val prefetchJobs = mutableMapOf<String, MutableSet<Job>>()
+    private val prefetchStates = mutableMapOf<String, PrefetchState>()
 
     suspend fun openRangeStream(
         client: WebDavClient,
@@ -60,8 +63,34 @@ internal class VideoSeekOptimizer(
         val firstSegmentIndex = segmentIndexFor(start)
         val lastSegmentIndex = segmentIndexFor(endInclusive)
         val requestedBytes = checkedRequestedByteCount(start, endInclusive)
-        val output = ByteArrayOutputStream(requestedBytes)
+        val foregroundGeneration = beginForegroundGeneration(
+            streamId = request.streamId,
+            foregroundSegments = segmentIndexesBetween(firstSegmentIndex, lastSegmentIndex),
+        )
 
+        if (shouldStreamSmallRangeDirectly(firstSegmentIndex, lastSegmentIndex, requestedBytes)) {
+            val cachedSlice = cache.getSegmentSlice(request.streamId, firstSegmentIndex, start, endInclusive)
+            if (cachedSlice == null) {
+                diagnostics.summary { "small_range_direct stream=${diagnostics.streamId(request.streamId)}" }
+                diagnostics.detail {
+                    "small_range_direct stream=${diagnostics.streamId(request.streamId)} " +
+                        "range=$start-$endInclusive threshold=$smallRangeDirectThresholdBytes"
+                }
+                if (!isFullSegmentRange(firstSegmentIndex, totalSize, start, endInclusive)) {
+                    scheduleSegmentWarmup(
+                        client = client,
+                        request = request,
+                        totalSize = totalSize,
+                        segmentIndex = firstSegmentIndex,
+                        diagnostics = diagnostics,
+                        generation = foregroundGeneration,
+                    )
+                }
+                return client.openRangeStream(request.remotePath, start, endInclusive)
+            }
+        }
+
+        val slices = ArrayList<ByteArray>()
         for (segmentIndex in firstSegmentIndex..lastSegmentIndex) {
             val segmentStart = segmentIndex * segmentBytes
             val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
@@ -74,7 +103,7 @@ internal class VideoSeekOptimizer(
                     "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
                         "segment=$segmentIndex range=$segmentStart-$segmentEnd cache_bytes=${cache.totalBytes()}"
                 }
-                output.write(cachedSlice)
+                slices += cachedSlice
             } else {
                 val segment = getOrFetchSegment(
                     client = client,
@@ -82,8 +111,9 @@ internal class VideoSeekOptimizer(
                     totalSize = totalSize,
                     segmentIndex = segmentIndex,
                     diagnostics = diagnostics,
+                    waiterKind = WaiterKind.FOREGROUND,
                 )
-                output.write(segment.slice(sliceStart, sliceEnd))
+                slices += segment.slice(sliceStart, sliceEnd)
             }
         }
 
@@ -94,13 +124,13 @@ internal class VideoSeekOptimizer(
             highestSegmentIndex = lastSegmentIndex,
             settings = settings,
             diagnostics = diagnostics,
+            generation = foregroundGeneration,
         )
 
-        val bytes = output.toByteArray()
         return WebDavStreamResponse(
-            stream = ByteArrayInputStream(bytes),
+            stream = ByteArraySlicesInputStream(slices),
             statusCode = 206,
-            contentLength = bytes.size.toLong(),
+            contentLength = requestedBytes.toLong(),
             contentRange = ContentRange(start, endInclusive, totalSize),
             contentType = request.mimeType,
             totalSize = totalSize,
@@ -124,10 +154,10 @@ internal class VideoSeekOptimizer(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        val jobs = synchronized(prefetchLock) {
-            prefetchJobs.values.flatten().also { prefetchJobs.clear() }
+        val states = synchronized(prefetchLock) {
+            prefetchStates.values.map { state -> state.copyForCancellation() }.also { prefetchStates.clear() }
         }
-        jobs.forEach { it.cancel() }
+        states.forEach(::cancelPrefetchState)
         inFlight.values.forEach { it.deferred.cancel() }
         inFlight.clear()
         activeResponses.keys.toList().forEach(::closeActiveResponses)
@@ -168,6 +198,7 @@ internal class VideoSeekOptimizer(
         totalSize: Long,
         segmentIndex: Long,
         diagnostics: VideoProxyDiagnostics,
+        waiterKind: WaiterKind,
     ): VideoRangeMemoryCache.Segment {
         cache.getSegment(request.streamId, segmentIndex)?.let { segment ->
             diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
@@ -206,11 +237,11 @@ internal class VideoSeekOptimizer(
             diagnostics.detail { "inflight_join stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex" }
         }
 
-        inFlightSegment.waiters.incrementAndGet()
+        inFlightSegment.increment(waiterKind)
         try {
             return inFlightSegment.deferred.await()
         } finally {
-            releaseWaiter(inFlightSegment)
+            inFlightSegment.decrement(waiterKind)
         }
     }
 
@@ -285,10 +316,12 @@ internal class VideoSeekOptimizer(
         highestSegmentIndex: Long,
         settings: VideoProxySettings,
         diagnostics: VideoProxyDiagnostics,
+        generation: Long,
     ) {
         val segmentCount = settings.forwardPrefetchMode.segmentCount
         if (segmentCount <= 0 || closed.get()) return
 
+        val segmentIndexes = ArrayList<Long>()
         for (offset in 1..segmentCount) {
             val segmentIndex = highestSegmentIndex + offset
             val segmentStart = segmentIndex * segmentBytes
@@ -310,64 +343,178 @@ internal class VideoSeekOptimizer(
                 diagnostics.detail { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex reason=inflight" }
                 continue
             }
+            segmentIndexes += segmentIndex
+        }
 
-            lateinit var job: Job
-            job = coroutineScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
-                try {
+        schedulePrefetchSegments(
+            client = client,
+            request = request,
+            totalSize = totalSize,
+            segmentIndexes = segmentIndexes,
+            diagnostics = diagnostics,
+            generation = generation,
+        )
+    }
+
+    private fun scheduleSegmentWarmup(
+        client: WebDavClient,
+        request: VideoStreamRequest,
+        totalSize: Long,
+        segmentIndex: Long,
+        diagnostics: VideoProxyDiagnostics,
+        generation: Long,
+    ) {
+        if (closed.get()) return
+        val key = SegmentKey(request.streamId, segmentIndex)
+        if (cache.containsSegment(request.streamId, segmentIndex) || inFlight.containsKey(key)) return
+        schedulePrefetchSegments(
+            client = client,
+            request = request,
+            totalSize = totalSize,
+            segmentIndexes = listOf(segmentIndex),
+            diagnostics = diagnostics,
+            generation = generation,
+        )
+    }
+
+    private fun schedulePrefetchSegments(
+        client: WebDavClient,
+        request: VideoStreamRequest,
+        totalSize: Long,
+        segmentIndexes: List<Long>,
+        diagnostics: VideoProxyDiagnostics,
+        generation: Long,
+    ) {
+        if (segmentIndexes.isEmpty() || closed.get()) return
+
+        val keys = segmentIndexes.map { SegmentKey(request.streamId, it) }
+        lateinit var job: Job
+        job = coroutineScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                for (segmentIndex in segmentIndexes) {
+                    coroutineContext.ensureActive()
+                    if (!isCurrentPrefetchGeneration(request.streamId, generation)) return@launch
+                    val key = SegmentKey(request.streamId, segmentIndex)
+                    if (cache.containsSegment(request.streamId, segmentIndex)) {
+                        diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=cache_hit" }
+                        diagnostics.detail {
+                            "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
+                                "segment=$segmentIndex reason=cache_hit"
+                        }
+                        continue
+                    }
+                    if (inFlight.containsKey(key)) {
+                        diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=inflight" }
+                        diagnostics.detail {
+                            "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
+                                "segment=$segmentIndex reason=inflight"
+                        }
+                        continue
+                    }
                     getOrFetchSegment(
                         client = client,
                         request = request,
                         totalSize = totalSize,
                         segmentIndex = segmentIndex,
                         diagnostics = diagnostics,
+                        waiterKind = WaiterKind.PREFETCH,
                     )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (isCurrentPrefetchGeneration(request.streamId, generation)) {
                     diagnostics.summary {
                         "prefetch_failed stream=${diagnostics.streamId(request.streamId)} " +
                             "error=${error.message ?: error::class.java.simpleName}"
                     }
                     diagnostics.detail {
                         "prefetch_failed stream=${diagnostics.streamId(request.streamId)} " +
-                            "segment=$segmentIndex error=${error.message ?: error::class.java.simpleName}"
+                            "error=${error.message ?: error::class.java.simpleName}"
                     }
-                } finally {
-                    unregisterPrefetchJob(request.streamId, job)
                 }
+            } finally {
+                unregisterPrefetchJob(request.streamId, generation, keys)
             }
-            registerPrefetchJob(request.streamId, job)
+        }
+
+        if (registerPrefetchJob(request.streamId, generation, keys, job)) {
             diagnostics.summary { "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)}" }
-            diagnostics.detail { "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex" }
-            job.start()
-        }
-    }
-
-    private fun registerPrefetchJob(streamId: String, job: Job) {
-        synchronized(prefetchLock) {
-            prefetchJobs.getOrPut(streamId) { mutableSetOf() } += job
-        }
-    }
-
-    private fun unregisterPrefetchJob(streamId: String, job: Job) {
-        synchronized(prefetchLock) {
-            val jobs = prefetchJobs[streamId] ?: return
-            jobs -= job
-            if (jobs.isEmpty()) {
-                prefetchJobs.remove(streamId)
+            diagnostics.detail {
+                "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)} " +
+                    "segments=${segmentIndexes.joinToString(",")}"
             }
+            job.start()
+        } else {
+            job.cancel()
+        }
+    }
+
+    private fun beginForegroundGeneration(streamId: String, foregroundSegments: Set<Long>): Long {
+        val cancellation = synchronized(prefetchLock) {
+            val state = prefetchStates.getOrPut(streamId) { PrefetchState() }
+            state.generation += 1L
+            val overlapsForeground = state.keys.any { key -> key.segmentIndex in foregroundSegments }
+            if (overlapsForeground) {
+                PrefetchCancellation(null, emptyList())
+            } else {
+                val cancellation = state.copyForCancellation()
+                state.job = null
+                state.keys.clear()
+                cancellation
+            }
+        }
+        cancelPrefetchState(cancellation)
+        return synchronized(prefetchLock) { prefetchStates.getValue(streamId).generation }
+    }
+
+    private fun registerPrefetchJob(
+        streamId: String,
+        generation: Long,
+        keys: List<SegmentKey>,
+        job: Job,
+    ): Boolean =
+        synchronized(prefetchLock) {
+            val state = prefetchStates.getOrPut(streamId) { PrefetchState() }
+            if (state.generation != generation) return@synchronized false
+            state.job?.cancel()
+            state.job = job
+            state.keys.clear()
+            state.keys += keys
+            true
+        }
+
+    private fun unregisterPrefetchJob(streamId: String, generation: Long, keys: List<SegmentKey>) {
+        synchronized(prefetchLock) {
+            val state = prefetchStates[streamId] ?: return
+            if (state.generation != generation) return
+            state.keys.removeAll(keys.toSet())
+            if (state.keys.isEmpty()) state.job = null
         }
     }
 
     private fun cancelPrefetchJobs(streamId: String) {
-        val jobs = synchronized(prefetchLock) {
-            prefetchJobs.remove(streamId)?.toList().orEmpty()
+        val state = synchronized(prefetchLock) {
+            prefetchStates.remove(streamId)?.copyForCancellation()
         }
-        jobs.forEach { it.cancel() }
+        state?.let(::cancelPrefetchState)
     }
 
-    private fun releaseWaiter(entry: InFlightSegment) {
-        entry.waiters.decrementAndGet()
+    private fun isCurrentPrefetchGeneration(streamId: String, generation: Long): Boolean =
+        synchronized(prefetchLock) {
+            prefetchStates[streamId]?.generation == generation
+        }
+
+    private fun cancelPrefetchState(state: PrefetchCancellation) {
+        state.job?.cancel()
+        state.keys.forEach { key ->
+            val entry = inFlight[key]
+            if (entry != null && entry.foregroundWaiters.get() <= 0) {
+                inFlight.remove(key, entry)
+                entry.deferred.cancel()
+                closeActiveResponses(key)
+            }
+        }
     }
 
     private fun addActiveResponse(key: SegmentKey, closeable: Closeable): Boolean {
@@ -403,6 +550,33 @@ internal class VideoSeekOptimizer(
 
     private fun segmentIndexFor(byteOffset: Long): Long = byteOffset / segmentBytes
 
+    private fun segmentIndexesBetween(firstSegmentIndex: Long, lastSegmentIndex: Long): Set<Long> =
+        buildSet {
+            for (segmentIndex in firstSegmentIndex..lastSegmentIndex) {
+                add(segmentIndex)
+            }
+        }
+
+    private fun shouldStreamSmallRangeDirectly(
+        firstSegmentIndex: Long,
+        lastSegmentIndex: Long,
+        requestedBytes: Int,
+    ): Boolean =
+        smallRangeDirectThresholdBytes > 0L &&
+            requestedBytes.toLong() <= smallRangeDirectThresholdBytes &&
+            firstSegmentIndex == lastSegmentIndex
+
+    private fun isFullSegmentRange(
+        segmentIndex: Long,
+        totalSize: Long,
+        start: Long,
+        endInclusive: Long,
+    ): Boolean {
+        val segmentStart = segmentIndex * segmentBytes
+        val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
+        return start == segmentStart && endInclusive == segmentEnd
+    }
+
     private fun checkedRequestedByteCount(start: Long, endInclusive: Long): Int {
         val count = endInclusive - start + 1L
         if (count > Int.MAX_VALUE) {
@@ -425,10 +599,90 @@ internal class VideoSeekOptimizer(
     private class InFlightSegment(
         val deferred: Deferred<VideoRangeMemoryCache.Segment>,
     ) {
-        val waiters = AtomicInteger(0)
+        val foregroundWaiters = AtomicInteger(0)
+        private val prefetchWaiters = AtomicInteger(0)
+
+        fun increment(kind: WaiterKind) {
+            when (kind) {
+                WaiterKind.FOREGROUND -> foregroundWaiters.incrementAndGet()
+                WaiterKind.PREFETCH -> prefetchWaiters.incrementAndGet()
+            }
+        }
+
+        fun decrement(kind: WaiterKind) {
+            when (kind) {
+                WaiterKind.FOREGROUND -> foregroundWaiters.decrementAndGet()
+                WaiterKind.PREFETCH -> prefetchWaiters.decrementAndGet()
+            }
+        }
+    }
+
+    private enum class WaiterKind {
+        FOREGROUND,
+        PREFETCH,
+    }
+
+    private class PrefetchState {
+        var generation: Long = 0L
+        var job: Job? = null
+        val keys: MutableSet<SegmentKey> = mutableSetOf()
+
+        fun copyForCancellation(): PrefetchCancellation =
+            PrefetchCancellation(job, keys.toList())
+    }
+
+    private data class PrefetchCancellation(
+        val job: Job?,
+        val keys: List<SegmentKey>,
+    )
+
+    private class ByteArraySlicesInputStream(
+        slices: List<ByteArray>,
+    ) : InputStream() {
+        private val slices = slices.filter { it.isNotEmpty() }
+        private var sliceIndex = 0
+        private var offset = 0
+
+        override fun read(): Int {
+            while (sliceIndex < slices.size) {
+                val slice = slices[sliceIndex]
+                if (offset < slice.size) {
+                    return slice[offset++].toInt() and 0xff
+                }
+                sliceIndex += 1
+                offset = 0
+            }
+            return -1
+        }
+
+        override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+            if (len == 0) return 0
+            var total = 0
+            var outputOffset = off
+            var remaining = len
+            while (remaining > 0 && sliceIndex < slices.size) {
+                val slice = slices[sliceIndex]
+                if (offset >= slice.size) {
+                    sliceIndex += 1
+                    offset = 0
+                    continue
+                }
+                val count = minOf(remaining, slice.size - offset)
+                slice.copyInto(buffer, outputOffset, offset, offset + count)
+                offset += count
+                outputOffset += count
+                remaining -= count
+                total += count
+            }
+            return if (total == 0) -1 else total
+        }
     }
 
     private fun Closeable.closeQuietly() {
         runCatching { close() }
+    }
+
+    private companion object {
+        const val DEFAULT_SMALL_RANGE_DIRECT_THRESHOLD_BYTES: Long = 256L * 1024L
     }
 }
