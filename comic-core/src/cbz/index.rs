@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::error::ComicCoreError;
+use crate::image::{is_supported_image, ImageFormatOptions};
 use crate::sort::natural;
 use crate::zip::central_directory::parse_central_directory;
 use crate::zip::eocd::{find_eocd_search, EocdSearch};
@@ -25,13 +26,20 @@ pub struct CbzIndex {
 }
 
 pub fn open_cbz(reader: &impl RangeReader) -> Result<CbzIndex> {
+    open_cbz_with_options(reader, ImageFormatOptions::default())
+}
+
+pub fn open_cbz_with_options(
+    reader: &impl RangeReader,
+    options: ImageFormatOptions,
+) -> Result<CbzIndex> {
     let eocd_search = find_eocd_search(reader)?;
     let eocd = &eocd_search.eocd;
     let central_directory = read_central_directory(reader, &eocd_search)?;
     let mut pages: Vec<CbzPageEntry> =
         parse_central_directory(&central_directory, eocd.total_entries)?
             .into_iter()
-            .filter(|entry| is_supported_image(&entry.name))
+            .filter(|entry| is_supported_image(&entry.name, options))
             .map(|entry| CbzPageEntry {
                 name: entry.name,
                 filename_len: entry.filename_len,
@@ -90,12 +98,4 @@ fn read_central_directory(reader: &impl RangeReader, search: &EocdSearch) -> Res
 
 fn page_file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
-}
-
-fn is_supported_image(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".jpg")
-        || lower.ends_with(".jpeg")
-        || lower.ends_with(".png")
-        || lower.ends_with(".webp")
 }

@@ -72,6 +72,17 @@ class AppSettingsStoreTest {
         assertFalse(store.settings.first().videoLibraryThumbnailsEnabled)
     }
 
+    @Test
+    fun avifImageSupportDefaultsOffAndCanBeUpdated() = runTest {
+        val store = createStore("avif_image_support.preferences_pb")
+
+        assertFalse(store.settings.first().avifImagesEnabled)
+
+        store.updateAvifImagesEnabled(true)
+
+        assertTrue(store.settings.first().avifImagesEnabled)
+    }
+
     private fun TestScope.createStore(fileName: String): AppSettingsStore {
         val preferencesFile = temporaryFolder.newFile(fileName)
         val dataStore = PreferenceDataStoreFactory.create(

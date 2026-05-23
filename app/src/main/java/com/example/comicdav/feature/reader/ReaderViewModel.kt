@@ -133,6 +133,7 @@ class ReaderViewModel(
         cacheDir: File,
         initialPage: Int,
         comicKey: String,
+        pageCacheKey: String = comicKey,
     ) {
         closeCurrentSession()
         diagnostics.reset()
@@ -141,6 +142,7 @@ class ReaderViewModel(
             cacheDir = cacheDir,
             initialPage = initialPage,
             comicKey = comicKey,
+            pageCacheKey = pageCacheKey,
             openGeneration = generation,
         )
     }
@@ -150,11 +152,12 @@ class ReaderViewModel(
         cacheDir: File,
         initialPage: Int,
         comicKey: String,
+        pageCacheKey: String,
         openGeneration: Int,
     ) {
         this.cacheDir = cacheDir
         this.comicKey = comicKey
-        this.pageCacheKey = comicKey
+        this.pageCacheKey = pageCacheKey
         ReaderDiagnosticLog.event("open_session_start initialPage=$initialPage generation=$openGeneration key=$comicKey")
         val activeReaderKey = readerInstanceKey(comicKey, openGeneration)
         uiState = ReaderUiState(isLoading = true, readerKey = activeReaderKey)
@@ -232,6 +235,7 @@ class ReaderViewModel(
                         cacheDir = cacheDir,
                         initialPage = result.initialPage,
                         comicKey = result.comicKey,
+                        pageCacheKey = result.pageCacheKey,
                         openGeneration = openGeneration,
                     )
                 },

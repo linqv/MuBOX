@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -104,7 +105,9 @@ import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.ReaderPageCache
 import com.example.comicdav.feature.reader.createReaderLogFile
+import com.example.comicdav.feature.reader.installReaderImageLoader
 import com.example.comicdav.feature.reader.localComicCacheKey
+import com.example.comicdav.feature.reader.readerImageFormatCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForMb
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
@@ -152,12 +155,18 @@ private val Context.webDavAccountDataStore by preferencesDataStore(name = "webda
 private val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
 private val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
 
+internal fun effectiveAvifImagesEnabled(
+    settingEnabled: Boolean,
+    sdkInt: Int = Build.VERSION.SDK_INT,
+): Boolean = settingEnabled && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+
 class MainActivity : ComponentActivity() {
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
     private var readerCrashHandler: Thread.UncaughtExceptionHandler? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installReaderImageLoader(applicationContext)
         installReaderCrashLogger()
         setContent { ComicDavApp() }
     }
@@ -409,10 +418,11 @@ fun ComicDavApp() {
         onFailure: (Throwable) -> Unit,
     ) {
         startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
+        val avifImagesEnabled = effectiveAvifImagesEnabled(appSettings.avifImagesEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    localComicOpener.open(uri, fileName)
+                    localComicOpener.open(uri, fileName, avifImagesEnabled = avifImagesEnabled)
                 }
             }.fold(
                 onSuccess = { session ->
@@ -424,6 +434,7 @@ fun ComicDavApp() {
                         cacheDir = context.cacheDir,
                         initialPage = 0,
                         comicKey = comicKey,
+                        pageCacheKey = readerImageFormatCacheKey(comicKey, avifImagesEnabled),
                     )
                     isReaderOpen = true
                 },
@@ -643,6 +654,7 @@ fun ComicDavApp() {
                             client = client,
                             accountId = accountId,
                             remotePath = item.path,
+                            avifImagesEnabled = effectiveAvifImagesEnabled(appSettings.avifImagesEnabled),
                             knownInfo = knownInfo,
                         )
                     }.onFailure { error ->
@@ -1298,6 +1310,7 @@ fun ComicDavApp() {
                     client = client,
                     accountId = source.accountId,
                     remotePath = source.remotePath,
+                    avifImagesEnabled = effectiveAvifImagesEnabled(appSettings.avifImagesEnabled),
                     knownInfo = source.size?.let { knownSize ->
                         RemoteFileInfo(
                             path = source.remotePath,
@@ -1433,11 +1446,13 @@ fun ComicDavApp() {
         isReaderOpen = true
         startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
+        val avifImagesEnabled = effectiveAvifImagesEnabled(appSettings.avifImagesEnabled)
         readerViewModel.openRemote(cacheDir = context.cacheDir) {
             val useCase = OpenComicUseCase(
                 accountId = accountId,
                 cache = remoteCache,
                 progressStore = progressStore,
+                avifImagesEnabled = avifImagesEnabled,
                 webDavPrefetchPageCount = appSettings.webDavPrefetchPageCount,
             )
             val result = useCase.open(
@@ -2052,6 +2067,9 @@ fun ComicDavApp() {
                                     },
                                     onColorPaletteChange = { value ->
                                         scope.launch { appSettingsStore.updateColorPalette(value) }
+                                    },
+                                    onAvifImagesEnabledChange = { value ->
+                                        scope.launch { appSettingsStore.updateAvifImagesEnabled(value) }
                                     },
                                     onAutoPageEnabledChange = { value ->
                                         scope.launch { appSettingsStore.updateAutoPageEnabled(value) }

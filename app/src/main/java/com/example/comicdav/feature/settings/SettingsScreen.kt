@@ -113,6 +113,7 @@ internal fun comicSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "音量键翻页",
                 "WebDAV 预取页数",
                 "诊断日志",
+                "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
                 "翻页速度",
@@ -146,6 +147,7 @@ fun SettingsScreen(
     onReadingDirectionChange: (ReadingDirection) -> Unit,
     onReaderLoggingModeChange: (ReaderLoggingMode) -> Unit,
     onColorPaletteChange: (AppColorPalette) -> Unit,
+    onAvifImagesEnabledChange: (Boolean) -> Unit = {},
     onAutoPageEnabledChange: (Boolean) -> Unit,
     onAutoPageSpeedChange: (Int) -> Unit,
     onScreenRotationLockChange: (Boolean) -> Unit,
@@ -205,6 +207,7 @@ fun SettingsScreen(
                 onAutoPageSpeedChange = onAutoPageSpeedChange,
                 onVolumeKeysTurnPagesChange = onVolumeKeysTurnPagesChange,
                 onWebDavPrefetchPageCountChange = onWebDavPrefetchPageCountChange,
+                onAvifImagesEnabledChange = onAvifImagesEnabledChange,
                 onLibraryCoversEnabledChange = onLibraryCoversEnabledChange,
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
@@ -433,6 +436,7 @@ private fun ComicSettingsPage(
     onAutoPageSpeedChange: (Int) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
+    onAvifImagesEnabledChange: (Boolean) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -470,6 +474,12 @@ private fun ComicSettingsPage(
                 selected = settings.readerLoggingMode,
                 label = ReaderLoggingMode::label,
                 onSelected = onReaderLoggingModeChange,
+            )
+            SwitchRow(
+                title = "AVIF 图片",
+                subtitle = "需要 Android 14+；旧系统会忽略这个开关",
+                checked = settings.avifImagesEnabled,
+                onCheckedChange = onAvifImagesEnabledChange,
             )
             SwitchRow(
                 title = "书架封面",

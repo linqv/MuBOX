@@ -17,6 +17,7 @@ typealias OpenLocalFdSessionFactory = (
     fd: Int,
     size: Long,
     format: LocalArchiveFormat,
+    avifImagesEnabled: Boolean,
 ) -> ComicReaderSession
 
 typealias OpenLocalDocumentSessionFactory = (
@@ -27,8 +28,8 @@ typealias OpenLocalDocumentSessionFactory = (
 
 class LocalComicOpener(
     private val context: Context,
-    private val openSession: OpenLocalFdSessionFactory = { fd, size, format ->
-        ComicEngine().openLocalFd(fd, size, format.nativeName)
+    private val openSession: OpenLocalFdSessionFactory = { fd, size, format, avifImagesEnabled ->
+        ComicEngine().openLocalFd(fd, size, format.nativeName, avifImagesEnabled = avifImagesEnabled)
     },
     private val openDocumentSession: OpenLocalDocumentSessionFactory = { descriptor, fileName, format ->
         val document = RealMuPdfDocumentAdapter().open(descriptor, fileName, format)
@@ -39,7 +40,7 @@ class LocalComicOpener(
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
-    fun open(uri: Uri, fileName: String): ComicReaderSession {
+    fun open(uri: Uri, fileName: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
         localArchiveFormatForFileName(fileName)?.let { format ->
             val descriptorOpenStartMs = elapsedRealtimeMs()
             val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
@@ -47,7 +48,7 @@ class LocalComicOpener(
             val descriptorOpenEndMs = elapsedRealtimeMs()
             val size = descriptor.statSize.takeIf { it > 0L } ?: 0L
             val fd = descriptor.detachFd()
-            val session = openSession(fd, size, format)
+            val session = openSession(fd, size, format, avifImagesEnabled)
             val openSessionEndMs = elapsedRealtimeMs()
             logLocalOpenDone(
                 engine = "native-archive",

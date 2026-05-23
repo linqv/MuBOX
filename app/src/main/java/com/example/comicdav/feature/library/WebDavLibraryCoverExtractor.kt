@@ -2,6 +2,7 @@ package com.example.comicdav.feature.library
 
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.feature.reader.RemoteRangeComicSessionFactory
+import com.example.comicdav.feature.reader.readerImageFormatCacheKey
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.RangeProviderRegistry
@@ -16,8 +17,24 @@ import kotlinx.coroutines.withContext
 class WebDavLibraryCoverExtractor(
     private val appCacheDir: File,
     private val remoteCacheDir: File,
-    private val openRemoteSession: RemoteRangeComicSessionFactory = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
-        ComicEngine().openRemote(fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount)
+    private val openRemoteSession: RemoteRangeComicSessionFactory = {
+            fileId,
+            size,
+            cacheDir,
+            comicKey,
+            validator,
+            avifImagesEnabled,
+            webDavPrefetchPageCount,
+        ->
+        ComicEngine().openRemote(
+            fileId = fileId,
+            size = size,
+            cacheDir = cacheDir,
+            comicKey = comicKey,
+            validator = validator,
+            avifImagesEnabled = avifImagesEnabled,
+            webDavPrefetchPageCount = webDavPrefetchPageCount,
+        )
     },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -25,6 +42,7 @@ class WebDavLibraryCoverExtractor(
         client: WebDavClient,
         accountId: String,
         remotePath: String,
+        avifImagesEnabled: Boolean = false,
         knownInfo: RemoteFileInfo? = null,
     ): String? = withContext(ioDispatcher) {
         val info = knownInfo ?: client.head(remotePath)
@@ -35,7 +53,7 @@ class WebDavLibraryCoverExtractor(
             etag = info.etag,
             lastModified = info.lastModified,
         )
-        val coverFile = coverFile(cacheKey)
+        val coverFile = coverFile(cacheKey, avifImagesEnabled)
         if (coverFile.isFile && coverFile.length() > 0L) {
             coverFile.setLastModified(System.currentTimeMillis())
             return@withContext coverFile.absolutePath
@@ -51,6 +69,7 @@ class WebDavLibraryCoverExtractor(
                 remoteCacheDir,
                 cacheKey.value,
                 info.validator(),
+                avifImagesEnabled,
                 0,
             )
             if (session.pageCount <= 0) {
@@ -80,8 +99,8 @@ class WebDavLibraryCoverExtractor(
         }
     }
 
-    private fun coverFile(cacheKey: ComicCacheKey): File =
-        File(appCacheDir, "library-covers/${cacheKey.value}.img")
+    private fun coverFile(cacheKey: ComicCacheKey, avifImagesEnabled: Boolean): File =
+        File(appCacheDir, "library-covers/${readerImageFormatCacheKey(cacheKey.value, avifImagesEnabled)}.img")
 
     private fun RemoteFileInfo.validator(): String =
         etag ?: lastModified?.toString() ?: size.toString()

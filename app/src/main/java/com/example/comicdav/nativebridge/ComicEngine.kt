@@ -12,14 +12,19 @@ class ComicEngine(
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
-    fun openLocal(path: String): ComicReaderSession {
-        val handle = native.openLocal(path)
+    fun openLocal(path: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
+        val handle = native.openLocal(path, avifImagesEnabled)
         return openChecked(handle)
     }
 
-    fun openLocalFd(fd: Int, size: Long, format: String): ComicReaderSession {
+    fun openLocalFd(
+        fd: Int,
+        size: Long,
+        format: String,
+        avifImagesEnabled: Boolean = false,
+    ): ComicReaderSession {
         val nativeOpenStartMs = elapsedRealtimeMs()
-        val handle = native.openLocalFd(fd, size, format)
+        val handle = native.openLocalFd(fd, size, format, avifImagesEnabled)
         val nativeOpenEndMs = elapsedRealtimeMs()
         return openChecked(
             handle = handle,
@@ -38,9 +43,17 @@ class ComicEngine(
         cacheDir: File,
         comicKey: String,
         validator: String,
+        avifImagesEnabled: Boolean = false,
         webDavPrefetchPageCount: Int = 4,
     ): ComicReaderSession {
-        val handle = native.openRemote(fileId, size, cacheDir.absolutePath, comicKey, validator)
+        val handle = native.openRemote(
+            fileId,
+            size,
+            cacheDir.absolutePath,
+            comicKey,
+            validator,
+            avifImagesEnabled,
+        )
         return openChecked(
             handle = handle,
             rangeProviderFileId = fileId,

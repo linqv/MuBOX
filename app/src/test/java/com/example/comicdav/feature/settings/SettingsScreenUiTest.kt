@@ -44,6 +44,7 @@ class SettingsScreenUiTest {
                 "音量键翻页",
                 "WebDAV 预取页数",
                 "诊断日志",
+                "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
                 "翻页速度",

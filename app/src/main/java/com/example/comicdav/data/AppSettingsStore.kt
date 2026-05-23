@@ -41,6 +41,7 @@ data class AppSettings(
     val readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
     val readerLoggingMode: ReaderLoggingMode = ReaderLoggingMode.SUMMARY,
     val colorPalette: AppColorPalette = AppColorPalette.DEFAULT,
+    val avifImagesEnabled: Boolean = false,
     val autoPageEnabled: Boolean = false,
     val autoPageSpeedMillis: Int = 5_000,
     val screenRotationLockEnabled: Boolean = false,
@@ -73,6 +74,7 @@ class AppSettingsStore(
             readerLoggingMode = preferences[READER_LOGGING_MODE].toEnumOrNull<ReaderLoggingMode>()
                 ?: if (preferences[LOGGING_ENABLED] == false) ReaderLoggingMode.OFF else ReaderLoggingMode.SUMMARY,
             colorPalette = preferences[COLOR_PALETTE].toEnumOrDefault(AppColorPalette.DEFAULT),
+            avifImagesEnabled = preferences[AVIF_IMAGES_ENABLED] ?: false,
             autoPageEnabled = preferences[AUTO_PAGE_ENABLED] ?: false,
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
@@ -119,6 +121,12 @@ class AppSettingsStore(
     suspend fun updateColorPalette(colorPalette: AppColorPalette) {
         dataStore.edit { preferences ->
             preferences[COLOR_PALETTE] = colorPalette.name
+        }
+    }
+
+    suspend fun updateAvifImagesEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[AVIF_IMAGES_ENABLED] = enabled
         }
     }
 
@@ -235,6 +243,7 @@ class AppSettingsStore(
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
         val READER_LOGGING_MODE = stringPreferencesKey("reader_logging_mode")
         val COLOR_PALETTE = stringPreferencesKey("color_palette")
+        val AVIF_IMAGES_ENABLED = booleanPreferencesKey("avif_images_enabled")
         val AUTO_PAGE_ENABLED = booleanPreferencesKey("auto_page_enabled")
         val AUTO_PAGE_SPEED_MILLIS = intPreferencesKey("auto_page_speed_millis")
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")

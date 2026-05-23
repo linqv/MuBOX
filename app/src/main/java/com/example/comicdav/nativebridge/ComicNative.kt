@@ -1,9 +1,16 @@
 package com.example.comicdav.nativebridge
 
 interface ComicNativeFacade {
-    fun openLocal(path: String): Long
-    fun openLocalFd(fd: Int, size: Long, format: String): Long
-    fun openRemote(fileId: Long, size: Long, cacheDir: String, comicKey: String, validator: String): Long
+    fun openLocal(path: String, avifImagesEnabled: Boolean): Long
+    fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long
+    fun openRemote(
+        fileId: Long,
+        size: Long,
+        cacheDir: String,
+        comicKey: String,
+        validator: String,
+        avifImagesEnabled: Boolean,
+    ): Long
     fun pageCount(handle: Long): Int
     fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int
     fun updateViewport(handle: Long, pageIndex: Int, networkClass: Int, forwardPrefetchPageCount: Int): Int
@@ -18,9 +25,9 @@ object ComicNative : ComicNativeFacade {
         System.loadLibrary("comic_core")
     }
 
-    external override fun openLocal(path: String): Long
+    external override fun openLocal(path: String, avifImagesEnabled: Boolean): Long
 
-    external override fun openLocalFd(fd: Int, size: Long, format: String): Long
+    external override fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long
 
     external override fun openRemote(
         fileId: Long,
@@ -28,6 +35,7 @@ object ComicNative : ComicNativeFacade {
         cacheDir: String,
         comicKey: String,
         validator: String,
+        avifImagesEnabled: Boolean,
     ): Long
 
     external override fun pageCount(handle: Long): Int

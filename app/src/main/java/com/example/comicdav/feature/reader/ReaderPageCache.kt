@@ -26,3 +26,6 @@ internal object ReaderPageCache {
 
     internal const val DEFAULT_MAX_BYTES = 1L * 1024L * 1024L * 1024L
 }
+
+internal fun readerImageFormatCacheKey(comicKey: String, avifImagesEnabled: Boolean): String =
+    if (avifImagesEnabled) "$comicKey-avif" else comicKey

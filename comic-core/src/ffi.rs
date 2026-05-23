@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use jni::objects::{JClass, JString};
 use jni::strings::JNIString;
-use jni::sys::{jint, jlong, jstring, JNI_ERR, JNI_VERSION_1_6};
+use jni::sys::{jboolean, jint, jlong, jstring, JNI_ERR, JNI_VERSION_1_6};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -13,10 +13,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use crate::archive::{open_local_archive_fd, ArchiveFormat, LocalArchiveSession};
-use crate::cache::index_cache::{open_cbz_with_index_cache, IndexCacheKey};
-use crate::cbz::{open_cbz, CbzIndex, CbzPageEntry};
+use crate::archive::{open_local_archive_fd_with_options, ArchiveFormat, LocalArchiveSession};
+use crate::cache::index_cache::{open_cbz_with_index_cache_options, IndexCacheKey};
+use crate::cbz::{open_cbz_with_options, CbzIndex, CbzPageEntry};
 use crate::error::ComicCoreError;
+use crate::image::ImageFormatOptions;
 use crate::remote::jni_range_reader::JniRangeReader;
 use crate::scheduler::prefetch::{plan_prefetch_with_forward_window, NetworkClass};
 use crate::scheduler::range_planner::{
@@ -89,7 +90,9 @@ static LAST_ERROR: Lazy<Mutex<CString>> = Lazy::new(|| Mutex::new(CString::defau
 
 #[no_mangle]
 pub extern "C" fn comic_open_local(path: *const c_char) -> ComicHandle {
-    match read_c_string(path).and_then(|path| open_local_path(Path::new(&path))) {
+    match read_c_string(path)
+        .and_then(|path| open_local_path(Path::new(&path), ImageFormatOptions::default()))
+    {
         Ok(handle) => handle,
         Err(error) => {
             set_last_error(error);
@@ -172,17 +175,17 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
     let methods = [
         native_method(
             "openLocal",
-            "(Ljava/lang/String;)J",
+            "(Ljava/lang/String;Z)J",
             native_open_local as *const () as *mut c_void,
         ),
         native_method(
             "openRemote",
-            "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)J",
+            "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)J",
             native_open_remote as *const () as *mut c_void,
         ),
         native_method(
             "openLocalFd",
-            "(IJLjava/lang/String;)J",
+            "(IJLjava/lang/String;Z)J",
             native_open_local_fd as *const () as *mut c_void,
         ),
         native_method(
@@ -233,8 +236,12 @@ extern "system" fn native_open_local(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     path: JString<'_>,
+    avif_enabled: jboolean,
 ) -> jlong {
-    match jstring_to_string(&mut env, &path).and_then(|path| open_local_path(Path::new(&path))) {
+    let options = image_format_options(avif_enabled);
+    match jstring_to_string(&mut env, &path)
+        .and_then(|path| open_local_path(Path::new(&path), options))
+    {
         Ok(handle) => handle as jlong,
         Err(error) => {
             set_last_error(error);
@@ -251,6 +258,7 @@ extern "system" fn native_open_remote(
     cache_dir: JString<'_>,
     comic_key: JString<'_>,
     validator: JString<'_>,
+    avif_enabled: jboolean,
 ) -> jlong {
     if file_id <= 0 || size <= 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -259,6 +267,7 @@ extern "system" fn native_open_remote(
         return 0;
     }
 
+    let options = image_format_options(avif_enabled);
     match jstring_to_string(&mut env, &cache_dir).and_then(|cache_dir| {
         let comic_key = jstring_to_string(&mut env, &comic_key)?;
         let validator = jstring_to_string(&mut env, &validator)?;
@@ -270,6 +279,7 @@ extern "system" fn native_open_remote(
             comic_key,
             size as u64,
             validator,
+            options,
         )
     }) {
         Ok(handle) => handle as jlong,
@@ -286,11 +296,13 @@ extern "system" fn native_open_local_fd(
     fd: jint,
     size: jlong,
     format: JString<'_>,
+    avif_enabled: jboolean,
 ) -> jlong {
     let size_hint = if size > 0 { Some(size as u64) } else { None };
+    let options = image_format_options(avif_enabled);
     match jstring_to_string(&mut env, &format).and_then(|format| {
         let format = archive_format_from_name(&format)?;
-        let archive = open_local_archive_fd(fd, size_hint, format)?;
+        let archive = open_local_archive_fd_with_options(fd, size_hint, format, options)?;
         insert_session(SessionKind::LocalArchive(archive))
     }) {
         Ok(handle) => handle as jlong,
@@ -418,9 +430,15 @@ extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>
         .unwrap_or(std::ptr::null_mut())
 }
 
-fn open_local_path(path: &Path) -> Result<ComicHandle> {
+fn image_format_options(avif_enabled: jboolean) -> ImageFormatOptions {
+    ImageFormatOptions {
+        avif: avif_enabled != 0,
+    }
+}
+
+fn open_local_path(path: &Path, options: ImageFormatOptions) -> Result<ComicHandle> {
     let reader = FileRangeReader::open(path)?;
-    let index = open_cbz(&reader)?;
+    let index = open_cbz_with_options(&reader, options)?;
     insert_session(SessionKind::Zip {
         reader: SessionReader::Local(reader),
         index,
@@ -433,13 +451,14 @@ fn open_remote_reader(
     comic_key: String,
     file_size: u64,
     validator: String,
+    options: ImageFormatOptions,
 ) -> Result<ComicHandle> {
     let key = IndexCacheKey {
         comic_key,
         file_size,
         validator,
     };
-    let index = open_cbz_with_index_cache(&reader, &cache_dir, &key)?;
+    let index = open_cbz_with_index_cache_options(&reader, &cache_dir, &key, options)?;
     insert_session(SessionKind::Zip {
         reader: SessionReader::Remote(reader),
         index,
