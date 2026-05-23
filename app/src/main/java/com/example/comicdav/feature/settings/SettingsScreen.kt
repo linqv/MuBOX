@@ -1,5 +1,6 @@
 package com.example.comicdav.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,19 +72,42 @@ private const val MaxAutoPageSpeedSeconds = 60
 private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
+private enum class SettingsPage {
+    ROOT,
+    COMIC,
+    VIDEO,
+    DOWNLOAD_RECORDS,
+}
+
 internal data class SettingsGroupLayout(
     val title: String,
     val rows: List<String>,
 )
 
-internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
+internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
     listOf(
         SettingsGroupLayout(
-            title = "显示",
+            title = "通用",
             rows = listOf("配色方案", "屏幕旋转锁定"),
         ),
         SettingsGroupLayout(
-            title = "漫画",
+            title = "内容设置",
+            rows = listOf("漫画设置", "视频设置"),
+        ),
+        SettingsGroupLayout(
+            title = "下载记录",
+            rows = listOf("下载记录"),
+        ),
+        SettingsGroupLayout(
+            title = "缓存",
+            rows = listOf("缓存占用", "远程整本缓存", "WebDAV 索引缓存", "页面图片缓存", "书架封面缓存", "磁盘缓存上限"),
+        ),
+    )
+
+internal fun comicSettingsGroupLayout(): List<SettingsGroupLayout> =
+    listOf(
+        SettingsGroupLayout(
+            title = "漫画设置",
             rows = listOf(
                 "阅读方向",
                 "音量键翻页",
@@ -94,8 +118,12 @@ internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
                 "翻页速度",
             ),
         ),
+    )
+
+internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
+    listOf(
         SettingsGroupLayout(
-            title = "视频",
+            title = "视频设置",
             rows = listOf(
                 "恢复播放位置",
                 "WebDAV 视频 seek 优化",
@@ -109,14 +137,6 @@ internal fun settingsGroupLayout(): List<SettingsGroupLayout> =
                 "播放器方向",
                 "提取加入影视库的视频缩略图作为封面",
             ),
-        ),
-        SettingsGroupLayout(
-            title = "下载记录",
-            rows = listOf("下载记录"),
-        ),
-        SettingsGroupLayout(
-            title = "缓存",
-            rows = listOf("缓存占用", "远程整本缓存", "WebDAV 索引缓存", "页面图片缓存", "书架封面缓存", "磁盘缓存上限"),
         ),
     )
 
@@ -153,44 +173,73 @@ fun SettingsScreen(
     onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var isDownloadRecordsOpen by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableStateOf(SettingsPage.ROOT) }
 
-    if (isDownloadRecordsOpen) {
-        DownloadRecordsScreen(
-            records = downloadRecords,
-            selectedRecord = selectedDownloadRecord,
-            onSelectRecord = onSelectDownloadRecord,
-            onBack = {
-                onClearSelectedDownloadRecord()
-                isDownloadRecordsOpen = false
-            },
-            modifier = modifier,
-        )
-        return
+    BackHandler(enabled = currentPage != SettingsPage.ROOT) {
+        if (currentPage == SettingsPage.DOWNLOAD_RECORDS) {
+            onClearSelectedDownloadRecord()
+        }
+        currentPage = SettingsPage.ROOT
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = "设置",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
+    when (currentPage) {
+        SettingsPage.DOWNLOAD_RECORDS -> {
+            DownloadRecordsScreen(
+                records = downloadRecords,
+                selectedRecord = selectedDownloadRecord,
+                onSelectRecord = onSelectDownloadRecord,
+                onBack = {
+                    onClearSelectedDownloadRecord()
+                    currentPage = SettingsPage.ROOT
+                },
+                modifier = modifier,
             )
-            Text(
-                text = "阅读体验和设备行为",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            return
         }
+        SettingsPage.COMIC -> {
+            ComicSettingsPage(
+                settings = settings,
+                onReadingDirectionChange = onReadingDirectionChange,
+                onReaderLoggingModeChange = onReaderLoggingModeChange,
+                onAutoPageEnabledChange = onAutoPageEnabledChange,
+                onAutoPageSpeedChange = onAutoPageSpeedChange,
+                onVolumeKeysTurnPagesChange = onVolumeKeysTurnPagesChange,
+                onWebDavPrefetchPageCountChange = onWebDavPrefetchPageCountChange,
+                onLibraryCoversEnabledChange = onLibraryCoversEnabledChange,
+                onBack = { currentPage = SettingsPage.ROOT },
+                modifier = modifier,
+            )
+            return
+        }
+        SettingsPage.VIDEO -> {
+            VideoSettingsPage(
+                settings = settings,
+                onVideoResumeEnabledChange = onVideoResumeEnabledChange,
+                onVideoSeekOptimizationEnabledChange = onVideoSeekOptimizationEnabledChange,
+                onVideoForwardPrefetchModeChange = onVideoForwardPrefetchModeChange,
+                onVideoProxyDiagnosticsModeChange = onVideoProxyDiagnosticsModeChange,
+                onVideoOutputModeChange = onVideoOutputModeChange,
+                onGpuApiModeChange = onGpuApiModeChange,
+                onVideoDecoderModeChange = onVideoDecoderModeChange,
+                onMpvProfileModeChange = onMpvProfileModeChange,
+                onVideoControlsAutoHideMillisChange = onVideoControlsAutoHideMillisChange,
+                onVideoPlayerOrientationModeChange = onVideoPlayerOrientationModeChange,
+                onVideoLibraryThumbnailsEnabledChange = onVideoLibraryThumbnailsEnabledChange,
+                onBack = { currentPage = SettingsPage.ROOT },
+                modifier = modifier,
+            )
+            return
+        }
+        SettingsPage.ROOT -> Unit
+    }
 
-        SettingsGroup(title = "显示") {
+    SettingsPageShell(modifier = modifier) {
+        SettingsPageHeader(
+            title = "设置",
+            subtitle = "通用设置、内容偏好、缓存和记录",
+        )
+
+        SettingsGroup(title = "通用") {
             DropdownRow(
                 title = "配色方案",
                 selected = settings.colorPalette,
@@ -206,7 +255,195 @@ fun SettingsScreen(
             )
         }
 
-        SettingsGroup(title = "漫画") {
+        SettingsGroup(title = "内容设置") {
+            NavigationRow(
+                title = "漫画设置",
+                subtitle = "阅读方向、翻页、预取、封面和诊断",
+                onClick = { currentPage = SettingsPage.COMIC },
+            )
+            NavigationRow(
+                title = "视频设置",
+                subtitle = "播放、WebDAV 流式读取、解码和封面",
+                onClick = { currentPage = SettingsPage.VIDEO },
+            )
+        }
+
+        SettingsGroup(title = "下载记录") {
+            if (downloadRecords.isEmpty()) {
+                StaticInfoRow(
+                    title = "暂无下载记录",
+                    subtitle = "从 WebDAV 下载到本地后会显示在这里",
+                )
+            } else {
+                ClickableInfoRow(
+                    title = "下载记录",
+                    subtitle = "${downloadRecords.size} 本漫画，点开查看完整记录",
+                    onClick = { currentPage = SettingsPage.DOWNLOAD_RECORDS },
+                )
+            }
+        }
+
+        SettingsGroup(title = "缓存") {
+            StaticInfoRow(
+                title = "缓存占用",
+                subtitle = formatCacheSize(cacheAnalysis.totalBytes),
+            )
+            CacheActionRow(
+                title = "远程整本缓存",
+                subtitle = formatCacheSize(cacheAnalysis.remoteDownloadsBytes),
+                enabled = cacheAnalysis.remoteDownloadsBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_DOWNLOADS) },
+            )
+            CacheActionRow(
+                title = "WebDAV 索引缓存",
+                subtitle = formatCacheSize(cacheAnalysis.remoteIndexBytes),
+                enabled = cacheAnalysis.remoteIndexBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_INDEX) },
+            )
+            CacheActionRow(
+                title = "页面图片缓存",
+                subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
+                enabled = cacheAnalysis.readerPagesBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
+            )
+            CacheActionRow(
+                title = "书架封面缓存",
+                subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
+                enabled = cacheAnalysis.libraryCoversBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
+            )
+            DiskCacheLimitRow(
+                limitMb = settings.diskCacheLimitMb,
+                onLimitChange = onDiskCacheLimitChange,
+            )
+            Text(
+                text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsPageShell(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun SettingsPageHeader(
+    title: String,
+    subtitle: String,
+    onBack: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (onBack != null) {
+            TextButton(onClick = onBack) {
+                Text("返回")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = "进入",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun ComicSettingsPage(
+    settings: AppSettings,
+    onReadingDirectionChange: (ReadingDirection) -> Unit,
+    onReaderLoggingModeChange: (ReaderLoggingMode) -> Unit,
+    onAutoPageEnabledChange: (Boolean) -> Unit,
+    onAutoPageSpeedChange: (Int) -> Unit,
+    onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
+    onWebDavPrefetchPageCountChange: (Int) -> Unit,
+    onLibraryCoversEnabledChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SettingsPageShell(modifier = modifier) {
+        SettingsPageHeader(
+            title = "漫画设置",
+            subtitle = "阅读方向、翻页、预取、封面和诊断",
+            onBack = onBack,
+        )
+        SettingsGroup(title = "漫画设置") {
             ChoiceRow(
                 title = "阅读方向",
                 options = ReadingDirection.entries,
@@ -251,8 +488,33 @@ fun SettingsScreen(
                 onSpeedChange = onAutoPageSpeedChange,
             )
         }
+    }
+}
 
-        SettingsGroup(title = "视频") {
+@Composable
+private fun VideoSettingsPage(
+    settings: AppSettings,
+    onVideoResumeEnabledChange: (Boolean) -> Unit,
+    onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit,
+    onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit,
+    onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit,
+    onVideoOutputModeChange: (VideoOutputMode) -> Unit,
+    onGpuApiModeChange: (GpuApiMode) -> Unit,
+    onVideoDecoderModeChange: (VideoDecoderMode) -> Unit,
+    onMpvProfileModeChange: (MpvProfileMode) -> Unit,
+    onVideoControlsAutoHideMillisChange: (Int) -> Unit,
+    onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit,
+    onVideoLibraryThumbnailsEnabledChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SettingsPageShell(modifier = modifier) {
+        SettingsPageHeader(
+            title = "视频设置",
+            subtitle = "播放、WebDAV 流式读取、解码和封面",
+            onBack = onBack,
+        )
+        SettingsGroup(title = "视频设置") {
             SwitchRow(
                 title = "恢复播放位置",
                 subtitle = "再次打开同一视频时从上次退出位置继续",
@@ -328,66 +590,6 @@ fun SettingsScreen(
                 onCheckedChange = onVideoLibraryThumbnailsEnabledChange,
             )
         }
-
-        SettingsGroup(title = "下载记录") {
-            if (downloadRecords.isEmpty()) {
-                StaticInfoRow(
-                    title = "暂无下载记录",
-                    subtitle = "从 WebDAV 下载到本地后会显示在这里",
-                )
-            } else {
-                ClickableInfoRow(
-                    title = "下载记录",
-                    subtitle = "${downloadRecords.size} 本漫画，点开查看完整记录",
-                    onClick = { isDownloadRecordsOpen = true },
-                )
-            }
-        }
-
-        SettingsGroup(title = "缓存") {
-            StaticInfoRow(
-                title = "缓存占用",
-                subtitle = formatCacheSize(cacheAnalysis.totalBytes),
-            )
-            CacheActionRow(
-                title = "远程整本缓存",
-                subtitle = formatCacheSize(cacheAnalysis.remoteDownloadsBytes),
-                enabled = cacheAnalysis.remoteDownloadsBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_DOWNLOADS) },
-            )
-            CacheActionRow(
-                title = "WebDAV 索引缓存",
-                subtitle = formatCacheSize(cacheAnalysis.remoteIndexBytes),
-                enabled = cacheAnalysis.remoteIndexBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_INDEX) },
-            )
-            CacheActionRow(
-                title = "页面图片缓存",
-                subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
-                enabled = cacheAnalysis.readerPagesBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
-            )
-            CacheActionRow(
-                title = "书架封面缓存",
-                subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
-                enabled = cacheAnalysis.libraryCoversBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
-            )
-            DiskCacheLimitRow(
-                limitMb = settings.diskCacheLimitMb,
-                onLimitChange = onDiskCacheLimitChange,
-            )
-            Text(
-                text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
@@ -404,29 +606,13 @@ private fun DownloadRecordsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "下载记录",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (records.isEmpty()) "暂无下载记录" else "${records.size} 本漫画",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            TextButton(onClick = onBack) {
-                Text("返回")
-            }
-        }
+        SettingsPageHeader(
+            title = "下载记录",
+            subtitle = if (records.isEmpty()) "暂无下载记录" else "${records.size} 本漫画",
+            onBack = onBack,
+        )
 
         if (records.isEmpty()) {
             Box(
