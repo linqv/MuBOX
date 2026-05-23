@@ -43,6 +43,54 @@ class MpvControllerGestureTest {
     }
 
     @Test
+    fun horizontalSwipeSeekUsesDurationFractionAndHud() {
+        val engine = GestureFakeMpvEngine()
+        val controller = MpvController(engine)
+        controller.onDurationChanged(120.0)
+        controller.onPositionChanged(30.0)
+
+        controller.beginHorizontalSwipeSeek()
+        controller.handleHorizontalSwipeSeek(0.1f)
+        controller.endHorizontalSwipeSeek()
+        controller.beginHorizontalSwipeSeek()
+        controller.handleHorizontalSwipeSeek(-0.2f)
+        controller.endHorizontalSwipeSeek()
+
+        assertEquals(18_000L, controller.state.value.positionMillis)
+        assertEquals("快退 24秒", controller.state.value.gestureState.hudMessage)
+        assertEquals(
+            listOf(
+                listOf("seek", "42.0", "absolute"),
+                listOf("seek", "18.0", "absolute"),
+            ),
+            engine.commands,
+        )
+    }
+
+    @Test
+    fun horizontalSwipeHudShowsCumulativeDeltaAcrossGestureUpdates() {
+        val engine = GestureFakeMpvEngine()
+        val controller = MpvController(engine)
+        controller.onDurationChanged(600.0)
+        controller.onPositionChanged(60.0)
+
+        controller.beginHorizontalSwipeSeek()
+        controller.handleHorizontalSwipeSeek(0.05f)
+        controller.handleHorizontalSwipeSeek(0.05f)
+        controller.endHorizontalSwipeSeek()
+
+        assertEquals(120_000L, controller.state.value.positionMillis)
+        assertEquals("快进 1分", controller.state.value.gestureState.hudMessage)
+        assertEquals(
+            listOf(
+                listOf("seek", "90.0", "absolute"),
+                listOf("seek", "120.0", "absolute"),
+            ),
+            engine.commands,
+        )
+    }
+
+    @Test
     fun pinchZoomMapsToVideoZoomPropertyAndHud() {
         val engine = GestureFakeMpvEngine()
         val controller = MpvController(engine)
@@ -64,6 +112,7 @@ class MpvControllerGestureTest {
         controller.adjustGestureVolume(20)
         controller.adjustGestureBrightness(20)
         controller.handleDoubleTapSeek(forward = false)
+        controller.handleHorizontalSwipeSeek(0.2f)
         controller.adjustGestureZoom(0.5f)
 
         assertNull(controller.state.value.gestureState.volumePercent)

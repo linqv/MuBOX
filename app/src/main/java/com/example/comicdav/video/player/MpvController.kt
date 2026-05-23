@@ -6,6 +6,7 @@ import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -243,6 +244,8 @@ class MpvController(
     private var isDestroyed = false
     private var pendingResumeSeekMillis: Long? = null
     private var speedBeforeTemporary: Double? = null
+    private var horizontalSwipeStartPositionMillis: Long? = null
+    private var horizontalSwipeAccumulatedFraction: Double = 0.0
 
     fun load(
         uri: String,
@@ -473,6 +476,47 @@ class MpvController(
         )
     }
 
+    fun beginHorizontalSwipeSeek() {
+        if (!canHandleGesture()) return
+        horizontalSwipeStartPositionMillis = _state.value.positionMillis
+        horizontalSwipeAccumulatedFraction = 0.0
+    }
+
+    fun handleHorizontalSwipeSeek(deltaFraction: Float) {
+        if (!canHandleGesture()) return
+        val durationMillis = _state.value.durationMillis
+        if (durationMillis <= 0L || deltaFraction == 0f) return
+
+        val startPosition = horizontalSwipeStartPositionMillis ?: _state.value.positionMillis.also {
+            horizontalSwipeStartPositionMillis = it
+            horizontalSwipeAccumulatedFraction = 0.0
+        }
+        horizontalSwipeAccumulatedFraction += deltaFraction.toDouble()
+        val requestedDelta = (durationMillis * horizontalSwipeAccumulatedFraction).roundToLong()
+
+        val targetPosition = (startPosition + requestedDelta).coerceIn(0L, durationMillis)
+        val currentPosition = _state.value.positionMillis
+        val actualDelta = targetPosition - startPosition
+        if (targetPosition == currentPosition && actualDelta == 0L) return
+
+        if (targetPosition != currentPosition) {
+            seekTo(targetPosition)
+        }
+        if (actualDelta == 0L) return
+
+        val directionText = if (actualDelta > 0L) "快进" else "快退"
+        _state.value = _state.value.copy(
+            gestureState = _state.value.gestureState.copy(
+                hudMessage = "$directionText ${formatGestureSeekDelta(abs(actualDelta))}",
+            ),
+        )
+    }
+
+    fun endHorizontalSwipeSeek() {
+        horizontalSwipeStartPositionMillis = null
+        horizontalSwipeAccumulatedFraction = 0.0
+    }
+
     fun adjustGestureZoom(delta: Float) {
         if (!canHandleGesture()) return
         val nextZoom = ((_state.value.gestureState.zoom + delta) * 100).roundToInt() / 100.0
@@ -650,6 +694,19 @@ class MpvController(
             roundedSpeed.toString().trimEnd('0').trimEnd('.')
         }
         return "${text}x"
+    }
+
+    private fun formatGestureSeekDelta(deltaMillis: Long): String {
+        val totalSeconds = (deltaMillis / 1000L).coerceAtLeast(1L)
+        if (totalSeconds < 60L) return "${totalSeconds}秒"
+
+        val minutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        return if (seconds == 0L) {
+            "${minutes}分"
+        } else {
+            "${minutes}分${seconds}秒"
+        }
     }
 
     private fun setAudioDelay(delayMillis: Long) {

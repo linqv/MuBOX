@@ -21,7 +21,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,6 +89,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -304,6 +304,9 @@ class VideoPlayerActivity : ComponentActivity() {
                     onVolumeDelta = controller::adjustGestureVolume,
                     onBrightnessDelta = ::handleBrightnessGesture,
                     onDoubleTapSeek = controller::handleDoubleTapSeek,
+                    onHorizontalSeekStarted = controller::beginHorizontalSwipeSeek,
+                    onHorizontalSeekFraction = controller::handleHorizontalSwipeSeek,
+                    onHorizontalSeekEnded = controller::endHorizontalSwipeSeek,
                     onZoomDelta = controller::adjustGestureZoom,
                     onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) },
                     onTemporarySpeedDelta = controller::adjustTemporarySpeed,
@@ -703,6 +706,9 @@ private fun VideoPlayerScreen(
     onVolumeDelta: (Int) -> Unit,
     onBrightnessDelta: (Int) -> Unit,
     onDoubleTapSeek: (Boolean) -> Unit,
+    onHorizontalSeekStarted: () -> Unit,
+    onHorizontalSeekFraction: (Float) -> Unit,
+    onHorizontalSeekEnded: () -> Unit,
     onZoomDelta: (Float) -> Unit,
     onTemporarySpeedStarted: () -> Unit,
     onTemporarySpeedDelta: (Double) -> Unit,
@@ -770,6 +776,9 @@ private fun VideoPlayerScreen(
                     onVolumeDelta = onVolumeDelta,
                     onBrightnessDelta = onBrightnessDelta,
                     onDoubleTapSeek = onDoubleTapSeek,
+                    onHorizontalSeekStarted = onHorizontalSeekStarted,
+                    onHorizontalSeekFraction = onHorizontalSeekFraction,
+                    onHorizontalSeekEnded = onHorizontalSeekEnded,
                     onZoomDelta = onZoomDelta,
                     onTemporarySpeedStarted = onTemporarySpeedStarted,
                     onTemporarySpeedDelta = onTemporarySpeedDelta,
@@ -873,6 +882,9 @@ private fun PlayerGestureOverlay(
     onVolumeDelta: (Int) -> Unit,
     onBrightnessDelta: (Int) -> Unit,
     onDoubleTapSeek: (Boolean) -> Unit,
+    onHorizontalSeekStarted: () -> Unit,
+    onHorizontalSeekFraction: (Float) -> Unit,
+    onHorizontalSeekEnded: () -> Unit,
     onZoomDelta: (Float) -> Unit,
     onTemporarySpeedStarted: () -> Unit,
     onTemporarySpeedDelta: (Double) -> Unit,
@@ -902,22 +914,89 @@ private fun PlayerGestureOverlay(
                 )
             }
             .pointerInput(temporarySpeedActive) {
-                detectTransformGestures(
-                    onGesture = { centroid, pan, zoom, _ ->
-                        if (temporarySpeedActive) return@detectTransformGestures
-                        if (zoom != 1f) {
-                            onZoomDelta((zoom - 1f) * PINCH_ZOOM_STEP_SCALE)
-                            return@detectTransformGestures
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startPosition = down.position
+                    var previousPosition = startPosition
+                    var dragMode: PlayerGestureDragMode? = null
+
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (temporarySpeedActive || pressed.size != 1) {
+                            if (dragMode == PlayerGestureDragMode.HORIZONTAL_SEEK) {
+                                onHorizontalSeekEnded()
+                            }
+                            break
                         }
-                        dispatchVerticalGesture(
-                            centroid = centroid,
-                            containerWidth = size.width.toFloat(),
-                            panY = pan.y,
-                            onBrightnessDelta = onBrightnessDelta,
-                            onVolumeDelta = onVolumeDelta,
-                        )
-                    },
-                )
+
+                        val change = pressed.first()
+                        val currentPosition = change.position
+                        val totalPan = currentPosition - startPosition
+
+                        if (dragMode == null) {
+                            dragMode = playerGestureDragModeForPan(totalPan.x, totalPan.y)
+                            if (dragMode == PlayerGestureDragMode.HORIZONTAL_SEEK) {
+                                onHorizontalSeekStarted()
+                            }
+                        }
+
+                        when (dragMode) {
+                            PlayerGestureDragMode.HORIZONTAL_SEEK -> {
+                                val framePanX = currentPosition.x - previousPosition.x
+                                val seekFraction = horizontalSeekFractionForPan(framePanX, size.width)
+                                if (seekFraction != 0f) {
+                                    change.consume()
+                                    onHorizontalSeekFraction(seekFraction)
+                                }
+                            }
+                            PlayerGestureDragMode.VERTICAL_ADJUST -> {
+                                val framePanY = currentPosition.y - previousPosition.y
+                                dispatchVerticalGesture(
+                                    centroid = currentPosition,
+                                    containerWidth = size.width.toFloat(),
+                                    panY = framePanY,
+                                    onBrightnessDelta = onBrightnessDelta,
+                                    onVolumeDelta = onVolumeDelta,
+                                )
+                                change.consume()
+                            }
+                            null -> Unit
+                        }
+
+                        previousPosition = currentPosition
+                    } while (event.changes.any { it.pressed })
+
+                    if (dragMode == PlayerGestureDragMode.HORIZONTAL_SEEK) {
+                        onHorizontalSeekEnded()
+                    }
+                }
+            }
+            .pointerInput(temporarySpeedActive) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var previousPinchDistance: Float? = null
+
+                    do {
+                        val event = awaitPointerEvent()
+                        if (temporarySpeedActive) break
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.size == 2) {
+                            val distance = (pressed[1].position - pressed[0].position).getDistance()
+                            val previousDistance = previousPinchDistance
+                            if (previousDistance != null && previousDistance > 0f && distance > 0f) {
+                                val zoom = distance / previousDistance
+                                if (zoom != 1f) {
+                                    onZoomDelta((zoom - 1f) * PINCH_ZOOM_STEP_SCALE)
+                                    pressed.forEach { it.consume() }
+                                }
+                            }
+                            previousPinchDistance = distance
+                        } else if (previousPinchDistance != null) {
+                            break
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
             }
             .pointerInput(Unit) {
                 var pendingVerticalDragPx = 0f
@@ -959,6 +1038,34 @@ private fun LockedPlayerGestureOverlay(
             detectTapGestures(onTap = { onTap() })
         },
     )
+}
+
+private fun horizontalSeekFractionForPan(panX: Float, widthPx: Int): Float {
+    if (widthPx <= 0 || abs(panX) < HORIZONTAL_GESTURE_MIN_PAN_PX) return 0f
+    return panX / widthPx
+}
+
+internal fun shouldDispatchVerticalPlayerPan(panX: Float, panY: Float): Boolean =
+    playerGestureDragModeForPan(panX, panY) == PlayerGestureDragMode.VERTICAL_ADJUST
+
+internal enum class PlayerGestureDragMode {
+    HORIZONTAL_SEEK,
+    VERTICAL_ADJUST,
+}
+
+internal fun playerGestureDragModeForPan(panX: Float, panY: Float): PlayerGestureDragMode? {
+    val absX = abs(panX)
+    val absY = abs(panY)
+    if (absX < PLAYER_GESTURE_DRAG_DIRECTION_THRESHOLD_PX &&
+        absY < PLAYER_GESTURE_DRAG_DIRECTION_THRESHOLD_PX
+    ) {
+        return null
+    }
+    return when {
+        absX > absY -> PlayerGestureDragMode.HORIZONTAL_SEEK
+        absY > absX -> PlayerGestureDragMode.VERTICAL_ADJUST
+        else -> null
+    }
 }
 
 private fun dispatchVerticalGesture(
@@ -1726,11 +1833,13 @@ private const val PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP = 38
 private const val PLAYER_PROGRESS_TOUCH_HEIGHT_DP = 18
 private const val PLAYER_PROGRESS_THUMB_RADIUS_DP = 4
 private const val MAX_VISIBLE_TRACK_BUTTONS = 4
-private const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 8
-private const val PLAYER_GESTURE_TOP_PADDING_DP = 72
-private const val PLAYER_GESTURE_END_PADDING_DP = 64
-private const val PLAYER_GESTURE_BOTTOM_PADDING_DP = 116
+internal const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 0
+internal const val PLAYER_GESTURE_TOP_PADDING_DP = 0
+internal const val PLAYER_GESTURE_END_PADDING_DP = 0
+internal const val PLAYER_GESTURE_BOTTOM_PADDING_DP = 0
 private const val VERTICAL_GESTURE_PIXELS_PER_PERCENT = 8f
+private const val HORIZONTAL_GESTURE_MIN_PAN_PX = 1f
+private const val PLAYER_GESTURE_DRAG_DIRECTION_THRESHOLD_PX = 12f
 private const val TEMPORARY_SPEED_PIXELS_PER_STEP = 48f
 private const val TEMPORARY_SPEED_STEP = 0.25
 private const val PINCH_ZOOM_STEP_SCALE = 1.2f

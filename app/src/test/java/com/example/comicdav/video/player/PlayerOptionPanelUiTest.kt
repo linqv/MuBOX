@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Subtitles
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerOptionPanelUiTest {
@@ -65,6 +66,28 @@ class PlayerOptionPanelUiTest {
         assertEquals(8, PLAYER_OPTION_SHEET_RAIL_GAP_DP)
         assertEquals(3, PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP)
         assertEquals(1, PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS)
+    }
+
+    @Test
+    fun playerGestureOverlayUsesFullScreenHitArea() {
+        assertEquals(0, PLAYER_GESTURE_HORIZONTAL_PADDING_DP)
+        assertEquals(0, PLAYER_GESTURE_TOP_PADDING_DP)
+        assertEquals(0, PLAYER_GESTURE_END_PADDING_DP)
+        assertEquals(0, PLAYER_GESTURE_BOTTOM_PADDING_DP)
+    }
+
+    @Test
+    fun playerGestureRoutingKeepsHorizontalPanOutOfVerticalControls() {
+        assertFalse(shouldDispatchVerticalPlayerPan(panX = 42f, panY = 6f))
+        assertFalse(shouldDispatchVerticalPlayerPan(panX = 12f, panY = 12f))
+        assertTrue(shouldDispatchVerticalPlayerPan(panX = 4f, panY = 28f))
+    }
+
+    @Test
+    fun playerGestureDragModeSeparatesHorizontalSeekFromVerticalControls() {
+        assertEquals(PlayerGestureDragMode.HORIZONTAL_SEEK, playerGestureDragModeForPan(panX = 42f, panY = 6f))
+        assertEquals(PlayerGestureDragMode.VERTICAL_ADJUST, playerGestureDragModeForPan(panX = 4f, panY = 28f))
+        assertEquals(null, playerGestureDragModeForPan(panX = 12f, panY = 12f))
     }
 
     @Test
