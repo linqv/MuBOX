@@ -1,7 +1,9 @@
 package com.example.comicdav.video.player
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
@@ -62,8 +66,8 @@ internal fun PlayerTopBar(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color.Black.copy(alpha = 0.78f),
-                        Color.Black.copy(alpha = 0.4f),
+                        Color(0xF2071222),
+                        Color(0xB70B182A),
                         Color.Transparent,
                     ),
                 ),
@@ -85,14 +89,14 @@ internal fun PlayerTopBar(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = Color(0xFFF3F8FF),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = source.videoSourceLabel(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.78f),
+                    color = Color(0xCC9FEAFD),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -130,14 +134,23 @@ internal fun PlayerCenterPlayPauseButton(
         Box(
             modifier = Modifier
                 .size(PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP.dp)
-                .background(PlayerCenterPlayButtonColor, androidx.compose.foundation.shape.CircleShape)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xD6193B5C),
+                            PlayerCenterPlayButtonColor,
+                        ),
+                    ),
+                    shape = CircleShape,
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape)
                 .clickable(role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                 contentDescription = if (isPaused) "播放" else "暂停",
-                tint = Color.White,
+                tint = Color(0xFFE6FBFF),
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -154,12 +167,19 @@ internal fun PlayerOverlayIconButton(
     sizeDp: Int = PLAYER_OVERLAY_BUTTON_SIZE_DP,
 ) {
     val backgroundColor = if (selected) PlayerAccentColor else PlayerOverlayColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color.White
+    val contentColor = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val buttonShape = CircleShape
+    val borderColor = if (selected) {
+        Color.White.copy(alpha = 0.46f)
+    } else {
+        PlayerAccentColor.copy(alpha = 0.18f)
+    }
     IconButton(
         onClick = onClick,
         modifier = modifier
             .size(sizeDp.dp)
-            .background(backgroundColor, androidx.compose.foundation.shape.CircleShape),
+            .background(backgroundColor, buttonShape)
+            .border(1.dp, borderColor, buttonShape),
     ) {
         Icon(
             imageVector = icon,
@@ -181,15 +201,15 @@ internal fun PlayerBottomControls(
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.7f),
-                        Color.Black.copy(alpha = 0.92f),
+                        Color(0xA6071222),
+                        Color(0xE6071222),
                     ),
                 ),
             )
@@ -199,41 +219,57 @@ internal fun PlayerBottomControls(
                 end = 18.dp,
                 bottom = (PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP + 6).dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentAlignment = Alignment.BottomCenter,
     ) {
-        activeControl?.let { control ->
-            PlayerBottomQuickSelectionPanel(
-                control = control,
-                state = state,
-                onSpeedSelected = onSpeedSelected,
-                onScaleModeSelected = onScaleModeSelected,
-                onDecoderModeSelected = onDecoderModeSelected,
-            )
-        }
-        if (state.errorMessage != null) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.5f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = PlayerSheetColor,
+            contentColor = Color.White,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.18f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = state.errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                activeControl?.let { control ->
+                    PlayerBottomQuickSelectionPanel(
+                        control = control,
+                        state = state,
+                        onSpeedSelected = onSpeedSelected,
+                        onScaleModeSelected = onScaleModeSelected,
+                        onDecoderModeSelected = onDecoderModeSelected,
+                    )
+                }
+                if (state.errorMessage != null) {
+                    Surface(
+                        color = Color(0xCC2A0D14),
+                        contentColor = MaterialTheme.colorScheme.error,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.28f)),
+                    ) {
+                        Text(
+                            text = state.errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+                PlayerProgressControls(
+                    state = state,
+                    onSeek = onSeek,
+                )
+                PlayerBottomQuickControls(
+                    state = state,
+                    activeControl = activeControl,
+                    onActiveControlChanged = onActiveControlChanged,
                 )
             }
         }
-        PlayerProgressControls(
-            state = state,
-            onSeek = onSeek,
-        )
-        PlayerBottomQuickControls(
-            state = state,
-            activeControl = activeControl,
-            onActiveControlChanged = onActiveControlChanged,
-        )
     }
 }
 
@@ -292,13 +328,13 @@ internal fun PlayerProgressControls(
             Text(
                 text = formatVideoTime(state.positionMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
+                color = Color(0xFFEAF7FF),
                 maxLines = 1,
             )
             Text(
                 text = formatVideoTime(state.durationMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.72f),
+                color = Color(0xB3C7E7F5),
                 maxLines = 1,
             )
         }
@@ -482,6 +518,7 @@ private fun FloatingPanelButton(
                 color = if (selected) PlayerOnAccentColor else PlayerAccentColor,
                 contentColor = if (selected) PlayerAccentColor else PlayerOnAccentColor,
                 shape = MaterialTheme.shapes.small,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
@@ -508,53 +545,59 @@ internal fun PlayerOptionSheet(
 ) {
     if (panel == null) return
 
-    Column(
-        modifier = modifier
-            .widthIn(min = 220.dp, max = 360.dp)
-            .background(PlayerSheetColor, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    Surface(
+        modifier = modifier.widthIn(min = 220.dp, max = 360.dp),
+        color = PlayerSheetColor,
+        contentColor = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.2f)),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = panel.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-            )
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color.White.copy(alpha = 0.12f), androidx.compose.foundation.shape.CircleShape),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "收起",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
+                Text(
+                    text = panel.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFFF3F8FF),
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(PlayerChipColor, CircleShape)
+                        .border(1.dp, PlayerAccentColor.copy(alpha = 0.18f), CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "收起",
+                        tint = Color(0xFFEAF7FF),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            when (panel) {
+                PlayerOptionPanel.TRACKS -> TrackSelectionControls(
+                    audioTracks = state.audioTracks,
+                    subtitleTracks = state.subtitleTracks,
+                    selectedAudioTrackId = state.selectedAudioTrackId,
+                    selectedSubtitleTrackId = state.selectedSubtitleTrackId,
+                    onAudioTrackSelected = onAudioTrackSelected,
+                    onSubtitleTrackSelected = onSubtitleTrackSelected,
+                    onSubtitlesDisabled = onSubtitlesDisabled,
+                )
+                PlayerOptionPanel.INFO -> StatisticsControls(
+                    snapshot = buildVideoPlayerStatisticsSnapshot(
+                        mediaContext = mediaContext,
+                        state = state,
+                    ),
                 )
             }
-        }
-        when (panel) {
-            PlayerOptionPanel.TRACKS -> TrackSelectionControls(
-                audioTracks = state.audioTracks,
-                subtitleTracks = state.subtitleTracks,
-                selectedAudioTrackId = state.selectedAudioTrackId,
-                selectedSubtitleTrackId = state.selectedSubtitleTrackId,
-                onAudioTrackSelected = onAudioTrackSelected,
-                onSubtitleTrackSelected = onSubtitleTrackSelected,
-                onSubtitlesDisabled = onSubtitlesDisabled,
-            )
-            PlayerOptionPanel.INFO -> StatisticsControls(
-                snapshot = buildVideoPlayerStatisticsSnapshot(
-                    mediaContext = mediaContext,
-                    state = state,
-                ),
-            )
         }
     }
 }
@@ -594,7 +637,7 @@ internal fun TrackSelectionControls(
             )
         }
         if (audioTracks.isEmpty()) {
-            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = Color.White)
+            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEAF7FF))
         }
     }
     ControlGroup(label = "字幕") {
@@ -622,7 +665,7 @@ internal fun StatisticsControls(
             Text(
                 text = line,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
+                color = Color(0xFFEAF7FF),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -643,13 +686,14 @@ internal fun GestureHud(
     }
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.78f),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = Color(0xE6071527),
+        contentColor = Color(0xFFEAF7FF),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.22f)),
     ) {
         Text(
             text = message,
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
             modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -704,12 +748,14 @@ private fun BottomQuickButton(
     onClick: () -> Unit,
 ) {
     val backgroundColor = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color.White
+    val contentColor = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val shape = RoundedCornerShape(18.dp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 64.dp, height = 36.dp)
-            .background(backgroundColor, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .background(backgroundColor, shape)
+            .border(1.dp, PlayerAccentColor.copy(alpha = if (selected) 0.42f else 0.16f), shape)
             .semantics { this.contentDescription = contentDescription },
     ) {
         Text(
@@ -762,7 +808,7 @@ private fun ControlGroup(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
+            color = Color(0xFFBAE6FD),
             modifier = Modifier.weight(0.24f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -783,12 +829,14 @@ private fun CompactTextButton(
     onClick: () -> Unit,
 ) {
     val bg = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val fg = if (selected) PlayerOnAccentColor else Color.White
+    val fg = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val shape = RoundedCornerShape(18.dp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 78.dp, height = 36.dp)
-            .background(bg, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)),
+            .background(bg, shape)
+            .border(1.dp, PlayerAccentColor.copy(alpha = if (selected) 0.42f else 0.16f), shape),
     ) {
         Text(
             text = text,
@@ -800,15 +848,15 @@ private fun CompactTextButton(
 }
 
 internal val playbackSpeedPresets = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
-internal val PlayerOverlayColor = Color(0x99000000) // 60% black, more readable
-internal val PlayerSheetColor = Color(0xEE0E1320) // deeper, slightly blue
-internal val PlayerAccentColor = Color(0xFF818CF8) // Indigo-400, matches theme
-internal val PlayerOnAccentColor = Color(0xFF1E1B4B)
-internal val PlayerCenterPlayButtonColor = Color(0x66000000)
-internal val PlayerProgressTrackColor = Color.White.copy(alpha = 0.22f)
-internal val PlayerProgressColor = Color(0xFFA5B4FC) // Indigo-300, accent
-internal val PlayerChipColor = Color.White.copy(alpha = 0.10f)
-internal val PlayerChipSelectedColor = Color(0xFF818CF8)
+internal val PlayerOverlayColor = Color(0xB30A1628)
+internal val PlayerSheetColor = Color(0xE60B1729)
+internal val PlayerAccentColor = Color(0xFF22D3EE)
+internal val PlayerOnAccentColor = Color(0xFF03131D)
+internal val PlayerCenterPlayButtonColor = Color(0xB30A1E32)
+internal val PlayerProgressTrackColor = Color(0x4DE0F7FF)
+internal val PlayerProgressColor = Color(0xFF38E8FF)
+internal val PlayerChipColor = Color(0x66142A46)
+internal val PlayerChipSelectedColor = Color(0xFF22D3EE)
 internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
 internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64
 internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 40
