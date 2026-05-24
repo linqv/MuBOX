@@ -756,8 +756,7 @@ private fun VideoPlayerScreen(
                     source = mediaContext.source,
                     onClose = onClose,
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .align(Alignment.TopCenter),
                 )
             }
 

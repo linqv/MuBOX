@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,9 +23,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -556,14 +562,16 @@ private fun ReaderChromeButton(
 ) {
     TextButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = 40.dp),
+        shape = MaterialTheme.shapes.small,
         colors = ButtonDefaults.textButtonColors(
             contentColor = ReaderOnDark,
-            containerColor = ReaderPanelOnDark,
+            containerColor = Color.White.copy(alpha = 0.14f),
         ),
     ) {
         Text(
             text = text,
+            style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -670,7 +678,16 @@ private fun ReaderEmptyOrLoadingState(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier.background(
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF0E0F18),
+                    Color(0xFF000000),
+                ),
+            ),
+        ),
+    ) {
         ReaderTopBar(
             title = if (isLoading) ComicDavCopy.readerLoading else "未打开漫画",
             subtitle = null,
@@ -686,10 +703,28 @@ private fun ReaderEmptyOrLoadingState(
                     .fillMaxWidth()
                     .padding(horizontal = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (loadingProgress == null) {
-                    CircularProgressIndicator(color = ReaderOnDark)
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.secondary,
+                                    ),
+                                ),
+                                shape = CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            color = ReaderOnDark,
+                            strokeWidth = 3.dp,
+                        )
+                    }
                     Text(
                         text = ComicDavCopy.readerLoading,
                         color = ReaderOnDark,
@@ -700,6 +735,13 @@ private fun ReaderEmptyOrLoadingState(
                 } else {
                     val percent = (loadingProgress.fraction * 100f).toInt()
                     Text(
+                        text = "$percent%",
+                        color = ReaderOnDark,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
                         text = ComicDavCopy.readerDownloading,
                         color = ReaderOnDark,
                         style = MaterialTheme.typography.titleMedium,
@@ -707,7 +749,7 @@ private fun ReaderEmptyOrLoadingState(
                         textAlign = TextAlign.Center,
                     )
                     Text(
-                        text = "${loadingProgress.label} ($percent%)",
+                        text = loadingProgress.label,
                         color = ReaderMutedOnDark,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
@@ -719,9 +761,10 @@ private fun ReaderEmptyOrLoadingState(
                         modifier = Modifier
                             .widthIn(max = 360.dp)
                             .fillMaxWidth()
-                            .height(6.dp),
-                        color = ReaderOnDark,
+                            .height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
                         trackColor = ReaderDividerOnDark,
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
                     )
                 }
 
@@ -729,6 +772,7 @@ private fun ReaderEmptyOrLoadingState(
                     Button(
                         onClick = onCancelLoading,
                         modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.large,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ReaderOnDark,
                             contentColor = Color.Black,
@@ -739,15 +783,42 @@ private fun ReaderEmptyOrLoadingState(
                 }
             }
         } else {
-            Text(
-                text = "从来源或书架打开漫画",
+            Column(
                 modifier = Modifier
                     .align(Alignment.Center)
+                    .fillMaxWidth()
                     .padding(horizontal = 32.dp),
-                color = ReaderMutedOnDark,
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+                                ),
+                            ),
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+                Text(
+                    text = "从来源或书架打开漫画",
+                    color = ReaderMutedOnDark,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -759,7 +830,16 @@ private fun ReaderErrorState(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier.background(
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF1A0E0E),
+                    Color(0xFF000000),
+                ),
+            ),
+        ),
+    ) {
         ReaderTopBar(
             title = ComicDavCopy.readerError,
             subtitle = null,
@@ -773,12 +853,28 @@ private fun ReaderErrorState(
                 .fillMaxWidth()
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.18f),
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
             Text(
                 text = ComicDavCopy.readerError,
                 color = ReaderOnDark,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )

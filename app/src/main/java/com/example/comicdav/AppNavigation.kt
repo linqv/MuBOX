@@ -5,9 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -99,13 +101,18 @@ internal fun ComicDavAppShell(
         if (bottomBar != null) {
             bottomBar()
         } else {
+            androidx.compose.material3.HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            )
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp,
+                tonalElevation = 0.dp,
             ) {
                 AppTab.values().forEach { tab ->
+                    val isSelected = selectedTab == tab
                     NavigationBarItem(
-                        selected = selectedTab == tab,
+                        selected = isSelected,
                         onClick = { onTabSelected(tab) },
                         icon = {
                             Icon(
@@ -117,8 +124,16 @@ internal fun ComicDavAppShell(
                             Text(
                                 text = tab.label,
                                 maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium,
                             )
                         },
+                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }
@@ -212,9 +227,13 @@ internal fun selectionBottomBar(
 
 @Composable
 internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
+    androidx.compose.material3.HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+    )
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
     ) {
         actions.forEach { action ->
             NavigationBarItem(
@@ -231,8 +250,16 @@ internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
                     Text(
                         text = action.label,
                         maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 },
+                colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurface,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
             )
         }
     }
@@ -244,24 +271,58 @@ internal fun DataFolderGateScreen(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.padding(28.dp),
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.background)
+            .padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .padding(bottom = 24.dp)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.secondary,
+                        ),
+                    ),
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                )
+                .padding(20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
         Text(
             text = ComicDavCopy.chooseDataFolderTitle,
             style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
         Text(
             text = ComicDavCopy.chooseDataFolderBody,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 20.dp),
+                .padding(top = 12.dp, bottom = 28.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        Button(onClick = onChooseFolder) {
-            Text(ComicDavCopy.chooseFolder)
+        Button(
+            onClick = onChooseFolder,
+            modifier = Modifier.defaultMinSize(minWidth = 160.dp, minHeight = 52.dp),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Text(
+                text = ComicDavCopy.chooseFolder,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }

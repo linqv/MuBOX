@@ -150,6 +150,7 @@ fun FileDirectoryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -252,10 +253,10 @@ private fun FileDirectoryHomeHeader(
                 Text(
                     text = ComicDavCopy.sourcesTitle,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "管理本地文件夹和 WebDAV 目录，浏览后可把漫画加入书架。",
+                    text = "管理本地文件夹和 WebDAV 目录,浏览后可把漫画加入书架。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -268,19 +269,37 @@ private fun FileDirectoryHomeHeader(
             ) {
                 TextButton(
                     onClick = onOpenLibrary,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 44.dp),
                 ) {
                     Text(ComicDavCopy.libraryTitle)
                 }
                 Box {
-                    IconButton(
-                        onClick = { isAddMenuOpen = true },
-                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    Surface(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.secondary,
+                                    ),
+                                ),
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                            ),
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = androidx.compose.ui.graphics.Color.Transparent,
+                        shadowElevation = 4.dp,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = "添加",
-                        )
+                        IconButton(
+                            onClick = { isAddMenuOpen = true },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = "添加",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
                     }
                     DropdownMenu(
                         expanded = isAddMenuOpen,
@@ -325,10 +344,10 @@ private fun FileDirectoryBrowseHeader(
                 Text(
                     text = ComicDavCopy.sourcesTitle,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "浏览文件夹，选择漫画阅读或加入书架。",
+                    text = "浏览文件夹,选择漫画阅读或加入书架。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -336,20 +355,32 @@ private fun FileDirectoryBrowseHeader(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(
                     onClick = onGoUp,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                        ),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.ArrowUpward,
                         contentDescription = "上一级",
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 IconButton(
                     onClick = onCloseBrowser,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                        ),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "关闭",
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -357,22 +388,45 @@ private fun FileDirectoryBrowseHeader(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
         ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                Text(
-                    text = "当前位置",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "当前位置",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -460,27 +514,57 @@ private fun DirectorySourceRow(
                 onLongClickLabel = "管理来源",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SourceBadge(
-                text = when (source.sourceType) {
-                    FileDirectorySourceType.LOCAL -> "本地"
-                    FileDirectorySourceType.WEBDAV -> "WebDAV"
-                },
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = fileDirectorySourceTitle(source),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            val isLocal = source.sourceType == FileDirectorySourceType.LOCAL
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        color = if (isLocal) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    tint = if (isLocal) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    },
+                    modifier = Modifier.size(22.dp),
                 )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = fileDirectorySourceTitle(source),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    SourceBadge(
+                        text = if (isLocal) "本地" else "WebDAV",
+                    )
+                }
                 Text(
                     text = fileDirectorySourceSubtitle(source),
                     style = MaterialTheme.typography.bodySmall,
@@ -491,7 +575,7 @@ private fun DirectorySourceRow(
             }
             TextButton(
                 onClick = onClick,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                modifier = Modifier.defaultMinSize(minHeight = 40.dp),
             ) {
                 Text(ComicDavCopy.open)
             }
@@ -646,7 +730,12 @@ private fun FileDirectoryEntryRow(
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -729,18 +818,16 @@ private fun SectionTitle(text: String) {
 private fun SourceBadge(text: String) {
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
         Box(
-            modifier = Modifier
-                .defaultMinSize(minWidth = 56.dp, minHeight = 28.dp)
-                .padding(horizontal = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

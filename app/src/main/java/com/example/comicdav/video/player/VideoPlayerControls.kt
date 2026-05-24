@@ -56,31 +56,47 @@ internal fun PlayerTopBar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = 0.78f),
+                        Color.Black.copy(alpha = 0.4f),
+                        Color.Transparent,
+                    ),
+                ),
+            ),
     ) {
-        PlayerOverlayIconButton(
-            icon = Icons.Filled.Close,
-            contentDescription = "关闭",
-            onClick = onClose,
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 22.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayerOverlayIconButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "关闭",
+                onClick = onClose,
             )
-            Text(
-                text = source.videoSourceLabel(),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = source.videoSourceLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -114,7 +130,7 @@ internal fun PlayerCenterPlayPauseButton(
         Box(
             modifier = Modifier
                 .size(PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP.dp)
-                .background(PlayerCenterPlayButtonColor, MaterialTheme.shapes.small)
+                .background(PlayerCenterPlayButtonColor, androidx.compose.foundation.shape.CircleShape)
                 .clickable(role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -122,6 +138,7 @@ internal fun PlayerCenterPlayPauseButton(
                 imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                 contentDescription = if (isPaused) "播放" else "暂停",
                 tint = Color.White,
+                modifier = Modifier.size(36.dp),
             )
         }
     }
@@ -142,12 +159,13 @@ internal fun PlayerOverlayIconButton(
         onClick = onClick,
         modifier = modifier
             .size(sizeDp.dp)
-            .background(backgroundColor, MaterialTheme.shapes.small),
+            .background(backgroundColor, androidx.compose.foundation.shape.CircleShape),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = contentColor,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -170,18 +188,18 @@ internal fun PlayerBottomControls(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.84f),
-                        Color.Black.copy(alpha = 0.94f),
+                        Color.Black.copy(alpha = 0.7f),
+                        Color.Black.copy(alpha = 0.92f),
                     ),
                 ),
             )
             .padding(
-                start = 16.dp,
-                top = 46.dp,
-                end = 16.dp,
-                bottom = PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP.dp,
+                start = 18.dp,
+                top = 56.dp,
+                end = 18.dp,
+                bottom = (PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP + 6).dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         activeControl?.let { control ->
             PlayerBottomQuickSelectionPanel(
@@ -193,22 +211,28 @@ internal fun PlayerBottomControls(
             )
         }
         if (state.errorMessage != null) {
-            Text(
-                text = state.errorMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Surface(
+                color = Color.Black.copy(alpha = 0.5f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            ) {
+                Text(
+                    text = state.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
         }
+        PlayerProgressControls(
+            state = state,
+            onSeek = onSeek,
+        )
         PlayerBottomQuickControls(
             state = state,
             activeControl = activeControl,
             onActiveControlChanged = onActiveControlChanged,
-        )
-        PlayerProgressControls(
-            state = state,
-            onSeek = onSeek,
         )
     }
 }
@@ -253,7 +277,13 @@ internal fun PlayerProgressControls(
     state: MpvPlayerState,
     onSeek: (Long) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        ThinSeekBar(
+            positionMillis = state.positionMillis,
+            durationMillis = state.durationMillis,
+            onSeek = onSeek,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -261,23 +291,17 @@ internal fun PlayerProgressControls(
         ) {
             Text(
                 text = formatVideoTime(state.positionMillis),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
                 maxLines = 1,
             )
             Text(
                 text = formatVideoTime(state.durationMillis),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.72f),
                 maxLines = 1,
             )
         }
-        ThinSeekBar(
-            positionMillis = state.positionMillis,
-            durationMillis = state.durationMillis,
-            onSeek = onSeek,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
@@ -487,9 +511,9 @@ internal fun PlayerOptionSheet(
     Column(
         modifier = modifier
             .widthIn(min = 220.dp, max = 360.dp)
-            .background(PlayerSheetColor, MaterialTheme.shapes.medium)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .background(PlayerSheetColor, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -498,19 +522,20 @@ internal fun PlayerOptionSheet(
         ) {
             Text(
                 text = panel.title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 color = Color.White,
             )
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
                     .size(36.dp)
-                    .background(Color.White.copy(alpha = 0.08f), MaterialTheme.shapes.small),
+                    .background(Color.White.copy(alpha = 0.12f), androidx.compose.foundation.shape.CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
                     contentDescription = "收起",
                     tint = Color.White,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -618,14 +643,14 @@ internal fun GestureHud(
     }
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.72f),
-        shape = MaterialTheme.shapes.small,
+        color = Color.Black.copy(alpha = 0.78f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
     ) {
         Text(
             text = message,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleMedium,
             color = Color.White,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -678,18 +703,18 @@ private fun BottomQuickButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val backgroundColor = if (selected) PlayerAccentColor else Color.White.copy(alpha = 0.08f)
+    val backgroundColor = if (selected) PlayerChipSelectedColor else PlayerChipColor
     val contentColor = if (selected) PlayerOnAccentColor else Color.White
     TextButton(
         onClick = onClick,
         modifier = Modifier
-            .size(width = 58.dp, height = 36.dp)
-            .background(backgroundColor, MaterialTheme.shapes.small)
+            .size(width = 64.dp, height = 36.dp)
+            .background(backgroundColor, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .semantics { this.contentDescription = contentDescription },
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -757,50 +782,50 @@ private fun CompactTextButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    if (selected) {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = Modifier.size(width = 78.dp, height = 38.dp),
-        ) {
-            Text(text = text, maxLines = 1, style = MaterialTheme.typography.labelSmall)
-        }
-    } else {
-        TextButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(width = 78.dp, height = 38.dp)
-                .background(Color.White.copy(alpha = 0.06f), MaterialTheme.shapes.small),
-        ) {
-            Text(text = text, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = Color.White)
-        }
+    val bg = if (selected) PlayerChipSelectedColor else PlayerChipColor
+    val fg = if (selected) PlayerOnAccentColor else Color.White
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(width = 78.dp, height = 36.dp)
+            .background(bg, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)),
+    ) {
+        Text(
+            text = text,
+            maxLines = 1,
+            style = MaterialTheme.typography.labelMedium,
+            color = fg,
+        )
     }
 }
 
 internal val playbackSpeedPresets = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
-internal val PlayerOverlayColor = Color.Black.copy(alpha = 0.58f)
-internal val PlayerSheetColor = Color(0xE60C0F14)
-internal val PlayerAccentColor = Color(0xFFE9F7EF)
-internal val PlayerOnAccentColor = Color(0xFF0B2418)
-internal val PlayerCenterPlayButtonColor = Color.Black.copy(alpha = 0.46f)
-internal val PlayerProgressTrackColor = Color.White.copy(alpha = 0.26f)
-internal val PlayerProgressColor = Color.White.copy(alpha = 0.92f)
-internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 72
-internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 56
-internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 36
+internal val PlayerOverlayColor = Color(0x99000000) // 60% black, more readable
+internal val PlayerSheetColor = Color(0xEE0E1320) // deeper, slightly blue
+internal val PlayerAccentColor = Color(0xFF818CF8) // Indigo-400, matches theme
+internal val PlayerOnAccentColor = Color(0xFF1E1B4B)
+internal val PlayerCenterPlayButtonColor = Color(0x66000000)
+internal val PlayerProgressTrackColor = Color.White.copy(alpha = 0.22f)
+internal val PlayerProgressColor = Color(0xFFA5B4FC) // Indigo-300, accent
+internal val PlayerChipColor = Color.White.copy(alpha = 0.10f)
+internal val PlayerChipSelectedColor = Color(0xFF818CF8)
+internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
+internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64
+internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 40
 internal const val PLAYER_LOCK_BUTTON_START_PADDING_DP = 18
 internal const val PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS = 3_000L
 internal const val PLAYER_OVERLAY_BUTTON_SIZE_DP = 44
-internal const val PLAYER_PROGRESS_TRACK_HEIGHT_DP = 2
+internal const val PLAYER_PROGRESS_TRACK_HEIGHT_DP = 3
 internal const val PLAYER_OPTION_SHEET_RAIL_GAP_DP = 8
-internal const val PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP = 3
+internal const val PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP = 6
 internal const val PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS = 1
 internal const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 0
 internal const val PLAYER_GESTURE_TOP_PADDING_DP = 0
 internal const val PLAYER_GESTURE_END_PADDING_DP = 0
 internal const val PLAYER_GESTURE_BOTTOM_PADDING_DP = 0
 private const val PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP = 38
-private const val PLAYER_PROGRESS_TOUCH_HEIGHT_DP = 18
-private const val PLAYER_PROGRESS_THUMB_RADIUS_DP = 4
+private const val PLAYER_PROGRESS_TOUCH_HEIGHT_DP = 22
+private const val PLAYER_PROGRESS_THUMB_RADIUS_DP = 6
 private const val MAX_VISIBLE_TRACK_BUTTONS = 4
 private const val GESTURE_HUD_TIMEOUT_MILLIS = 900L
 
