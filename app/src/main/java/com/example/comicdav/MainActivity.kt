@@ -1390,6 +1390,110 @@ fun ComicDavApp() {
         }
     }
 
+    fun startAddingWebDavSource() {
+        localOpenError = null
+        webDavActionMessage = null
+        editingWebDavSourceId = null
+        webDavViewModel.startNewConnection()
+        isWebDavOpen = true
+        isAddingWebDavPath = true
+    }
+
+    fun openLibraryTabFromSources() {
+        localOpenError = null
+        webDavActionMessage = null
+        selectedTabName = AppTab.LIBRARY.name
+    }
+
+    fun openFileDirectorySource(source: FileDirectorySourceEntity) {
+        when (source.sourceType) {
+            FileDirectorySourceType.LOCAL -> {
+                webDavActionMessage = null
+                fileDirectoryViewModel.openLocalSource(source)
+            }
+            FileDirectorySourceType.WEBDAV -> {
+                val expectedAccountId = source.webDavAccountId
+                val path = source.webDavPath ?: "/"
+                webDavActionMessage = null
+                isWebDavOpen = true
+                isAddingWebDavPath = false
+                editingWebDavSourceId = null
+                scope.launch {
+                    if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
+                        localOpenError = null
+                        webDavActionMessage = null
+                        webDavViewModel.openPath(path)
+                        return@launch
+                    }
+                    val savedAccount = expectedAccountId?.let { accountId ->
+                        webDavAccountStore.loadAccount(accountId)
+                    }
+                    val baseUrl = source.webDavBaseUrl
+                        ?.takeIf { it.isNotBlank() }
+                        ?: savedAccount?.baseUrl
+                    if (baseUrl.isNullOrBlank()) {
+                        localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
+                        webDavActionMessage = null
+                        return@launch
+                    }
+                    localOpenError = null
+                    webDavActionMessage = null
+                    webDavViewModel.connectToSavedSource(
+                        baseUrl = baseUrl,
+                        username = source.webDavUsername
+                            ?.takeIf { it.isNotBlank() }
+                            ?: savedAccount?.username,
+                        password = source.webDavPassword
+                            ?.takeIf { it.isNotBlank() }
+                            ?: savedAccount?.password,
+                        path = path,
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectDirectoryComicItem(item: FileDirectoryBrowserItem) {
+        selectedDirectoryComic = item
+        selectedWebDavFile = null
+        selectedDirectoryVideo = null
+        selectedLibraryItem = null
+        selectedVideoLibraryItem = null
+        selectedDownloadRecord = null
+    }
+
+    fun selectDirectoryVideoItem(item: FileDirectoryBrowserItem) {
+        selectedDirectoryVideo = item
+        selectedWebDavFile = null
+        selectedDirectoryComic = null
+        selectedLibraryItem = null
+        selectedVideoLibraryItem = null
+        selectedDownloadRecord = null
+    }
+
+    fun dismissFileDirectoryMessage() {
+        localOpenError = null
+        fileDirectoryViewModel.clearMessage()
+    }
+
+    fun editWebDavSource(source: FileDirectorySourceEntity) {
+        val baseUrl = source.webDavBaseUrl
+            ?.takeIf { it.isNotBlank() }
+            ?: source.webDavAccountId?.substringBefore("|").orEmpty()
+        webDavViewModel.editSavedConnection(
+            displayName = source.displayName,
+            baseUrl = baseUrl,
+            username = source.webDavUsername,
+            password = source.webDavPassword,
+            path = source.webDavPath ?: "/",
+        )
+        editingWebDavSourceId = source.id
+        isAddingWebDavPath = false
+        isWebDavOpen = true
+        localOpenError = null
+        webDavActionMessage = null
+    }
+
     BackHandler(
         enabled = selectedWebDavFile != null ||
             selectedDirectoryComic != null ||
@@ -1453,8 +1557,11 @@ fun ComicDavApp() {
                 }
 
                 isReaderOpen -> {
-                    ReaderScreen(
-                        uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
+                    ReaderRoute(
+                        readerUiState = readerUiState,
+                        localOpenError = localOpenError,
+                        downloadProgress = downloadProgress,
+                        appSettings = appSettings,
                         onPageChanged = readerViewModel::selectPage,
                         onPageDemanded = readerViewModel::reportPageDemand,
                         onImageLoadStarted = readerViewModel::reportImageLoadStarted,
@@ -1465,7 +1572,6 @@ fun ComicDavApp() {
                                 logFolderPicker.launch(null)
                             }
                         },
-                        loadingProgress = downloadProgress?.toReaderLoadingProgress(),
                         onCancelLoading = {
                             ReaderDiagnosticLog.event("reader_open_cancel")
                             readerViewModel.closeReader()
@@ -1478,13 +1584,9 @@ fun ComicDavApp() {
                             downloadProgress = null
                             isReaderOpen = false
                         },
-                        readingDirection = appSettings.readingDirection,
-                        autoPageEnabled = appSettings.autoPageEnabled,
                         onAutoPageEnabledChange = { value ->
                             scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
                         },
-                        autoPageIntervalMillis = appSettings.autoPageSpeedMillis.toLong(),
-                        volumeKeysTurnPages = appSettings.volumeKeysTurnPagesEnabled,
                     )
                 }
 
@@ -1670,243 +1772,60 @@ fun ComicDavApp() {
                                             modifier = contentModifier,
                                         )
                                     } else {
-                                        FileDirectoryScreen(
-                                            uiState = fileDirectoryUiState.copy(error = fileDirectoryUiState.error ?: localOpenError ?: uiState.message.takeIf { it.isNotBlank() }),
-                                            onAddLocalDirectory = {
-                                                localDirectoryPicker.launch(null)
-                                            },
-                                            onOpenWebDav = {
-                                                localOpenError = null
-                                                webDavActionMessage = null
-                                                editingWebDavSourceId = null
-                                                webDavViewModel.startNewConnection()
-                                                isWebDavOpen = true
-                                                isAddingWebDavPath = true
-                                            },
-                                            onOpenLibrary = {
-                                                localOpenError = null
-                                                webDavActionMessage = null
-                                                selectedTabName = AppTab.LIBRARY.name
-                                            },
-                                            onOpenSource = { source ->
-                                                when (source.sourceType) {
-                                                    FileDirectorySourceType.LOCAL -> {
-                                                        webDavActionMessage = null
-                                                        fileDirectoryViewModel.openLocalSource(source)
-                                                    }
-                                                    FileDirectorySourceType.WEBDAV -> {
-                                                        val expectedAccountId = source.webDavAccountId
-                                                        val path = source.webDavPath ?: "/"
-                                                        webDavActionMessage = null
-                                                        isWebDavOpen = true
-                                                        isAddingWebDavPath = false
-                                                        editingWebDavSourceId = null
-                                                        scope.launch {
-                                                            if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
-                                                                localOpenError = null
-                                                                webDavActionMessage = null
-                                                                webDavViewModel.openPath(path)
-                                                                return@launch
-                                                            }
-                                                            val savedAccount = expectedAccountId?.let { accountId ->
-                                                                webDavAccountStore.loadAccount(accountId)
-                                                            }
-                                                            val baseUrl = source.webDavBaseUrl
-                                                                ?.takeIf { it.isNotBlank() }
-                                                                ?: savedAccount?.baseUrl
-                                                            if (baseUrl.isNullOrBlank()) {
-                                                                localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
-                                                                webDavActionMessage = null
-                                                                return@launch
-                                                            }
-                                                            localOpenError = null
-                                                            webDavActionMessage = null
-                                                            webDavViewModel.connectToSavedSource(
-                                                                baseUrl = baseUrl,
-                                                                username = source.webDavUsername
-                                                                    ?.takeIf { it.isNotBlank() }
-                                                                    ?: savedAccount?.username,
-                                                                password = source.webDavPassword
-                                                                    ?.takeIf { it.isNotBlank() }
-                                                                    ?: savedAccount?.password,
-                                                                path = path,
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            },
+                                        FileDirectoryTabContent(
+                                            fileDirectoryUiState = fileDirectoryUiState,
+                                            localOpenError = localOpenError,
+                                            webDavMessage = uiState.message.takeIf { it.isNotBlank() },
+                                            selectedDirectoryComic = selectedDirectoryComic,
+                                            selectedDirectoryVideo = selectedDirectoryVideo,
+                                            onAddLocalDirectory = { localDirectoryPicker.launch(null) },
+                                            onOpenWebDav = ::startAddingWebDavSource,
+                                            onOpenLibrary = ::openLibraryTabFromSources,
+                                            onOpenSource = ::openFileDirectorySource,
                                             onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
                                             onOpenComic = ::openLocalDirectoryComic,
                                             onOpenVideo = ::openLocalDirectoryVideo,
-                                            onSelectComic = { item ->
-                                                selectedDirectoryComic = item
-                                                selectedWebDavFile = null
-                                                selectedDirectoryVideo = null
-                                                selectedLibraryItem = null
-                                                selectedVideoLibraryItem = null
-                                                selectedDownloadRecord = null
-                                            },
-                                            onSelectVideo = { item ->
-                                                selectedDirectoryVideo = item
-                                                selectedWebDavFile = null
-                                                selectedDirectoryComic = null
-                                                selectedLibraryItem = null
-                                                selectedVideoLibraryItem = null
-                                                selectedDownloadRecord = null
-                                            },
+                                            onSelectComic = ::selectDirectoryComicItem,
+                                            onSelectVideo = ::selectDirectoryVideoItem,
                                             onGoUp = fileDirectoryViewModel::goUp,
                                             onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
-                                            onDismissMessage = {
-                                                localOpenError = null
-                                                fileDirectoryViewModel.clearMessage()
-                                            },
-                                            onDeleteSource = { source ->
-                                                fileDirectoryViewModel.deleteSource(source.id)
-                                            },
+                                            onDismissMessage = ::dismissFileDirectoryMessage,
+                                            onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                             onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
-                                            onEditWebDavSource = { source ->
-                                                val baseUrl = source.webDavBaseUrl
-                                                    ?.takeIf { it.isNotBlank() }
-                                                    ?: source.webDavAccountId?.substringBefore("|").orEmpty()
-                                                webDavViewModel.editSavedConnection(
-                                                    displayName = source.displayName,
-                                                    baseUrl = baseUrl,
-                                                    username = source.webDavUsername,
-                                                    password = source.webDavPassword,
-                                                    path = source.webDavPath ?: "/",
-                                                )
-                                                editingWebDavSourceId = source.id
-                                                isAddingWebDavPath = false
-                                                isWebDavOpen = true
-                                                localOpenError = null
-                                                webDavActionMessage = null
-                                            },
-                                            selectedComic = selectedDirectoryComic,
-                                            selectedVideo = selectedDirectoryVideo,
+                                            onEditWebDavSource = ::editWebDavSource,
                                             modifier = contentModifier,
                                         )
                                     }
                                 } else {
-                                    FileDirectoryScreen(
-                                        uiState = fileDirectoryUiState.copy(error = fileDirectoryUiState.error ?: localOpenError),
-                                        onAddLocalDirectory = {
-                                            localDirectoryPicker.launch(null)
-                                        },
-                                        onOpenWebDav = {
-                                            localOpenError = null
-                                            webDavActionMessage = null
-                                            editingWebDavSourceId = null
-                                            webDavViewModel.startNewConnection()
-                                            isWebDavOpen = true
-                                            isAddingWebDavPath = true
-                                        },
-                                        onOpenLibrary = {
-                                            localOpenError = null
-                                            webDavActionMessage = null
-                                            selectedTabName = AppTab.LIBRARY.name
-                                        },
-                                        onOpenSource = { source ->
-                                            when (source.sourceType) {
-                                                FileDirectorySourceType.LOCAL -> {
-                                                    webDavActionMessage = null
-                                                    fileDirectoryViewModel.openLocalSource(source)
-                                                }
-                                                FileDirectorySourceType.WEBDAV -> {
-                                                    val expectedAccountId = source.webDavAccountId
-                                                    val path = source.webDavPath ?: "/"
-                                                    webDavActionMessage = null
-                                                    isWebDavOpen = true
-                                                    isAddingWebDavPath = false
-                                                    editingWebDavSourceId = null
-                                                    scope.launch {
-                                                        if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
-                                                            localOpenError = null
-                                                            webDavActionMessage = null
-                                                            webDavViewModel.openPath(path)
-                                                            return@launch
-                                                        }
-                                                        val savedAccount = expectedAccountId?.let { accountId ->
-                                                            webDavAccountStore.loadAccount(accountId)
-                                                        }
-                                                        val baseUrl = source.webDavBaseUrl
-                                                            ?.takeIf { it.isNotBlank() }
-                                                            ?: savedAccount?.baseUrl
-                                                        if (baseUrl.isNullOrBlank()) {
-                                                            localOpenError = "请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录"
-                                                            webDavActionMessage = null
-                                                            return@launch
-                                                        }
-                                                        localOpenError = null
-                                                        webDavActionMessage = null
-                                                        webDavViewModel.connectToSavedSource(
-                                                            baseUrl = baseUrl,
-                                                            username = source.webDavUsername
-                                                                ?.takeIf { it.isNotBlank() }
-                                                                ?: savedAccount?.username,
-                                                            password = source.webDavPassword
-                                                                ?.takeIf { it.isNotBlank() }
-                                                                ?: savedAccount?.password,
-                                                            path = path,
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        },
+                                    FileDirectoryTabContent(
+                                        fileDirectoryUiState = fileDirectoryUiState,
+                                        localOpenError = localOpenError,
+                                        webDavMessage = null,
+                                        selectedDirectoryComic = selectedDirectoryComic,
+                                        selectedDirectoryVideo = selectedDirectoryVideo,
+                                        onAddLocalDirectory = { localDirectoryPicker.launch(null) },
+                                        onOpenWebDav = ::startAddingWebDavSource,
+                                        onOpenLibrary = ::openLibraryTabFromSources,
+                                        onOpenSource = ::openFileDirectorySource,
                                         onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
                                         onOpenComic = ::openLocalDirectoryComic,
                                         onOpenVideo = ::openLocalDirectoryVideo,
-                                        onSelectComic = { item ->
-                                            selectedDirectoryComic = item
-                                            selectedWebDavFile = null
-                                            selectedDirectoryVideo = null
-                                            selectedLibraryItem = null
-                                            selectedVideoLibraryItem = null
-                                            selectedDownloadRecord = null
-                                        },
-                                        onSelectVideo = { item ->
-                                            selectedDirectoryVideo = item
-                                            selectedWebDavFile = null
-                                            selectedDirectoryComic = null
-                                            selectedLibraryItem = null
-                                            selectedVideoLibraryItem = null
-                                            selectedDownloadRecord = null
-                                        },
+                                        onSelectComic = ::selectDirectoryComicItem,
+                                        onSelectVideo = ::selectDirectoryVideoItem,
                                         onGoUp = fileDirectoryViewModel::goUp,
                                         onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
-                                        onDismissMessage = {
-                                            localOpenError = null
-                                            fileDirectoryViewModel.clearMessage()
-                                        },
-                                        onDeleteSource = { source ->
-                                            fileDirectoryViewModel.deleteSource(source.id)
-                                        },
+                                        onDismissMessage = ::dismissFileDirectoryMessage,
+                                        onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                         onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
-                                        onEditWebDavSource = { source ->
-                                            val baseUrl = source.webDavBaseUrl
-                                                ?.takeIf { it.isNotBlank() }
-                                                ?: source.webDavAccountId?.substringBefore("|").orEmpty()
-                                            webDavViewModel.editSavedConnection(
-                                                displayName = source.displayName,
-                                                baseUrl = baseUrl,
-                                                username = source.webDavUsername,
-                                                password = source.webDavPassword,
-                                                path = source.webDavPath ?: "/",
-                                            )
-                                            editingWebDavSourceId = source.id
-                                            isAddingWebDavPath = false
-                                            isWebDavOpen = true
-                                            localOpenError = null
-                                            webDavActionMessage = null
-                                        },
-                                        selectedComic = selectedDirectoryComic,
-                                        selectedVideo = selectedDirectoryVideo,
+                                        onEditWebDavSource = ::editWebDavSource,
                                         modifier = contentModifier,
                                     )
                                 }
                             }
                             AppTab.LIBRARY -> {
-                                LibraryScreen(
-                                    uiState = libraryUiState.copy(error = libraryUiState.error ?: localOpenError),
+                                LibraryTabContent(
+                                    libraryUiState = libraryUiState,
+                                    localOpenError = localOpenError,
                                     onOpenItem = { item ->
                                         when (item.item.sourceType) {
                                             SourceType.LOCAL -> openLocalLibraryComic(item)
@@ -1949,8 +1868,9 @@ fun ComicDavApp() {
                                 )
                             }
                             AppTab.VIDEO_LIBRARY -> {
-                                VideoLibraryScreen(
-                                    uiState = videoLibraryUiState.copy(error = videoLibraryUiState.error ?: localOpenError),
+                                VideoLibraryTabContent(
+                                    videoLibraryUiState = videoLibraryUiState,
+                                    localOpenError = localOpenError,
                                     onOpenItem = ::openVideoLibraryItem,
                                     onSelectItem = { item ->
                                         selectedVideoLibraryItem = item
@@ -1974,74 +1894,10 @@ fun ComicDavApp() {
                                 )
                             }
                             AppTab.SETTINGS -> {
-                                SettingsScreen(
+                                SettingsTabContent(
                                     settings = appSettings,
-                                    onReadingDirectionChange = { value ->
-                                        scope.launch { appSettingsStore.updateReadingDirection(value) }
-                                    },
-                                    onReaderLoggingModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateReaderLoggingMode(value) }
-                                    },
-                                    onColorPaletteChange = { value ->
-                                        scope.launch { appSettingsStore.updateColorPalette(value) }
-                                    },
-                                    onAvifImagesEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateAvifImagesEnabled(value) }
-                                    },
-                                    onAutoPageEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
-                                    },
-                                    onAutoPageSpeedChange = { value ->
-                                        scope.launch { appSettingsStore.updateAutoPageSpeedMillis(value) }
-                                    },
-                                    onScreenRotationLockChange = { value ->
-                                        scope.launch { appSettingsStore.updateScreenRotationLockEnabled(value) }
-                                    },
-                                    onVolumeKeysTurnPagesChange = { value ->
-                                        scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
-                                    },
-                                    onDiskCacheLimitChange = { value ->
-                                        scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
-                                    },
-                                    onWebDavPrefetchPageCountChange = { value ->
-                                        scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(value) }
-                                    },
-                                    onLibraryCoversEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateLibraryCoversEnabled(value) }
-                                    },
-                                    onVideoResumeEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoResumeEnabled(value) }
-                                    },
-                                    onVideoSeekOptimizationEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(value) }
-                                    },
-                                    onVideoForwardPrefetchModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoForwardPrefetchMode(value) }
-                                    },
-                                    onVideoProxyDiagnosticsModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(value) }
-                                    },
-                                    onVideoOutputModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoOutputMode(value) }
-                                    },
-                                    onGpuApiModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateGpuApiMode(value) }
-                                    },
-                                    onVideoDecoderModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoDecoderMode(value) }
-                                    },
-                                    onMpvProfileModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateMpvProfileMode(value) }
-                                    },
-                                    onVideoControlsAutoHideMillisChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(value) }
-                                    },
-                                    onVideoPlayerOrientationModeChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(value) }
-                                    },
-                                    onVideoLibraryThumbnailsEnabledChange = { value ->
-                                        scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(value) }
-                                    },
+                                    appSettingsStore = appSettingsStore,
+                                    scope = scope,
                                     downloadRecords = downloadRecords,
                                     selectedDownloadRecord = selectedDownloadRecord,
                                     onSelectDownloadRecord = { record ->

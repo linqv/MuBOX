@@ -2,7 +2,9 @@ package com.example.comicdav
 
 import android.content.pm.ActivityInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class MainActivityUiLogicTest {
     @Test
@@ -73,5 +75,14 @@ class MainActivityUiLogicTest {
     fun webDavParentDirectoryKeepsEncodedPathForRemoteRequests() {
         assertEquals("/", parentWebDavDirectoryPath("/movie.mp4"))
         assertEquals("/%E8%A7%86%E9%A2%91/", parentWebDavDirectoryPath("/%E8%A7%86%E9%A2%91/movie.mp4"))
+    }
+
+    @Test
+    fun mainActivityCompositionRootStaysBelow100Kb() {
+        val file = File("src/main/java/com/example/comicdav/MainActivity.kt")
+        assertTrue(
+            "MainActivity.kt should stay below 100 KB after composition-root extraction; actual=${file.length()}",
+            file.length() < 100_000L,
+        )
     }
 }

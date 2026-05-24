@@ -1,6 +1,7 @@
 package com.example.comicdav.nativebridge
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,6 +67,24 @@ class NativeWorkerThreadContractTest {
             File(srcRoot, "nativebridge/ComicEngine.kt"),
             "fun prefetchRange",
         )
+    }
+
+    @Test
+    fun comicReaderSession_allPrefetchRangeOverloadsHaveWorkerThread() {
+        val file = File(srcRoot, "nativebridge/ComicEngine.kt")
+        val lines = file.readLines()
+        val prefetchIndexes = lines.withIndex()
+            .filter { it.value.contains("fun prefetchRange") }
+            .map { it.index }
+
+        assertEquals("Expected interface and implementation prefetchRange overloads", 4, prefetchIndexes.size)
+        prefetchIndexes.forEach { idx ->
+            val preceding = lines.subList(maxOf(0, idx - 3), idx).joinToString("\n")
+            assertTrue(
+                "@WorkerThread should appear above prefetchRange overload near line ${idx + 1}",
+                preceding.contains("@WorkerThread"),
+            )
+        }
     }
 
     @Test

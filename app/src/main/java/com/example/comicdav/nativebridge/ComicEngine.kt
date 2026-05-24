@@ -140,6 +140,7 @@ interface ComicReaderSession : Closeable {
     fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> = emptyList()
     @WorkerThread
     fun prefetchRange(start: Long, endInclusive: Long): Boolean = false
+    @WorkerThread
     fun prefetchRange(
         start: Long,
         endInclusive: Long,
@@ -187,11 +188,13 @@ class ComicSession internal constructor(
         return decodePlannedRanges(encoded)
     }
 
+    @WorkerThread
     override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
         val fileId = rangeProviderFileId ?: return false
         return RangeProviderRegistry.prefetchRange(fileId, start, endInclusive)
     }
 
+    @WorkerThread
     override fun prefetchRange(
         start: Long,
         endInclusive: Long,
