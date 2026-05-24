@@ -5,6 +5,7 @@ use jni::sys::{jboolean, jint, jlong, jstring, JNI_ERR, JNI_VERSION_1_6};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs;
@@ -86,7 +87,9 @@ impl RangeReader for SessionReader {
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: Lazy<Mutex<HashMap<ComicHandle, CbzSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-static LAST_ERROR: Lazy<Mutex<CString>> = Lazy::new(|| Mutex::new(CString::default()));
+thread_local! {
+    static LAST_ERROR: RefCell<CString> = RefCell::new(CString::default());
+}
 
 #[no_mangle]
 pub extern "C" fn comic_open_local(path: *const c_char) -> ComicHandle {
@@ -136,12 +139,11 @@ pub extern "C" fn comic_close(handle: ComicHandle) {
     }
 }
 
+/// Returns a pointer to the current thread's last error CString.
+/// The pointer is only valid on the same thread and only until the next native error is set.
 #[no_mangle]
 pub extern "C" fn comic_last_error_message() -> *const c_char {
-    LAST_ERROR
-        .lock()
-        .map(|message| message.as_ptr())
-        .unwrap_or(std::ptr::null())
+    LAST_ERROR.with(|cell| cell.borrow().as_ptr())
 }
 
 #[no_mangle]
@@ -729,28 +731,44 @@ fn jstring_to_string(env: &mut JNIEnv<'_>, value: &JString<'_>) -> Result<String
 
 fn set_last_error(error: impl std::fmt::Display) {
     let sanitized = error.to_string().replace('\0', "\\0");
-    if let Ok(mut message) = LAST_ERROR.lock() {
-        *message = CString::new(sanitized).unwrap_or_default();
-    }
+    LAST_ERROR.with(|cell| {
+        *cell.borrow_mut() = CString::new(sanitized).unwrap_or_default();
+    });
 }
 
 fn last_error_message_string() -> String {
-    LAST_ERROR
-        .lock()
-        .ok()
-        .and_then(|message| message.to_str().ok().map(ToOwned::to_owned))
-        .unwrap_or_default()
+    LAST_ERROR.with(|cell| {
+        cell.borrow().to_str().unwrap_or_default().to_owned()
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{comic_close, comic_open_local, comic_page_count};
+    use super::{last_error_message_string, set_last_error};
     use std::ffi::CString;
     use std::fs::File;
     use std::io::Write;
     use tempfile::NamedTempFile;
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
+
+    #[test]
+    fn last_error_is_thread_local() {
+        // Main thread sets error A
+        set_last_error("error_A");
+        assert_eq!(last_error_message_string(), "error_A");
+
+        // Child thread sets error B and reads it back
+        let child = std::thread::spawn(|| {
+            set_last_error("error_B");
+            assert_eq!(last_error_message_string(), "error_B");
+        });
+        child.join().unwrap();
+
+        // Main thread still reads error A
+        assert_eq!(last_error_message_string(), "error_A");
+    }
 
     #[test]
     fn opens_counts_and_closes_local_cbz_session() {

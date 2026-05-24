@@ -1,5 +1,6 @@
 package com.example.comicdav.nativebridge
 
+import androidx.annotation.WorkerThread
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLogCategory
 import java.io.Closeable
@@ -12,11 +13,13 @@ class ComicEngine(
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
+    @WorkerThread
     fun openLocal(path: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
         val handle = native.openLocal(path, avifImagesEnabled)
         return openChecked(handle)
     }
 
+    @WorkerThread
     fun openLocalFd(
         fd: Int,
         size: Long,
@@ -37,6 +40,9 @@ class ComicEngine(
         )
     }
 
+    // Note: openRemote registers a RangeProvider whose readRange callback is invoked
+    // synchronously by Rust. Inside that callback, Java may runBlocking to await OkHttp I/O.
+    @WorkerThread
     fun openRemote(
         fileId: Long,
         size: Long,
@@ -125,10 +131,14 @@ interface ComicReaderSession : Closeable {
     val advancePrefetchOnPageDemand: Boolean
         get() = false
 
+    @WorkerThread
     fun loadPageToFile(pageIndex: Int, outputFile: File): File
+    @WorkerThread
     fun updateViewport(pageIndex: Int, networkClass: Int) = Unit
     fun diagnostics(): String = ""
+    @WorkerThread
     fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> = emptyList()
+    @WorkerThread
     fun prefetchRange(start: Long, endInclusive: Long): Boolean = false
     fun prefetchRange(
         start: Long,

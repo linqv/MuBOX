@@ -37,4 +37,7 @@ interface FileDirectoryDao {
 
     @Query("SELECT * FROM file_directory_sources ORDER BY addedAt DESC, id DESC")
     fun observeSources(): Flow<List<FileDirectorySourceEntity>>
+
+    @Query("UPDATE file_directory_sources SET webDavPassword = :encryptedPassword WHERE id = :id")
+    suspend fun updateWebDavPassword(id: Long, encryptedPassword: String)
 }

@@ -100,6 +100,7 @@ class OpenComicUseCase(
         cache.cacheDir.mkdirs()
         val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, info.size))
         return try {
+            // Dispatch to IO: openRemoteSession calls @WorkerThread native methods.
             val session = withContext(ioDispatcher) {
                 openRemoteSession(
                     fileId,

@@ -36,12 +36,36 @@ impl RangeReader for JniRangeReader {
             ],
         );
         if env.exception_check()? {
-            env.exception_clear()?;
+            let detail = match env.exception_occurred() {
+                Ok(throwable) => {
+                    env.exception_clear()?;
+                    match (|| -> Result<String> {
+                        let cls = env.get_object_class(&throwable)?;
+                        let cls_obj = env.call_method(&cls, "getName", "()Ljava/lang/String;", &[])?;
+                        let cls_name: String = env.get_string(&cls_obj.l()?.into())?.into();
+                        let msg_jobj = env.call_method(&throwable, "getMessage", "()Ljava/lang/String;", &[])?.l()?;
+                        let msg: String = if msg_jobj.is_null() {
+                            "<null>".to_string()
+                        } else {
+                            env.get_string(&msg_jobj.into())?.into()
+                        };
+                        Ok(format!("{}: {}", cls_name, msg))
+                    })() {
+                        Ok(info) => info,
+                        Err(e) => format!("Java exception; failed to inspect Java exception: {}", e),
+                    }
+                }
+                Err(e) => {
+                    let _ = env.exception_clear();
+                    format!("Java exception; failed to inspect Java exception: {}", e)
+                }
+            };
             return Err(anyhow!(
-                "range callback failed for file {} bytes {}-{}",
+                "range callback failed for file {} bytes {}-{}: {}",
                 self.file_id,
                 start,
-                end_inclusive
+                end_inclusive,
+                detail
             ));
         }
         let bytes = result?.l()?;

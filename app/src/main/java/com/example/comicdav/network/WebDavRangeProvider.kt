@@ -6,6 +6,10 @@ import com.example.comicdav.nativebridge.RangeProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 
+// WebDavRangeProvider implements the RangeProvider interface called synchronously from Rust
+// (via JNI) during comic parsing. Inside readRange(), Java uses runBlocking to bridge the
+// suspend OkHttp call back to the blocking Rust caller. Callers of ComicEngine.openRemote
+// and ComicReaderSession methods must therefore be on a worker thread (annotated @WorkerThread).
 class WebDavRangeProvider(
     private val client: WebDavClient,
     private val path: String,

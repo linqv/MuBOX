@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 
@@ -894,16 +893,13 @@ class ReaderViewModel(
         session: ComicReaderSession,
         range: PlannedRemoteRange,
         protectedRanges: List<LongRange>,
-    ): Boolean =
-        plannedRangeSemaphore.withPermit {
-            if (range.priority > HIGH_PRIORITY_PLANNED_RANGE_MAX) {
-                lowPriorityPlannedRangeSemaphore.withPermit {
-                    session.prefetchRange(range.start, range.endInclusive, range.priority, protectedRanges)
-                }
-            } else {
-                session.prefetchRange(range.start, range.endInclusive, range.priority, protectedRanges)
-            }
-        }
+    ): Boolean = prefetchPlannedRangeWithLimits(
+        session = session,
+        range = range,
+        protectedRanges = protectedRanges,
+        plannedRangeSemaphore = plannedRangeSemaphore,
+        lowPriorityPlannedRangeSemaphore = lowPriorityPlannedRangeSemaphore,
+    )
 
     private fun protectedPlannedByteRanges(
         ranges: List<PlannedRemoteRange>,
@@ -1087,9 +1083,6 @@ class ReaderViewModel(
         const val PREFETCH_START_DELAY_MS = 150L
         const val PREFETCH_STAGGER_MS = 1L
         const val NETWORK_WIFI = 2
-        const val HIGH_PRIORITY_PLANNED_RANGE_MAX = 2
-        const val MAX_PLANNED_RANGE_CONCURRENCY = 2
-        const val MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY = 1
         const val MAX_PLANNED_RANGE_PROTECTED_BYTES = 32L * 1024L * 1024L
         const val CONTINUOUS_PAGE_PREFETCH_RETENTION_BEHIND = 2
         const val CONTINUOUS_PAGE_PREFETCH_RETENTION_AHEAD = 2

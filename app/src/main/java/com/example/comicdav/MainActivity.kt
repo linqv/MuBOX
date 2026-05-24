@@ -3,45 +3,17 @@ package com.example.comicdav
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
-import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.datastore.preferences.preferencesDataStore
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Text
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Source
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,56 +27,39 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettings
-import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
 import com.example.comicdav.data.ComicCacheKey
-import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.DownloadRecordStore
-import com.example.comicdav.data.VideoDownloadRecord
-import com.example.comicdav.data.VideoDownloadStore
-import com.example.comicdav.data.filedirectory.FileDirectoryRepository
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
-import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.SavedWebDavAccount
-import com.example.comicdav.data.WebDavAccountStore
+import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.analyzeComicCache
 import com.example.comicdav.data.clearComicCacheCategory
 import com.example.comicdav.data.formatCacheSize
-import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
 import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.library.LibraryRepository
 import com.example.comicdav.data.library.SourceType
-import com.example.comicdav.data.library.createLibraryDatabase
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoLibraryRepository
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryViewModel
-import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
-import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderViewModel
-import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.ReaderPageCache
-import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.reader.installReaderImageLoader
 import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.reader.readerImageFormatCacheKey
@@ -112,16 +67,13 @@ import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForMb
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryViewModel
-import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
 import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
 import com.example.comicdav.feature.webdav.WebDavViewModel
 import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavItem
-import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.MediaKind
@@ -137,28 +89,13 @@ import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private val Context.readingProgressDataStore by preferencesDataStore(name = "reading_progress")
-private val Context.appDataFolderDataStore by preferencesDataStore(name = "app_data_folder")
-private val Context.appSettingsDataStore by preferencesDataStore(name = "app_settings")
-private val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
-private val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
-private val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
-
-internal fun effectiveAvifImagesEnabled(
-    settingEnabled: Boolean,
-    sdkInt: Int = Build.VERSION.SDK_INT,
-): Boolean = settingEnabled && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
 class MainActivity : ComponentActivity() {
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
@@ -198,24 +135,11 @@ fun ComicDavApp() {
     val webDavViewModel: WebDavViewModel = viewModel()
     val readerViewModel: ReaderViewModel = viewModel()
     val context = LocalContext.current
-    val libraryDatabase = remember(context) {
-        createLibraryDatabase(context)
-    }
-    val libraryRepository = remember(libraryDatabase) {
-        LibraryRepository(libraryDatabase.libraryDao())
-    }
-    val videoLibraryRepository = remember(libraryDatabase) {
-        VideoLibraryRepository(libraryDatabase.videoLibraryDao())
-    }
-    val fileDirectoryRepository = remember(libraryDatabase) {
-        FileDirectoryRepository(libraryDatabase.fileDirectoryDao())
-    }
-    val localDirectoryReader = remember(context) {
-        AndroidLocalDirectoryReader(context.applicationContext)
-    }
-    val localComicOpener = remember(context) {
-        LocalComicOpener(context.applicationContext)
-    }
+    val container = remember(context) { AppContainer(context) }
+    val libraryRepository = container.libraryRepository
+    val videoLibraryRepository = container.videoLibraryRepository
+    val localComicOpener = container.localComicOpener
+    val localDirectoryReader = container.localDirectoryReader
     val libraryViewModel: LibraryViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -236,7 +160,7 @@ fun ComicDavApp() {
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return FileDirectoryViewModel(fileDirectoryRepository, localDirectoryReader) as T
+                return FileDirectoryViewModel(container.fileDirectoryRepository, container.localDirectoryReader) as T
             }
         },
     )
@@ -272,22 +196,15 @@ fun ComicDavApp() {
     var logFolderUriText by rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
     var dataFolderUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var isDataFolderLoading by remember { mutableStateOf(true) }
-    val remoteCache = remember(context) { ComicDownloadCache(File(context.cacheDir, "remote-comics")) }
-    val coverExtractor = remember(context, remoteCache) {
-        WebDavLibraryCoverExtractor(
-            appCacheDir = context.cacheDir,
-            remoteCacheDir = remoteCache.cacheDir,
-        )
-    }
-    val videoThumbnailExtractor = remember(context) {
-        VideoThumbnailExtractor(cacheDir = context.cacheDir)
-    }
-    val progressStore = remember(context) { ReadingProgressStore(context.readingProgressDataStore) }
-    val dataFolderStore = remember(context) { AppDataFolderStore(context.appDataFolderDataStore) }
-    val appSettingsStore = remember(context) { AppSettingsStore(context.appSettingsDataStore) }
-    val webDavAccountStore = remember(context) { WebDavAccountStore(context.webDavAccountDataStore) }
-    val downloadRecordStore = remember(context) { DownloadRecordStore(context.downloadRecordsDataStore) }
-    val videoDownloadStore = remember(context) { VideoDownloadStore(context.videoDownloadRecordsDataStore) }
+    val remoteCache = container.remoteCache
+    val coverExtractor = container.coverExtractor
+    val videoThumbnailExtractor = container.videoThumbnailExtractor
+    val progressStore = container.progressStore
+    val dataFolderStore = container.dataFolderStore
+    val appSettingsStore = container.appSettingsStore
+    val webDavAccountStore = container.webDavAccountStore
+    val downloadRecordStore = container.downloadRecordStore
+    val videoDownloadStore = container.videoDownloadStore
     val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings(videoResumeEnabled = false))
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     fun clearSelection() {
@@ -2162,531 +2079,3 @@ fun ComicDavApp() {
         }
     }
 }
-
-private fun ComicCacheCategory.cacheLabel(): String =
-    when (this) {
-        ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"
-        ComicCacheCategory.REMOTE_INDEX -> "WebDAV 索引缓存"
-        ComicCacheCategory.READER_PAGES -> "页面图片缓存"
-        ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
-    }
-
-internal fun shouldShowWebDavAccountForm(
-    isAddingWebDavPath: Boolean,
-    editingWebDavSourceId: Long?,
-    webDavStatus: String,
-): Boolean =
-    webDavStatus != WEB_DAV_STATUS_CONNECTED && (isAddingWebDavPath || editingWebDavSourceId != null)
-
-internal fun mainAppRequestedOrientation(screenRotationLockEnabled: Boolean): Int =
-    if (screenRotationLockEnabled) {
-        ActivityInfo.SCREEN_ORIENTATION_LOCKED
-    } else {
-        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-
-internal class DownloadProgressThrottler(
-    private val minIntervalMillis: Long = 250L,
-    private val minByteDelta: Long = 512L * 1024L,
-) {
-    private var lastReportMillis: Long? = null
-    private var lastReportedBytes: Long = 0L
-
-    fun shouldReport(
-        downloadedBytes: Long,
-        totalBytes: Long,
-        nowMillis: Long = SystemClock.elapsedRealtime(),
-    ): Boolean {
-        val lastMillis = lastReportMillis
-        val isComplete = totalBytes > 0L && downloadedBytes >= totalBytes
-        val shouldReport = lastMillis == null ||
-            nowMillis - lastMillis >= minIntervalMillis ||
-            downloadedBytes - lastReportedBytes >= minByteDelta ||
-            isComplete
-        if (shouldReport) {
-            lastReportMillis = nowMillis
-            lastReportedBytes = downloadedBytes
-        }
-        return shouldReport
-    }
-}
-
-internal fun parentWebDavDirectoryPath(remotePath: String): String {
-    val normalized = remotePath.takeIf { it.isNotBlank() } ?: return "/"
-    val withoutTrailingSlash = normalized.trimEnd('/')
-    val slashIndex = withoutTrailingSlash.lastIndexOf('/')
-    return if (slashIndex <= 0) {
-        "/"
-    } else {
-        withoutTrailingSlash.substring(0, slashIndex + 1)
-    }
-}
-
-private fun parentDocumentUriForLocalVideo(videoUri: Uri): Uri? {
-    return runCatching {
-        val documentId = DocumentsContract.getDocumentId(videoUri)
-        val parentDocumentId = documentId.substringBeforeLast('/', missingDelimiterValue = "")
-        if (parentDocumentId.isBlank()) {
-            null
-        } else {
-            DocumentsContract.buildDocumentUriUsingTree(videoUri, parentDocumentId)
-        }
-    }.getOrNull()
-}
-
-internal fun appTabLabels(): List<String> =
-    AppTab.values().map { it.label }
-
-internal fun selectionActionLabelsForLocalVideo(): List<String> =
-    listOf("加入影视库", "取消")
-
-internal fun selectionActionLabelsForWebDavVideo(): List<String> =
-    listOf("加入影视库", "下载", "取消")
-
-internal fun selectionActionLabelsForVideoLibraryItem(): List<String> =
-    listOf("重新提取缩略图", "移除", "删除缩略图", "取消")
-
-private enum class AppTab {
-    SOURCES,
-    LIBRARY,
-    VIDEO_LIBRARY,
-    SETTINGS;
-
-    val label: String
-        get() = when (this) {
-            SOURCES -> ComicDavCopy.sourcesTab
-            LIBRARY -> ComicDavCopy.libraryTab
-            VIDEO_LIBRARY -> ComicDavCopy.videoLibraryTab
-            SETTINGS -> ComicDavCopy.settingsTab
-        }
-
-    val iconVector: ImageVector
-        get() = when (this) {
-            SOURCES -> Icons.Filled.Folder
-            LIBRARY -> Icons.AutoMirrored.Filled.LibraryBooks
-            VIDEO_LIBRARY -> Icons.Filled.PlayArrow
-            SETTINGS -> Icons.Filled.Settings
-        }
-}
-
-@Composable
-private fun ComicDavAppShell(
-    selectedTab: AppTab,
-    onTabSelected: (AppTab) -> Unit,
-    modifier: Modifier = Modifier,
-    bottomBar: (@Composable () -> Unit)? = null,
-    content: @Composable (Modifier) -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            content(Modifier.fillMaxSize())
-        }
-        if (bottomBar != null) {
-            bottomBar()
-        } else {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp,
-            ) {
-                AppTab.values().forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { onTabSelected(tab) },
-                        icon = {
-                            Icon(
-                                imageVector = tab.iconVector,
-                                contentDescription = tab.label,
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.label,
-                                maxLines = 1,
-                            )
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-private data class SelectionAction(
-    val label: String,
-    val icon: ImageVector,
-    val enabled: Boolean = true,
-    val onClick: () -> Unit,
-)
-
-private fun selectionBottomBar(
-    selectedWebDavFile: WebDavItem?,
-    selectedDirectoryComic: FileDirectoryBrowserItem?,
-    selectedDirectoryVideo: FileDirectoryBrowserItem?,
-    selectedLibraryItem: LibraryItemWithSources?,
-    selectedVideoLibraryItem: VideoLibraryItemWithSources?,
-    selectedDownloadRecord: DownloadRecord?,
-    onDownloadWebDavFile: (WebDavItem) -> Unit,
-    onDownloadWebDavVideo: (WebDavItem) -> Unit,
-    onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
-    onAddWebDavVideoToVideoLibrary: (WebDavItem) -> Unit,
-    onAddDirectoryComicToLibrary: (FileDirectoryBrowserItem) -> Unit,
-    onAddDirectoryVideoToVideoLibrary: (FileDirectoryBrowserItem) -> Unit,
-    onRemoveLibraryItem: (LibraryItemWithSources) -> Unit,
-    onRefreshLibraryCover: (LibraryItemWithSources) -> Unit,
-    onDownloadLibraryItem: (LibraryItemWithSources) -> Unit,
-    onRemoveVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
-    onRefreshVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
-    onDeleteVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
-    onDeleteDownloadRecord: (DownloadRecord) -> Unit,
-    onAddDownloadRecordToLibrary: (DownloadRecord) -> Unit,
-    onCancel: () -> Unit,
-): (@Composable () -> Unit)? {
-    val actions = when {
-        selectedWebDavFile != null -> when (mediaKindFor(name = selectedWebDavFile.name, isDirectory = selectedWebDavFile.isDirectory)) {
-            MediaKind.Video -> listOf(
-                SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddWebDavVideoToVideoLibrary(selectedWebDavFile) },
-                SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavVideo(selectedWebDavFile) },
-                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            )
-            else -> listOf(
-                SelectionAction("下载", Icons.Filled.Download) { onDownloadWebDavFile(selectedWebDavFile) },
-                SelectionAction("加入书架", Icons.Filled.Book) { onAddWebDavFileToLibrary(selectedWebDavFile) },
-                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            )
-        }
-        selectedDirectoryComic != null -> listOf(
-            SelectionAction("加入书架", Icons.Filled.Book) { onAddDirectoryComicToLibrary(selectedDirectoryComic) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
-        selectedDirectoryVideo != null -> listOf(
-            SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddDirectoryVideoToVideoLibrary(selectedDirectoryVideo) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
-        selectedLibraryItem != null -> {
-            val isWebDav = selectedLibraryItem.webDavSource != null
-            listOf(
-                SelectionAction("移除", Icons.Filled.Delete) { onRemoveLibraryItem(selectedLibraryItem) },
-                SelectionAction("重新获取封面", Icons.Filled.Refresh, enabled = isWebDav) {
-                    onRefreshLibraryCover(selectedLibraryItem)
-                },
-                SelectionAction("下载", Icons.Filled.Download, enabled = isWebDav) {
-                    onDownloadLibraryItem(selectedLibraryItem)
-                },
-                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            )
-        }
-        selectedVideoLibraryItem != null -> listOf(
-            SelectionAction("重新提取缩略图", Icons.Filled.Refresh) {
-                onRefreshVideoLibraryThumbnail(selectedVideoLibraryItem)
-            },
-            SelectionAction("移除", Icons.Filled.Delete) { onRemoveVideoLibraryItem(selectedVideoLibraryItem) },
-            SelectionAction("删除缩略图", Icons.Filled.Delete) { onDeleteVideoLibraryThumbnail(selectedVideoLibraryItem) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
-        selectedDownloadRecord != null -> listOf(
-            SelectionAction("删除", Icons.Filled.Delete) { onDeleteDownloadRecord(selectedDownloadRecord) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            SelectionAction("加入书架", Icons.Filled.Book) { onAddDownloadRecordToLibrary(selectedDownloadRecord) },
-        )
-        else -> return null
-    }
-    return {
-        SelectionNavigationBar(actions = actions)
-    }
-}
-
-@Composable
-private fun SelectionNavigationBar(actions: List<SelectionAction>) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-    ) {
-        actions.forEach { action ->
-            NavigationBarItem(
-                selected = false,
-                enabled = action.enabled,
-                onClick = action.onClick,
-                icon = {
-                    Icon(
-                        imageVector = action.icon,
-                        contentDescription = action.label,
-                    )
-                },
-                label = {
-                    Text(
-                        text = action.label,
-                        maxLines = 1,
-                    )
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun DataFolderGateScreen(
-    onChooseFolder: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = ComicDavCopy.chooseDataFolderTitle,
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text(
-            text = ComicDavCopy.chooseDataFolderBody,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 20.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Button(onClick = onChooseFolder) {
-            Text(ComicDavCopy.chooseFolder)
-        }
-    }
-}
-
-private fun queryDirectoryDisplayName(context: Context, treeUri: Uri): String {
-    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
-        treeUri,
-        DocumentsContract.getTreeDocumentId(treeUri),
-    )
-    context.contentResolver.query(
-        rootDocumentUri,
-        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-        null,
-        null,
-        null,
-    )?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-            if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
-                return cursor.getString(nameIndex)
-            }
-        }
-    }
-    return treeUri.lastPathSegment
-        ?.substringAfterLast(':')
-        ?.let(::decodeWebDavPathForDisplay)
-        ?.ifBlank { null }
-        ?: "本地文件夹"
-}
-
-private fun deleteLocalSourceTree(context: Context, treeUri: Uri) {
-    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
-        treeUri,
-        DocumentsContract.getTreeDocumentId(treeUri),
-    )
-    val deleted = DocumentsContract.deleteDocument(context.contentResolver, rootDocumentUri)
-    check(deleted) { "系统未允许删除这个本地文件夹" }
-}
-
-private suspend fun downloadWebDavVideoToDataFolder(
-    context: Context,
-    folderTreeUri: Uri,
-    client: WebDavClient,
-    remotePath: String,
-    fileName: String,
-    expectedSize: Long,
-    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
-): String = withContext(Dispatchers.IO) {
-    val resolver = context.applicationContext.contentResolver
-    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
-        folderTreeUri,
-        DocumentsContract.getTreeDocumentId(folderTreeUri),
-    )
-    val videosDirectoryUri = findOrCreateChildDocument(
-        context = context,
-        parentDocumentUri = rootDocumentUri,
-        displayName = "videos",
-        mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
-    )
-    val safeName = sanitizeDownloadedVideoFileName(fileName)
-    findChildDocumentUri(context, videosDirectoryUri, "$safeName.tmp")?.let { tmp ->
-        DocumentsContract.deleteDocument(resolver, tmp)
-    }
-    val tmpUri = requireNotNull(
-        DocumentsContract.createDocument(
-            resolver,
-            videosDirectoryUri,
-            mimeTypeForMediaFileName(fileName) ?: "application/octet-stream",
-            "$safeName.tmp",
-        ),
-    ) { "无法在数据文件夹创建视频临时文件" }
-
-    try {
-        val downloadJob = currentCoroutineContext().job
-        val response = client.openFullStream(remotePath) { closeable ->
-            downloadJob.invokeOnCompletion { cause ->
-                if (cause is CancellationException) {
-                    runCatching { closeable.close() }
-                }
-            }
-        }
-        var downloaded = 0L
-        try {
-            response.stream.use { input ->
-                resolver.openOutputStream(tmpUri, "w").use { output ->
-                    requireNotNull(output) { "无法写入视频文件" }
-                    downloaded = copyStreamWithProgress(
-                        input = input,
-                        output = output,
-                        totalBytes = expectedSize.takeIf { it > 0L }
-                            ?: response.totalSize
-                            ?: response.contentLength.takeIf { it > 0L }
-                            ?: 0L,
-                        onProgress = onProgress,
-                    )
-                }
-            }
-        } finally {
-            response.close()
-        }
-        if (expectedSize > 0L && downloaded != expectedSize) {
-            error("Downloaded $downloaded bytes, expected $expectedSize")
-        }
-        findChildDocumentUri(context, videosDirectoryUri, safeName)?.let { existing ->
-            check(DocumentsContract.deleteDocument(resolver, existing)) { "无法替换已有视频文件" }
-        }
-        val finalUri = requireNotNull(
-            DocumentsContract.renameDocument(resolver, tmpUri, safeName),
-        ) { "无法保存视频文件" }
-        finalUri.toString()
-    } catch (error: Throwable) {
-        runCatching { DocumentsContract.deleteDocument(resolver, tmpUri) }
-        throw error
-    }
-}
-
-private fun findOrCreateChildDocument(
-    context: Context,
-    parentDocumentUri: Uri,
-    displayName: String,
-    mimeType: String,
-): Uri {
-    findChildDocumentUri(context, parentDocumentUri, displayName)?.let { return it }
-    return requireNotNull(
-        DocumentsContract.createDocument(
-            context.contentResolver,
-            parentDocumentUri,
-            mimeType,
-            displayName,
-        ),
-    ) { "无法创建 $displayName 文件夹" }
-}
-
-private fun findChildDocumentUri(
-    context: Context,
-    parentDocumentUri: Uri,
-    displayName: String,
-): Uri? {
-    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-        parentDocumentUri,
-        DocumentsContract.getDocumentId(parentDocumentUri),
-    )
-    context.contentResolver.query(
-        childrenUri,
-        arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-        ),
-        null,
-        null,
-        null,
-    )?.use { cursor ->
-        val idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-        val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-        while (cursor.moveToNext()) {
-            if (idColumn < 0 || nameColumn < 0 || cursor.isNull(idColumn) || cursor.isNull(nameColumn)) continue
-            if (cursor.getString(nameColumn) == displayName) {
-                return DocumentsContract.buildDocumentUriUsingTree(
-                    parentDocumentUri,
-                    cursor.getString(idColumn),
-                )
-            }
-        }
-    }
-    return null
-}
-
-private suspend fun copyStreamWithProgress(
-    input: InputStream,
-    output: OutputStream,
-    totalBytes: Long,
-    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
-): Long {
-    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-    var downloaded = 0L
-    while (true) {
-        currentCoroutineContext().ensureActive()
-        val read = input.read(buffer)
-        if (read == -1) break
-        output.write(buffer, 0, read)
-        downloaded += read
-        onProgress(downloaded, totalBytes)
-    }
-    output.flush()
-    return downloaded
-}
-
-private fun sanitizeDownloadedVideoFileName(fileName: String): String {
-    val sanitized = fileName
-        .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
-        .trim()
-        .trim('.')
-        .take(180)
-    return sanitized.ifBlank { "video-download" }
-}
-
-private fun loadReaderLogFolderUri(context: Context): String? {
-    return context
-        .getSharedPreferences(READER_DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
-        .getString(READER_LOG_FOLDER_URI_KEY, null)
-}
-
-private fun saveReaderLogFolderUri(context: Context, uri: Uri) {
-    context
-        .getSharedPreferences(READER_DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putString(READER_LOG_FOLDER_URI_KEY, uri.toString())
-        .apply()
-}
-
-private fun startReaderLogFile(
-    context: Context,
-    folderUriText: String?,
-    scope: kotlinx.coroutines.CoroutineScope,
-    loggingEnabled: Boolean = true,
-) {
-    if (!loggingEnabled) {
-        ReaderDiagnosticLog.clearSink()
-        return
-    }
-    if (folderUriText.isNullOrBlank()) return
-    runCatching {
-        createReaderLogFile(context, Uri.parse(folderUriText), scope)
-    }.fold(
-        onSuccess = { logFile ->
-            ReaderDiagnosticLog.setSink(logFile.sink)
-            ReaderDiagnosticLog.event("log_file_created fileName=${logFile.fileName} uri=${logFile.uri}")
-        },
-        onFailure = { error ->
-            ReaderDiagnosticLog.error("log_file_create_failed folderUri=$folderUriText", error)
-        },
-    )
-}
-
-private fun DownloadProgressUi.toReaderLoadingProgress(): ReaderLoadingProgress =
-    ReaderLoadingProgress(downloadedBytes = downloadedBytes, totalBytes = totalBytes)
-
-private const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
-private const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"

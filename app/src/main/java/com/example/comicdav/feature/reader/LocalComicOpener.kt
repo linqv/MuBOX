@@ -3,6 +3,7 @@ package com.example.comicdav.feature.reader
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import androidx.annotation.WorkerThread
 import com.example.comicdav.data.LocalArchiveFormat
 import com.example.comicdav.data.LocalDocumentFormat
 import com.example.comicdav.data.localArchiveFormatForFileName
@@ -40,6 +41,7 @@ class LocalComicOpener(
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
+    @WorkerThread
     fun open(uri: Uri, fileName: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
         localArchiveFormatForFileName(fileName)?.let { format ->
             val descriptorOpenStartMs = elapsedRealtimeMs()

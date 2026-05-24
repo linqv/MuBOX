@@ -44,7 +44,7 @@ class WebDavLibraryCoverExtractor(
         remotePath: String,
         avifImagesEnabled: Boolean = false,
         knownInfo: RemoteFileInfo? = null,
-    ): String? = withContext(ioDispatcher) {
+    ): String? = withContext(ioDispatcher) { // Dispatched to IO for @WorkerThread native calls
         val info = knownInfo ?: client.head(remotePath)
         val cacheKey = ComicCacheKey.fromRemote(
             accountId = accountId,

@@ -94,7 +94,7 @@ class VideoPlayerActivityIntegrationTest {
 
     @Test
     fun screenExposesVisibleAlternativesForAdvancedPlaybackControls() {
-        val source = activitySourceFile().readText()
+        val source = videoPlayerPackageSource()
 
         assertTrue(source.contains("onSpeedSelected = controller::setPlaybackSpeed"))
         assertTrue(source.contains("onAudioTrackSelected = controller::selectAudioTrack"))
@@ -129,7 +129,7 @@ class VideoPlayerActivityIntegrationTest {
 
     @Test
     fun screenExposesStatisticsInFloatingOptionPanel() {
-        val source = activitySourceFile().readText()
+        val source = videoPlayerPackageSource()
 
         assertTrue(source.contains("VideoPlayerMediaContext("))
         assertTrue(source.contains("buildVideoPlayerStatisticsSnapshot("))
@@ -154,7 +154,7 @@ class VideoPlayerActivityIntegrationTest {
 
     @Test
     fun screenConnectsGestureOverlayToControllerGestureActions() {
-        val source = activitySourceFile().readText()
+        val source = videoPlayerPackageSource()
 
         assertTrue(source.contains("PlayerGestureOverlay("))
         assertTrue(source.contains("onVolumeDelta = controller::adjustGestureVolume"))
@@ -203,6 +203,18 @@ class VideoPlayerActivityIntegrationTest {
             File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
             File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
         ).first { it.isFile }
+
+    private fun videoPlayerPackageSource(): String =
+        videoPlayerPackageDir().listFiles()
+            ?.filter { it.extension == "kt" }
+            ?.joinToString("\n") { it.readText() }
+            ?: activitySourceFile().readText()
+
+    private fun videoPlayerPackageDir(): File =
+        listOf(
+            File("src/main/java/com/example/comicdav/video/player"),
+            File("app/src/main/java/com/example/comicdav/video/player"),
+        ).first { it.isDirectory }
 
     private fun mpvViewSourceFile(): File =
         listOf(
