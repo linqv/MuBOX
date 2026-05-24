@@ -1,11 +1,17 @@
 package com.example.comicdav.feature.settings
 
+import com.example.comicdav.data.AppColorPalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsScreenUiTest {
+    @Test
+    fun defaultPaletteLabelMatchesCinematicTheme() {
+        assertEquals("影院深色", AppColorPalette.DEFAULT.settingsLabel())
+    }
+
     @Test
     fun rootSettingsLayoutKeepsOnlyCommonAndManagementGroups() {
         val layout = rootSettingsGroupLayout()

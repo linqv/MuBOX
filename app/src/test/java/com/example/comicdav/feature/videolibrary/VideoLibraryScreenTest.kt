@@ -1,14 +1,31 @@
 package com.example.comicdav.feature.videolibrary
 
+import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.videolibrary.LocalVideoSourceEntity
 import com.example.comicdav.data.videolibrary.VideoLibraryItemEntity
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.data.videolibrary.WebDavVideoSourceEntity
+import com.example.comicdav.ui.comicDavColorSchemeFor
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class VideoLibraryScreenTest {
+    @Test
+    fun screenColorsUseThemePaletteRoles() {
+        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
+        val colors = videoLibraryScreenColors(highContrast)
+
+        assertEquals(highContrast.background, colors.backgroundTop)
+        assertEquals(highContrast.surfaceContainerLowest, colors.backgroundBottom)
+        assertEquals(highContrast.surfaceContainer, colors.surface)
+        assertEquals(highContrast.surfaceContainerHigh, colors.surfaceRaised)
+        assertEquals(highContrast.primary, colors.accent)
+        assertEquals(highContrast.onPrimary, colors.onAccent)
+        assertEquals(highContrast.onBackground, colors.text)
+        assertEquals(highContrast.onSurfaceVariant, colors.muted)
+    }
+
     @Test
     fun countLabelShowsEmptyAndNonEmptyCounts() {
         assertEquals("还没有视频", videoLibraryCountLabel(0))

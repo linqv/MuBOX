@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,18 +54,38 @@ import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
-private val CinematicBackdropTop = Color(0xFF050814)
-private val CinematicBackdropBottom = Color(0xFF0A1220)
-private val CinematicSurface = Color(0xFF0D1626)
-private val CinematicSurfaceRaised = Color(0xFF121D31)
-private val CinematicPosterTop = Color(0xFF172033)
-private val CinematicPosterBottom = Color(0xFF050A14)
-private val CinematicAccent = Color(0xFF22D3EE)
-private val CinematicAccentOn = Color(0xFF03131A)
-private val CinematicText = Color(0xFFF8FAFC)
-private val CinematicTextMuted = Color(0xFFAEB8C8)
-private val CinematicErrorSurface = Color(0xFF2B1118)
-private val CinematicErrorText = Color(0xFFFFC4C8)
+internal data class VideoLibraryScreenColors(
+    val backgroundTop: Color,
+    val backgroundBottom: Color,
+    val surface: Color,
+    val surfaceRaised: Color,
+    val posterTop: Color,
+    val posterBottom: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val text: Color,
+    val muted: Color,
+    val errorSurface: Color,
+    val errorText: Color,
+    val border: Color,
+)
+
+internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScreenColors =
+    VideoLibraryScreenColors(
+        backgroundTop = colorScheme.background,
+        backgroundBottom = colorScheme.surfaceContainerLowest,
+        surface = colorScheme.surfaceContainer,
+        surfaceRaised = colorScheme.surfaceContainerHigh,
+        posterTop = colorScheme.surfaceVariant,
+        posterBottom = colorScheme.surfaceContainerLowest,
+        accent = colorScheme.primary,
+        onAccent = colorScheme.onPrimary,
+        text = colorScheme.onBackground,
+        muted = colorScheme.onSurfaceVariant,
+        errorSurface = colorScheme.errorContainer,
+        errorText = colorScheme.onErrorContainer,
+        border = colorScheme.outlineVariant,
+    )
 
 @Composable
 fun VideoLibraryScreen(
@@ -77,12 +98,13 @@ fun VideoLibraryScreen(
     selectedItemId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
+    val colors = videoLibraryScreenColors(MaterialTheme.colorScheme)
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(CinematicBackdropTop, CinematicBackdropBottom),
+                    colors = listOf(colors.backgroundTop, colors.backgroundBottom),
                 ),
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -97,24 +119,24 @@ fun VideoLibraryScreen(
                 Text(
                     text = "影视库",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = CinematicText,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = videoLibraryCountLabel(uiState.items.size),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = CinematicTextMuted,
+                    color = colors.muted,
                 )
             }
             OutlinedButton(
                 onClick = onOpenDirectories,
                 modifier = Modifier.defaultMinSize(minHeight = 44.dp),
                 shape = MaterialTheme.shapes.large,
-                border = BorderStroke(1.dp, CinematicAccent.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.6f)),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = CinematicSurfaceRaised.copy(alpha = 0.72f),
-                    contentColor = CinematicAccent,
+                    containerColor = colors.surfaceRaised.copy(alpha = 0.72f),
+                    contentColor = colors.accent,
                 ),
             ) {
                 Text("来源")
@@ -126,14 +148,14 @@ fun VideoLibraryScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
                 color = if (uiState.error == null) {
-                    CinematicSurfaceRaised
+                    colors.surfaceRaised
                 } else {
-                    CinematicErrorSurface
+                    colors.errorSurface
                 },
                 border = BorderStroke(
                     width = 1.dp,
                     color = if (uiState.error == null) {
-                        CinematicAccent.copy(alpha = 0.34f)
+                        colors.accent.copy(alpha = 0.34f)
                     } else {
                         MaterialTheme.colorScheme.error.copy(alpha = 0.64f)
                     },
@@ -149,9 +171,9 @@ fun VideoLibraryScreen(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (uiState.error == null) {
-                            CinematicText
+                            colors.text
                         } else {
-                            CinematicErrorText
+                            colors.errorText
                         },
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -160,9 +182,9 @@ fun VideoLibraryScreen(
                         onClick = onDismissMessage,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = if (uiState.error == null) {
-                                CinematicAccent
+                                colors.accent
                             } else {
-                                CinematicErrorText
+                                colors.errorText
                             },
                         ),
                     ) {
@@ -191,6 +213,7 @@ fun VideoLibraryScreen(
                 state.items.isEmpty() -> {
                     EmptyVideoLibrary(
                         onOpenDirectories = onOpenDirectories,
+                        colors = colors,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -209,6 +232,7 @@ fun VideoLibraryScreen(
                                 onLongClick = { onSelectItem(item) },
                                 thumbnailsEnabled = thumbnailsEnabled,
                                 isSelected = selectedItemId == item.item.id,
+                                colors = colors,
                             )
                         }
                     }
@@ -221,6 +245,7 @@ fun VideoLibraryScreen(
 @Composable
 private fun EmptyVideoLibrary(
     onOpenDirectories: () -> Unit,
+    colors: VideoLibraryScreenColors,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -234,15 +259,15 @@ private fun EmptyVideoLibrary(
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            CinematicSurfaceRaised,
-                            CinematicPosterBottom,
+                            colors.surfaceRaised,
+                            colors.posterBottom,
                         ),
                     ),
                     shape = CircleShape,
                 )
                 .border(
                     width = 1.dp,
-                    color = CinematicAccent.copy(alpha = 0.58f),
+                    color = colors.accent.copy(alpha = 0.58f),
                     shape = CircleShape,
                 )
                 .padding(20.dp),
@@ -250,7 +275,7 @@ private fun EmptyVideoLibrary(
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
                 contentDescription = null,
-                tint = CinematicAccent,
+                tint = colors.accent,
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -258,13 +283,13 @@ private fun EmptyVideoLibrary(
             text = "还没有视频",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
-            color = CinematicText,
+            color = colors.text,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "从来源页长按视频加入影视库",
             style = MaterialTheme.typography.bodyMedium,
-            color = CinematicTextMuted,
+            color = colors.muted,
             textAlign = TextAlign.Center,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
@@ -277,8 +302,8 @@ private fun EmptyVideoLibrary(
                 modifier = Modifier.defaultMinSize(minWidth = 140.dp, minHeight = 48.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = CinematicAccent,
-                    contentColor = CinematicAccentOn,
+                    containerColor = colors.accent,
+                    contentColor = colors.onAccent,
                 ),
             ) {
                 Text("来源")
@@ -295,19 +320,20 @@ private fun VideoLibraryCard(
     onLongClick: () -> Unit,
     thumbnailsEnabled: Boolean,
     isSelected: Boolean,
+    colors: VideoLibraryScreenColors,
     modifier: Modifier = Modifier,
 ) {
     val cardShape = RoundedCornerShape(16.dp)
     val borderModifier = if (isSelected) {
         Modifier.border(
             width = 1.5.dp,
-            color = CinematicAccent,
+            color = colors.accent,
             shape = cardShape,
         )
     } else {
         Modifier.border(
             width = 1.dp,
-            color = Color.White.copy(alpha = 0.06f),
+            color = colors.border.copy(alpha = 0.45f),
             shape = cardShape,
         )
     }
@@ -322,9 +348,9 @@ private fun VideoLibraryCard(
             ),
         shape = cardShape,
         color = if (isSelected) {
-            CinematicAccent.copy(alpha = 0.14f)
+            colors.accent.copy(alpha = 0.14f)
         } else {
-            CinematicSurface.copy(alpha = 0.92f)
+            colors.surface.copy(alpha = 0.92f)
         },
         shadowElevation = if (isSelected) 10.dp else 3.dp,
     ) {
@@ -339,7 +365,7 @@ private fun VideoLibraryCard(
                 shape = RoundedCornerShape(12.dp),
                 tonalElevation = 0.dp,
                 shadowElevation = if (isSelected) 8.dp else 5.dp,
-                color = CinematicPosterBottom,
+                color = colors.posterBottom,
             ) {
                 Box(
                     modifier = Modifier
@@ -347,8 +373,8 @@ private fun VideoLibraryCard(
                         .background(
                             Brush.linearGradient(
                                 listOf(
-                                    CinematicPosterTop,
-                                    CinematicPosterBottom,
+                                    colors.posterTop,
+                                    colors.posterBottom,
                                 ),
                             ),
                         ),
@@ -380,7 +406,7 @@ private fun VideoLibraryCard(
                                 ),
                         )
                     } else {
-                        FallbackVideoTitle(item.item.displayName)
+                        FallbackVideoTitle(item.item.displayName, colors = colors)
                     }
                     Surface(
                         modifier = Modifier
@@ -408,12 +434,12 @@ private fun VideoLibraryCard(
                             .padding(8.dp),
                         shape = RoundedCornerShape(7.dp),
                         color = Color.Black.copy(alpha = 0.62f),
-                        border = BorderStroke(1.dp, CinematicAccent.copy(alpha = 0.28f)),
+                        border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
                     ) {
                         Text(
                             text = videoSourceLabel(item.item.sourceType),
                             style = MaterialTheme.typography.labelSmall,
-                            color = CinematicAccent,
+                            color = colors.accent,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
@@ -425,7 +451,7 @@ private fun VideoLibraryCard(
                     text = item.item.displayName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = CinematicText,
+                    color = colors.text,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -433,7 +459,7 @@ private fun VideoLibraryCard(
                 Text(
                     text = videoSourceMeta(item),
                     style = MaterialTheme.typography.bodySmall,
-                    color = CinematicTextMuted,
+                    color = colors.muted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -443,16 +469,19 @@ private fun VideoLibraryCard(
 }
 
 @Composable
-private fun FallbackVideoTitle(title: String) {
+private fun FallbackVideoTitle(
+    title: String,
+    colors: VideoLibraryScreenColors,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        CinematicPosterTop,
-                        CinematicSurfaceRaised,
-                        CinematicPosterBottom,
+                        colors.posterTop,
+                        colors.surfaceRaised,
+                        colors.posterBottom,
                     ),
                 ),
             )
@@ -462,7 +491,7 @@ private fun FallbackVideoTitle(title: String) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            color = CinematicText,
+            color = colors.text,
             fontWeight = FontWeight.Bold,
             maxLines = 4,
             overflow = TextOverflow.Ellipsis,

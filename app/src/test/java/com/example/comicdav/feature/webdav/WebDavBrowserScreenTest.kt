@@ -1,11 +1,26 @@
 package com.example.comicdav.feature.webdav
 
+import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class WebDavBrowserScreenTest {
+    @Test
+    fun screenColorsUseThemePaletteRoles() {
+        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
+        val colors = webDavScreenColors(highContrast)
+
+        assertEquals(highContrast.background, colors.background)
+        assertEquals(highContrast.surfaceContainer, colors.panel)
+        assertEquals(highContrast.surfaceContainerHigh, colors.panelHigh)
+        assertEquals(highContrast.primary, colors.accent)
+        assertEquals(highContrast.onBackground, colors.text)
+        assertEquals(highContrast.onSurfaceVariant, colors.muted)
+    }
+
     @Test
     fun comicLongPressActionsAddToLibraryAndDownload() {
         val comic = webDavFile(name = "chapter.cbz")

@@ -253,7 +253,7 @@ fun SettingsScreen(
                 title = "配色方案",
                 selected = settings.colorPalette,
                 options = AppColorPalette.entries,
-                label = AppColorPalette::label,
+                label = AppColorPalette::settingsLabel,
                 onSelected = onColorPaletteChange,
             )
             SwitchRow(
@@ -733,9 +733,9 @@ internal fun ReadingDirection.label(): String =
         ReadingDirection.VERTICAL_CONTINUOUS -> "纵向滚动（无间隙）"
     }
 
-private fun AppColorPalette.label(): String =
+internal fun AppColorPalette.settingsLabel(): String =
     when (this) {
-        AppColorPalette.DEFAULT -> "松石浅色"
+        AppColorPalette.DEFAULT -> "影院深色"
         AppColorPalette.SEPIA -> "纸张护眼"
         AppColorPalette.NIGHT -> "夜间深色"
         AppColorPalette.HIGH_CONTRAST -> "高对比"

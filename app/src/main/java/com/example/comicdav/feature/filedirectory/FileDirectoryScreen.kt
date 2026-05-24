@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -57,21 +58,50 @@ import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 
-private val FileDirectoryBackground = Color(0xFF070B16)
-private val FileDirectoryPanel = Color(0xFF0D1424)
-private val FileDirectoryPanelHigh = Color(0xFF121D31)
-private val FileDirectoryRow = Color(0xFF101A2C)
-private val FileDirectoryRowSelected = Color(0xFF123847)
-private val FileDirectoryBorder = Color(0xFF243149)
-private val FileDirectorySelectedBorder = Color(0xFF38BDF8)
-private val FileDirectoryAccent = Color(0xFF38BDF8)
-private val FileDirectoryAccentSoft = Color(0xFF164E63)
-private val FileDirectoryPurple = Color(0xFFA78BFA)
-private val FileDirectoryText = Color(0xFFE5EDF8)
-private val FileDirectoryMuted = Color(0xFFAAB6CB)
-private val FileDirectoryNoticeContainer = Color(0xFF172033)
-private val FileDirectoryErrorContainer = Color(0xFF4A1720)
-private val FileDirectoryErrorText = Color(0xFFFCA5A5)
+internal data class FileDirectoryScreenColors(
+    val background: Color,
+    val panel: Color,
+    val panelHigh: Color,
+    val row: Color,
+    val rowSelected: Color,
+    val border: Color,
+    val selectedBorder: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val accentSoft: Color,
+    val onAccentSoft: Color,
+    val purple: Color,
+    val text: Color,
+    val muted: Color,
+    val noticeContainer: Color,
+    val errorContainer: Color,
+    val errorText: Color,
+    val sourceBadgeContainer: Color,
+    val sourceBadgeContent: Color,
+)
+
+internal fun fileDirectoryScreenColors(colorScheme: ColorScheme): FileDirectoryScreenColors =
+    FileDirectoryScreenColors(
+        background = colorScheme.background,
+        panel = colorScheme.surfaceContainer,
+        panelHigh = colorScheme.surfaceContainerHigh,
+        row = colorScheme.surfaceContainer,
+        rowSelected = colorScheme.primaryContainer,
+        border = colorScheme.outlineVariant,
+        selectedBorder = colorScheme.primary,
+        accent = colorScheme.primary,
+        onAccent = colorScheme.onPrimary,
+        accentSoft = colorScheme.primaryContainer,
+        onAccentSoft = colorScheme.onPrimaryContainer,
+        purple = colorScheme.secondary,
+        text = colorScheme.onBackground,
+        muted = colorScheme.onSurfaceVariant,
+        noticeContainer = colorScheme.surfaceContainerHigh,
+        errorContainer = colorScheme.errorContainer,
+        errorText = colorScheme.onErrorContainer,
+        sourceBadgeContainer = colorScheme.primaryContainer,
+        sourceBadgeContent = colorScheme.onPrimaryContainer,
+    )
 
 private data class FileDirectoryIconColors(
     val container: Color,
@@ -170,10 +200,11 @@ fun FileDirectoryScreen(
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit = {},
     onEditWebDavSource: (FileDirectorySourceEntity) -> Unit = {},
 ) {
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(FileDirectoryBackground)
+            .background(colors.background)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -196,14 +227,14 @@ fun FileDirectoryScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
                 color = if (uiState.error == null) {
-                    FileDirectoryNoticeContainer
+                    colors.noticeContainer
                 } else {
-                    FileDirectoryErrorContainer
+                    colors.errorContainer
                 },
-                contentColor = if (uiState.error == null) FileDirectoryText else FileDirectoryErrorText,
+                contentColor = if (uiState.error == null) colors.text else colors.errorText,
                 border = BorderStroke(
                     1.dp,
-                    if (uiState.error == null) FileDirectoryBorder else FileDirectoryErrorText.copy(alpha = 0.35f),
+                    if (uiState.error == null) colors.border else colors.errorText.copy(alpha = 0.35f),
                 ),
             ) {
                 Row(
@@ -213,14 +244,14 @@ fun FileDirectoryScreen(
                     Text(
                         text = uiState.error ?: uiState.message.orEmpty(),
                         modifier = Modifier.weight(1f),
-                        color = if (uiState.error == null) FileDirectoryText else FileDirectoryErrorText,
+                        color = if (uiState.error == null) colors.text else colors.errorText,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     TextButton(onClick = onDismissMessage) {
                         Text(
                             text = "知道了",
-                            color = if (uiState.error == null) FileDirectoryAccent else FileDirectoryErrorText,
+                            color = if (uiState.error == null) colors.accent else colors.errorText,
                         )
                     }
                 }
@@ -239,7 +270,7 @@ fun FileDirectoryScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(color = FileDirectoryAccent)
+                        CircularProgressIndicator(color = colors.accent)
                     }
                 } else {
                     EntryList(
@@ -274,13 +305,14 @@ private fun FileDirectoryHomeHeader(
     onOpenLibrary: () -> Unit,
 ) {
     var isAddMenuOpen by remember { mutableStateOf(false) }
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = FileDirectoryPanel,
-        contentColor = FileDirectoryText,
-        border = BorderStroke(1.dp, FileDirectoryBorder),
+        color = colors.panel,
+        contentColor = colors.text,
+        border = BorderStroke(1.dp, colors.border),
         shadowElevation = 4.dp,
     ) {
         Row(
@@ -294,14 +326,14 @@ private fun FileDirectoryHomeHeader(
                 Text(
                     text = ComicDavCopy.sourcesTitle,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = FileDirectoryText,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = "管理本地文件夹和 WebDAV 目录,浏览后可把漫画加入书架。",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = FileDirectoryMuted,
+                    color = colors.muted,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -316,7 +348,7 @@ private fun FileDirectoryHomeHeader(
                 ) {
                     Text(
                         text = ComicDavCopy.libraryTitle,
-                        color = FileDirectoryAccent,
+                        color = colors.accent,
                     )
                 }
                 Box {
@@ -326,8 +358,8 @@ private fun FileDirectoryHomeHeader(
                             .background(
                                 brush = Brush.linearGradient(
                                     colors = listOf(
-                                        FileDirectoryAccent,
-                                        FileDirectoryPurple,
+                                        colors.accent,
+                                        colors.purple,
                                     ),
                                 ),
                                 shape = CircleShape,
@@ -380,13 +412,14 @@ private fun FileDirectoryBrowseHeader(
     onGoUp: () -> Unit,
     onCloseBrowser: () -> Unit,
 ) {
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            color = FileDirectoryPanel,
-            contentColor = FileDirectoryText,
-            border = BorderStroke(1.dp, FileDirectoryBorder),
+            color = colors.panel,
+            contentColor = colors.text,
+            border = BorderStroke(1.dp, colors.border),
         ) {
             Row(
                 modifier = Modifier
@@ -399,14 +432,14 @@ private fun FileDirectoryBrowseHeader(
                     Text(
                         text = ComicDavCopy.sourcesTitle,
                         style = MaterialTheme.typography.headlineSmall,
-                        color = FileDirectoryText,
+                        color = colors.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = "浏览文件夹,选择漫画阅读或加入书架。",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = FileDirectoryMuted,
+                        color = colors.muted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -417,14 +450,14 @@ private fun FileDirectoryBrowseHeader(
                         modifier = Modifier
                             .size(44.dp)
                             .background(
-                                color = FileDirectoryPanelHigh,
+                                color = colors.panelHigh,
                                 shape = CircleShape,
                             ),
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ArrowUpward,
                             contentDescription = "上一级",
-                            tint = FileDirectoryText,
+                            tint = colors.text,
                         )
                     }
                     IconButton(
@@ -432,14 +465,14 @@ private fun FileDirectoryBrowseHeader(
                         modifier = Modifier
                             .size(44.dp)
                             .background(
-                                color = FileDirectoryPanelHigh,
+                                color = colors.panelHigh,
                                 shape = CircleShape,
                             ),
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = "关闭",
-                            tint = FileDirectoryText,
+                            tint = colors.text,
                         )
                     }
                 }
@@ -448,9 +481,9 @@ private fun FileDirectoryBrowseHeader(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            color = FileDirectoryPanelHigh,
-            contentColor = FileDirectoryText,
-            border = BorderStroke(1.dp, FileDirectoryAccent.copy(alpha = 0.32f)),
+            color = colors.panelHigh,
+            contentColor = colors.text,
+            border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.32f)),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -461,7 +494,7 @@ private fun FileDirectoryBrowseHeader(
                     modifier = Modifier
                         .size(36.dp)
                         .background(
-                            color = FileDirectoryAccentSoft,
+                            color = colors.accentSoft,
                             shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
@@ -469,7 +502,7 @@ private fun FileDirectoryBrowseHeader(
                     Icon(
                         imageVector = Icons.Rounded.Folder,
                         contentDescription = null,
-                        tint = FileDirectoryAccent,
+                        tint = colors.accent,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -477,14 +510,14 @@ private fun FileDirectoryBrowseHeader(
                     Text(
                         text = "当前位置",
                         style = MaterialTheme.typography.labelMedium,
-                        color = FileDirectoryAccent,
+                        color = colors.accent,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = FileDirectoryText,
+                        color = colors.text,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -504,6 +537,7 @@ private fun SourceList(
     modifier: Modifier = Modifier,
 ) {
     var sourceBeingManaged by remember { mutableStateOf<FileDirectorySourceEntity?>(null) }
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
 
     if (sources.isEmpty()) {
         Column(
@@ -519,13 +553,13 @@ private fun SourceList(
             ) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = FileDirectoryPanel,
-                    contentColor = FileDirectoryMuted,
-                    border = BorderStroke(1.dp, FileDirectoryBorder),
+                    color = colors.panel,
+                    contentColor = colors.muted,
+                    border = BorderStroke(1.dp, colors.border),
                 ) {
                     Text(
                         text = "还没有保存来源。添加本地文件夹或 WebDAV 目录开始浏览。",
-                        color = FileDirectoryMuted,
+                        color = colors.muted,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
                     )
                 }
@@ -578,7 +612,8 @@ private fun DirectorySourceRow(
     isSelected: Boolean,
 ) {
     val isLocal = source.sourceType == FileDirectorySourceType.LOCAL
-    val iconColors = sourceIconColors(isLocal)
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
+    val iconColors = sourceIconColors(isLocal, colors)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -588,11 +623,11 @@ private fun DirectorySourceRow(
                 onLongClickLabel = "管理来源",
             ),
         shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) FileDirectoryRowSelected else FileDirectoryRow,
-        contentColor = FileDirectoryText,
+        color = if (isSelected) colors.rowSelected else colors.row,
+        contentColor = colors.text,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) FileDirectorySelectedBorder else FileDirectoryBorder,
+            color = if (isSelected) colors.selectedBorder else colors.border,
         ),
         tonalElevation = 0.dp,
     ) {
@@ -626,7 +661,7 @@ private fun DirectorySourceRow(
                         text = fileDirectorySourceTitle(source),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = FileDirectoryText,
+                        color = colors.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
@@ -638,7 +673,7 @@ private fun DirectorySourceRow(
                 Text(
                     text = fileDirectorySourceSubtitle(source),
                     style = MaterialTheme.typography.bodySmall,
-                    color = FileDirectoryMuted,
+                    color = colors.muted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -649,7 +684,7 @@ private fun DirectorySourceRow(
             ) {
                 Text(
                     text = ComicDavCopy.open,
-                    color = FileDirectoryAccent,
+                    color = colors.accent,
                 )
             }
         }
@@ -779,6 +814,7 @@ private fun FileDirectoryEntryRow(
     val longPressActions = fileDirectoryEntryLongPressActions(entry)
     val clickAction = fileDirectoryEntryClickAction(entry)
     val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
 
     Surface(
         modifier = Modifier
@@ -804,14 +840,14 @@ private fun FileDirectoryEntryRow(
             ),
         shape = MaterialTheme.shapes.medium,
         color = if (isSelected) {
-            FileDirectoryRowSelected
+            colors.rowSelected
         } else {
-            FileDirectoryRow
+            colors.row
         },
-        contentColor = FileDirectoryText,
+        contentColor = colors.text,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) FileDirectorySelectedBorder else FileDirectoryBorder,
+            color = if (isSelected) colors.selectedBorder else colors.border,
         ),
         tonalElevation = 0.dp,
     ) {
@@ -826,7 +862,7 @@ private fun FileDirectoryEntryRow(
                     text = entry.name,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
-                    color = FileDirectoryText,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -834,7 +870,7 @@ private fun FileDirectoryEntryRow(
                     Text(
                         text = supportingLabel,
                         style = MaterialTheme.typography.bodySmall,
-                        color = FileDirectoryMuted,
+                        color = colors.muted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -849,7 +885,8 @@ internal fun fileDirectoryEntrySupportingLabel(entry: FileDirectoryBrowserItem):
 
 @Composable
 private fun EntryTypeIcon(mediaKind: MediaKind) {
-    val colors = entryIconColors(mediaKind)
+    val screenColors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
+    val colors = entryIconColors(mediaKind, screenColors)
     val icon = when (mediaKind) {
         MediaKind.Directory -> Icons.Rounded.Folder
         MediaKind.Video -> Icons.Rounded.PlayCircle
@@ -882,22 +919,24 @@ private fun EntryTypeIcon(mediaKind: MediaKind) {
 
 @Composable
 private fun SectionTitle(text: String) {
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
-        color = FileDirectoryMuted,
+        color = colors.muted,
         modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
     )
 }
 
 @Composable
 private fun SourceBadge(text: String) {
+    val colors = fileDirectoryScreenColors(MaterialTheme.colorScheme)
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = FileDirectoryAccentSoft,
-        contentColor = FileDirectoryAccent,
-        border = BorderStroke(1.dp, FileDirectoryAccent.copy(alpha = 0.35f)),
+        color = colors.sourceBadgeContainer,
+        contentColor = colors.sourceBadgeContent,
+        border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.35f)),
     ) {
         Box(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -914,41 +953,47 @@ private fun SourceBadge(text: String) {
     }
 }
 
-private fun sourceIconColors(isLocal: Boolean): FileDirectoryIconColors =
+private fun sourceIconColors(
+    isLocal: Boolean,
+    colors: FileDirectoryScreenColors,
+): FileDirectoryIconColors =
     if (isLocal) {
         FileDirectoryIconColors(
-            container = Color(0xFF0D344B),
-            content = Color(0xFF7DD3FC),
+            container = colors.accentSoft,
+            content = colors.onAccentSoft,
         )
     } else {
         FileDirectoryIconColors(
-            container = Color(0xFF2E244F),
-            content = Color(0xFFC4B5FD),
+            container = colors.panelHigh,
+            content = colors.purple,
         )
     }
 
-private fun entryIconColors(mediaKind: MediaKind): FileDirectoryIconColors =
+private fun entryIconColors(
+    mediaKind: MediaKind,
+    colors: FileDirectoryScreenColors,
+): FileDirectoryIconColors =
     when (mediaKind) {
         MediaKind.Directory -> FileDirectoryIconColors(
-            container = Color(0xFF0D344B),
-            content = Color(0xFF7DD3FC),
+            container = colors.accentSoft,
+            content = colors.onAccentSoft,
         )
         MediaKind.Comic -> FileDirectoryIconColors(
-            container = Color(0xFF2E244F),
-            content = Color(0xFFC4B5FD),
+            container = colors.panelHigh,
+            content = colors.purple,
         )
         MediaKind.Video -> FileDirectoryIconColors(
-            container = Color(0xFF073B43),
-            content = Color(0xFF67E8F9),
+            container = colors.accentSoft,
+            content = colors.onAccentSoft,
         )
         MediaKind.Subtitle -> FileDirectoryIconColors(
-            container = Color(0xFF3F3215),
-            content = Color(0xFFFDE68A),
+            container = colors.panelHigh,
+            content = colors.accent,
         )
         MediaKind.Audio,
         MediaKind.Unknown,
         -> FileDirectoryIconColors(
-            container = Color(0xFF263247),
-            content = Color(0xFFCBD5E1),
+            container = colors.panelHigh,
+            content = colors.muted,
         )
     }
