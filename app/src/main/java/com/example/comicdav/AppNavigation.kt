@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
@@ -58,6 +60,12 @@ internal fun selectionActionLabelsForWebDavVideo(): List<String> =
 
 internal fun selectionActionLabelsForVideoLibraryItem(): List<String> =
     listOf("重新提取缩略图", "移除", "删除缩略图", "取消")
+
+internal fun appShellNavigationBarContainerColor(colorScheme: ColorScheme) =
+    colorScheme.surfaceContainerLowest
+
+internal fun selectionNavigationBarContainerColor(colorScheme: ColorScheme) =
+    colorScheme.surfaceContainer
 
 internal enum class AppTab {
     SOURCES,
@@ -103,10 +111,10 @@ internal fun ComicDavAppShell(
         } else {
             androidx.compose.material3.HorizontalDivider(
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
             )
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = appShellNavigationBarContainerColor(MaterialTheme.colorScheme),
                 tonalElevation = 0.dp,
             ) {
                 AppTab.values().forEach { tab ->
@@ -127,11 +135,11 @@ internal fun ComicDavAppShell(
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         },
-                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                        colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                     )
@@ -229,10 +237,10 @@ internal fun selectionBottomBar(
 internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
     androidx.compose.material3.HorizontalDivider(
         thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
     )
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = selectionNavigationBarContainerColor(MaterialTheme.colorScheme),
         tonalElevation = 0.dp,
     ) {
         actions.forEach { action ->
@@ -253,12 +261,14 @@ internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
                         style = MaterialTheme.typography.labelMedium,
                     )
                 },
-                colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.primary,
                     indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurface,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unselectedIconColor = MaterialTheme.colorScheme.primary,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    disabledIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
                 ),
             )
         }

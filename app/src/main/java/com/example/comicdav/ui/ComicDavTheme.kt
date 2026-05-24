@@ -1,6 +1,7 @@
 package com.example.comicdav.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -14,37 +15,37 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.comicdav.data.AppColorPalette
 
-// 默认浅色 — 以靛蓝/紫色为主调,搭配琥珀色作为强调,呈现现代感和专业感
-private val ComicDavLightColors = lightColorScheme(
-    primary = Color(0xFF4F46E5), // Indigo 600
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE0E7FF),
-    onPrimaryContainer = Color(0xFF1E1B4B),
-    secondary = Color(0xFF7C3AED), // Violet 600
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEDE9FE),
-    onSecondaryContainer = Color(0xFF2E1065),
-    tertiary = Color(0xFFD97706), // Amber 600
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFEF3C7),
-    onTertiaryContainer = Color(0xFF451A03),
-    background = Color(0xFFF8FAFC),
-    onBackground = Color(0xFF0F172A),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF0F172A),
-    surfaceVariant = Color(0xFFEEF2F6),
-    onSurfaceVariant = Color(0xFF475569),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF8FAFC),
-    surfaceContainer = Color(0xFFF1F5F9),
-    surfaceContainerHigh = Color(0xFFE2E8F0),
-    surfaceContainerHighest = Color(0xFFCBD5E1),
-    outline = Color(0xFF94A3B8),
-    outlineVariant = Color(0xFFE2E8F0),
-    error = Color(0xFFDC2626),
-    onError = Color.White,
-    errorContainer = Color(0xFFFEE2E2),
-    onErrorContainer = Color(0xFF7F1D1D),
+// 默认 — 影院式深色外壳,以青色媒体强调色搭配紫色和琥珀色状态色
+private val ComicDavLightColors = darkColorScheme(
+    primary = Color(0xFF5EEBFF),
+    onPrimary = Color(0xFF00363F),
+    primaryContainer = Color(0xFF005463),
+    onPrimaryContainer = Color(0xFFB8F4FF),
+    secondary = Color(0xFFD6B7FF),
+    onSecondary = Color(0xFF3A1768),
+    secondaryContainer = Color(0xFF553285),
+    onSecondaryContainer = Color(0xFFF0DDFF),
+    tertiary = Color(0xFFFFC857),
+    onTertiary = Color(0xFF422C00),
+    tertiaryContainer = Color(0xFF614100),
+    onTertiaryContainer = Color(0xFFFFE3A3),
+    background = Color(0xFF050A14),
+    onBackground = Color(0xFFE8EEF7),
+    surface = Color(0xFF0B1220),
+    onSurface = Color(0xFFE7EDF7),
+    surfaceVariant = Color(0xFF243244),
+    onSurfaceVariant = Color(0xFFC3CEDB),
+    surfaceContainerLowest = Color(0xFF03070F),
+    surfaceContainerLow = Color(0xFF0E1726),
+    surfaceContainer = Color(0xFF132033),
+    surfaceContainerHigh = Color(0xFF1A2A40),
+    surfaceContainerHighest = Color(0xFF23344B),
+    outline = Color(0xFF7890A8),
+    outlineVariant = Color(0xFF2F425A),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 // 护眼/Sepia — 更柔和、温暖的米色调
@@ -204,7 +205,7 @@ private val ComicDavTypography = Typography(
         fontSize = 14.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
@@ -222,42 +223,47 @@ private val ComicDavTypography = Typography(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         fontWeight = FontWeight.Normal,
-        letterSpacing = 0.3.sp,
+        letterSpacing = 0.sp,
     ),
     labelLarge = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.1.sp,
+        letterSpacing = 0.sp,
     ),
     labelMedium = TextStyle(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.4.sp,
+        letterSpacing = 0.sp,
     ),
     labelSmall = TextStyle(
         fontSize = 11.sp,
         lineHeight = 14.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.4.sp,
+        letterSpacing = 0.sp,
     ),
 )
+
+internal fun comicDavColorSchemeFor(palette: AppColorPalette): ColorScheme =
+    when (palette) {
+        AppColorPalette.DEFAULT -> ComicDavLightColors
+        AppColorPalette.SEPIA -> ComicDavSepiaColors
+        AppColorPalette.NIGHT -> ComicDavNightColors
+        AppColorPalette.HIGH_CONTRAST -> ComicDavHighContrastColors
+    }
+
+internal fun comicDavTypography(): Typography = ComicDavTypography
 
 @Composable
 fun ComicDavTheme(
     palette: AppColorPalette = AppColorPalette.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when (palette) {
-        AppColorPalette.DEFAULT -> ComicDavLightColors
-        AppColorPalette.SEPIA -> ComicDavSepiaColors
-        AppColorPalette.NIGHT -> ComicDavNightColors
-        AppColorPalette.HIGH_CONTRAST -> ComicDavHighContrastColors
-    }
+    val colorScheme = comicDavColorSchemeFor(palette)
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = ComicDavTypography,
+        typography = comicDavTypography(),
         shapes = ComicDavShapes,
         content = content,
     )

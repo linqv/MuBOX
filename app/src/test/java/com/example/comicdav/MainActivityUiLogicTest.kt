@@ -1,6 +1,10 @@
 package com.example.comicdav
 
 import android.content.pm.ActivityInfo
+import androidx.compose.ui.graphics.luminance
+import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.ui.comicDavTypography
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,6 +41,54 @@ class MainActivityUiLogicTest {
             listOf("重新提取缩略图", "移除", "删除缩略图", "取消"),
             selectionActionLabelsForVideoLibraryItem(),
         )
+    }
+
+    @Test
+    fun defaultThemeUsesCinematicDarkShellRoles() {
+        val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT)
+
+        assertTrue("default background should be a dark shell", colors.background.luminance() < 0.05f)
+        assertTrue("surface should layer above background", colors.surface.luminance() > colors.background.luminance())
+        assertTrue(
+            "high surface containers should layer above low containers",
+            colors.surfaceContainerHigh.luminance() > colors.surfaceContainerLow.luminance(),
+        )
+        assertTrue("text on background should stay readable", colors.onBackground.luminance() > 0.70f)
+        assertTrue("primary should read as a cyan media accent", colors.primary.blue > colors.primary.red)
+        assertTrue("primary should read as a cyan media accent", colors.primary.green > colors.primary.red)
+        assertTrue("secondary should read as a purple accent", colors.secondary.blue > colors.secondary.green)
+        assertTrue("secondary should read as a purple accent", colors.secondary.red > colors.secondary.green)
+        assertTrue("tertiary should read as an amber accent", colors.tertiary.red > colors.tertiary.blue)
+        assertTrue("tertiary should read as an amber accent", colors.tertiary.green > colors.tertiary.blue)
+        assertTrue("error pair should work on dark UI", colors.error.luminance() > colors.onError.luminance())
+        assertTrue(
+            "error container pair should work on dark UI",
+            colors.errorContainer.luminance() < colors.onErrorContainer.luminance(),
+        )
+    }
+
+    @Test
+    fun compactTypographyAvoidsDecorativeTracking() {
+        val typography = comicDavTypography()
+
+        listOf(
+            typography.titleSmall,
+            typography.bodySmall,
+            typography.labelLarge,
+            typography.labelMedium,
+            typography.labelSmall,
+        ).forEach { style ->
+            assertTrue(style.letterSpacing.value >= 0f)
+            assertTrue(style.letterSpacing.value <= 0.1f)
+        }
+    }
+
+    @Test
+    fun appShellNavigationBarsUseLayeredSurfaceRoles() {
+        val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT)
+
+        assertEquals(colors.surfaceContainerLowest, appShellNavigationBarContainerColor(colors))
+        assertEquals(colors.surfaceContainer, selectionNavigationBarContainerColor(colors))
     }
 
     @Test
