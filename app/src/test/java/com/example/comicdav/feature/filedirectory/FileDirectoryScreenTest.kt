@@ -20,6 +20,7 @@ class FileDirectoryScreenTest {
         assertEquals(highContrast.surfaceContainer, colors.panel)
         assertEquals(highContrast.surfaceContainerHigh, colors.panelHigh)
         assertEquals(highContrast.primary, colors.accent)
+        assertEquals(highContrast.onPrimary, colors.onAccent)
         assertEquals(highContrast.onBackground, colors.text)
         assertEquals(highContrast.onSurfaceVariant, colors.muted)
     }

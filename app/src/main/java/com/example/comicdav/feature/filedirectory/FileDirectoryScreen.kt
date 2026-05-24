@@ -365,7 +365,7 @@ private fun FileDirectoryHomeHeader(
                                 shape = CircleShape,
                             ),
                         shape = CircleShape,
-                        color = Color.Transparent,
+                        color = colors.accent.copy(alpha = 0f),
                         shadowElevation = 4.dp,
                     ) {
                         IconButton(
@@ -375,7 +375,7 @@ private fun FileDirectoryHomeHeader(
                             Icon(
                                 imageVector = Icons.Filled.Add,
                                 contentDescription = "添加",
-                                tint = Color.White,
+                                tint = colors.onAccent,
                             )
                         }
                     }

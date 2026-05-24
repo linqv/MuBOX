@@ -68,6 +68,8 @@ internal data class VideoLibraryScreenColors(
     val errorSurface: Color,
     val errorText: Color,
     val border: Color,
+    val thumbnailScrim: Color,
+    val onThumbnailScrim: Color,
 )
 
 internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScreenColors =
@@ -85,6 +87,8 @@ internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScr
         errorSurface = colorScheme.errorContainer,
         errorText = colorScheme.onErrorContainer,
         border = colorScheme.outlineVariant,
+        thumbnailScrim = colorScheme.scrim,
+        onThumbnailScrim = colorScheme.inverseOnSurface,
     )
 
 @Composable
@@ -397,10 +401,10 @@ private fun VideoLibraryCard(
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color.Black.copy(alpha = 0.62f),
-                                            Color.Black.copy(alpha = 0.1f),
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.78f),
+                                            colors.thumbnailScrim.copy(alpha = 0.62f),
+                                            colors.thumbnailScrim.copy(alpha = 0.1f),
+                                            colors.thumbnailScrim.copy(alpha = 0f),
+                                            colors.thumbnailScrim.copy(alpha = 0.78f),
                                         ),
                                     ),
                                 ),
@@ -412,8 +416,8 @@ private fun VideoLibraryCard(
                         modifier = Modifier
                             .size(56.dp),
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.58f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                        color = colors.thumbnailScrim.copy(alpha = 0.58f),
+                        border = BorderStroke(1.dp, colors.onThumbnailScrim.copy(alpha = 0.28f)),
                         shadowElevation = 6.dp,
                     ) {
                         Box(
@@ -423,7 +427,7 @@ private fun VideoLibraryCard(
                             Icon(
                                 imageVector = Icons.Filled.PlayArrow,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = colors.onThumbnailScrim,
                                 modifier = Modifier.size(32.dp),
                             )
                         }
@@ -433,7 +437,7 @@ private fun VideoLibraryCard(
                             .align(Alignment.TopStart)
                             .padding(8.dp),
                         shape = RoundedCornerShape(7.dp),
-                        color = Color.Black.copy(alpha = 0.62f),
+                        color = colors.thumbnailScrim.copy(alpha = 0.62f),
                         border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
                     ) {
                         Text(

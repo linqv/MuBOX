@@ -24,6 +24,8 @@ class VideoLibraryScreenTest {
         assertEquals(highContrast.onPrimary, colors.onAccent)
         assertEquals(highContrast.onBackground, colors.text)
         assertEquals(highContrast.onSurfaceVariant, colors.muted)
+        assertEquals(highContrast.scrim, colors.thumbnailScrim)
+        assertEquals(highContrast.inverseOnSurface, colors.onThumbnailScrim)
     }
 
     @Test
