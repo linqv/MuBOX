@@ -43,6 +43,7 @@ import coil3.compose.AsyncImage
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
 @Composable
@@ -331,6 +332,6 @@ private fun sourceLabel(sourceType: SourceType): String {
 private fun sourceMeta(item: LibraryItemWithSources): String {
     return when (item.item.sourceType) {
         SourceType.LOCAL -> item.localSource?.fileName ?: "本地文件"
-        SourceType.WEBDAV -> item.webDavSource?.remotePath ?: "WebDAV"
+        SourceType.WEBDAV -> item.webDavSource?.remotePath?.let(::decodeWebDavPathForDisplay) ?: "WebDAV"
     }
 }
