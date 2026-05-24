@@ -19,7 +19,7 @@ internal fun installReaderImageLoader(context: Context) {
         ImageLoader.Builder(context.applicationContext)
             .components {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    add(PlatformAnimatedImageDecoder.Factory())
+                    add(PlatformReaderImageDecoder.Factory())
                 }
             }
             .build()
@@ -27,17 +27,25 @@ internal fun installReaderImageLoader(context: Context) {
 }
 
 @RequiresApi(Build.VERSION_CODES.P)
-private class PlatformAnimatedImageDecoder(
+internal class PlatformReaderImageDecoder(
     private val source: ImageDecoder.Source,
     private val closeable: AutoCloseable,
+    private val decodeAsBitmap: Boolean,
 ) : Decoder {
     override suspend fun decode(): DecodeResult {
-        val drawable = try {
-            ImageDecoder.decodeDrawable(source)
+        val image = try {
+            if (decodeAsBitmap) {
+                val bitmap = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                }
+                bitmap.asImage(false)
+            } else {
+                ImageDecoder.decodeDrawable(source).asImage()
+            }
         } finally {
             closeable.close()
         }
-        return DecodeResult(drawable.asImage(), false)
+        return DecodeResult(image, false)
     }
 
     class Factory : Decoder.Factory {
@@ -46,12 +54,25 @@ private class PlatformAnimatedImageDecoder(
             options: Options,
             imageLoader: ImageLoader,
         ): Decoder? {
-            if (!isPlatformAnimatedReaderImage(result.mimeType, result.headerBytes())) return null
+            val header = result.headerBytes()
+            if (!isPlatformReaderImage(result.mimeType, header)) return null
             val file = result.source.fileOrNull()?.toFile() ?: return null
             val source = ImageDecoder.createSource(file)
-            return PlatformAnimatedImageDecoder(source, result.source)
+            return PlatformReaderImageDecoder(
+                source = source,
+                closeable = result.source,
+                decodeAsBitmap = isAvifReaderImage(result.mimeType, header),
+            )
         }
     }
+}
+
+internal fun isPlatformReaderImage(mimeType: String?, header: ByteArray): Boolean {
+    val normalizedMimeType = mimeType?.lowercase(Locale.ROOT)
+    if (normalizedMimeType == "image/gif" || normalizedMimeType == "image/webp") {
+        return true
+    }
+    return isAvifReaderImage(normalizedMimeType, header) || header.isGifHeader() || header.isWebpHeader()
 }
 
 internal fun isPlatformAnimatedReaderImage(mimeType: String?, header: ByteArray): Boolean {
@@ -60,6 +81,11 @@ internal fun isPlatformAnimatedReaderImage(mimeType: String?, header: ByteArray)
         return true
     }
     return header.isGifHeader() || header.isWebpHeader()
+}
+
+internal fun isAvifReaderImage(mimeType: String?, header: ByteArray): Boolean {
+    val normalizedMimeType = mimeType?.lowercase(Locale.ROOT)
+    return normalizedMimeType == "image/avif" || header.isAvifHeader()
 }
 
 private fun SourceFetchResult.headerBytes(maxBytes: Long = 32L): ByteArray {
@@ -91,3 +117,28 @@ private fun ByteArray.isWebpHeader(): Boolean =
         this[9] == 'E'.code.toByte() &&
         this[10] == 'B'.code.toByte() &&
         this[11] == 'P'.code.toByte()
+
+private fun ByteArray.isAvifHeader(): Boolean {
+    if (size < 12) return false
+    if (
+        this[4] != 'f'.code.toByte() ||
+        this[5] != 't'.code.toByte() ||
+        this[6] != 'y'.code.toByte() ||
+        this[7] != 'p'.code.toByte()
+    ) {
+        return false
+    }
+    var offset = 8
+    while (offset + 4 <= size) {
+        if (hasAvifBrand(offset)) return true
+        offset += 4
+    }
+    return false
+}
+
+private fun ByteArray.hasAvifBrand(offset: Int): Boolean =
+    size >= offset + 4 &&
+        this[offset] == 'a'.code.toByte() &&
+        this[offset + 1] == 'v'.code.toByte() &&
+        this[offset + 2] == 'i'.code.toByte() &&
+        (this[offset + 3] == 'f'.code.toByte() || this[offset + 3] == 's'.code.toByte())

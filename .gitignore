@@ -22,6 +22,9 @@ app/src/test/**
 !app/src/test/java/com/
 !app/src/test/java/com/example/
 !app/src/test/java/com/example/comicdav/
+!app/src/test/java/com/example/comicdav/feature/
+!app/src/test/java/com/example/comicdav/feature/reader/
+!app/src/test/java/com/example/comicdav/feature/reader/ReaderImageLoaderTest.kt
 !app/src/test/java/com/example/comicdav/video/
 !app/src/test/java/com/example/comicdav/video/player/
 !app/src/test/java/com/example/comicdav/video/player/MpvControllerAdvancedControlsTest.kt

@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.reader
 
 import android.content.Context
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -402,6 +403,11 @@ internal fun readerScrollStateKey(uiState: ReaderUiState): String =
 internal fun readerImageRequest(context: Context, pageFile: java.io.File): ImageRequest =
     ImageRequest.Builder(context)
         .data(pageFile)
+        .apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                decoderFactory(PlatformReaderImageDecoder.Factory())
+            }
+        }
         .memoryCachePolicy(CachePolicy.DISABLED)
         .diskCachePolicy(CachePolicy.DISABLED)
         .build()
