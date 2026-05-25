@@ -83,6 +83,22 @@ class AppSettingsStoreTest {
         assertTrue(store.settings.first().avifImagesEnabled)
     }
 
+    @Test
+    fun readerPinchZoomDefaultsOff() = runTest {
+        val store = createStore("reader_pinch_zoom_default.preferences_pb")
+
+        assertFalse(store.settings.first().readerPinchZoomEnabled)
+    }
+
+    @Test
+    fun readerPinchZoomCanBeUpdatedAndReadBack() = runTest {
+        val store = createStore("reader_pinch_zoom_update.preferences_pb")
+
+        store.updateReaderPinchZoomEnabled(true)
+
+        assertTrue(store.settings.first().readerPinchZoomEnabled)
+    }
+
     private fun TestScope.createStore(fileName: String): AppSettingsStore {
         val preferencesFile = temporaryFolder.newFile(fileName)
         val dataStore = PreferenceDataStoreFactory.create(

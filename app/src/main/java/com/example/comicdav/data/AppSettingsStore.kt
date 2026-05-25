@@ -46,6 +46,7 @@ data class AppSettings(
     val autoPageSpeedMillis: Int = 5_000,
     val screenRotationLockEnabled: Boolean = false,
     val volumeKeysTurnPagesEnabled: Boolean = false,
+    val readerPinchZoomEnabled: Boolean = false,
     val diskCacheLimitMb: Int = 1024,
     val webDavPrefetchPageCount: Int = 4,
     val libraryCoversEnabled: Boolean = true,
@@ -79,6 +80,7 @@ class AppSettingsStore(
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
+            readerPinchZoomEnabled = preferences[READER_PINCH_ZOOM_ENABLED] ?: false,
             diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
             webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
             libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
@@ -151,6 +153,12 @@ class AppSettingsStore(
     suspend fun updateVolumeKeysTurnPagesEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateReaderPinchZoomEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[READER_PINCH_ZOOM_ENABLED] = enabled
         }
     }
 
@@ -248,6 +256,7 @@ class AppSettingsStore(
         val AUTO_PAGE_SPEED_MILLIS = intPreferencesKey("auto_page_speed_millis")
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")
         val VOLUME_KEYS_TURN_PAGES_ENABLED = booleanPreferencesKey("volume_keys_turn_pages_enabled")
+        val READER_PINCH_ZOOM_ENABLED = booleanPreferencesKey("reader_pinch_zoom_enabled")
         val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
         val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
         val LIBRARY_COVERS_ENABLED = booleanPreferencesKey("library_covers_enabled")
