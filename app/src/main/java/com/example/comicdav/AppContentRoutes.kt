@@ -56,6 +56,7 @@ internal fun ReaderRoute(
         onAutoPageEnabledChange = onAutoPageEnabledChange,
         autoPageIntervalMillis = appSettings.autoPageSpeedMillis.toLong(),
         volumeKeysTurnPages = appSettings.volumeKeysTurnPagesEnabled,
+        pinchZoomEnabled = appSettings.readerPinchZoomEnabled,
         modifier = modifier,
     )
 }

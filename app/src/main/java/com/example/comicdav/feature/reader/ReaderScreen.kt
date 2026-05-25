@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,22 +47,27 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -97,6 +105,7 @@ fun ReaderScreen(
     onAutoPageEnabledChange: (Boolean) -> Unit = {},
     autoPageIntervalMillis: Long = 0L,
     volumeKeysTurnPages: Boolean = false,
+    pinchZoomEnabled: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -321,21 +330,23 @@ fun ReaderScreen(
                                     onImageLoadSucceeded = onImageLoadSucceeded,
                                     onImageLoadFailed = onImageLoadFailed,
                                     fillWidth = true,
+                                    pinchZoomEnabled = pinchZoomEnabled,
                                 )
                             }
                         }
                     } else if (readingDirection == ReadingDirection.VERTICAL) {
                         VerticalPager(
                             state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        beyondViewportPageCount = 1,
-                    ) { page ->
-                        ReaderImagePage(
-                            page = page,
-                            pageFile = uiState.pageFiles[page],
-                            onImageLoadStarted = onImageLoadStarted,
+                            modifier = Modifier.fillMaxSize(),
+                            beyondViewportPageCount = 1,
+                        ) { page ->
+                            ReaderImagePage(
+                                page = page,
+                                pageFile = uiState.pageFiles[page],
+                                onImageLoadStarted = onImageLoadStarted,
                                 onImageLoadSucceeded = onImageLoadSucceeded,
                                 onImageLoadFailed = onImageLoadFailed,
+                                pinchZoomEnabled = pinchZoomEnabled,
                             )
                         }
                     } else {
@@ -351,6 +362,7 @@ fun ReaderScreen(
                                 onImageLoadStarted = onImageLoadStarted,
                                 onImageLoadSucceeded = onImageLoadSucceeded,
                                 onImageLoadFailed = onImageLoadFailed,
+                                pinchZoomEnabled = pinchZoomEnabled,
                             )
                         }
                     }
@@ -457,6 +469,62 @@ internal fun readerZoomStateAfterTransform(
     )
 }
 
+private fun Modifier.readerZoomTransform(
+    enabled: Boolean,
+    zoomState: ReaderZoomState,
+    viewportSize: IntSize,
+    currentZoomState: () -> ReaderZoomState,
+    onZoomStateChanged: (ReaderZoomState) -> Unit,
+): Modifier {
+    val transformed = if (enabled) {
+        this.graphicsLayer {
+            scaleX = zoomState.scale
+            scaleY = zoomState.scale
+            translationX = zoomState.offsetX
+            translationY = zoomState.offsetY
+        }
+    } else {
+        this
+    }
+    if (!enabled) return transformed
+    return transformed.pointerInput(viewportSize) {
+        awaitEachGesture {
+            do {
+                val event = awaitPointerEvent()
+                val pressedChanges = event.changes.filter { it.pressed }
+                val current = currentZoomState()
+                when {
+                    pressedChanges.size > 1 -> {
+                        val nextState = readerZoomStateAfterTransform(
+                            current = current,
+                            zoomChange = event.calculateZoom(),
+                            pan = event.calculatePan(),
+                            viewportSize = viewportSize,
+                        )
+                        if (nextState != current) {
+                            onZoomStateChanged(nextState)
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
+                    current.scale > ReaderMinZoom && pressedChanges.size == 1 -> {
+                        val change = pressedChanges.first()
+                        val nextState = readerZoomStateAfterTransform(
+                            current = current,
+                            zoomChange = 1f,
+                            pan = change.positionChange(),
+                            viewportSize = viewportSize,
+                        )
+                        if (nextState != current) {
+                            onZoomStateChanged(nextState)
+                        }
+                        change.consume()
+                    }
+                }
+            } while (event.changes.any { it.pressed })
+        }
+    }
+}
+
 @Composable
 private fun ReaderImagePage(
     page: Int,
@@ -466,17 +534,33 @@ private fun ReaderImagePage(
     onImageLoadFailed: (Int) -> Unit,
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
+    pinchZoomEnabled: Boolean = false,
 ) {
     var continuousImageReady by remember(pageFile?.absolutePath, fillWidth) {
         mutableStateOf(!fillWidth || pageFile == null)
+    }
+    var zoomState by remember(page, pageFile?.absolutePath, fillWidth) {
+        mutableStateOf(ReaderZoomState())
+    }
+    var viewportSize by remember(page, pageFile?.absolutePath, fillWidth) {
+        mutableStateOf(IntSize.Zero)
+    }
+    val latestZoomState by rememberUpdatedState(zoomState)
+    val latestZoomStateUpdater by rememberUpdatedState<(ReaderZoomState) -> Unit> { nextState ->
+        zoomState = nextState
     }
     Box(
         modifier = if (fillWidth) {
             modifier
                 .fillMaxWidth()
                 .background(Color.Black)
+                .clipToBounds()
+                .onSizeChanged { viewportSize = it }
         } else {
-            modifier.fillMaxSize()
+            modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .onSizeChanged { viewportSize = it }
         },
         contentAlignment = Alignment.Center,
     ) {
@@ -501,13 +585,19 @@ private fun ReaderImagePage(
             AsyncImage(
                 model = imageRequest,
                 contentDescription = "第 ${page + 1} 页",
-                modifier = if (fillWidth) {
+                modifier = (if (fillWidth) {
                     Modifier
                         .fillMaxWidth()
                         .then(if (continuousImageReady) Modifier else Modifier.height(ContinuousPageLoadingHeight))
                 } else {
                     Modifier.fillMaxSize()
-                },
+                }).readerZoomTransform(
+                    enabled = pinchZoomEnabled && continuousImageReady,
+                    zoomState = zoomState,
+                    viewportSize = viewportSize,
+                    currentZoomState = { latestZoomState },
+                    onZoomStateChanged = latestZoomStateUpdater,
+                ),
                 contentScale = if (fillWidth) ContentScale.FillWidth else ContentScale.Fit,
                 onLoading = {
                     continuousImageReady = false
