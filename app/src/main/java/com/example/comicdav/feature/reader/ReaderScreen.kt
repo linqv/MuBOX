@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -67,6 +68,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
@@ -425,6 +427,34 @@ internal fun reportableContinuousPageChange(
 ): Int? {
     if (!isScrollInProgress) return null
     return firstVisiblePage.takeIf { it in 0 until pageCount }
+}
+
+internal const val ReaderMinZoom = 1f
+internal const val ReaderMaxZoom = 4f
+
+internal data class ReaderZoomState(
+    val scale: Float = ReaderMinZoom,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+)
+
+internal fun readerZoomStateAfterTransform(
+    current: ReaderZoomState,
+    zoomChange: Float,
+    pan: Offset,
+    viewportSize: IntSize,
+): ReaderZoomState {
+    val nextScale = (current.scale * zoomChange).coerceIn(ReaderMinZoom, ReaderMaxZoom)
+    if (nextScale <= ReaderMinZoom || viewportSize.width <= 0 || viewportSize.height <= 0) {
+        return ReaderZoomState()
+    }
+    val maxOffsetX = ((nextScale - ReaderMinZoom) * viewportSize.width / 2f).coerceAtLeast(0f)
+    val maxOffsetY = ((nextScale - ReaderMinZoom) * viewportSize.height / 2f).coerceAtLeast(0f)
+    return ReaderZoomState(
+        scale = nextScale,
+        offsetX = (current.offsetX + pan.x).coerceIn(-maxOffsetX, maxOffsetX),
+        offsetY = (current.offsetY + pan.y).coerceIn(-maxOffsetY, maxOffsetY),
+    )
 }
 
 @Composable
