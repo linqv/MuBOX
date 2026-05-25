@@ -26,4 +26,10 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleRelease -PtargetAb
 
 - MuBOX source code is released under GPLv3-or-later.
 - Binary releases must provide corresponding source code and retain license notices.
-- Third-party dependency licenses must be reviewed before distribution.
+- Third-party dependency licenses have been reviewed and documented in `NOTICE`.
+  - MuPDF (fitz-1.27.1.aar): AGPL-3.0-or-later. Source must be made available
+    to recipients; see https://mupdf.com/downloads/ for MuPDF 1.27.1 source.
+  - mpvEx / mpv-android-lib: Apache-2.0 / MIT. libmpv is LGPL-2.1-or-later.
+  - Android Gradle dependencies: Apache-2.0.
+  - Rust crates (libcomic_core.so): MIT / Apache-2.0 / Zlib / BSD-3-Clause.
+  - Full details are in `NOTICE`.

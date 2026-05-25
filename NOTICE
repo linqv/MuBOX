@@ -12,5 +12,132 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 The full license text is available in the LICENSE file at the repository root.
 
-Third-party components keep their own licenses. Review Gradle and Cargo
-dependency metadata before publishing binary releases.
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+The following third-party components are included in or linked by MuBOX binary
+releases. Each component retains its own copyright and license.
+
+--------------------------------------------------------------------------------
+1. MuPDF / fitz (app/libs/fitz-1.27.1.aar)
+--------------------------------------------------------------------------------
+Copyright (C) 2006-2024 Artifex Software, Inc.
+License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+Source:  https://mupdf.com/  |  https://git.ghostscript.com/?p=mupdf.git
+
+AGPL COMPLIANCE NOTE: MuPDF is distributed under the AGPL. Binary releases of
+MuBOX that include fitz-1.27.1.aar must make the complete corresponding source
+code of MuPDF available to recipients, either by including it or by providing a
+written offer valid for three years. The MuPDF source corresponding to version
+1.27.1 is available at https://mupdf.com/downloads/.
+
+--------------------------------------------------------------------------------
+2. mpvEx (mpvEx/)
+--------------------------------------------------------------------------------
+Copyright (C) mpvEx contributors
+License: Apache License 2.0
+Source:  https://github.com/mpvExProject/mpvEx
+Full license text: mpvEx/LICENSE
+
+mpvEx bundles libmpv. libmpv is licensed under the GNU Lesser General Public
+License v2.1 or later (LGPL-2.1-or-later). Source code for libmpv is available
+at https://github.com/mpv-player/mpv.
+
+--------------------------------------------------------------------------------
+3. mpv-android-lib (app/libs/mpv-android-lib-v0.0.1.aar)
+--------------------------------------------------------------------------------
+License: MIT
+Source:  https://github.com/mpvExProject/mpvEx
+
+This AAR is built from the mpvEx project and bundles precompiled native
+libraries (libmpv and its dependencies). Corresponding source is available from
+the mpvEx repository listed above.
+
+--------------------------------------------------------------------------------
+4. Android / Kotlin dependencies (Gradle)
+--------------------------------------------------------------------------------
+The following libraries are fetched via Gradle at build time. All are licensed
+under the Apache License 2.0 unless noted otherwise.
+
+  androidx.activity:activity-compose:1.9.3
+  androidx.compose:compose-bom:2026.04.01
+  androidx.compose.foundation:foundation
+  androidx.compose.material3:material3
+  androidx.compose.material:material-icons-extended
+  androidx.compose.ui:ui
+  androidx.compose.ui:ui-tooling-preview
+  androidx.datastore:datastore-preferences:1.1.1
+  androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7
+  androidx.room:room-runtime:2.8.4
+  androidx.room:room-ktx:2.8.4
+  androidx.room:room-compiler:2.8.4
+  org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0
+
+  io.coil-kt.coil3:coil-compose:3.0.4
+    License: Apache License 2.0
+    Source:  https://github.com/coil-kt/coil
+
+  com.squareup.okhttp3:okhttp:4.12.0
+    License: Apache License 2.0
+    Source:  https://github.com/square/okhttp
+
+Apache License 2.0 full text: https://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+5. Rust crates (comic-core)
+--------------------------------------------------------------------------------
+The Rust crate dependencies listed below are compiled into libcomic_core.so.
+Most are dual-licensed MIT OR Apache-2.0; exceptions are noted.
+
+  anyhow 1.0.102            MIT OR Apache-2.0
+  thiserror 2.0.18          MIT OR Apache-2.0
+  flate2 1.1.9              MIT OR Apache-2.0
+  encoding_rs 0.8.35        (Apache-2.0 OR MIT) AND BSD-3-Clause
+  jni 0.21.1                MIT OR Apache-2.0
+  once_cell 1.21.4          MIT OR Apache-2.0
+  serde 1.0.228             MIT OR Apache-2.0
+  serde_json 1.0.149        MIT OR Apache-2.0
+  sevenz-rust2 0.21.0       Apache-2.0
+  sha2 0.10.9               MIT OR Apache-2.0
+  adler2 2.0.1              0BSD OR MIT OR Apache-2.0
+  bitflags 2.11.1           MIT OR Apache-2.0
+  block-buffer 0.10.4       MIT OR Apache-2.0
+  bytes 1.11.1              MIT
+  cfg-if 1.0.4              MIT OR Apache-2.0
+  combine 4.6.7             MIT
+  cpufeatures 0.2.17        MIT OR Apache-2.0
+  crossbeam-utils 0.8.21    MIT OR Apache-2.0
+  crypto-common 0.1.7       MIT OR Apache-2.0
+  digest 0.10.7             MIT OR Apache-2.0
+  foldhash 0.1.5            Zlib
+  generic-array 0.14.7      MIT
+  hashbrown 0.15.5          MIT OR Apache-2.0
+  indexmap 2.14.0           Apache-2.0 OR MIT
+  itoa 1.0.18               MIT OR Apache-2.0
+  jni-sys 0.4.1             MIT OR Apache-2.0
+  libc 0.2.186              MIT OR Apache-2.0
+  log 0.4.29                MIT OR Apache-2.0
+  lzma-rust2 0.16.2         Apache-2.0
+  memchr 2.8.0              Unlicense OR MIT
+  miniz_oxide 0.8.9         MIT OR Zlib OR Apache-2.0
+  pin-project-lite 0.2.17   Apache-2.0 OR MIT
+  proc-macro2 1.0.106       MIT OR Apache-2.0
+  quote 1.0.45              MIT OR Apache-2.0
+  rustix 1.1.4              Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+  serde_derive 1.0.228      MIT OR Apache-2.0
+  simd-adler32 0.3.9        MIT
+  slab 0.4.12               MIT
+  syn 2.0.117               MIT OR Apache-2.0
+  typenum 1.20.0            MIT OR Apache-2.0
+  unicode-ident 1.0.24      (MIT OR Apache-2.0) AND Unicode-3.0
+  walkdir 2.5.0             Unlicense OR MIT
+  zip 2.4.2                 MIT
+  zopfli 0.8.3              Apache-2.0
+
+  encoding_rs additionally carries a BSD-3-Clause notice:
+    Copyright (c) 2015-2019 Mozilla Foundation
+    Portions copyright (c) 2015 Google Inc.
+
+MIT License full text: https://opensource.org/licenses/MIT
+Apache License 2.0 full text: https://www.apache.org/licenses/LICENSE-2.0
