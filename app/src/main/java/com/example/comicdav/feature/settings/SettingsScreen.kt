@@ -117,6 +117,7 @@ internal fun comicSettingsGroupLayout(): List<SettingsGroupLayout> =
             rows = listOf(
                 "阅读方向",
                 "音量键翻页",
+                "双指缩放",
                 "WebDAV 预取页数",
                 "诊断日志",
                 "AVIF 图片",
@@ -158,6 +159,7 @@ fun SettingsScreen(
     onAutoPageSpeedChange: (Int) -> Unit,
     onScreenRotationLockChange: (Boolean) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
+    onReaderPinchZoomEnabledChange: (Boolean) -> Unit = {},
     onDiskCacheLimitChange: (Int) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
@@ -212,6 +214,7 @@ fun SettingsScreen(
                 onAutoPageEnabledChange = onAutoPageEnabledChange,
                 onAutoPageSpeedChange = onAutoPageSpeedChange,
                 onVolumeKeysTurnPagesChange = onVolumeKeysTurnPagesChange,
+                onReaderPinchZoomEnabledChange = onReaderPinchZoomEnabledChange,
                 onWebDavPrefetchPageCountChange = onWebDavPrefetchPageCountChange,
                 onAvifImagesEnabledChange = onAvifImagesEnabledChange,
                 onLibraryCoversEnabledChange = onLibraryCoversEnabledChange,
@@ -453,6 +456,7 @@ private fun ComicSettingsPage(
     onAutoPageEnabledChange: (Boolean) -> Unit,
     onAutoPageSpeedChange: (Int) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
+    onReaderPinchZoomEnabledChange: (Boolean) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onAvifImagesEnabledChange: (Boolean) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
@@ -478,6 +482,12 @@ private fun ComicSettingsPage(
                 subtitle = "使用音量键向前或向后翻页",
                 checked = settings.volumeKeysTurnPagesEnabled,
                 onCheckedChange = onVolumeKeysTurnPagesChange,
+            )
+            SwitchRow(
+                title = "双指缩放",
+                subtitle = "在阅读时用双指放大并拖动查看细节",
+                checked = settings.readerPinchZoomEnabled,
+                onCheckedChange = onReaderPinchZoomEnabledChange,
             )
             DropdownRow(
                 title = "WebDAV 预取页数",

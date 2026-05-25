@@ -197,6 +197,9 @@ internal fun SettingsTabContent(
         onVolumeKeysTurnPagesChange = { value ->
             scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
         },
+        onReaderPinchZoomEnabledChange = { value ->
+            scope.launch { appSettingsStore.updateReaderPinchZoomEnabled(value) }
+        },
         onDiskCacheLimitChange = { value ->
             scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
         },

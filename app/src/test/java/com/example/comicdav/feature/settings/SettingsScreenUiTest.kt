@@ -48,6 +48,7 @@ class SettingsScreenUiTest {
             listOf(
                 "阅读方向",
                 "音量键翻页",
+                "双指缩放",
                 "WebDAV 预取页数",
                 "诊断日志",
                 "AVIF 图片",
