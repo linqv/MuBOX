@@ -39,6 +39,7 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.video.mediaKindFor
 
@@ -61,11 +62,14 @@ internal fun selectionActionLabelsForWebDavVideo(): List<String> =
 internal fun selectionActionLabelsForVideoLibraryItem(): List<String> =
     listOf("重新提取缩略图", "移除", "删除缩略图", "取消")
 
+internal fun appShellBackgroundColor(colorScheme: ColorScheme) =
+    muBoxColorsFor(colorScheme).background
+
 internal fun appShellNavigationBarContainerColor(colorScheme: ColorScheme) =
-    colorScheme.surfaceContainerLowest
+    muBoxColorsFor(colorScheme).panel
 
 internal fun selectionNavigationBarContainerColor(colorScheme: ColorScheme) =
-    colorScheme.surfaceContainer
+    muBoxColorsFor(colorScheme).panelHigh
 
 internal enum class AppTab {
     SOURCES,
@@ -101,7 +105,7 @@ internal fun ComicDavAppShell(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(appShellBackgroundColor(MaterialTheme.colorScheme)),
     ) {
         Box(modifier = Modifier.weight(1f)) {
             content(Modifier.fillMaxSize())
@@ -280,9 +284,10 @@ internal fun DataFolderGateScreen(
     onChooseFolder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = com.example.comicdav.ui.rememberMuBoxColors()
     Column(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.background)
+            .background(colors.background)
             .padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -312,7 +317,7 @@ internal fun DataFolderGateScreen(
         Text(
             text = ComicDavCopy.chooseDataFolderTitle,
             style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = colors.text,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
         Text(
@@ -321,7 +326,7 @@ internal fun DataFolderGateScreen(
                 .fillMaxWidth()
                 .padding(top = 12.dp, bottom = 28.dp),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colors.muted,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
         Button(

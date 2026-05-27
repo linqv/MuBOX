@@ -84,11 +84,13 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun appShellNavigationBarsUseLayeredSurfaceRoles() {
+    fun appShellUsesMuBoxMediaSurfaceRoles() {
         val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT)
+        val muBoxColors = com.example.comicdav.ui.muBoxColorsFor(colors)
 
-        assertEquals(colors.surfaceContainerLowest, appShellNavigationBarContainerColor(colors))
-        assertEquals(colors.surfaceContainer, selectionNavigationBarContainerColor(colors))
+        assertEquals(muBoxColors.background, appShellBackgroundColor(colors))
+        assertEquals(muBoxColors.panel, appShellNavigationBarContainerColor(colors))
+        assertEquals(muBoxColors.panelHigh, selectionNavigationBarContainerColor(colors))
     }
 
     @Test
