@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 
@@ -67,25 +68,27 @@ internal data class WebDavScreenColors(
     val errorText: Color,
 )
 
-internal fun webDavScreenColors(colorScheme: ColorScheme): WebDavScreenColors =
-    WebDavScreenColors(
-        background = colorScheme.background,
-        panel = colorScheme.surfaceContainer,
-        panelHigh = colorScheme.surfaceContainerHigh,
-        row = colorScheme.surfaceContainer,
-        rowSelected = colorScheme.primaryContainer,
-        border = colorScheme.outlineVariant,
-        selectedBorder = colorScheme.primary,
-        accent = colorScheme.primary,
-        onAccent = colorScheme.onPrimary,
-        accentSoft = colorScheme.primaryContainer,
-        onAccentSoft = colorScheme.onPrimaryContainer,
-        purple = colorScheme.secondary,
-        text = colorScheme.onBackground,
-        muted = colorScheme.onSurfaceVariant,
-        progressTrack = colorScheme.surfaceContainerHighest,
+internal fun webDavScreenColors(colorScheme: ColorScheme): WebDavScreenColors {
+    val tokens = muBoxColorsFor(colorScheme)
+    return WebDavScreenColors(
+        background = tokens.background,
+        panel = tokens.panel,
+        panelHigh = tokens.panelHigh,
+        row = tokens.row,
+        rowSelected = tokens.rowSelected,
+        border = tokens.border,
+        selectedBorder = tokens.selectedBorder,
+        accent = tokens.mediaAccent,
+        onAccent = tokens.onMediaAccent,
+        accentSoft = tokens.accentSoft,
+        onAccentSoft = tokens.onAccentSoft,
+        purple = tokens.comicAccent,
+        text = tokens.text,
+        muted = tokens.muted,
+        progressTrack = tokens.playerProgressTrack,
         errorText = colorScheme.error,
     )
+}
 
 private data class WebDavIconColors(
     val container: Color,
@@ -389,14 +392,7 @@ private fun WebDavItemTypeIcon(mediaKind: MediaKind) {
         MediaKind.Subtitle -> Icons.Rounded.Subtitles
         else -> Icons.AutoMirrored.Rounded.MenuBook
     }
-    val contentDescription = when (mediaKind) {
-        MediaKind.Directory -> "文件夹"
-        MediaKind.Comic -> "漫画文件"
-        MediaKind.Video -> "视频文件"
-        MediaKind.Subtitle -> "字幕文件"
-        MediaKind.Audio -> "音频文件"
-        MediaKind.Unknown -> "文件"
-    }
+    val contentDescription = webDavItemTypeContentDescription(mediaKind)
 
     Box(
         modifier = Modifier
@@ -505,6 +501,9 @@ private fun webDavIconColors(
             content = colors.muted,
         )
     }
+
+internal fun webDavItemTypeContentDescription(mediaKind: MediaKind): String =
+    com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind)
 
 internal fun webDavItemSupportingLabel(item: WebDavItem): String =
     if (item.isDirectory) "" else item.size?.let(::formatByteSize) ?: "大小未知"

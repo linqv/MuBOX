@@ -6,6 +6,7 @@ import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.video.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,6 +34,16 @@ class FileDirectoryScreenTest {
             "source badge contrast should meet AA for small text",
             contrastRatio(colors.sourceBadgeContent, colors.sourceBadgeContainer) >= 4.5f,
         )
+    }
+
+    @Test
+    fun entryTypeContentDescriptionsUseSharedMediaLabels() {
+        MediaKind.entries.forEach { mediaKind ->
+            assertEquals(
+                com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind),
+                fileDirectoryEntryTypeContentDescription(mediaKind),
+            )
+        }
     }
 
     @Test

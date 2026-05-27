@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 
@@ -80,28 +81,30 @@ internal data class FileDirectoryScreenColors(
     val sourceBadgeContent: Color,
 )
 
-internal fun fileDirectoryScreenColors(colorScheme: ColorScheme): FileDirectoryScreenColors =
-    FileDirectoryScreenColors(
-        background = colorScheme.background,
-        panel = colorScheme.surfaceContainer,
-        panelHigh = colorScheme.surfaceContainerHigh,
-        row = colorScheme.surfaceContainer,
-        rowSelected = colorScheme.primaryContainer,
-        border = colorScheme.outlineVariant,
-        selectedBorder = colorScheme.primary,
-        accent = colorScheme.primary,
-        onAccent = colorScheme.onPrimary,
-        accentSoft = colorScheme.primaryContainer,
-        onAccentSoft = colorScheme.onPrimaryContainer,
-        purple = colorScheme.secondary,
-        text = colorScheme.onBackground,
-        muted = colorScheme.onSurfaceVariant,
-        noticeContainer = colorScheme.surfaceContainerHigh,
-        errorContainer = colorScheme.errorContainer,
-        errorText = colorScheme.onErrorContainer,
-        sourceBadgeContainer = colorScheme.primaryContainer,
-        sourceBadgeContent = colorScheme.onPrimaryContainer,
+internal fun fileDirectoryScreenColors(colorScheme: ColorScheme): FileDirectoryScreenColors {
+    val tokens = muBoxColorsFor(colorScheme)
+    return FileDirectoryScreenColors(
+        background = tokens.background,
+        panel = tokens.panel,
+        panelHigh = tokens.panelHigh,
+        row = tokens.row,
+        rowSelected = tokens.rowSelected,
+        border = tokens.border,
+        selectedBorder = tokens.selectedBorder,
+        accent = tokens.mediaAccent,
+        onAccent = tokens.onMediaAccent,
+        accentSoft = tokens.accentSoft,
+        onAccentSoft = tokens.onAccentSoft,
+        purple = tokens.comicAccent,
+        text = tokens.text,
+        muted = tokens.muted,
+        noticeContainer = tokens.panelHigh,
+        errorContainer = tokens.errorSurface,
+        errorText = tokens.errorText,
+        sourceBadgeContainer = tokens.accentSoft,
+        sourceBadgeContent = tokens.onAccentSoft,
     )
+}
 
 private data class FileDirectoryIconColors(
     val container: Color,
@@ -893,14 +896,7 @@ private fun EntryTypeIcon(mediaKind: MediaKind) {
         MediaKind.Subtitle -> Icons.Rounded.Subtitles
         else -> Icons.AutoMirrored.Rounded.MenuBook
     }
-    val contentDescription = when (mediaKind) {
-        MediaKind.Directory -> "文件夹"
-        MediaKind.Comic -> "漫画文件"
-        MediaKind.Video -> "视频文件"
-        MediaKind.Subtitle -> "字幕文件"
-        MediaKind.Audio -> "音频文件"
-        MediaKind.Unknown -> "文件"
-    }
+    val contentDescription = fileDirectoryEntryTypeContentDescription(mediaKind)
 
     Box(
         modifier = Modifier
@@ -997,3 +993,6 @@ private fun entryIconColors(
             content = colors.muted,
         )
     }
+
+internal fun fileDirectoryEntryTypeContentDescription(mediaKind: MediaKind): String =
+    com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind)

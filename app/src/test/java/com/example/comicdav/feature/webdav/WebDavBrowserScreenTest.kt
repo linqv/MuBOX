@@ -3,6 +3,7 @@ package com.example.comicdav.feature.webdav
 import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,6 +20,16 @@ class WebDavBrowserScreenTest {
         assertEquals(highContrast.primary, colors.accent)
         assertEquals(highContrast.onBackground, colors.text)
         assertEquals(highContrast.onSurfaceVariant, colors.muted)
+    }
+
+    @Test
+    fun itemTypeContentDescriptionsUseSharedMediaLabels() {
+        MediaKind.entries.forEach { mediaKind ->
+            assertEquals(
+                com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind),
+                webDavItemTypeContentDescription(mediaKind),
+            )
+        }
     }
 
     @Test
