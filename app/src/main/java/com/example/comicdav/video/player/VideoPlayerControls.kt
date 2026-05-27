@@ -66,8 +66,8 @@ internal fun PlayerTopBar(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xF2071222),
-                        Color(0xB70B182A),
+                        Color(0xCC000000),
+                        Color(0x66000000),
                         Color.Transparent,
                     ),
                 ),
@@ -89,14 +89,14 @@ internal fun PlayerTopBar(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFF3F8FF),
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = source.videoSourceLabel(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xCC9FEAFD),
+                    color = Color.White.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -134,23 +134,15 @@ internal fun PlayerCenterPlayPauseButton(
         Box(
             modifier = Modifier
                 .size(PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xD6193B5C),
-                            PlayerCenterPlayButtonColor,
-                        ),
-                    ),
-                    shape = CircleShape,
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.22f), CircleShape)
+                .background(PlayerCenterPlayButtonColor, CircleShape)
+                .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
                 .clickable(role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                 contentDescription = if (isPaused) "播放" else "暂停",
-                tint = Color(0xFFE6FBFF),
+                tint = Color.White,
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -167,12 +159,12 @@ internal fun PlayerOverlayIconButton(
     sizeDp: Int = PLAYER_OVERLAY_BUTTON_SIZE_DP,
 ) {
     val backgroundColor = if (selected) PlayerAccentColor else PlayerOverlayColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val contentColor = if (selected) PlayerOnAccentColor else Color.White
     val buttonShape = CircleShape
     val borderColor = if (selected) {
         Color.White.copy(alpha = 0.46f)
     } else {
-        PlayerAccentColor.copy(alpha = 0.18f)
+        Color.White.copy(alpha = 0.15f)
     }
     IconButton(
         onClick = onClick,
@@ -208,8 +200,8 @@ internal fun PlayerBottomControls(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color(0xA6071222),
-                        Color(0xE6071222),
+                        Color(0x99000000),
+                        Color(0xCC000000),
                     ),
                 ),
             )
@@ -322,13 +314,13 @@ internal fun PlayerProgressControls(
             Text(
                 text = formatVideoTime(state.positionMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFEAF7FF),
+                color = Color.White,
                 maxLines = 1,
             )
             Text(
                 text = formatVideoTime(state.durationMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xB3C7E7F5),
+                color = Color.White.copy(alpha = 0.7f),
                 maxLines = 1,
             )
         }
@@ -539,7 +531,11 @@ internal fun PlayerOptionSheet(
 ) {
     if (panel == null) return
 
-    com.example.comicdav.ui.MuBoxPlayerPanel(modifier = modifier.widthIn(min = 220.dp, max = 360.dp)) {
+    com.example.comicdav.ui.MuBoxPlayerPanel(
+        modifier = modifier.widthIn(min = 220.dp, max = 360.dp),
+        color = PlayerSheetColor,
+        borderColor = Color.White.copy(alpha = 0.12f),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -552,19 +548,19 @@ internal fun PlayerOptionSheet(
                 Text(
                     text = panel.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFF3F8FF),
+                    color = Color.White,
                 )
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
                         .size(36.dp)
                         .background(PlayerChipColor, CircleShape)
-                        .border(1.dp, PlayerAccentColor.copy(alpha = 0.18f), CircleShape),
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "收起",
-                        tint = Color(0xFFEAF7FF),
+                        tint = Color.White,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -625,7 +621,7 @@ internal fun TrackSelectionControls(
             )
         }
         if (audioTracks.isEmpty()) {
-            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEAF7FF))
+            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
         }
     }
     ControlGroup(label = "字幕") {
@@ -653,7 +649,7 @@ internal fun StatisticsControls(
             Text(
                 text = line,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFEAF7FF),
+                color = Color.White.copy(alpha = 0.8f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -674,10 +670,10 @@ internal fun GestureHud(
     }
     Surface(
         modifier = modifier,
-        color = Color(0xE6071527),
-        contentColor = Color(0xFFEAF7FF),
+        color = Color(0xCC000000),
+        contentColor = Color.White,
         shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.22f)),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
     ) {
         Text(
             text = message,
@@ -736,14 +732,14 @@ private fun BottomQuickButton(
     onClick: () -> Unit,
 ) {
     val backgroundColor = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val contentColor = if (selected) PlayerOnAccentColor else Color.White
     val shape = RoundedCornerShape(18.dp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 64.dp, height = 36.dp)
             .background(backgroundColor, shape)
-            .border(1.dp, PlayerAccentColor.copy(alpha = if (selected) 0.42f else 0.16f), shape)
+            .border(1.dp, if (selected) PlayerAccentColor.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.15f), shape)
             .semantics { this.contentDescription = contentDescription },
     ) {
         Text(
@@ -796,7 +792,7 @@ private fun ControlGroup(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = Color(0xFFBAE6FD),
+            color = Color.White.copy(alpha = 0.7f),
             modifier = Modifier.weight(0.24f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -817,14 +813,14 @@ private fun CompactTextButton(
     onClick: () -> Unit,
 ) {
     val bg = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val fg = if (selected) PlayerOnAccentColor else Color(0xFFEAF7FF)
+    val fg = if (selected) PlayerOnAccentColor else Color.White
     val shape = RoundedCornerShape(18.dp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 78.dp, height = 36.dp)
             .background(bg, shape)
-            .border(1.dp, PlayerAccentColor.copy(alpha = if (selected) 0.42f else 0.16f), shape),
+            .border(1.dp, if (selected) PlayerAccentColor.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.15f), shape),
     ) {
         Text(
             text = text,
@@ -836,14 +832,14 @@ private fun CompactTextButton(
 }
 
 internal val playbackSpeedPresets = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
-internal val PlayerOverlayColor = Color(0xB30A1628)
-internal val PlayerSheetColor = Color(0xE60B1729)
-internal val PlayerAccentColor = Color(0xFF22D3EE)
-internal val PlayerOnAccentColor = Color(0xFF03131D)
-internal val PlayerCenterPlayButtonColor = Color(0xB30A1E32)
-internal val PlayerProgressTrackColor = Color(0x4DE0F7FF)
-internal val PlayerProgressColor = Color(0xFF38E8FF)
-internal val PlayerChipColor = Color(0x66142A46)
+internal val PlayerOverlayColor = Color(0x66000000)
+internal val PlayerSheetColor = Color(0xCC0F172A)
+internal val PlayerAccentColor = Color(0xFFEC4899)
+internal val PlayerOnAccentColor = Color(0xFFFFFFFF)
+internal val PlayerCenterPlayButtonColor = Color(0x4D000000)
+internal val PlayerProgressTrackColor = Color(0x4DFFFFFF)
+internal val PlayerProgressColor = Color(0xFFEC4899)
+internal val PlayerChipColor = Color(0x33FFFFFF)
 internal val PlayerChipSelectedColor = PlayerAccentColor
 internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
 internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64

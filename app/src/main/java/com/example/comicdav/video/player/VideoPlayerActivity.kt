@@ -161,7 +161,6 @@ class VideoPlayerActivity : ComponentActivity() {
         orientationSession = VideoPlayerOrientationSession(initialPlayerOrientationMode)
         requestedOrientation = orientationSession.initialRequestedOrientation()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        configurePlayerSystemBars()
 
         val uri = intent.getStringExtra(EXTRA_URI)
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: intent.data?.lastPathSegment ?: "视频"
@@ -317,7 +316,7 @@ class VideoPlayerActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            hidePlayerStatusBar()
+            configurePlayerSystemBars()
         }
     }
 
@@ -326,12 +325,11 @@ class VideoPlayerActivity : ComponentActivity() {
             playbackLifecyclePolicy.cleanup()
         }
         activityScope.cancel()
-        restorePlayerSystemBars()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
 
-    private fun configurePlayerSystemBars() {
+    internal fun configurePlayerSystemBars() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             @Suppress("DEPRECATION")
             window.setDecorFitsSystemWindows(false)
@@ -384,7 +382,7 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun restorePlayerSystemBars() {
+    internal fun restorePlayerSystemBars() {
         systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val decorView = window.decorView
@@ -674,6 +672,15 @@ private fun VideoPlayerScreen(
     mediaContext: VideoPlayerMediaContext,
     controlsAutoHideMillis: Int,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val activity = context as? VideoPlayerActivity
+        activity?.configurePlayerSystemBars()
+        onDispose {
+            activity?.restorePlayerSystemBars()
+        }
+    }
+
     var openPanel by remember { mutableStateOf<PlayerOptionPanel?>(null) }
     var activeBottomControl by remember { mutableStateOf<PlayerBottomQuickControl?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }

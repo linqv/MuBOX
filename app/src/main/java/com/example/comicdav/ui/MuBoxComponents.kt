@@ -304,15 +304,17 @@ internal fun MuBoxSettingsGroup(
 @Composable
 internal fun MuBoxPlayerPanel(
     modifier: Modifier = Modifier,
+    color: Color? = null,
+    borderColor: Color? = null,
     content: @Composable () -> Unit,
 ) {
     val colors = rememberMuBoxColors()
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(MuBoxMetrics.PlayerPanelCornerDp),
-        color = colors.playerSheet,
+        color = color ?: colors.playerSheet,
         contentColor = colors.overlayText,
-        border = BorderStroke(1.dp, colors.playerProgressTrack),
+        border = BorderStroke(1.dp, borderColor ?: colors.playerProgressTrack),
         content = content,
     )
 }
