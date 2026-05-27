@@ -52,6 +52,8 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.ui.MuBoxSettingsGroup
+import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoDecoderMode
@@ -347,10 +349,11 @@ private fun SettingsPageShell(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(colors.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -411,11 +414,12 @@ private fun NavigationRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .heightIn(min = 64.dp)
+            .heightIn(min = settingsControlRowMinHeightDp().dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -428,14 +432,14 @@ private fun NavigationRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.muted,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -443,7 +447,7 @@ private fun NavigationRow(
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = colors.muted,
         )
     }
 }
@@ -778,35 +782,17 @@ private fun formatDownloadTime(downloadedAtMillis: Long): String =
 private fun DownloadRecord?.sameDownloadRecord(other: DownloadRecord): Boolean =
     this != null && fileName == other.fileName && remotePath == other.remotePath
 
+internal fun settingsControlRowMinHeightDp(): Int = 64
+
+internal fun settingsStaticRowMinHeightDp(): Int = 58
+
 @Composable
 private fun SettingsGroup(
     title: String,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp),
-        )
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 0.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = 4.dp),
-                content = content,
-            )
-        }
-    }
+    MuBoxSettingsGroup(title = title, modifier = modifier, content = content)
 }
 
 @Composable
@@ -831,10 +817,11 @@ private fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
+            .heightIn(min = settingsControlRowMinHeightDp().dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -847,13 +834,14 @@ private fun SwitchRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
+                color = colors.text,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.muted,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -871,10 +859,11 @@ private fun StaticInfoRow(
     subtitle: String,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 58.dp)
+            .heightIn(min = settingsStaticRowMinHeightDp().dp)
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -882,13 +871,14 @@ private fun StaticInfoRow(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
+            color = colors.text,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colors.muted,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -903,10 +893,11 @@ private fun CacheActionRow(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
+            .heightIn(min = settingsControlRowMinHeightDp().dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -919,13 +910,14 @@ private fun CacheActionRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
+                color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.muted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -997,7 +989,7 @@ private fun <T> DropdownRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
+            .heightIn(min = settingsControlRowMinHeightDp().dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,

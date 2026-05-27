@@ -13,6 +13,12 @@ class SettingsScreenUiTest {
     }
 
     @Test
+    fun settingsRowsExposeStableControlPanelMetrics() {
+        assertEquals(64, settingsControlRowMinHeightDp())
+        assertEquals(58, settingsStaticRowMinHeightDp())
+    }
+
+    @Test
     fun rootSettingsLayoutKeepsOnlyCommonAndManagementGroups() {
         val layout = rootSettingsGroupLayout()
 
