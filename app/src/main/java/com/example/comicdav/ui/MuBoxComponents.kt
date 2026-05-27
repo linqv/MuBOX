@@ -1,9 +1,10 @@
 package com.example.comicdav.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,6 +39,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,8 +55,8 @@ internal fun rememberMuBoxColors(): MuBoxColors {
 @Composable
 internal fun MuBoxPageHeader(
     title: String,
-    subtitle: String? = null,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = rememberMuBoxColors()
@@ -92,9 +95,10 @@ internal fun MuBoxPageHeader(
 @Composable
 internal fun MuBoxMessagePanel(
     text: String,
+    modifier: Modifier = Modifier,
     isError: Boolean = false,
     onDismiss: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
+    dismissLabel: String = "知道了",
 ) {
     val colors = rememberMuBoxColors()
     val containerColor = if (isError) colors.errorSurface else colors.panelHigh
@@ -122,7 +126,7 @@ internal fun MuBoxMessagePanel(
                     onClick = onDismiss,
                     colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
                 ) {
-                    Text("知道了")
+                    Text(dismissLabel)
                 }
             }
         }
@@ -133,10 +137,10 @@ internal fun MuBoxMessagePanel(
 internal fun MuBoxEmptyState(
     icon: ImageVector,
     title: String,
+    modifier: Modifier = Modifier,
     body: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
     Column(
@@ -186,14 +190,17 @@ internal fun MuBoxEmptyState(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MuBoxDenseMediaRow(
     title: String,
-    subtitle: String? = null,
     mediaKind: MediaKind,
-    selected: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = rememberMuBoxColors()
@@ -207,7 +214,13 @@ internal fun MuBoxDenseMediaRow(
             .clip(shape)
             .background(containerColor)
             .border(1.dp, borderColor, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.selected = selected }
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
