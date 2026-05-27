@@ -41,8 +41,7 @@ class OkHttpWebDavClient(
                     "PROPFIND failed with HTTP ${response.code}: ${request.url}",
                 )
             }
-            val responseBody = response.body ?: throw WebDavException.MissingMetadata("PROPFIND response body is empty")
-            WebDavXmlParser.parse(responseBody.byteStream(), request.url.encodedPath)
+            WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath)
         }
     }
 
@@ -91,10 +90,7 @@ class OkHttpWebDavClient(
         val response = call.execute()
         when (response.code) {
             206 -> {
-                val body = response.body ?: run {
-                    response.close()
-                    throw WebDavException.MissingMetadata("Range response body is empty")
-                }
+                val body = response.body
                 try {
                     val contentRangeHeader = response.header("Content-Range")
                     val parsedRange = validateContentRange(
@@ -161,10 +157,7 @@ class OkHttpWebDavClient(
                 "GET failed with HTTP ${response.code}: ${request.url}",
             )
         }
-        val body = response.body ?: run {
-            response.close()
-            throw WebDavException.MissingMetadata("GET response body is empty")
-        }
+        val body = response.body
         val contentLength = body.contentLength()
         val stream = body.byteStream()
         WebDavStreamResponse(
@@ -185,7 +178,7 @@ class OkHttpWebDavClient(
                 if (!response.isSuccessful) {
                     throw WebDavException.HttpStatus(response.code, "GET failed with HTTP ${response.code}: ${request.url}")
                 }
-                val body = response.body ?: throw WebDavException.MissingMetadata("GET response body is empty")
+                val body = response.body
                 target.parentFile?.mkdirs()
                 var total = 0L
                 body.byteStream().use { input ->

@@ -303,6 +303,9 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.04.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    val okhttpBom = platform("com.squareup.okhttp3:okhttp-bom:5.3.2")
+    implementation(okhttpBom)
+    testImplementation(okhttpBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -313,7 +316,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp")
     implementation(files("libs/fitz-1.27.1.aar"))
     implementation(files("libs/mpv-android-lib-v0.0.1.aar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
@@ -323,7 +326,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("androidx.room:room-testing:2.8.4")
     testImplementation("androidx.test:core:1.6.1")

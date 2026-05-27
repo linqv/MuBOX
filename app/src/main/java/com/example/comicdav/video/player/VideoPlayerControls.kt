@@ -439,7 +439,7 @@ private fun EdgeFloatingControls(
     if (compact) {
         FlowRow(
             modifier = modifier.widthIn(max = PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.Start,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             maxItemsInEachRow = PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS,
         ) {

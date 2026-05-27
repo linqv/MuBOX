@@ -44,6 +44,13 @@ Android 包名：`org.mubox.reader`
 rustup target add aarch64-linux-android x86_64-linux-android
 ```
 
+## 关键依赖
+
+- WebDAV 网络层使用 OkHttp 5.3.2，通过 `okhttp-bom` 统一约束 `okhttp` 与测试用 `mockwebserver` 版本。
+- Gradle 会按 OkHttp 5 的 module metadata 为 Android 构建解析 Android 变体，运行时实际使用 `okhttp-android`。
+- 当前保留旧坐标 `com.squareup.okhttp3:mockwebserver`，以匹配现有 JUnit 4 测试；OkHttp 5 的 `mockwebserver3` 可作为后续测试重构目标。
+- OkHttp 5 的 Kotlin API 将 `Response.body` 暴露为非空类型，WebDAV client 不再做旧版的空 body 分支。
+
 ## 构建
 
 ### 调试包

@@ -198,7 +198,7 @@ Range 规则：
 
 ## 共享 OkHttp
 
-当前 MuBOX `OkHttpWebDavClient` 默认每个实例创建 `OkHttpClient()`。视频流会更依赖连接复用，应改为共享 client：
+MuBOX 的 WebDAV 网络层使用共享 `OkHttpClient`，视频流、漫画 Range 读取和 WebDAV 浏览共用连接池：
 
 ```kotlin
 object HttpClients {
@@ -211,7 +211,14 @@ object HttpClients {
 }
 ```
 
-测试仍需允许注入测试用 OkHttpClient/MockWebServer。
+依赖版本通过 `com.squareup.okhttp3:okhttp-bom:5.3.2` 统一约束。`okhttp` 在 Android 构建中由 Gradle module metadata 解析到 Android 变体；测试仍允许注入测试用 `OkHttpClient`，并继续使用旧坐标 `com.squareup.okhttp3:mockwebserver` 以保留现有 JUnit 4 测试结构。
+
+OkHttp 5 迁移注意点：
+
+- `Response.body` 的 Kotlin API 现在是非空类型，WebDAV client 不再保留旧版空 body 防御分支。
+- OkHttp 5 新的 `mockwebserver3` 坐标不依赖 JUnit 4，API 也更偏不可变值；当前暂不迁移，避免把依赖升级和测试框架重构混在一起。
+- 5.x 提供 Happy Eyeballs、`Call` tags、`EventListener.plus()`、`Request.toCurl()`、HTTP/1.1 upgrade body 支持等能力。WebDAV 诊断后续可以优先评估 `Request.toCurl()` 与 `Call` tags。
+- `okhttp-zstd` 是可选模块；当前 WebDAV Range 流不启用额外压缩拦截器，以保持 Range 与 `Content-Range` 校验语义清晰。
 
 ## 分阶段实施
 
