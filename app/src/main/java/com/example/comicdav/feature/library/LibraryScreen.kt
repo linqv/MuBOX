@@ -90,10 +90,9 @@ fun LibraryScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(
+            androidx.compose.material3.TextButton(
                 onClick = onOpenDirectories,
                 modifier = Modifier.defaultMinSize(minHeight = 44.dp),
-                shape = MaterialTheme.shapes.large,
             ) {
                 Text(ComicDavCopy.sourcesTitle)
             }

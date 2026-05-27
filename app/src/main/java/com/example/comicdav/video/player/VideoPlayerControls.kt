@@ -245,14 +245,14 @@ internal fun PlayerBottomControls(
                         )
                     }
                 }
-                PlayerProgressControls(
-                    state = state,
-                    onSeek = onSeek,
-                )
                 PlayerBottomQuickControls(
                     state = state,
                     activeControl = activeControl,
                     onActiveControlChanged = onActiveControlChanged,
+                )
+                PlayerProgressControls(
+                    state = state,
+                    onSeek = onSeek,
                 )
             }
         }
@@ -269,8 +269,8 @@ internal fun PlayerBottomQuickControls(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP.dp),
-        horizontalArrangement = Arrangement.Start,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         maxItemsInEachRow = 3,
     ) {
         BottomQuickButton(
@@ -733,18 +733,19 @@ private fun BottomQuickButton(
 ) {
     val backgroundColor = if (selected) PlayerChipSelectedColor else PlayerChipColor
     val contentColor = if (selected) PlayerOnAccentColor else Color.White
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(14.dp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
-            .size(width = 64.dp, height = 36.dp)
+            .size(width = 52.dp, height = 28.dp)
             .background(backgroundColor, shape)
             .border(1.dp, if (selected) PlayerAccentColor.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.15f), shape)
             .semantics { this.contentDescription = contentDescription },
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -857,7 +858,7 @@ internal const val PLAYER_GESTURE_HORIZONTAL_PADDING_DP = 0
 internal const val PLAYER_GESTURE_TOP_PADDING_DP = 0
 internal const val PLAYER_GESTURE_END_PADDING_DP = 0
 internal const val PLAYER_GESTURE_BOTTOM_PADDING_DP = 0
-private const val PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP = 38
+private const val PLAYER_BOTTOM_QUICK_CONTROL_HEIGHT_DP = 30
 private const val PLAYER_PROGRESS_TOUCH_HEIGHT_DP = 22
 private const val PLAYER_PROGRESS_THUMB_RADIUS_DP = 6
 private const val MAX_VISIBLE_TRACK_BUTTONS = 4

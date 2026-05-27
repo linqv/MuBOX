@@ -135,13 +135,10 @@ fun VideoLibraryScreen(
                     color = colors.muted,
                 )
             }
-            OutlinedButton(
+            androidx.compose.material3.TextButton(
                 onClick = onOpenDirectories,
                 modifier = Modifier.defaultMinSize(minHeight = 44.dp),
-                shape = MaterialTheme.shapes.large,
-                border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.6f)),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = colors.surfaceRaised.copy(alpha = 0.72f),
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
                     contentColor = colors.accent,
                 ),
             ) {
@@ -216,32 +213,14 @@ private fun EmptyVideoLibrary(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = colors.accent,
             modifier = Modifier
                 .padding(bottom = 22.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            colors.surfaceRaised,
-                            colors.posterBottom,
-                        ),
-                    ),
-                    shape = CircleShape,
-                )
-                .border(
-                    width = 1.dp,
-                    color = colors.accent.copy(alpha = 0.58f),
-                    shape = CircleShape,
-                )
-                .padding(20.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.PlayArrow,
-                contentDescription = null,
-                tint = colors.accent,
-                modifier = Modifier.size(36.dp),
-            )
-        }
+                .size(64.dp),
+        )
         Text(
             text = "还没有视频",
             style = MaterialTheme.typography.titleLarge,
@@ -371,26 +350,12 @@ private fun VideoLibraryCard(
                     } else {
                         FallbackVideoTitle(item.item.displayName, colors = colors)
                     }
-                    Surface(
-                        modifier = Modifier
-                            .size(56.dp),
-                        shape = CircleShape,
-                        color = colors.thumbnailScrim.copy(alpha = 0.58f),
-                        border = BorderStroke(1.dp, colors.onThumbnailScrim.copy(alpha = 0.28f)),
-                        shadowElevation = 6.dp,
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                tint = colors.onThumbnailScrim,
-                                modifier = Modifier.size(32.dp),
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = colors.onThumbnailScrim,
+                        modifier = Modifier.size(48.dp),
+                    )
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopStart)

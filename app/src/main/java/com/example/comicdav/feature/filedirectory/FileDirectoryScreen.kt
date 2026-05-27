@@ -355,32 +355,15 @@ private fun FileDirectoryHomeHeader(
                     )
                 }
                 Box {
-                    Surface(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        colors.accent,
-                                        colors.purple,
-                                    ),
-                                ),
-                                shape = CircleShape,
-                            ),
-                        shape = CircleShape,
-                        color = colors.accent.copy(alpha = 0f),
-                        shadowElevation = 4.dp,
+                    IconButton(
+                        onClick = { isAddMenuOpen = true },
+                        modifier = Modifier.size(48.dp),
                     ) {
-                        IconButton(
-                            onClick = { isAddMenuOpen = true },
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Add,
-                                contentDescription = "添加",
-                                tint = colors.onAccent,
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "添加",
+                            tint = colors.accent,
+                        )
                     }
                     DropdownMenu(
                         expanded = isAddMenuOpen,
@@ -450,12 +433,7 @@ private fun FileDirectoryBrowseHeader(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     IconButton(
                         onClick = onGoUp,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(
-                                color = colors.panelHigh,
-                                shape = CircleShape,
-                            ),
+                        modifier = Modifier.size(44.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ArrowUpward,
@@ -465,12 +443,7 @@ private fun FileDirectoryBrowseHeader(
                     }
                     IconButton(
                         onClick = onCloseBrowser,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(
-                                color = colors.panelHigh,
-                                shape = CircleShape,
-                            ),
+                        modifier = Modifier.size(44.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,

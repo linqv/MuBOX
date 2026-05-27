@@ -58,6 +58,15 @@ internal fun PlayerGestureOverlay(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startPosition = down.position
+                    // 顶部安全区:起点处于状态栏潜在区域,跳过整个手势,避免误触发
+                    val topGuardPx = PLAYER_GESTURE_TOP_EDGE_GUARD_DP.dp.toPx()
+                    if (startPosition.y < topGuardPx) {
+                        // 等待手指抬起再退出本次手势,避免影响后续手势
+                        do {
+                            val event = awaitPointerEvent()
+                        } while (event.changes.any { it.pressed })
+                        return@awaitEachGesture
+                    }
                     var previousPosition = startPosition
                     var dragMode: PlayerGestureDragMode? = null
 
@@ -79,6 +88,16 @@ internal fun PlayerGestureOverlay(
                             dragMode = playerGestureDragModeForPan(totalPan.x, totalPan.y)
                             if (dragMode == PlayerGestureDragMode.HORIZONTAL_SEEK) {
                                 onHorizontalSeekStarted()
+                            } else if (dragMode == PlayerGestureDragMode.VERTICAL_ADJUST) {
+                                // 仅在屏幕左/右四分之一区域才允许音量/亮度调节,中间二分之一区域忽略
+                                val quarter = size.width / 4f
+                                if (startPosition.x >= quarter && startPosition.x <= size.width - quarter) {
+                                    // 起点位于中间区,跳过本次手势
+                                    do {
+                                        val nextEvent = awaitPointerEvent()
+                                    } while (nextEvent.changes.any { it.pressed })
+                                    return@awaitEachGesture
+                                }
                             }
                         }
 
@@ -218,11 +237,21 @@ internal fun dispatchVerticalGesture(
 ) {
     val deltaPercent = (-panY / VERTICAL_GESTURE_PIXELS_PER_PERCENT).roundToInt()
     if (deltaPercent == 0) return
+    if (containerWidth <= 0f) return
+    // 起点已经在外层过滤为两边 1/4 区域,这里按左右半屏分发即可:
+    // 左半屏调亮度,右半屏调音量。即使手指滑到中线另一侧,仍以当前位置判定。
     if (centroid.x < containerWidth / 2f) {
         onBrightnessDelta(deltaPercent)
     } else {
         onVolumeDelta(deltaPercent)
     }
+}
+
+internal fun isWithinPlayerTopGestureGuard(
+    startY: Float,
+    density: androidx.compose.ui.unit.Density,
+): Boolean = with(density) {
+    startY < PLAYER_GESTURE_TOP_EDGE_GUARD_DP.dp.toPx()
 }
 
 private const val VERTICAL_GESTURE_PIXELS_PER_PERCENT = 8f
@@ -231,3 +260,4 @@ private const val PLAYER_GESTURE_DRAG_DIRECTION_THRESHOLD_PX = 12f
 private const val TEMPORARY_SPEED_PIXELS_PER_STEP = 48f
 private const val TEMPORARY_SPEED_STEP = 0.25
 private const val PINCH_ZOOM_STEP_SCALE = 1.2f
+internal const val PLAYER_GESTURE_TOP_EDGE_GUARD_DP = 48
