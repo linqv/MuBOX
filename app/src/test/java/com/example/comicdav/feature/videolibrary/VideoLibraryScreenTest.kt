@@ -29,6 +29,11 @@ class VideoLibraryScreenTest {
     }
 
     @Test
+    fun videoLibraryUsesVideoPosterKind() {
+        assertEquals(com.example.comicdav.ui.MuBoxPosterKind.Video, videoLibraryPosterKind())
+    }
+
+    @Test
     fun countLabelShowsEmptyAndNonEmptyCounts() {
         assertEquals("还没有视频", videoLibraryCountLabel(0))
         assertEquals("2 个视频", videoLibraryCountLabel(2))

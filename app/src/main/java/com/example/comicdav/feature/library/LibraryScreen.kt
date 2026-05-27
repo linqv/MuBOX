@@ -36,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,37 +100,11 @@ fun LibraryScreen(
         }
 
         if (uiState.message != null || uiState.error != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = if (uiState.error == null) {
-                    MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.errorContainer
-                },
-                tonalElevation = 1.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 14.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = uiState.error ?: uiState.message.orEmpty(),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (uiState.error == null) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onErrorContainer
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    TextButton(onClick = onDismissMessage) {
-                        Text("知道了")
-                    }
-                }
-            }
+            com.example.comicdav.ui.MuBoxMessagePanel(
+                text = uiState.error ?: uiState.message.orEmpty(),
+                isError = uiState.error != null,
+                onDismiss = onDismissMessage,
+            )
         }
 
         AnimatedContent(
@@ -281,7 +254,7 @@ private fun LibraryCard(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(0.72f),
+                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(libraryPosterKind())),
                 shape = RoundedCornerShape(12.dp),
                 tonalElevation = 0.dp,
                 shadowElevation = 6.dp,
@@ -391,6 +364,9 @@ private fun FallbackCoverTitle(title: String) {
 private fun libraryCountLabel(count: Int): String {
     return if (count == 0) "还没有漫画" else "$count 本漫画"
 }
+
+internal fun libraryPosterKind(): com.example.comicdav.ui.MuBoxPosterKind =
+    com.example.comicdav.ui.MuBoxPosterKind.Comic
 
 private fun sourceLabel(sourceType: SourceType): String {
     return when (sourceType) {

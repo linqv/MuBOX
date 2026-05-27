@@ -37,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
@@ -72,24 +72,26 @@ internal data class VideoLibraryScreenColors(
     val onThumbnailScrim: Color,
 )
 
-internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScreenColors =
-    VideoLibraryScreenColors(
-        backgroundTop = colorScheme.background,
+internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScreenColors {
+    val tokens = muBoxColorsFor(colorScheme)
+    return VideoLibraryScreenColors(
+        backgroundTop = tokens.background,
         backgroundBottom = colorScheme.surfaceContainerLowest,
-        surface = colorScheme.surfaceContainer,
-        surfaceRaised = colorScheme.surfaceContainerHigh,
+        surface = tokens.panel,
+        surfaceRaised = tokens.panelHigh,
         posterTop = colorScheme.surfaceVariant,
         posterBottom = colorScheme.surfaceContainerLowest,
-        accent = colorScheme.primary,
-        onAccent = colorScheme.onPrimary,
-        text = colorScheme.onBackground,
-        muted = colorScheme.onSurfaceVariant,
-        errorSurface = colorScheme.errorContainer,
-        errorText = colorScheme.onErrorContainer,
-        border = colorScheme.outlineVariant,
+        accent = tokens.mediaAccent,
+        onAccent = tokens.onMediaAccent,
+        text = tokens.text,
+        muted = tokens.muted,
+        errorSurface = tokens.errorSurface,
+        errorText = tokens.errorText,
+        border = tokens.border,
         thumbnailScrim = colorScheme.scrim,
         onThumbnailScrim = colorScheme.inverseOnSurface,
     )
+}
 
 @Composable
 fun VideoLibraryScreen(
@@ -148,54 +150,11 @@ fun VideoLibraryScreen(
         }
 
         if (uiState.message != null || uiState.error != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = if (uiState.error == null) {
-                    colors.surfaceRaised
-                } else {
-                    colors.errorSurface
-                },
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = if (uiState.error == null) {
-                        colors.accent.copy(alpha = 0.34f)
-                    } else {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.64f)
-                    },
-                ),
-                tonalElevation = 1.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 14.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = uiState.error ?: uiState.message.orEmpty(),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (uiState.error == null) {
-                            colors.text
-                        } else {
-                            colors.errorText
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    TextButton(
-                        onClick = onDismissMessage,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = if (uiState.error == null) {
-                                colors.accent
-                            } else {
-                                colors.errorText
-                            },
-                        ),
-                    ) {
-                        Text("知道了")
-                    }
-                }
-            }
+            com.example.comicdav.ui.MuBoxMessagePanel(
+                text = uiState.error ?: uiState.message.orEmpty(),
+                isError = uiState.error != null,
+                onDismiss = onDismissMessage,
+            )
         }
 
         AnimatedContent(
@@ -365,7 +324,7 @@ private fun VideoLibraryCard(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
+                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind())),
                 shape = RoundedCornerShape(12.dp),
                 tonalElevation = 0.dp,
                 shadowElevation = if (isSelected) 8.dp else 5.dp,
@@ -507,6 +466,9 @@ private fun FallbackVideoTitle(
 internal fun videoLibraryCountLabel(count: Int): String {
     return if (count == 0) "还没有视频" else "$count 个视频"
 }
+
+internal fun videoLibraryPosterKind(): com.example.comicdav.ui.MuBoxPosterKind =
+    com.example.comicdav.ui.MuBoxPosterKind.Video
 
 internal fun videoSourceLabel(sourceType: VideoSourceType): String {
     return when (sourceType) {
