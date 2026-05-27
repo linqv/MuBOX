@@ -221,13 +221,7 @@ internal fun PlayerBottomControls(
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = PlayerSheetColor,
-            contentColor = Color.White,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.18f)),
-        ) {
+        com.example.comicdav.ui.MuBoxPlayerPanel(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -545,13 +539,7 @@ internal fun PlayerOptionSheet(
 ) {
     if (panel == null) return
 
-    Surface(
-        modifier = modifier.widthIn(min = 220.dp, max = 360.dp),
-        color = PlayerSheetColor,
-        contentColor = Color.White,
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, PlayerAccentColor.copy(alpha = 0.2f)),
-    ) {
+    com.example.comicdav.ui.MuBoxPlayerPanel(modifier = modifier.widthIn(min = 220.dp, max = 360.dp)) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -856,9 +844,10 @@ internal val PlayerCenterPlayButtonColor = Color(0xB30A1E32)
 internal val PlayerProgressTrackColor = Color(0x4DE0F7FF)
 internal val PlayerProgressColor = Color(0xFF38E8FF)
 internal val PlayerChipColor = Color(0x66142A46)
-internal val PlayerChipSelectedColor = Color(0xFF22D3EE)
+internal val PlayerChipSelectedColor = PlayerAccentColor
 internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
 internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64
+internal val PLAYER_PANEL_CORNER_DP = com.example.comicdav.ui.MuBoxMetrics.PlayerPanelCornerDp.value.toInt()
 internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 40
 internal const val PLAYER_LOCK_BUTTON_START_PADDING_DP = 18
 internal const val PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS = 3_000L
