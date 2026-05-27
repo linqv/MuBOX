@@ -73,6 +73,7 @@ class PlayerOptionPanelUiTest {
         assertEquals(com.example.comicdav.ui.MuBoxMetrics.PlayerCenterControlTouchDp.value.toInt(), PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP)
         assertEquals(com.example.comicdav.ui.MuBoxMetrics.PlayerCenterControlVisualDp.value.toInt(), PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP)
         assertEquals(com.example.comicdav.ui.MuBoxMetrics.PlayerPanelCornerDp.value.toInt(), PLAYER_PANEL_CORNER_DP)
+        assertEquals(com.example.comicdav.ui.MuBoxMetrics.PlayerPanelContentPaddingDp.value.toInt(), PLAYER_PANEL_CONTENT_PADDING_DP)
     }
 
     @Test

@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -305,7 +304,7 @@ internal fun MuBoxSettingsGroup(
 @Composable
 internal fun MuBoxPlayerPanel(
     modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val colors = rememberMuBoxColors()
     Surface(
@@ -314,12 +313,8 @@ internal fun MuBoxPlayerPanel(
         color = colors.playerSheet,
         contentColor = colors.overlayText,
         border = BorderStroke(1.dp, colors.playerProgressTrack),
-    ) {
-        Box(
-            modifier = Modifier.padding(16.dp),
-            content = content,
-        )
-    }
+        content = content,
+    )
 }
 
 private data class MuBoxIconColors(

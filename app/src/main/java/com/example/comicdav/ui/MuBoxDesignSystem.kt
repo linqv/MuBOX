@@ -67,6 +67,7 @@ internal object MuBoxMetrics {
     val DenseRowCornerDp = 14.dp
     val PanelCornerDp = 20.dp
     val PlayerPanelCornerDp = 22.dp
+    val PlayerPanelContentPaddingDp = 0.dp
     val PlayerCenterControlVisualDp = 64.dp
     val PlayerCenterControlTouchDp = 80.dp
 }

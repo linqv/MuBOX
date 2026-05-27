@@ -848,6 +848,7 @@ internal val PlayerChipSelectedColor = PlayerAccentColor
 internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
 internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64
 internal val PLAYER_PANEL_CORNER_DP = com.example.comicdav.ui.MuBoxMetrics.PlayerPanelCornerDp.value.toInt()
+internal val PLAYER_PANEL_CONTENT_PADDING_DP = com.example.comicdav.ui.MuBoxMetrics.PlayerPanelContentPaddingDp.value.toInt()
 internal const val PLAYER_LOCK_BUTTON_SIZE_DP = 40
 internal const val PLAYER_LOCK_BUTTON_START_PADDING_DP = 18
 internal const val PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS = 3_000L
