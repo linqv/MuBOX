@@ -110,9 +110,7 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("controller.setGpuApiMode(initialGpuApiMode)"))
         assertTrue(source.contains("controller.setDecoderMode(initialVideoDecoderMode)"))
         assertTrue(source.contains("onControlsLockedChanged = controller::setControlsLocked"))
-        assertTrue(source.contains("PlayerSideControls("))
-        assertTrue(source.contains("PlayerBottomQuickControls("))
-        assertTrue(source.contains("PlayerOptionSheet("))
+        assertTrue(source.contains("PlayerMenuPanel("))
         assertTrue(source.contains("PlayerOptionPanel.TRACKS"))
         assertTrue(source.contains("PlayerOptionPanel.INFO"))
         assertTrue(!source.contains("PlayerOptionPanel.DELAYS"))
@@ -123,8 +121,6 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("controlsAutoHideMillis"))
         assertTrue(source.contains("lockButtonRevealSignal"))
         assertTrue(source.contains("delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)"))
-        assertTrue(source.contains("horizontalArrangement = Arrangement.Start"))
-        assertTrue(source.contains("maxItemsInEachRow = PLAYER_EDGE_FLOATING_CONTROLS_MAX_ITEMS"))
     }
 
     @Test
@@ -134,10 +130,17 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("VideoPlayerMediaContext("))
         assertTrue(source.contains("buildVideoPlayerStatisticsSnapshot("))
         assertTrue(source.contains("StatisticsControls("))
-        assertTrue(source.contains("PlayerOptionPanel.INFO -> \"信息\""))
-        assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor("))
-        assertTrue(source.contains("contentDescription = \"播放信息\""))
+        assertTrue(source.contains("Text(\"信息\""))
+        assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(Icons.Filled.Info, \"播放信息\")"))
         assertTrue(source.contains("snapshot.redacted().debugLines()"))
+    }
+
+    @Test
+    fun centerForwardControlDoesNotClampUnknownDurationToZero() {
+        val source = videoPlayerPackageSource()
+
+        assertTrue(source.contains("seekForwardTargetMillis("))
+        assertTrue(!source.contains("state.positionMillis + SEEK_STEP_MILLIS).coerceAtMost(state.durationMillis)"))
     }
 
     @Test

@@ -681,8 +681,7 @@ private fun VideoPlayerScreen(
         }
     }
 
-    var openPanel by remember { mutableStateOf<PlayerOptionPanel?>(null) }
-    var activeBottomControl by remember { mutableStateOf<PlayerBottomQuickControl?>(null) }
+    var menuVisible by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
     var lockButtonVisible by remember { mutableStateOf(true) }
     var lockButtonRevealSignal by remember { mutableStateOf(0) }
@@ -690,22 +689,19 @@ private fun VideoPlayerScreen(
 
     LaunchedEffect(
         controlsVisible,
-        activeBottomControl,
-        openPanel,
+        menuVisible,
         controlsLocked,
         controlsAutoHideMillis,
     ) {
-        if (!controlsVisible || controlsLocked || controlsAutoHideMillis <= 0) return@LaunchedEffect
+        if (!controlsVisible || controlsLocked || menuVisible || controlsAutoHideMillis <= 0) return@LaunchedEffect
         delay(controlsAutoHideMillis.toLong())
-        activeBottomControl = null
-        openPanel = null
+        menuVisible = false
         controlsVisible = false
     }
 
     LaunchedEffect(controlsLocked) {
         if (controlsLocked) {
-            activeBottomControl = null
-            openPanel = null
+            menuVisible = false
             controlsVisible = false
             lockButtonVisible = false
         } else {
@@ -749,8 +745,7 @@ private fun VideoPlayerScreen(
                     onTemporarySpeedEnded = onTemporarySpeedEnded,
                     onClearHud = onClearHud,
                     onOverlayTap = {
-                        activeBottomControl = null
-                        openPanel = null
+                        menuVisible = false
                         controlsVisible = !controlsVisible
                     },
                     modifier = Modifier.fillMaxSize(),
@@ -762,6 +757,10 @@ private fun VideoPlayerScreen(
                     title = state.displayName,
                     source = mediaContext.source,
                     onClose = onClose,
+                    onMenuClick = {
+                        menuVisible = !menuVisible
+                    },
+                    onOrientationToggle = onOrientationToggle,
                     modifier = Modifier
                         .align(Alignment.TopCenter),
                 )
@@ -773,8 +772,7 @@ private fun VideoPlayerScreen(
                     onClick = {
                         val nextLocked = !controlsLocked
                         onControlsLockedChanged(nextLocked)
-                        openPanel = null
-                        activeBottomControl = null
+                        menuVisible = false
                         controlsVisible = !nextLocked
                         lockButtonVisible = !nextLocked
                     },
@@ -784,22 +782,20 @@ private fun VideoPlayerScreen(
                 )
             }
 
-            if (!controlsLocked && controlsVisible) {
-                PlayerSideControls(
+            if (!controlsLocked && controlsVisible && menuVisible) {
+                PlayerMenuPanel(
                     state = state,
-                    activePanel = openPanel,
-                    onPanelSelected = { panel ->
-                        openPanel = if (openPanel == panel) null else panel
-                    },
-                    onDismiss = { openPanel = null },
+                    mediaContext = mediaContext,
+                    onDismiss = { menuVisible = false },
+                    onSpeedSelected = onSpeedSelected,
+                    onScaleModeSelected = onScaleModeSelected,
+                    onDecoderModeSelected = onDecoderModeSelected,
                     onAudioTrackSelected = onAudioTrackSelected,
                     onSubtitleTrackSelected = onSubtitleTrackSelected,
                     onSubtitlesDisabled = onSubtitlesDisabled,
-                    onOrientationToggle = onOrientationToggle,
-                    mediaContext = mediaContext,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .fillMaxWidth(),
+                        .padding(end = 16.dp),
                 )
             }
 
@@ -810,29 +806,33 @@ private fun VideoPlayerScreen(
             )
 
             if (!controlsLocked && controlsVisible) {
-                PlayerCenterPlayPauseButton(
+                PlayerCenterControls(
                     isPaused = state.isPaused,
-                    onClick = {
+                    onPlayPause = {
                         controlsVisible = true
                         onPlayPause()
+                    },
+                    onSeekBackward = {
+                        controlsVisible = true
+                        onSeek((state.positionMillis - SEEK_STEP_MILLIS).coerceAtLeast(0L))
+                    },
+                    onSeekForward = {
+                        controlsVisible = true
+                        onSeek(
+                            seekForwardTargetMillis(
+                                positionMillis = state.positionMillis,
+                                durationMillis = state.durationMillis,
+                            ),
+                        )
                     },
                     modifier = Modifier.align(Alignment.Center),
                 )
                 PlayerBottomControls(
                     state = state,
-                    activeControl = activeBottomControl,
-                    onActiveControlChanged = { control ->
-                        activeBottomControl = if (activeBottomControl == control) null else control
-                        openPanel = null
-                        controlsVisible = true
-                    },
                     onSeek = {
                         controlsVisible = true
                         onSeek(it)
                     },
-                    onSpeedSelected = onSpeedSelected,
-                    onScaleModeSelected = onScaleModeSelected,
-                    onDecoderModeSelected = onDecoderModeSelected,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }

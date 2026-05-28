@@ -55,6 +55,12 @@ class PlayerOptionPanelUiTest {
     }
 
     @Test
+    fun centerForwardSeekOnlyClampsWhenDurationIsKnown() {
+        assertEquals(52_000L, seekForwardTargetMillis(positionMillis = 42_000L, durationMillis = 0L))
+        assertEquals(120_000L, seekForwardTargetMillis(positionMillis = 115_000L, durationMillis = 120_000L))
+    }
+
+    @Test
     fun playerControlSizingSupportsCenterPlaybackLockAndThinProgress() {
         assertEquals(0.62f, PLAYER_TOP_BAR_MAX_WIDTH_FRACTION)
         assertEquals(0.70f, PLAYER_BOTTOM_CONTROLS_MAX_WIDTH_FRACTION)
