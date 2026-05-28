@@ -7,6 +7,14 @@ pub mod jni_range_reader;
 pub trait RangeCallbacks {
     fn size(&self, file_id: u64) -> Result<u64>;
     fn read_range(&self, file_id: u64, start: u64, end_inclusive: u64) -> Result<Vec<u8>>;
+    fn read_cached_range(
+        &self,
+        _file_id: u64,
+        _start: u64,
+        _end_inclusive: u64,
+    ) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 }
 
 pub struct CallbackRangeReader<C> {
@@ -28,6 +36,11 @@ impl<C: RangeCallbacks> RangeReader for CallbackRangeReader<C> {
     fn read_range(&self, start: u64, end_inclusive: u64) -> Result<Vec<u8>> {
         self.callbacks
             .read_range(self.file_id, start, end_inclusive)
+    }
+
+    fn read_cached_range(&self, start: u64, end_inclusive: u64) -> Result<Option<Vec<u8>>> {
+        self.callbacks
+            .read_cached_range(self.file_id, start, end_inclusive)
     }
 }
 

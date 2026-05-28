@@ -76,7 +76,9 @@ impl LocalArchiveSession {
 
     pub fn extract_page(&mut self, page_index: usize) -> Result<Vec<u8>> {
         match self {
-            LocalArchiveSession::Zip { reader, index } => index.extract_page(reader, page_index),
+            LocalArchiveSession::Zip { reader, index } => {
+                index.extract_page(reader, page_index).map(|page| page.bytes)
+            }
             LocalArchiveSession::SevenZ { reader, pages } => {
                 let name = pages
                     .get(page_index)

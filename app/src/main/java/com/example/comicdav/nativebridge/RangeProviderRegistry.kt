@@ -30,6 +30,18 @@ object RangeProviderRegistry {
     }
 
     @JvmStatic
+    fun isRangeCached(fileId: Long, start: Long, endInclusive: Long): Boolean {
+        requireValidRange(start, endInclusive)
+        return provider(fileId).isRangeCached(start, endInclusive)
+    }
+
+    @JvmStatic
+    fun readCachedRange(fileId: Long, start: Long, endInclusive: Long): ByteArray? {
+        requireValidRange(start, endInclusive)
+        return provider(fileId).readCachedRange(start, endInclusive)
+    }
+
+    @JvmStatic
     fun prefetchRange(fileId: Long, start: Long, endInclusive: Long): Boolean {
         requireValidRange(start, endInclusive)
         return provider(fileId).prefetchRange(start, endInclusive)

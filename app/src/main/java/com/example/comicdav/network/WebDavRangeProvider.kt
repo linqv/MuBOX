@@ -44,11 +44,11 @@ class WebDavRangeProvider(
             .coerceAtMost(size - 1)
             .coerceAtLeast(endInclusive)
         val decision = synchronized(lock) {
-            coveringInFlight(start, endInclusive)?.let { existing ->
+            coveringDemandInFlight(start, endInclusive)?.let { existing ->
                 FetchDecision.Join(existing)
-            } ?: coveringInFlight(start, expandedEnd)?.let { existing ->
+            } ?: coveringDemandInFlight(start, expandedEnd)?.let { existing ->
                 FetchDecision.Join(existing)
-            } ?: FetchDecision.Fetch(registerInFlight(start, expandedEnd))
+            } ?: FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand))
         }
         if (decision is FetchDecision.Join) {
             return awaitInFlight(decision.inFlight, start, endInclusive)
@@ -98,6 +98,27 @@ class WebDavRangeProvider(
         return postFetch.bytes
     }
 
+    override fun isRangeCached(start: Long, endInclusive: Long): Boolean =
+        synchronized(lock) {
+            cache.isCovered(start, endInclusive)
+        }
+
+    override fun readCachedRange(start: Long, endInclusive: Long): ByteArray? {
+        val cached = synchronized(lock) {
+            cache.find(start, endInclusive)
+        }
+        if (cached == null) {
+            emitDiagnostic { "range_cache_only_miss path=$path start=$start end=$endInclusive" }
+            return null
+        }
+        emitDiagnostic {
+            "range_cache_only_hit path=$path start=$start end=$endInclusive " +
+                "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive} " +
+                "bytes=${cached.bytes.size}"
+        }
+        return cached.bytes
+    }
+
     override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
         return prefetchRange(start, endInclusive, priority = 0, protectedRanges = emptyList())
     }
@@ -132,7 +153,7 @@ class WebDavRangeProvider(
         val decision = synchronized(lock) {
             coveringInFlight(start, clampedEnd)?.let { existing ->
                 FetchDecision.Join(existing)
-            } ?: FetchDecision.Fetch(registerInFlight(start, clampedEnd))
+            } ?: FetchDecision.Fetch(registerInFlight(start, clampedEnd, InFlightOwner.Prefetch))
         }
         if (decision is FetchDecision.Join) {
             awaitInFlight(decision.inFlight, start, clampedEnd)
@@ -209,9 +230,21 @@ class WebDavRangeProvider(
     private fun coveringInFlight(start: Long, endInclusive: Long): InFlightRange? =
         inFlightRanges.firstOrNull { it.covers(start, endInclusive) }
 
-    private fun registerInFlight(start: Long, endInclusive: Long): RegisteredFetch {
+    private fun coveringDemandInFlight(start: Long, endInclusive: Long): InFlightRange? =
+        inFlightRanges.firstOrNull { it.owner == InFlightOwner.Demand && it.covers(start, endInclusive) }
+
+    private fun registerInFlight(
+        start: Long,
+        endInclusive: Long,
+        owner: InFlightOwner,
+    ): RegisteredFetch {
         val deferred = CompletableDeferred<ByteArray>()
-        inFlightRanges += InFlightRange(start = start, endInclusive = endInclusive, deferred = deferred)
+        inFlightRanges += InFlightRange(
+            start = start,
+            endInclusive = endInclusive,
+            owner = owner,
+            deferred = deferred,
+        )
         return RegisteredFetch(start = start, endInclusive = endInclusive, deferred = deferred)
     }
 
@@ -232,7 +265,7 @@ class WebDavRangeProvider(
     private fun awaitInFlight(inFlight: InFlightRange, start: Long, endInclusive: Long): ByteArray {
         emitDiagnostic {
             "range_inflight_join path=$path start=$start end=$endInclusive " +
-                "windowStart=${inFlight.start} windowEnd=${inFlight.endInclusive}"
+                "windowStart=${inFlight.start} windowEnd=${inFlight.endInclusive} owner=${inFlight.owner.logValue}"
         }
         val bytes = runBlocking { inFlight.deferred.await() }
         return inFlight.slice(bytes, start, endInclusive)
@@ -371,6 +404,9 @@ class WebDavRangeProvider(
                 windowEndInclusive = window.endInclusive,
             )
         }
+
+        fun isCovered(start: Long, endInclusive: Long): Boolean =
+            windows.any { it.covers(start, endInclusive) }
 
         fun store(
             start: Long,
@@ -533,6 +569,7 @@ class WebDavRangeProvider(
     private data class InFlightRange(
         val start: Long,
         val endInclusive: Long,
+        val owner: InFlightOwner,
         val deferred: CompletableDeferred<ByteArray>,
     ) {
         fun covers(reqStart: Long, reqEndInclusive: Long): Boolean =
@@ -550,6 +587,11 @@ class WebDavRangeProvider(
         val endInclusive: Long,
         val deferred: CompletableDeferred<ByteArray>,
     )
+
+    private enum class InFlightOwner(val logValue: String) {
+        Demand("demand"),
+        Prefetch("prefetch"),
+    }
 
     private sealed class FetchDecision {
         data class Join(val inFlight: InFlightRange) : FetchDecision()

@@ -15,7 +15,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::archive::{open_local_archive_fd_with_options, ArchiveFormat, LocalArchiveSession};
-use crate::cache::index_cache::{open_cbz_with_index_cache_options, IndexCacheKey};
+use crate::cache::index_cache::{
+    open_cbz_with_index_cache_options, store_index_cache_with_options, IndexCacheKey,
+};
 use crate::cbz::{open_cbz_with_options, CbzIndex, CbzPageEntry};
 use crate::error::ComicCoreError;
 use crate::image::ImageFormatOptions;
@@ -32,6 +34,7 @@ pub type ComicHandle = u64;
 struct CbzSession {
     kind: SessionKind,
     diagnostics: SessionDiagnostics,
+    index_cache: Option<SessionIndexCache>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -39,6 +42,13 @@ struct SessionDiagnostics {
     viewport_page: Option<usize>,
     planned_request_count: usize,
     planned_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+struct SessionIndexCache {
+    cache_dir: PathBuf,
+    key: IndexCacheKey,
+    options: ImageFormatOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -305,7 +315,7 @@ extern "system" fn native_open_local_fd(
     match jstring_to_string(&mut env, &format).and_then(|format| {
         let format = archive_format_from_name(&format)?;
         let archive = open_local_archive_fd_with_options(fd, size_hint, format, options)?;
-        insert_session(SessionKind::LocalArchive(archive))
+        insert_session(SessionKind::LocalArchive(archive), None)
     }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
@@ -441,10 +451,13 @@ fn image_format_options(avif_enabled: jboolean) -> ImageFormatOptions {
 fn open_local_path(path: &Path, options: ImageFormatOptions) -> Result<ComicHandle> {
     let reader = FileRangeReader::open(path)?;
     let index = open_cbz_with_options(&reader, options)?;
-    insert_session(SessionKind::Zip {
-        reader: SessionReader::Local(reader),
-        index,
-    })
+    insert_session(
+        SessionKind::Zip {
+            reader: SessionReader::Local(reader),
+            index,
+        },
+        None,
+    )
 }
 
 fn open_remote_reader(
@@ -461,13 +474,20 @@ fn open_remote_reader(
         validator,
     };
     let index = open_cbz_with_index_cache_options(&reader, &cache_dir, &key, options)?;
-    insert_session(SessionKind::Zip {
-        reader: SessionReader::Remote(reader),
-        index,
-    })
+    insert_session(
+        SessionKind::Zip {
+            reader: SessionReader::Remote(reader),
+            index,
+        },
+        Some(SessionIndexCache {
+            cache_dir,
+            key,
+            options,
+        }),
+    )
 }
 
-fn insert_session(kind: SessionKind) -> Result<ComicHandle> {
+fn insert_session(kind: SessionKind, index_cache: Option<SessionIndexCache>) -> Result<ComicHandle> {
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     if handle == 0 {
         return Err(anyhow!("native handle counter overflowed"));
@@ -480,6 +500,7 @@ fn insert_session(kind: SessionKind) -> Result<ComicHandle> {
         CbzSession {
             kind,
             diagnostics: SessionDiagnostics::default(),
+            index_cache,
         },
     );
     Ok(handle)
@@ -502,19 +523,31 @@ fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path)
     if output_path.is_file() && output_path.metadata()?.len() > 0 {
         return Ok(());
     }
-    let bytes = {
+    let (bytes, index_cache_update) = {
         let mut sessions = SESSIONS
             .lock()
             .map_err(|_| anyhow!("native session table lock poisoned"))?;
         let session = sessions
             .get_mut(&handle)
             .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+        let index_cache = session.index_cache.clone();
         match &mut session.kind {
-            SessionKind::Zip { reader, index } => index.extract_page(reader, page_index)?,
-            SessionKind::LocalArchive(archive) => archive.extract_page(page_index)?,
+            SessionKind::Zip { reader, index } => {
+                let page = index.extract_page(reader, page_index)?;
+                let cache_update = if page.data_offset_updated {
+                    index_cache.map(|cache| (cache, index.clone()))
+                } else {
+                    None
+                };
+                (page.bytes, cache_update)
+            }
+            SessionKind::LocalArchive(archive) => (archive.extract_page(page_index)?, None),
         }
     };
     fs::write(output_path, bytes)?;
+    if let Some((cache, index)) = index_cache_update {
+        let _ = store_index_cache_with_options(&cache.cache_dir, &cache.key, cache.options, &index);
+    }
     Ok(())
 }
 

@@ -13,6 +13,9 @@ pub mod zip64;
 pub trait RangeReader {
     fn size(&self) -> Result<u64>;
     fn read_range(&self, start: u64, end_inclusive: u64) -> Result<Vec<u8>>;
+    fn read_cached_range(&self, _start: u64, _end_inclusive: u64) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 }
 
 fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16> {

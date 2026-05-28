@@ -242,6 +242,7 @@ data class PageNotReadyTiming(
     val wasPrefetchPlanned: Boolean,
     val wasPrefetchCancelled: Boolean,
     val prefetchStartedBeforeDemand: Boolean,
+    val queueOrWaitMs: Long? = null,
     val extractMs: Long? = null,
     val imageRenderMs: Long? = null,
 )
@@ -264,6 +265,7 @@ fun formatPageNotReadyAnalysis(timing: PageNotReadyTiming): String {
         "wasPrefetchPlanned=${timing.wasPrefetchPlanned} " +
         "wasPrefetchCancelled=${timing.wasPrefetchCancelled} " +
         "prefetchStartedBeforeDemand=${timing.prefetchStartedBeforeDemand} " +
+        "queueOrWaitMs=${timing.queueOrWaitMs.formatDiagnosticMs()} " +
         "extractMs=${timing.extractMs.formatDiagnosticMs()} " +
         "imageRenderMs=${timing.imageRenderMs.formatDiagnosticMs()}"
 }
@@ -287,13 +289,18 @@ private fun pageNotReadyLikelyCause(timing: PageNotReadyTiming): String {
     if (timing.wasPrefetchCancelled) return "prefetch_cancelled"
     if (!timing.prefetchStartedBeforeDemand) return "prefetch_too_late"
 
+    val queueOrWaitMs = timing.queueOrWaitMs ?: 0L
     val extractMs = timing.extractMs ?: 0L
     val imageRenderMs = timing.imageRenderMs ?: 0L
-    return when {
-        extractMs <= 0L && imageRenderMs <= 0L -> "unknown"
-        extractMs >= imageRenderMs -> "extract_slow"
-        else -> "image_decode_slow"
-    }
+    return listOf(
+        "queue_or_wait" to queueOrWaitMs,
+        "extract_slow" to extractMs,
+        "image_decode_slow" to imageRenderMs,
+    )
+        .maxByOrNull { (_, duration) -> duration }
+        ?.takeIf { (_, duration) -> duration > 0L }
+        ?.first
+        ?: "unknown"
 }
 
 private fun Long?.formatDiagnosticMs(): String {

@@ -151,6 +151,7 @@ internal class ReaderDiagnosticsTracker(
                     wasPrefetchPlanned = wait.wasPrefetchPlanned,
                     wasPrefetchCancelled = prefetch?.cancelledAtMs != null && prefetch.completedAtMs == null,
                     prefetchStartedBeforeDemand = wait.prefetchStartedBeforeDemand,
+                    queueOrWaitMs = pageLoad?.queueOrWaitMs,
                     extractMs = pageLoad?.extractMs,
                     imageRenderMs = imageRenderMs,
                 ),
@@ -173,6 +174,8 @@ internal class ReaderDiagnosticsTracker(
                 slowestPage = slowestPage.key,
                 slowestPageMs = slowestPage.value.durationMs,
                 slowestPageReason = slowestPage.value.performanceReason,
+                slowestPageExtractMs = slowestPage.value.extractMs,
+                slowestPageQueueOrWaitMs = slowestPage.value.queueOrWaitMs,
             )
         }
 
@@ -187,8 +190,16 @@ internal class ReaderDiagnosticsTracker(
         val durationMs: Long
             get() = (fileReadyAtMs - loadStartedAtMs).coerceAtLeast(0L)
 
+        val queueOrWaitMs: Long
+            get() = (durationMs - extractMs).coerceAtLeast(0L)
+
         val performanceReason: String
-            get() = if (cacheHit) PERFORMANCE_REASON_CACHE_READ else PERFORMANCE_REASON_DECODE_RENDER
+            get() = when {
+                cacheHit -> PERFORMANCE_REASON_CACHE_READ
+                queueOrWaitMs > extractMs -> PERFORMANCE_REASON_QUEUE_WAIT
+                extractMs > 0L -> PERFORMANCE_REASON_EXTRACT
+                else -> PERFORMANCE_REASON_DECODE_RENDER
+            }
     }
 
     private data class PrefetchDiagnostic(
@@ -208,6 +219,8 @@ internal class ReaderDiagnosticsTracker(
     private companion object {
         const val LOAD_REASON_INITIAL = "initial"
         const val PERFORMANCE_REASON_CACHE_READ = "cache-read"
+        const val PERFORMANCE_REASON_QUEUE_WAIT = "queue-wait"
+        const val PERFORMANCE_REASON_EXTRACT = "extract"
         const val PERFORMANCE_REASON_DECODE_RENDER = "decode-render"
     }
 }
@@ -221,4 +234,6 @@ internal data class LocalSessionPerformanceSummary(
     val slowestPage: Int,
     val slowestPageMs: Long,
     val slowestPageReason: String,
+    val slowestPageExtractMs: Long = 0L,
+    val slowestPageQueueOrWaitMs: Long = 0L,
 )

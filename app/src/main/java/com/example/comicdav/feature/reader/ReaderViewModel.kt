@@ -264,8 +264,6 @@ class ReaderViewModel(
         }
 
         reportPageDemand(pageIndex, "select_page")
-        val promotedPrefetch = activePrefetchJob(pageIndex)
-        val promotedPlannedRange = activePlannedRangeJob(pageIndex)
         val existingFile = uiState.pageFiles[pageIndex]
         ReaderDiagnosticLog.event(
             "select_page page=$pageIndex previous=${uiState.currentPage} cached=${existingFile != null} pageCount=${activeSession.pageCount}",
@@ -283,55 +281,7 @@ class ReaderViewModel(
             return
         }
         val loadGeneration = generation
-        prefetchNeighbors(pageIndex, reason = "select_page")
-        val promotedJob = promotedPrefetch ?: promotedPlannedRange
-        if (promotedJob != null) {
-            val promotionSource = if (promotedPrefetch != null) {
-                "prefetch_to_select"
-            } else {
-                "planned_range_to_select"
-            }
-            ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
-                "prefetch_promoted page=$pageIndex source=$promotionSource"
-            }
-            viewModelScope.launch {
-                runCatching {
-                    promotedJob.join()
-                    uiState.pageFiles[pageIndex]
-                        ?: withContext(ioDispatcher) {
-                            loadPages(
-                                session = activeSession,
-                                pageIndexes = listOf(pageIndex),
-                                cacheDir = activeCacheDir,
-                                expectedGeneration = loadGeneration,
-                                reason = LOAD_REASON_SELECT,
-                            )
-                        }[pageIndex]
-                }.fold(
-                    onSuccess = { file ->
-                        if (loadGeneration != generation || file == null) return@fold
-                        uiState = uiState.copy(
-                            currentPage = pageIndex,
-                            pageFiles = uiState.pageFiles + (pageIndex to file),
-                            isLoading = false,
-                        )
-                        scheduleViewportUpdate(activeSession, pageIndex, loadGeneration)
-                        saveProgress(pageIndex)
-                        ReaderDiagnosticLog.event("select_page_loaded page=$pageIndex files=[$pageIndex]")
-                        prefetchNeighbors(pageIndex)
-                    },
-                    onFailure = { error ->
-                        if (loadGeneration != generation) return@fold
-                        ReaderDiagnosticLog.error("select_page_load_failed page=$pageIndex", error)
-                        uiState = uiState.copy(
-                            isLoading = false,
-                            error = error.message ?: "加载页面失败",
-                        )
-                    },
-                )
-            }
-            return
-        }
+        prioritizeSelectedPageLoad(pageIndex)
         viewModelScope.launch {
             runCatching {
                 withContext(ioDispatcher) {
@@ -366,6 +316,16 @@ class ReaderViewModel(
                 },
             )
         }
+    }
+
+    private fun prioritizeSelectedPageLoad(pageIndex: Int) {
+        val activePrefetchPages = prefetchJobs.keys.toList()
+        if (activePrefetchPages.isEmpty()) return
+        cancelPagePrefetches(
+            reason = "selected_page_priority",
+            pages = activePrefetchPages,
+            selectedPage = pageIndex,
+        )
     }
 
     fun closeReader() {
@@ -655,19 +615,6 @@ class ReaderViewModel(
         }
         return files
     }
-
-    private fun activePrefetchJob(pageIndex: Int): Job? =
-        prefetchJobs[pageIndex]?.takeIf { it.isActive }
-
-    private fun activePlannedRangeJob(pageIndex: Int): Job? =
-        synchronized(plannedRangeLock) {
-            plannedRangeJobs
-                .values
-                .firstOrNull { planned ->
-                    planned.job.isPendingOrActive() && pageIndex in planned.range.pages
-                }
-                ?.job
-        }
 
     private fun reconcilePagePrefetches(
         selectedPage: Int,
@@ -989,13 +936,6 @@ class ReaderViewModel(
         }
     }
 
-    private fun activePlannedRangeForPagesLocked(pages: List<Int>): PlannedRangePrefetch? =
-        plannedRangeJobs
-            .values
-            .firstOrNull { planned ->
-                planned.job.isPendingOrActive() && planned.range.pages.any { page -> page in pages }
-            }
-
     private fun Job.isPendingOrActive(): Boolean = !isCompleted && !isCancelled
 
     private fun cancelPlannedRangePrefetches(reason: String, keepPages: Set<Int>) {
@@ -1069,7 +1009,10 @@ class ReaderViewModel(
         "local_session_summary pagesLoaded=$pagesLoaded " +
             "cacheHits=$cacheHits cacheMisses=$cacheMisses " +
             "totalOutputBytes=$totalOutputBytes largestOutputBytes=$largestOutputBytes " +
-            "slowestPage=$slowestPage slowestPageMs=$slowestPageMs slowestPageReason=$slowestPageReason"
+            "slowestPage=$slowestPage slowestPageMs=$slowestPageMs " +
+            "slowestPageExtractMs=$slowestPageExtractMs " +
+            "slowestPageQueueOrWaitMs=$slowestPageQueueOrWaitMs " +
+            "slowestPageReason=$slowestPageReason"
 
     private fun closeSessionAsync(session: ComicReaderSession) {
         cleanupScope.launch {
