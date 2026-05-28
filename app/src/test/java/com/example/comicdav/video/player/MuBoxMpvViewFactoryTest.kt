@@ -12,7 +12,8 @@ class MuBoxMpvViewFactoryTest {
         val layout = layoutFile().readText()
 
         assertTrue(source.contains("LayoutInflater.from(context)"))
-        assertTrue(source.contains(".inflate(R.layout.view_mubox_mpv, null)"))
+        assertTrue(source.contains(".inflate(R.layout.view_mubox_mpv, parent, false)"))
+        assertFalse(source.contains(".inflate(R.layout.view_mubox_mpv, null)"))
         assertFalse(source.contains("Xml.asAttributeSet"))
         assertTrue(layout.contains("com.example.comicdav.video.player.MuBoxMpvView"))
     }

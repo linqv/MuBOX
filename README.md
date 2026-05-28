@@ -34,7 +34,7 @@ Android 包名：`org.mubox.reader`
 | 工具 | 版本 |
 |------|------|
 | JDK | 17 |
-| Android SDK | compileSdk 35，minSdk 26 |
+| Android SDK | compileSdk 36，targetSdk 36，minSdk 26 |
 | Android NDK | 任意已安装版本（自动检测最新） |
 | Rust 工具链 | stable，需安装 `aarch64-linux-android` / `x86_64-linux-android` target |
 

@@ -42,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -370,11 +371,15 @@ fun ReaderScreen(
                 }
 
                 if (controlsVisible) {
-                    val displayPage = if (isContinuousVertical) {
-                        continuousListState.firstVisibleItemIndex + 1
-                    } else {
-                        pagerState.currentPage + 1
-                    }.coerceIn(1, uiState.pageCount)
+                    val displayPage by remember(isContinuousVertical, uiState.pageCount) {
+                        derivedStateOf {
+                            if (isContinuousVertical) {
+                                continuousListState.firstVisibleItemIndex + 1
+                            } else {
+                                pagerState.currentPage + 1
+                            }.coerceIn(1, uiState.pageCount)
+                        }
+                    }
                     ReaderTopBar(
                         title = "正在阅读",
                         subtitle = "共 ${uiState.pageCount} 页",

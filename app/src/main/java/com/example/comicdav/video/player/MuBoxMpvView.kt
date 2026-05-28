@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.SurfaceHolder
+import android.widget.FrameLayout
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.MPVLib
 import org.mubox.reader.R
@@ -87,8 +88,9 @@ class MuBoxMpvView(
 
     companion object {
         fun create(context: Context): MuBoxMpvView {
+            val parent = FrameLayout(context)
             return LayoutInflater.from(context)
-                .inflate(R.layout.view_mubox_mpv, null) as MuBoxMpvView
+                .inflate(R.layout.view_mubox_mpv, parent, false) as MuBoxMpvView
         }
     }
 }

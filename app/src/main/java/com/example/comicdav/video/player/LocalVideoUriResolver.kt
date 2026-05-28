@@ -61,11 +61,12 @@ class LocalVideoUriResolver(
 
     private fun resolveFileDescriptorUri(uri: Uri, uriText: String): String =
         runCatching {
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+            context.contentResolver.openFileDescriptor(uri, "r")
+                ?.use { descriptor ->
+                    // detachFd transfers ownership to mpv before the descriptor wrapper is closed.
+                    "fd://${descriptor.detachFd()}"
+                }
                 ?: throw IllegalStateException("内容提供方没有返回可读取的文件描述符")
-
-            // detachFd transfers ownership to mpv. Do not close the detached fd here.
-            "fd://${descriptor.detachFd()}"
         }.getOrElse { error ->
             throw IllegalStateException("无法读取本地视频：$uriText", error)
         }

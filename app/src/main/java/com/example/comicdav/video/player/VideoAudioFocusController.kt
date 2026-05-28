@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 
@@ -149,31 +148,19 @@ private class AndroidVideoAudioFocusGateway(
 ) : VideoAudioFocusGateway {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private var focusRequest: AudioFocusRequest? = null
-    private var legacyListener: AudioManager.OnAudioFocusChangeListener? = null
 
     override fun request(listener: VideoAudioFocusListener): Boolean {
-        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            requestModernFocus(listener)
-        } else {
-            requestLegacyFocus(listener)
-        }
+        val result = requestModernFocus(listener)
         val granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (!granted) {
             focusRequest = null
-            legacyListener = null
         }
         return granted
     }
 
     override fun abandon() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest?.let(audioManager::abandonAudioFocusRequest)
-            focusRequest = null
-        } else {
-            @Suppress("DEPRECATION")
-            legacyListener?.let(audioManager::abandonAudioFocus)
-            legacyListener = null
-        }
+        focusRequest?.let(audioManager::abandonAudioFocusRequest)
+        focusRequest = null
     }
 
     private fun requestModernFocus(listener: VideoAudioFocusListener): Int {
@@ -189,19 +176,6 @@ private class AndroidVideoAudioFocusGateway(
             .build()
         focusRequest = request
         return audioManager.requestAudioFocus(request)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun requestLegacyFocus(listener: VideoAudioFocusListener): Int {
-        val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-            listener.onAudioFocusChange(focusChange.toVideoAudioFocusChange())
-        }
-        legacyListener = audioFocusListener
-        return audioManager.requestAudioFocus(
-            audioFocusListener,
-            AudioManager.STREAM_MUSIC,
-            AudioManager.AUDIOFOCUS_GAIN,
-        )
     }
 
     private fun Int.toVideoAudioFocusChange(): VideoAudioFocusChange =
