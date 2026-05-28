@@ -3,6 +3,7 @@ package com.example.comicdav.network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,8 +18,21 @@ class OkHttpWebDavClient(
     private val baseUrl: String,
     private val username: String?,
     private val password: String?,
-    private val httpClient: OkHttpClient = HttpClients.webDav,
+    httpClient: OkHttpClient = HttpClients.webDav,
+    private val diagnostics: WebDavNetworkDiagnostics = WebDavNetworkDiagnostics(),
 ) : WebDavClient {
+    private val httpClient: OkHttpClient = run {
+        val upstreamEvents = httpClient.eventListenerFactory
+        val diagnosticEvents = diagnostics.eventListenerFactory()
+        httpClient.newBuilder()
+            .eventListenerFactory(
+                EventListener.Factory { call ->
+                    upstreamEvents.create(call).plus(diagnosticEvents.create(call))
+                },
+            )
+            .build()
+    }
+
     override suspend fun list(path: String): List<WebDavItem> = withContext(Dispatchers.IO) {
         val body = """<?xml version="1.0" encoding="utf-8" ?>
             <d:propfind xmlns:d="DAV:">
@@ -30,36 +44,43 @@ class OkHttpWebDavClient(
                 </d:prop>
             </d:propfind>
         """.trimIndent().toRequestBody("application/xml; charset=utf-8".toMediaType())
-        val request = requestBuilder(path)
+        val request = requestBuilder(path, WebDavOperation.PROPFIND)
             .method("PROPFIND", body)
             .header("Depth", "1")
             .build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw WebDavException.HttpStatus(
-                    response.code,
-                    "PROPFIND failed with HTTP ${response.code}: ${request.url}",
-                )
+        request.withFailureDiagnostics {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw WebDavException.HttpStatus(
+                        response.code,
+                        httpFailureMessage("PROPFIND", response.code, request),
+                    )
+                }
+                WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath)
             }
-            WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath)
         }
     }
 
     override suspend fun head(path: String): RemoteFileInfo = withContext(Dispatchers.IO) {
-        val request = requestBuilder(path).head().build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw WebDavException.HttpStatus(response.code, "HEAD failed with HTTP ${response.code}: ${request.url}")
+        val request = requestBuilder(path, WebDavOperation.HEAD).head().build()
+        request.withFailureDiagnostics {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw WebDavException.HttpStatus(
+                        response.code,
+                        httpFailureMessage("HEAD", response.code, request),
+                    )
+                }
+                val size = response.header("Content-Length")?.toLongOrNull()
+                    ?: throw WebDavException.MissingMetadata("HEAD response is missing Content-Length")
+                RemoteFileInfo(
+                    path = path,
+                    size = size,
+                    etag = response.header("ETag"),
+                    lastModified = response.header("Last-Modified")?.hashCode()?.toLong(),
+                    supportsRange = response.header("Accept-Ranges")?.equals("bytes", ignoreCase = true) == true,
+                )
             }
-            val size = response.header("Content-Length")?.toLongOrNull()
-                ?: throw WebDavException.MissingMetadata("HEAD response is missing Content-Length")
-            RemoteFileInfo(
-                path = path,
-                size = size,
-                etag = response.header("ETag"),
-                lastModified = response.header("Last-Modified")?.hashCode()?.toLong(),
-                supportsRange = response.header("Accept-Ranges")?.equals("bytes", ignoreCase = true) == true,
-            )
         }
     }
 
@@ -81,58 +102,61 @@ class OkHttpWebDavClient(
         endInclusive: Long?,
         registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse = withContext(Dispatchers.IO) {
-        val request = requestBuilder(path)
+        val rangeHeader = buildRangeHeader(start, endInclusive)
+        val request = requestBuilder(path, WebDavOperation.RANGE_GET, rangeHeader)
             .get()
-            .header("Range", buildRangeHeader(start, endInclusive))
+            .header("Range", rangeHeader)
             .build()
-        val call = httpClient.newCall(request)
-        registerCancellation(Closeable { call.cancel() })
-        val response = call.execute()
-        when (response.code) {
-            206 -> {
-                val body = response.body
-                try {
-                    val contentRangeHeader = response.header("Content-Range")
-                    val parsedRange = validateContentRange(
-                        header = contentRangeHeader,
-                        expectedStart = start,
-                        expectedEndInclusive = endInclusive,
-                    )
-                    val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
-                    val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
-                    val declaredContentLength = body.contentLength()
-                    if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
-                        throw WebDavException.InvalidContentRange(
-                            "Expected response body length $expectedContentLength but got $declaredContentLength",
+        request.withFailureDiagnostics {
+            val call = httpClient.newCall(request)
+            registerCancellation(Closeable { call.cancel() })
+            val response = call.execute()
+            when (response.code) {
+                206 -> {
+                    val body = response.body
+                    try {
+                        val contentRangeHeader = response.header("Content-Range")
+                        val parsedRange = validateContentRange(
+                            header = contentRangeHeader,
+                            expectedStart = start,
+                            expectedEndInclusive = endInclusive,
                         )
+                        val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
+                        val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
+                        val declaredContentLength = body.contentLength()
+                        if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
+                            throw WebDavException.InvalidContentRange(
+                                "Expected response body length $expectedContentLength but got $declaredContentLength",
+                            )
+                        }
+                        val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
+                        val stream = body.byteStream()
+                        val close = { response.close() }
+                        WebDavStreamResponse(
+                            stream = stream,
+                            statusCode = response.code,
+                            contentLength = contentLength,
+                            contentRange = parsedRange,
+                            contentType = response.header("Content-Type"),
+                            totalSize = totalSize,
+                            close = close,
+                        )
+                    } catch (error: Throwable) {
+                        response.close()
+                        throw error
                     }
-                    val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
-                    val stream = body.byteStream()
-                    val close = { response.close() }
-                    WebDavStreamResponse(
-                        stream = stream,
-                        statusCode = response.code,
-                        contentLength = contentLength,
-                        contentRange = parsedRange,
-                        contentType = response.header("Content-Type"),
-                        totalSize = totalSize,
-                        close = close,
-                    )
-                } catch (error: Throwable) {
-                    response.close()
-                    throw error
                 }
-            }
-            200 -> {
-                response.close()
-                throw WebDavException.RangeNotSupported()
-            }
-            else -> {
-                response.close()
-                throw WebDavException.HttpStatus(
-                    response.code,
-                    "Range GET failed with HTTP ${response.code}: ${request.url}",
-                )
+                200 -> {
+                    response.close()
+                    throw WebDavException.RangeNotSupported()
+                }
+                else -> {
+                    response.close()
+                    throw WebDavException.HttpStatus(
+                        response.code,
+                        httpFailureMessage("Range GET", response.code, request),
+                    )
+                }
             }
         }
     }
@@ -144,62 +168,74 @@ class OkHttpWebDavClient(
         path: String,
         registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse = withContext(Dispatchers.IO) {
-        val request = requestBuilder(path)
+        val request = requestBuilder(path, WebDavOperation.FULL_GET)
             .get()
             .build()
-        val call = httpClient.newCall(request)
-        registerCancellation(Closeable { call.cancel() })
-        val response = call.execute()
-        if (response.code != 200) {
-            response.close()
-            throw WebDavException.HttpStatus(
-                response.code,
-                "GET failed with HTTP ${response.code}: ${request.url}",
+        request.withFailureDiagnostics {
+            val call = httpClient.newCall(request)
+            registerCancellation(Closeable { call.cancel() })
+            val response = call.execute()
+            if (response.code != 200) {
+                response.close()
+                throw WebDavException.HttpStatus(
+                    response.code,
+                    httpFailureMessage("GET", response.code, request),
+                )
+            }
+            val body = response.body
+            val contentLength = body.contentLength()
+            val stream = body.byteStream()
+            WebDavStreamResponse(
+                stream = stream,
+                statusCode = response.code,
+                contentLength = contentLength,
+                contentRange = null,
+                contentType = response.header("Content-Type"),
+                totalSize = contentLength.takeIf { it >= 0 },
+                close = { response.close() },
             )
         }
-        val body = response.body
-        val contentLength = body.contentLength()
-        val stream = body.byteStream()
-        WebDavStreamResponse(
-            stream = stream,
-            statusCode = response.code,
-            contentLength = contentLength,
-            contentRange = null,
-            contentType = response.header("Content-Type"),
-            totalSize = contentLength.takeIf { it >= 0 },
-            close = { response.close() },
-        )
     }
 
     override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
         withContext(Dispatchers.IO) {
-            val request = requestBuilder(path).get().build()
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw WebDavException.HttpStatus(response.code, "GET failed with HTTP ${response.code}: ${request.url}")
-                }
-                val body = response.body
-                target.parentFile?.mkdirs()
-                var total = 0L
-                body.byteStream().use { input ->
-                    target.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read == -1) break
-                            output.write(buffer, 0, read)
-                            total += read
-                            onBytesRead(total)
+            val request = requestBuilder(path, WebDavOperation.DOWNLOAD).get().build()
+            request.withFailureDiagnostics {
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw WebDavException.HttpStatus(
+                            response.code,
+                            httpFailureMessage("GET", response.code, request),
+                        )
+                    }
+                    val body = response.body
+                    target.parentFile?.mkdirs()
+                    var total = 0L
+                    body.byteStream().use { input ->
+                        target.outputStream().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read == -1) break
+                                output.write(buffer, 0, read)
+                                total += read
+                                onBytesRead(total)
+                            }
                         }
                     }
+                    total
                 }
-                total
             }
         }
 
-    private fun requestBuilder(path: String): Request.Builder =
+    private fun requestBuilder(
+        path: String,
+        operation: WebDavOperation,
+        rangeHeader: String? = null,
+    ): Request.Builder =
         Request.Builder()
             .url(resolveUrl(path))
+            .tag(WebDavRequestTag::class.java, diagnostics.requestTag(operation, path, rangeHeader))
             .also { builder ->
                 if (!username.isNullOrBlank() && password != null) {
                     builder.header("Authorization", Credentials.basic(username, password))
@@ -249,6 +285,18 @@ class OkHttpWebDavClient(
         } else {
             "bytes=$start-$endInclusive"
         }
+
+    private fun httpFailureMessage(operation: String, statusCode: Int, request: Request): String =
+        "$operation failed with HTTP $statusCode: ${diagnostics.sanitizedUrl(request.url)}"
+
+    private inline fun <T> Request.withFailureDiagnostics(block: () -> T): T {
+        try {
+            return block()
+        } catch (error: Throwable) {
+            diagnostics.logFailure(this, error)
+            throw error
+        }
+    }
 
     private fun parseContentRange(header: String?): ContentRange? {
         val value = header ?: return null

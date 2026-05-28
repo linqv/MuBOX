@@ -41,6 +41,7 @@ enum class ReaderLogCategory {
     IMAGE,
     PREFETCH,
     RANGE_CACHE,
+    WEBDAV_NETWORK,
     UI,
 }
 
