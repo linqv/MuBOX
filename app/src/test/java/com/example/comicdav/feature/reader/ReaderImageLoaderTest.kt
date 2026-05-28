@@ -55,6 +55,13 @@ class ReaderImageLoaderTest {
     }
 
     @Test
+    fun readerChromeDoesNotKeepLegacyVerticalGradientPanels() {
+        val source = readerScreenSource()
+
+        assertFalse(source.contains("Brush.verticalGradient"))
+    }
+
+    @Test
     fun platformReaderImageRejectsUnknownIsoBmffBrands() {
         val header = byteArrayOf(
             0x00, 0x00, 0x00, 0x18,

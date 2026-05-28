@@ -5,8 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,21 +13,12 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,61 +28,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
-import com.example.comicdav.ui.muBoxColorsFor
+import com.example.comicdav.ui.MuBoxDenseMediaRow
+import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
-
-internal data class WebDavScreenColors(
-    val background: Color,
-    val panel: Color,
-    val panelHigh: Color,
-    val row: Color,
-    val rowSelected: Color,
-    val border: Color,
-    val selectedBorder: Color,
-    val accent: Color,
-    val onAccent: Color,
-    val accentSoft: Color,
-    val onAccentSoft: Color,
-    val purple: Color,
-    val text: Color,
-    val muted: Color,
-    val progressTrack: Color,
-    val errorText: Color,
-)
-
-internal fun webDavScreenColors(colorScheme: ColorScheme): WebDavScreenColors {
-    val tokens = muBoxColorsFor(colorScheme)
-    return WebDavScreenColors(
-        background = tokens.background,
-        panel = tokens.panel,
-        panelHigh = tokens.panelHigh,
-        row = tokens.row,
-        rowSelected = tokens.rowSelected,
-        border = tokens.border,
-        selectedBorder = tokens.selectedBorder,
-        accent = tokens.mediaAccent,
-        onAccent = tokens.onMediaAccent,
-        accentSoft = tokens.accentSoft,
-        onAccentSoft = tokens.onAccentSoft,
-        purple = tokens.comicAccent,
-        text = tokens.text,
-        muted = tokens.muted,
-        progressTrack = tokens.playerProgressTrack,
-        errorText = colorScheme.error,
-    )
-}
-
-private data class WebDavIconColors(
-    val container: Color,
-    val content: Color,
-)
 
 internal enum class WebDavItemClickAction {
     OpenDirectory,
@@ -147,265 +91,126 @@ fun WebDavBrowserScreen(
     modifier: Modifier = Modifier,
     selectedFile: WebDavItem? = null,
 ) {
-    val colors = webDavScreenColors(MaterialTheme.colorScheme)
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .background(colors.background),
     ) {
-        WebDavBrowserAppBar(
-            currentPath = uiState.currentPath,
-            isLoading = uiState.isLoading,
-            onBackToDirectories = onBackToDirectories,
-            onSaveDirectory = onSaveDirectory,
-            showSaveDirectoryAction = showSaveDirectoryAction,
-        )
-
-        if (uiState.isLoading) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.accent,
-                trackColor = colors.progressTrack,
-            )
-        }
-
-        AnimatedContent(
-            targetState = uiState.items,
-            modifier = Modifier.weight(1f),
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "WebDavListContent",
-        ) { items ->
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(items) { item ->
-                    WebDavItemRow(
-                        item = item,
-                        onOpen = { onItemClick(item) },
-                        onAddToLibrary = { onAddToLibrary(item) },
-                        onDownloadToLocal = { onDownloadToLocal(item) },
-                        onSelectFile = { onSelectFile(item) },
-                        isSelected = selectedFile?.path == item.path,
-                    )
-                }
-            }
-        }
-
-        val panelMessage = uiState.message.ifBlank { actionMessage.orEmpty() }
-        if (downloadProgress != null || !downloadError.isNullOrBlank() || panelMessage.isNotBlank()) {
-            WebDavTransferPanel(
-                message = panelMessage,
-                downloadProgress = downloadProgress,
-                downloadError = downloadError,
-                onCancelDownload = onCancelDownload,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WebDavBrowserAppBar(
-    currentPath: String,
-    isLoading: Boolean,
-    onBackToDirectories: () -> Unit,
-    onSaveDirectory: () -> Unit,
-    showSaveDirectoryAction: Boolean,
-) {
-    val colors = webDavScreenColors(MaterialTheme.colorScheme)
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = colors.panel,
-            contentColor = colors.text,
-            border = BorderStroke(1.dp, colors.border),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = "WebDAV ${ComicDavCopy.sourcesTitle}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "浏览远程目录，阅读漫画或加入书架",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+        MuBoxHeaderBar(
+            title = "WebDAV " + ComicDavCopy.sourcesTitle,
+            actions = {
                 TextButton(
                     onClick = onBackToDirectories,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accent),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.mediaAccent),
                 ) {
                     Text(ComicDavCopy.sourcesTitle)
                 }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .defaultMinSize(minHeight = 48.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = colors.panelHigh,
-                contentColor = colors.text,
-                border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.32f)),
-            ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Text(
-                        text = webDavDisplayPathLabel(currentPath),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
-                OutlinedButton(
-                    onClick = onSaveDirectory,
-                    enabled = !isLoading,
-                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    border = BorderStroke(1.dp, if (isLoading) colors.border else colors.accent.copy(alpha = 0.65f)),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = colors.accent,
-                        disabledContentColor = colors.muted.copy(alpha = 0.55f),
-                    ),
-                ) {
-                    Text(ComicDavCopy.saveCurrentDirectory)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun WebDavItemRow(
-    item: WebDavItem,
-    onOpen: () -> Unit,
-    onAddToLibrary: () -> Unit,
-    onDownloadToLocal: () -> Unit,
-    onSelectFile: () -> Unit,
-    isSelected: Boolean,
-) {
-    val clickAction = webDavItemClickAction(item)
-    val longPressActions = webDavItemLongPressActions(item)
-    val supportingLabel = webDavItemSupportingLabel(item)
-    val colors = webDavScreenColors(MaterialTheme.colorScheme)
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {
-                    when (clickAction) {
-                        WebDavItemClickAction.OpenDirectory -> onOpen()
-                        WebDavItemClickAction.OpenComic -> onOpen()
-                        WebDavItemClickAction.OpenVideo -> onOpen()
-                        WebDavItemClickAction.NoAction -> Unit
-                    }
-                },
-                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
-                    { onSelectFile() }
-                },
-                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
-            ),
-        shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) colors.rowSelected else colors.row,
-        contentColor = colors.text,
-        border = BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) colors.selectedBorder else colors.border,
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            WebDavItemTypeIcon(mediaKind = item.mediaKind)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (supportingLabel.isNotBlank()) {
-                    Text(
-                        text = supportingLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WebDavItemTypeIcon(mediaKind: MediaKind) {
-    val screenColors = webDavScreenColors(MaterialTheme.colorScheme)
-    val colors = webDavIconColors(mediaKind, screenColors)
-    val icon = when (mediaKind) {
-        MediaKind.Directory -> Icons.Rounded.Folder
-        MediaKind.Video -> Icons.Rounded.PlayCircle
-        MediaKind.Subtitle -> Icons.Rounded.Subtitles
-        else -> Icons.AutoMirrored.Rounded.MenuBook
-    }
-    val contentDescription = webDavItemTypeContentDescription(mediaKind)
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .background(color = colors.container, shape = CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(24.dp),
-            tint = colors.content,
+            },
         )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp),
+                    shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
+                    color = colors.panelHigh,
+                    contentColor = colors.text,
+                    border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.32f)),
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            text = webDavDisplayPathLabel(uiState.currentPath),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = colors.muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
+                    OutlinedButton(
+                        onClick = onSaveDirectory,
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        border = BorderStroke(1.dp, if (uiState.isLoading) colors.border else colors.mediaAccent.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = colors.mediaAccent,
+                            disabledContentColor = colors.muted.copy(alpha = 0.55f),
+                        ),
+                    ) {
+                        Text(ComicDavCopy.saveCurrentDirectory)
+                    }
+                }
+            }
+
+            if (uiState.isLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = colors.mediaAccent,
+                    trackColor = colors.playerProgressTrack,
+                )
+            }
+
+            AnimatedContent(
+                targetState = uiState.items,
+                modifier = Modifier.weight(1f),
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "WebDavListContent",
+            ) { items ->
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(items) { item ->
+                        val clickAction = webDavItemClickAction(item)
+                        val longPressActions = webDavItemLongPressActions(item)
+                        val supportingLabel = webDavItemSupportingLabel(item)
+                        val isSelected = selectedFile?.path == item.path
+                        MuBoxDenseMediaRow(
+                            title = item.name,
+                            mediaKind = item.mediaKind,
+                            onClick = {
+                                when (clickAction) {
+                                    WebDavItemClickAction.OpenDirectory -> onItemClick(item)
+                                    WebDavItemClickAction.OpenComic -> onItemClick(item)
+                                    WebDavItemClickAction.OpenVideo -> onItemClick(item)
+                                    WebDavItemClickAction.NoAction -> Unit
+                                }
+                            },
+                            subtitle = supportingLabel.ifBlank { null },
+                            selected = isSelected,
+                            onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile(item) } },
+                            onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+                        )
+                    }
+                }
+            }
+
+            val panelMessage = uiState.message.ifBlank { actionMessage.orEmpty() }
+            if (downloadProgress != null || !downloadError.isNullOrBlank() || panelMessage.isNotBlank()) {
+                WebDavTransferPanel(
+                    message = panelMessage,
+                    downloadProgress = downloadProgress,
+                    downloadError = downloadError,
+                    onCancelDownload = onCancelDownload,
+                )
+            }
+        }
     }
 }
 
@@ -416,14 +221,13 @@ private fun WebDavTransferPanel(
     downloadError: String?,
     onCancelDownload: () -> Unit,
 ) {
-    val colors = webDavScreenColors(MaterialTheme.colorScheme)
+    val colors = rememberMuBoxColors()
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
         color = colors.panel,
         contentColor = colors.text,
         border = BorderStroke(1.dp, colors.border),
-        tonalElevation = 1.dp,
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -438,13 +242,13 @@ private fun WebDavTransferPanel(
                 LinearProgressIndicator(
                     progress = { downloadProgress.fraction },
                     modifier = Modifier.fillMaxWidth(),
-                    color = colors.accent,
-                    trackColor = colors.progressTrack,
+                    color = colors.mediaAccent,
+                    trackColor = colors.playerProgressTrack,
                 )
                 TextButton(
                     onClick = onCancelDownload,
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accent),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.mediaAccent),
                 ) {
                     Text("取消下载")
                 }
@@ -472,35 +276,6 @@ private fun WebDavTransferPanel(
         }
     }
 }
-
-private fun webDavIconColors(
-    mediaKind: MediaKind,
-    colors: WebDavScreenColors,
-): WebDavIconColors =
-    when (mediaKind) {
-        MediaKind.Directory -> WebDavIconColors(
-            container = colors.accentSoft,
-            content = colors.onAccentSoft,
-        )
-        MediaKind.Comic -> WebDavIconColors(
-            container = colors.panelHigh,
-            content = colors.purple,
-        )
-        MediaKind.Video -> WebDavIconColors(
-            container = colors.accentSoft,
-            content = colors.onAccentSoft,
-        )
-        MediaKind.Subtitle -> WebDavIconColors(
-            container = colors.panelHigh,
-            content = colors.accent,
-        )
-        MediaKind.Audio,
-        MediaKind.Unknown,
-        -> WebDavIconColors(
-            container = colors.panelHigh,
-            content = colors.muted,
-        )
-    }
 
 internal fun webDavItemTypeContentDescription(mediaKind: MediaKind): String =
     com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind)

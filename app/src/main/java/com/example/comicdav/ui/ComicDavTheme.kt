@@ -15,8 +15,88 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.comicdav.data.AppColorPalette
 
-// 默认 — 影院式深色外壳,以青色媒体强调色搭配紫色和琥珀色状态色
-private val ComicDavLightColors = darkColorScheme(
+// Adwaita Dark — neutral GNOME dark
+private val AdwaitaDarkColors = darkColorScheme(
+    primary = Color(0xFF3584E4),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF1A4F8B),
+    onPrimaryContainer = Color(0xFFD4E4FF),
+    secondary = Color(0xFF9141AC),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF5C2D6E),
+    onSecondaryContainer = Color(0xFFF0DDFF),
+    tertiary = Color(0xFFE5A50A),
+    onTertiary = Color(0xFF3A2A00),
+    tertiaryContainer = Color(0xFF5C4300),
+    onTertiaryContainer = Color(0xFFFFE3A3),
+    background = Color(0xFF1E1E1E),
+    onBackground = Color.White,
+    surface = Color(0xFF242424),
+    onSurface = Color.White,
+    surfaceVariant = Color(0xFF303030),
+    onSurfaceVariant = Color(0xFFB0B0B0),
+    surfaceContainerLowest = Color(0xFF1A1A1A),
+    surfaceContainerLow = Color(0xFF202020),
+    surfaceContainer = Color(0xFF303030),
+    surfaceContainerHigh = Color(0xFF383838),
+    surfaceContainerHighest = Color(0xFF424242),
+    outline = Color(0xFF5E5E5E),
+    outlineVariant = Color(0xFF3D3D3D),
+    error = Color(0xFFC01C28),
+    onError = Color.White,
+    errorContainer = Color(0xFF3D1418),
+    onErrorContainer = Color(0xFFFFDAD6),
+)
+
+// Adwaita Light
+private val AdwaitaLightColors = lightColorScheme(
+    primary = Color(0xFF1C71D8),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD4E4FF),
+    onPrimaryContainer = Color(0xFF0A3066),
+    secondary = Color(0xFF613583),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFF0DDFF),
+    onSecondaryContainer = Color(0xFF2E1065),
+    tertiary = Color(0xFFA5790A),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFE3A3),
+    onTertiaryContainer = Color(0xFF3A2A00),
+    background = Color(0xFFFAFAFA),
+    onBackground = Color(0xFF1E1E1E),
+    surface = Color.White,
+    onSurface = Color(0xFF1E1E1E),
+    surfaceVariant = Color(0xFFF0F0F0),
+    onSurfaceVariant = Color(0xFF5E5E5E),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF8F8F8),
+    surfaceContainer = Color(0xFFF0F0F0),
+    surfaceContainerHigh = Color(0xFFE8E8E8),
+    surfaceContainerHighest = Color(0xFFE0E0E0),
+    outline = Color(0xFF5E5E5E),
+    outlineVariant = Color(0xFFD0D0D0),
+    error = Color(0xFFC01C28),
+    onError = Color.White,
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF3D1418),
+)
+
+// Adwaita Blue-Gray — dark base with cool blue-gray accent
+private val AdwaitaBlueGrayColors = AdwaitaDarkColors.copy(
+    primary = Color(0xFF78AEED),
+    primaryContainer = Color(0xFF2A5A8F),
+    onPrimaryContainer = Color(0xFFD8EAFF),
+)
+
+// Adwaita Purple — dark base with purple accent
+private val AdwaitaPurpleColors = AdwaitaDarkColors.copy(
+    primary = Color(0xFFC061CB),
+    primaryContainer = Color(0xFF6E3575),
+    onPrimaryContainer = Color(0xFFF8DDFF),
+)
+
+// Cinema Dark — the original cinema-style dark scheme (was DEFAULT)
+private val CinemaDarkColors = darkColorScheme(
     primary = Color(0xFF5EEBFF),
     onPrimary = Color(0xFF00363F),
     primaryContainer = Color(0xFF005463),
@@ -48,17 +128,17 @@ private val ComicDavLightColors = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD6),
 )
 
-// 护眼/Sepia — 更柔和、温暖的米色调
+// Sepia
 private val ComicDavSepiaColors = lightColorScheme(
-    primary = Color(0xFF92400E), // Amber 800
+    primary = Color(0xFF92400E),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFCD9A8),
     onPrimaryContainer = Color(0xFF2D1607),
-    secondary = Color(0xFF7C2D12), // Orange 900
+    secondary = Color(0xFF7C2D12),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFFED7AA),
     onSecondaryContainer = Color(0xFF2A0F03),
-    tertiary = Color(0xFF65A30D), // Lime 600
+    tertiary = Color(0xFF65A30D),
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFD9F99D),
     onTertiaryContainer = Color(0xFF1A2E05),
@@ -81,17 +161,17 @@ private val ComicDavSepiaColors = lightColorScheme(
     onErrorContainer = Color(0xFF7F1D1D),
 )
 
-// 夜间模式 — 深色背景,鲜亮的紫色/蓝色作为强调
+// Night
 private val ComicDavNightColors = darkColorScheme(
-    primary = Color(0xFFA5B4FC), // Indigo 300
+    primary = Color(0xFFA5B4FC),
     onPrimary = Color(0xFF1E1B4B),
     primaryContainer = Color(0xFF312E81),
     onPrimaryContainer = Color(0xFFE0E7FF),
-    secondary = Color(0xFFC4B5FD), // Violet 300
+    secondary = Color(0xFFC4B5FD),
     onSecondary = Color(0xFF2E1065),
     secondaryContainer = Color(0xFF4C1D95),
     onSecondaryContainer = Color(0xFFEDE9FE),
-    tertiary = Color(0xFFFBBF24), // Amber 400
+    tertiary = Color(0xFFFBBF24),
     onTertiary = Color(0xFF451A03),
     tertiaryContainer = Color(0xFF78350F),
     onTertiaryContainer = Color(0xFFFEF3C7),
@@ -114,7 +194,7 @@ private val ComicDavNightColors = darkColorScheme(
     onErrorContainer = Color(0xFFFECACA),
 )
 
-// 高对比度 — 深蓝主色,白底黑字,强烈对比
+// High Contrast
 private val ComicDavHighContrastColors = lightColorScheme(
     primary = Color(0xFF1D1F8B),
     onPrimary = Color.White,
@@ -147,28 +227,24 @@ private val ComicDavHighContrastColors = lightColorScheme(
     onErrorContainer = Color(0xFF2C0000),
 )
 
-// 圆角形状:更柔和的弧度,呈现现代感
 private val ComicDavShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
-// 排版:精修字号、字距、字重
 private val ComicDavTypography = Typography(
     displayLarge = TextStyle(
         fontSize = 56.sp,
         lineHeight = 64.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.4).sp,
     ),
     displayMedium = TextStyle(
         fontSize = 44.sp,
         lineHeight = 52.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.2).sp,
     ),
     displaySmall = TextStyle(
         fontSize = 34.sp,
@@ -176,13 +252,13 @@ private val ComicDavTypography = Typography(
         fontWeight = FontWeight.Bold,
     ),
     headlineLarge = TextStyle(
-        fontSize = 30.sp,
-        lineHeight = 38.sp,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
         fontWeight = FontWeight.Bold,
     ),
     headlineMedium = TextStyle(
-        fontSize = 26.sp,
-        lineHeight = 34.sp,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     headlineSmall = TextStyle(
@@ -205,7 +281,6 @@ private val ComicDavTypography = Typography(
         fontSize = 14.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.sp,
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
@@ -223,31 +298,31 @@ private val ComicDavTypography = Typography(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         fontWeight = FontWeight.Normal,
-        letterSpacing = 0.sp,
     ),
     labelLarge = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.sp,
     ),
     labelMedium = TextStyle(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.sp,
     ),
     labelSmall = TextStyle(
         fontSize = 11.sp,
         lineHeight = 14.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = 0.sp,
     ),
 )
 
 internal fun comicDavColorSchemeFor(palette: AppColorPalette): ColorScheme =
     when (palette) {
-        AppColorPalette.DEFAULT -> ComicDavLightColors
+        AppColorPalette.DEFAULT -> AdwaitaDarkColors
+        AppColorPalette.ADWAITA_LIGHT -> AdwaitaLightColors
+        AppColorPalette.ADWAITA_BLUE_GRAY -> AdwaitaBlueGrayColors
+        AppColorPalette.ADWAITA_PURPLE -> AdwaitaPurpleColors
+        AppColorPalette.CINEMA_DARK -> CinemaDarkColors
         AppColorPalette.SEPIA -> ComicDavSepiaColors
         AppColorPalette.NIGHT -> ComicDavNightColors
         AppColorPalette.HIGH_CONTRAST -> ComicDavHighContrastColors

@@ -7,6 +7,7 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.data.videolibrary.WebDavVideoSourceEntity
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.ui.muBoxColorsFor
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -14,18 +15,15 @@ class VideoLibraryScreenTest {
     @Test
     fun screenColorsUseThemePaletteRoles() {
         val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
-        val colors = videoLibraryScreenColors(highContrast)
+        val colors = muBoxColorsFor(highContrast)
 
-        assertEquals(highContrast.background, colors.backgroundTop)
-        assertEquals(highContrast.surfaceContainerLowest, colors.backgroundBottom)
-        assertEquals(highContrast.surfaceContainer, colors.surface)
-        assertEquals(highContrast.surfaceContainerHigh, colors.surfaceRaised)
-        assertEquals(highContrast.primary, colors.accent)
-        assertEquals(highContrast.onPrimary, colors.onAccent)
+        assertEquals(highContrast.background, colors.background)
+        assertEquals(highContrast.surfaceContainer, colors.panel)
+        assertEquals(highContrast.surfaceContainerHigh, colors.panelHigh)
+        assertEquals(highContrast.primary, colors.mediaAccent)
+        assertEquals(highContrast.onPrimary, colors.onMediaAccent)
         assertEquals(highContrast.onBackground, colors.text)
         assertEquals(highContrast.onSurfaceVariant, colors.muted)
-        assertEquals(highContrast.scrim, colors.thumbnailScrim)
-        assertEquals(highContrast.inverseOnSurface, colors.onThumbnailScrim)
     }
 
     @Test

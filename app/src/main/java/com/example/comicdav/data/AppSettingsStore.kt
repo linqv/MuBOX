@@ -26,9 +26,24 @@ enum class ReadingDirection {
 
 enum class AppColorPalette {
     DEFAULT,
+    ADWAITA_LIGHT,
+    ADWAITA_BLUE_GRAY,
+    ADWAITA_PURPLE,
+    CINEMA_DARK,
     SEPIA,
     NIGHT,
     HIGH_CONTRAST,
+}
+
+fun AppColorPalette.displayLabel(): String = when (this) {
+    AppColorPalette.DEFAULT -> "Adwaita 深色（默认）"
+    AppColorPalette.ADWAITA_LIGHT -> "Adwaita 浅色"
+    AppColorPalette.ADWAITA_BLUE_GRAY -> "Adwaita 蓝灰"
+    AppColorPalette.ADWAITA_PURPLE -> "Adwaita 紫色"
+    AppColorPalette.CINEMA_DARK -> "影院深色（旧）"
+    AppColorPalette.SEPIA -> "纸张护眼"
+    AppColorPalette.NIGHT -> "夜间深色"
+    AppColorPalette.HIGH_CONTRAST -> "高对比"
 }
 
 enum class ReaderLoggingMode {

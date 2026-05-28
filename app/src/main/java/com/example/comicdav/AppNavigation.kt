@@ -40,6 +40,7 @@ import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.muBoxColorsFor
+import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.video.mediaKindFor
 
@@ -67,6 +68,9 @@ internal fun appShellBackgroundColor(colorScheme: ColorScheme) =
 
 internal fun appShellNavigationBarContainerColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).panel
+
+internal fun appShellNavigationBarIndicatorColor(colorScheme: ColorScheme) =
+    muBoxColorsFor(colorScheme).panelHigh
 
 internal fun selectionNavigationBarContainerColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).panelHigh
@@ -113,9 +117,10 @@ internal fun ComicDavAppShell(
         if (bottomBar != null) {
             bottomBar()
         } else {
+            val muBoxColors = rememberMuBoxColors()
             androidx.compose.material3.HorizontalDivider(
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                color = muBoxColors.separator,
             )
             NavigationBar(
                 containerColor = appShellNavigationBarContainerColor(MaterialTheme.colorScheme),
@@ -140,11 +145,11 @@ internal fun ComicDavAppShell(
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            selectedIconColor = muBoxColors.mediaAccent,
+                            selectedTextColor = muBoxColors.mediaAccent,
+                            indicatorColor = appShellNavigationBarIndicatorColor(MaterialTheme.colorScheme),
+                            unselectedIconColor = muBoxColors.muted,
+                            unselectedTextColor = muBoxColors.muted,
                         ),
                     )
                 }
@@ -239,9 +244,10 @@ internal fun selectionBottomBar(
 
 @Composable
 internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
+    val muBoxColors = rememberMuBoxColors()
     androidx.compose.material3.HorizontalDivider(
         thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+        color = muBoxColors.separator,
     )
     NavigationBar(
         containerColor = selectionNavigationBarContainerColor(MaterialTheme.colorScheme),
@@ -266,13 +272,13 @@ internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.primary,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                    selectedIconColor = muBoxColors.mediaAccent,
+                    selectedTextColor = muBoxColors.mediaAccent,
+                    indicatorColor = muBoxColors.accentSoft,
+                    unselectedIconColor = muBoxColors.accentText,
+                    unselectedTextColor = muBoxColors.muted,
+                    disabledIconColor = muBoxColors.muted.copy(alpha = 0.38f),
+                    disabledTextColor = muBoxColors.muted.copy(alpha = 0.38f),
                 ),
             )
         }
@@ -295,22 +301,14 @@ internal fun DataFolderGateScreen(
         Box(
             modifier = Modifier
                 .padding(bottom = 24.dp)
-                .background(
-                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary,
-                        ),
-                    ),
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                )
-                .padding(20.dp),
+                .size(72.dp)
+                .background(colors.accentSoft, androidx.compose.foundation.shape.RoundedCornerShape(22.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Filled.Folder,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = colors.onAccentSoft,
                 modifier = Modifier.size(36.dp),
             )
         }

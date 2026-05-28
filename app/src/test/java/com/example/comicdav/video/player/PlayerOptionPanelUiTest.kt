@@ -56,6 +56,8 @@ class PlayerOptionPanelUiTest {
 
     @Test
     fun playerControlSizingSupportsCenterPlaybackLockAndThinProgress() {
+        assertEquals(0.62f, PLAYER_TOP_BAR_MAX_WIDTH_FRACTION)
+        assertEquals(0.70f, PLAYER_BOTTOM_CONTROLS_MAX_WIDTH_FRACTION)
         assertEquals(80, PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP)
         assertEquals(64, PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP)
         assertEquals(40, PLAYER_LOCK_BUTTON_SIZE_DP)

@@ -8,8 +8,8 @@ import org.junit.Test
 
 class SettingsScreenUiTest {
     @Test
-    fun defaultPaletteLabelMatchesCinematicTheme() {
-        assertEquals("影院深色", AppColorPalette.DEFAULT.settingsLabel())
+    fun defaultPaletteLabelMatchesAdwaitaTheme() {
+        assertEquals("Adwaita 深色（默认）", AppColorPalette.DEFAULT.settingsLabel())
     }
 
     @Test

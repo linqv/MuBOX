@@ -5,9 +5,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,23 +25,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +48,9 @@ import coil3.compose.AsyncImage
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
@@ -64,39 +65,26 @@ fun LibraryScreen(
     selectedItemId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(colors.background)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = ComicDavCopy.libraryTitle,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = libraryCountLabel(uiState.items.size),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            androidx.compose.material3.TextButton(
-                onClick = onOpenDirectories,
-                modifier = Modifier.defaultMinSize(minHeight = 44.dp),
-            ) {
-                Text(ComicDavCopy.sourcesTitle)
-            }
-        }
+        MuBoxHeaderBar(
+            title = ComicDavCopy.libraryTitle,
+            actions = {
+                TextButton(onClick = onOpenDirectories) { Text(ComicDavCopy.sourcesTitle) }
+            },
+        )
+        Text(
+            text = libraryCountLabel(uiState.items.size),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.muted,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
 
         if (uiState.message != null || uiState.error != null) {
             com.example.comicdav.ui.MuBoxMessagePanel(
@@ -157,6 +145,7 @@ private fun EmptyLibrary(
     onOpenDirectories: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -165,21 +154,14 @@ private fun EmptyLibrary(
         Box(
             modifier = Modifier
                 .padding(bottom = 22.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary,
-                        ),
-                    ),
-                    shape = CircleShape,
-                )
-                .padding(20.dp),
+                .size(72.dp)
+                .background(colors.accentSoft, RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.LibraryBooks,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = colors.onAccentSoft,
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -187,12 +169,13 @@ private fun EmptyLibrary(
             text = ComicDavCopy.emptyLibraryTitle,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
+            color = colors.text,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = ComicDavCopy.emptyLibraryBody,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colors.muted,
             textAlign = TextAlign.Center,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
@@ -221,11 +204,13 @@ private fun LibraryCard(
     isSelected: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
+    val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     val borderModifier = if (isSelected) {
         Modifier.border(
             width = 2.dp,
-            color = MaterialTheme.colorScheme.primary,
-            shape = RoundedCornerShape(14.dp),
+            color = colors.selectedBorder,
+            shape = cardShape,
         )
     } else {
         Modifier
@@ -239,9 +224,9 @@ private fun LibraryCard(
                 onLongClick = onLongClick,
                 onLongClickLabel = "书架操作",
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = cardShape,
         color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            colors.rowSelected.copy(alpha = 0.4f)
         } else {
             Color.Transparent
         },
@@ -254,22 +239,16 @@ private fun LibraryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(libraryPosterKind())),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
                 tonalElevation = 0.dp,
-                shadowElevation = 6.dp,
-                color = MaterialTheme.colorScheme.surfaceContainer,
+                shadowElevation = 0.dp,
+                border = BorderStroke(1.dp, colors.border),
+                color = colors.raisedSurface,
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.secondaryContainer,
-                                ),
-                            ),
-                        ),
+                        .background(colors.raisedSurface),
                     contentAlignment = Alignment.Center,
                 ) {
                     val coverFile = item.item.coverPath
@@ -283,17 +262,16 @@ private fun LibraryCard(
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
-                        // 顶部渐变以确保徽章可读
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color.Black.copy(alpha = 0.32f),
+                                            Color.Black.copy(alpha = 0.2f),
                                             Color.Transparent,
                                             Color.Transparent,
-                                            Color.Black.copy(alpha = 0.4f),
+                                            Color.Black.copy(alpha = 0.3f),
                                         ),
                                     ),
                                 ),
@@ -306,12 +284,12 @@ private fun LibraryCard(
                             .align(Alignment.TopStart)
                             .padding(8.dp),
                         shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        color = colors.panel.copy(alpha = 0.92f),
                     ) {
                         Text(
                             text = sourceLabel(item.item.sourceType),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = colors.mediaAccent,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
@@ -323,7 +301,7 @@ private fun LibraryCard(
                     text = item.item.displayName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = colors.text,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -331,7 +309,7 @@ private fun LibraryCard(
                 Text(
                     text = sourceMeta(item),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.muted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -342,6 +320,7 @@ private fun LibraryCard(
 
 @Composable
 private fun FallbackCoverTitle(title: String) {
+    val colors = rememberMuBoxColors()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -351,7 +330,7 @@ private fun FallbackCoverTitle(title: String) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            color = colors.text,
             fontWeight = FontWeight.Bold,
             maxLines = 4,
             overflow = TextOverflow.Ellipsis,

@@ -6,6 +6,7 @@ import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.video.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -15,24 +16,24 @@ class FileDirectoryScreenTest {
     @Test
     fun screenColorsUseThemePaletteRoles() {
         val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
-        val colors = fileDirectoryScreenColors(highContrast)
+        val colors = muBoxColorsFor(highContrast)
 
         assertEquals(highContrast.background, colors.background)
         assertEquals(highContrast.surfaceContainer, colors.panel)
         assertEquals(highContrast.surfaceContainerHigh, colors.panelHigh)
-        assertEquals(highContrast.primary, colors.accent)
-        assertEquals(highContrast.onPrimary, colors.onAccent)
+        assertEquals(highContrast.primary, colors.mediaAccent)
+        assertEquals(highContrast.onPrimary, colors.onMediaAccent)
         assertEquals(highContrast.onBackground, colors.text)
         assertEquals(highContrast.onSurfaceVariant, colors.muted)
     }
 
     @Test
     fun sourceBadgeUsesAccessibleContrast() {
-        val colors = fileDirectoryScreenColors(comicDavColorSchemeFor(AppColorPalette.DEFAULT))
+        val colors = muBoxColorsFor(comicDavColorSchemeFor(AppColorPalette.DEFAULT))
 
         assertTrue(
             "source badge contrast should meet AA for small text",
-            contrastRatio(colors.sourceBadgeContent, colors.sourceBadgeContainer) >= 4.5f,
+            contrastRatio(colors.onAccentSoft, colors.accentSoft) >= 4.5f,
         )
     }
 

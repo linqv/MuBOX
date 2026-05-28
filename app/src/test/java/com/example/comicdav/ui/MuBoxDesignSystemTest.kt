@@ -47,8 +47,8 @@ class MuBoxDesignSystemTest {
     @Test
     fun metricsExposeFoundationSizingTokens() {
         assertEquals(44.dp, MuBoxMetrics.MinTouchTargetDp)
-        assertEquals(14.dp, MuBoxMetrics.DenseRowCornerDp)
-        assertEquals(22.dp, MuBoxMetrics.PlayerPanelCornerDp)
+        assertEquals(10.dp, MuBoxMetrics.DenseRowCornerDp)
+        assertEquals(16.dp, MuBoxMetrics.PlayerPanelCornerDp)
         assertEquals(64.dp, MuBoxMetrics.PlayerCenterControlVisualDp)
         assertEquals(80.dp, MuBoxMetrics.PlayerCenterControlTouchDp)
     }

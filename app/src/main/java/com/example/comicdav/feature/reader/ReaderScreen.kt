@@ -83,6 +83,7 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.rememberMuBoxColors
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -630,20 +631,13 @@ private fun ReaderTopBar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Black.copy(alpha = 0.92f),
-                        Color.Black.copy(alpha = 0.68f),
-                        Color.Transparent,
-                    ),
-                ),
-            )
+            .background(colors.playerSheet)
             .statusBarsPadding()
-            .padding(start = 18.dp, top = 10.dp, end = 12.dp, bottom = 30.dp),
+            .padding(start = 18.dp, top = 10.dp, end = 12.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -706,21 +700,14 @@ private fun ReaderBottomOverlay(
     onAutoPageEnabledChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val progress = currentPage.toFloat() / pageCount.toFloat()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.58f),
-                        Color.Black.copy(alpha = 0.88f),
-                    ),
-                ),
-            )
+            .background(colors.playerSheet)
             .navigationBarsPadding()
-            .padding(start = 20.dp, top = 34.dp, end = 20.dp, bottom = 18.dp),
+            .padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -798,15 +785,9 @@ private fun ReaderEmptyOrLoadingState(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Box(
-        modifier = modifier.background(
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFF0E0F18),
-                    Color(0xFF000000),
-                ),
-            ),
-        ),
+        modifier = modifier.background(colors.background),
     ) {
         ReaderTopBar(
             title = if (isLoading) ComicDavCopy.readerLoading else "未打开漫画",
@@ -950,15 +931,9 @@ private fun ReaderErrorState(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Box(
-        modifier = modifier.background(
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFF1A0E0E),
-                    Color(0xFF000000),
-                ),
-            ),
-        ),
+        modifier = modifier.background(colors.background),
     ) {
         ReaderTopBar(
             title = ComicDavCopy.readerError,

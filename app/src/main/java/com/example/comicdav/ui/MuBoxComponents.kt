@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -343,3 +345,142 @@ private fun muBoxMediaKindIcon(mediaKind: MediaKind): ImageVector =
         MediaKind.Audio -> Icons.Filled.AudioFile
         MediaKind.Unknown -> Icons.AutoMirrored.Filled.InsertDriveFile
     }
+
+@Composable
+internal fun MuBoxHeaderBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    navigationIcon: @Composable (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val colors = rememberMuBoxColors()
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = colors.headerBar,
+        contentColor = colors.text,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .heightIn(min = MuBoxMetrics.HeaderBarHeightDp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (navigationIcon != null) navigationIcon()
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            actions()
+        }
+    }
+}
+
+@Composable
+internal fun MuBoxBoxedList(
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = rememberMuBoxColors()
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (title != null) {
+            Text(
+                text = title,
+                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.muted,
+            )
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
+            color = colors.boxedList,
+            border = BorderStroke(MuBoxMetrics.SeparatorThicknessDp, colors.boxedListBorder),
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
+internal fun MuBoxActionRow(
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    leading: @Composable (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    val colors = rememberMuBoxColors()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = MuBoxMetrics.BoxedListRowMinHeightDp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (leading != null) leading()
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = colors.text)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.muted)
+            }
+        }
+        if (trailing != null) trailing()
+    }
+}
+
+@Composable
+internal fun MuBoxSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+) {
+    val colors = rememberMuBoxColors()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = MuBoxMetrics.BoxedListRowMinHeightDp)
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = colors.text)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.muted)
+            }
+        }
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+internal fun MuBoxPropertyRow(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    val colors = rememberMuBoxColors()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = MuBoxMetrics.BoxedListRowMinHeightDp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = colors.text)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.muted)
+    }
+}

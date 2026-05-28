@@ -48,3 +48,4 @@ app/src/test/**
 mpvEx/
 REVIEW.md
 debug_logs/
+.kiro/

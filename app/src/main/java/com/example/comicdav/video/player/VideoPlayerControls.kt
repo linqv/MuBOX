@@ -40,7 +40,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -52,6 +51,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToLong
+import com.example.comicdav.ui.PlayerOsdDefaults
+import com.example.comicdav.ui.rememberMuBoxColors
 
 @Composable
 internal fun PlayerTopBar(
@@ -60,24 +61,22 @@ internal fun PlayerTopBar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xCC000000),
-                        Color(0x66000000),
-                        Color.Transparent,
-                    ),
-                ),
-            ),
+    val colors = rememberMuBoxColors()
+    Surface(
+        modifier = modifier.fillMaxWidth(PLAYER_TOP_BAR_MAX_WIDTH_FRACTION),
+        color = colors.playerSheet,
+        contentColor = colors.playerOsdText,
+        shape = RoundedCornerShape(
+            bottomStart = PlayerOsdDefaults.OsdCornerDp,
+            bottomEnd = PlayerOsdDefaults.OsdCornerDp,
+        ),
+        border = BorderStroke(1.dp, colors.playerOsdBorder),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 22.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerOverlayIconButton(
@@ -88,15 +87,15 @@ internal fun PlayerTopBar(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.playerOsdText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = source.videoSourceLabel(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = colors.playerOsdText.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -127,22 +126,23 @@ internal fun PlayerCenterPlayPauseButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Box(
-        modifier = modifier.size(PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP.dp),
+        modifier = modifier.size(PlayerOsdDefaults.CenterButtonTouchDp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP.dp)
-                .background(PlayerCenterPlayButtonColor, CircleShape)
-                .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                .size(PlayerOsdDefaults.CenterButtonVisualDp)
+                .background(colors.playerOverlay, CircleShape)
+                .border(1.dp, colors.playerOsdBorder, CircleShape)
                 .clickable(role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                 contentDescription = if (isPaused) "播放" else "暂停",
-                tint = Color.White,
+                tint = colors.playerOsdText,
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -158,13 +158,14 @@ internal fun PlayerOverlayIconButton(
     selected: Boolean = false,
     sizeDp: Int = PLAYER_OVERLAY_BUTTON_SIZE_DP,
 ) {
-    val backgroundColor = if (selected) PlayerAccentColor else PlayerOverlayColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color.White
+    val colors = rememberMuBoxColors()
+    val backgroundColor = if (selected) colors.playerChipSelected else colors.playerOverlay
+    val contentColor = colors.playerOsdText
     val buttonShape = CircleShape
     val borderColor = if (selected) {
-        Color.White.copy(alpha = 0.46f)
+        colors.playerOsdBorder.copy(alpha = 0.7f)
     } else {
-        Color.White.copy(alpha = 0.15f)
+        colors.playerOsdBorder
     }
     IconButton(
         onClick = onClick,
@@ -177,7 +178,7 @@ internal fun PlayerOverlayIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = contentColor,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(PlayerOsdDefaults.OsdIconSize),
         )
     }
 }
@@ -193,68 +194,52 @@ internal fun PlayerBottomControls(
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    val colors = rememberMuBoxColors()
+    com.example.comicdav.ui.MuBoxPlayerPanel(
         modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color(0x99000000),
-                        Color(0xCC000000),
-                    ),
-                ),
-            )
-            .padding(
-                start = 18.dp,
-                top = 56.dp,
-                end = 18.dp,
-                bottom = (PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP + 6).dp,
-            ),
-        contentAlignment = Alignment.BottomCenter,
+            .fillMaxWidth(PLAYER_BOTTOM_CONTROLS_MAX_WIDTH_FRACTION)
+            .padding(start = 12.dp, end = 12.dp, bottom = (PLAYER_BOTTOM_CONTROLS_BOTTOM_PADDING_DP + 6).dp),
     ) {
-        com.example.comicdav.ui.MuBoxPlayerPanel(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                activeControl?.let { control ->
-                    PlayerBottomQuickSelectionPanel(
-                        control = control,
-                        state = state,
-                        onSpeedSelected = onSpeedSelected,
-                        onScaleModeSelected = onScaleModeSelected,
-                        onDecoderModeSelected = onDecoderModeSelected,
-                    )
-                }
-                if (state.errorMessage != null) {
-                    Surface(
-                        color = Color(0xCC2A0D14),
-                        contentColor = MaterialTheme.colorScheme.error,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.28f)),
-                    ) {
-                        Text(
-                            text = state.errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-                PlayerBottomQuickControls(
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            activeControl?.let { control ->
+                PlayerBottomQuickSelectionPanel(
+                    control = control,
                     state = state,
-                    activeControl = activeControl,
-                    onActiveControlChanged = onActiveControlChanged,
-                )
-                PlayerProgressControls(
-                    state = state,
-                    onSeek = onSeek,
+                    onSpeedSelected = onSpeedSelected,
+                    onScaleModeSelected = onScaleModeSelected,
+                    onDecoderModeSelected = onDecoderModeSelected,
                 )
             }
+            if (state.errorMessage != null) {
+                Surface(
+                    color = colors.errorSurface,
+                    contentColor = colors.errorText,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, colors.errorText.copy(alpha = 0.28f)),
+                ) {
+                    Text(
+                        text = state.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+            PlayerBottomQuickControls(
+                state = state,
+                activeControl = activeControl,
+                onActiveControlChanged = onActiveControlChanged,
+            )
+            PlayerProgressControls(
+                state = state,
+                onSeek = onSeek,
+            )
         }
     }
 }
@@ -299,6 +284,7 @@ internal fun PlayerProgressControls(
     state: MpvPlayerState,
     onSeek: (Long) -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ThinSeekBar(
             positionMillis = state.positionMillis,
@@ -314,13 +300,13 @@ internal fun PlayerProgressControls(
             Text(
                 text = formatVideoTime(state.positionMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
+                color = colors.playerOsdText,
                 maxLines = 1,
             )
             Text(
                 text = formatVideoTime(state.durationMillis),
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = colors.playerOsdText.copy(alpha = 0.7f),
                 maxLines = 1,
             )
         }
@@ -334,6 +320,7 @@ internal fun ThinSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val duration = durationMillis.coerceAtLeast(1L)
     val progress = (positionMillis.toFloat() / duration).coerceIn(0f, 1f)
     Canvas(
@@ -354,25 +341,25 @@ internal fun ThinSeekBar(
             },
     ) {
         val trackY = size.height / 2f
-        val strokeWidth = PLAYER_PROGRESS_TRACK_HEIGHT_DP.dp.toPx()
+        val strokeWidth = PlayerOsdDefaults.ProgressTrackHeight.toPx()
         val progressX = size.width * progress
         drawLine(
-            color = PlayerProgressTrackColor,
+            color = colors.playerProgressTrack,
             start = Offset(0f, trackY),
             end = Offset(size.width, trackY),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round,
         )
         drawLine(
-            color = PlayerProgressColor,
+            color = colors.playerProgress,
             start = Offset(0f, trackY),
             end = Offset(progressX, trackY),
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round,
         )
         drawCircle(
-            color = PlayerProgressColor,
-            radius = PLAYER_PROGRESS_THUMB_RADIUS_DP.dp.toPx(),
+            color = colors.playerProgress,
+            radius = PlayerOsdDefaults.ProgressThumbRadius.toPx(),
             center = Offset(progressX, trackY),
         )
     }
@@ -488,6 +475,7 @@ private fun FloatingPanelButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     val descriptor = panel.sideRailDescriptor()
     Box {
         PlayerOverlayIconButton(
@@ -501,10 +489,10 @@ private fun FloatingPanelButton(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .size(width = 24.dp, height = 18.dp),
-                color = if (selected) PlayerOnAccentColor else PlayerAccentColor,
-                contentColor = if (selected) PlayerAccentColor else PlayerOnAccentColor,
+                color = if (selected) colors.playerOsdText else colors.playerChipSelected,
+                contentColor = if (selected) colors.playerChipSelected else colors.playerOsdText,
                 shape = MaterialTheme.shapes.small,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f)),
+                border = BorderStroke(1.dp, colors.playerOsdBorder),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
@@ -530,11 +518,12 @@ internal fun PlayerOptionSheet(
     modifier: Modifier = Modifier,
 ) {
     if (panel == null) return
+    val colors = rememberMuBoxColors()
 
     com.example.comicdav.ui.MuBoxPlayerPanel(
         modifier = modifier.widthIn(min = 220.dp, max = 360.dp),
-        color = PlayerSheetColor,
-        borderColor = Color.White.copy(alpha = 0.12f),
+        color = colors.playerSheet,
+        borderColor = colors.playerOsdBorder,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -548,19 +537,19 @@ internal fun PlayerOptionSheet(
                 Text(
                     text = panel.title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = colors.playerOsdText,
                 )
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(PlayerChipColor, CircleShape)
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape),
+                        .background(colors.playerChip, CircleShape)
+                        .border(1.dp, colors.playerOsdBorder, CircleShape),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "收起",
-                        tint = Color.White,
+                        tint = colors.playerOsdText,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -621,7 +610,8 @@ internal fun TrackSelectionControls(
             )
         }
         if (audioTracks.isEmpty()) {
-            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+            val colors = rememberMuBoxColors()
+            Text(text = "自动", style = MaterialTheme.typography.labelSmall, color = colors.playerOsdText.copy(alpha = 0.7f))
         }
     }
     ControlGroup(label = "字幕") {
@@ -644,12 +634,13 @@ internal fun TrackSelectionControls(
 internal fun StatisticsControls(
     snapshot: VideoPlayerStatisticsSnapshot,
 ) {
+    val colors = rememberMuBoxColors()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         snapshot.redacted().debugLines().forEach { line ->
             Text(
                 text = line,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f),
+                color = colors.playerOsdText.copy(alpha = 0.8f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -664,16 +655,17 @@ internal fun GestureHud(
     modifier: Modifier = Modifier,
 ) {
     if (message.isNullOrBlank()) return
+    val colors = rememberMuBoxColors()
     androidx.compose.runtime.LaunchedEffect(message) {
         kotlinx.coroutines.delay(GESTURE_HUD_TIMEOUT_MILLIS)
         onTimeout()
     }
     Surface(
         modifier = modifier,
-        color = Color(0xCC000000),
-        contentColor = Color.White,
-        shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+        color = colors.playerHud,
+        contentColor = colors.playerOsdText,
+        shape = RoundedCornerShape(PlayerOsdDefaults.OsdCornerDp),
+        border = BorderStroke(1.dp, colors.playerOsdBorder),
     ) {
         Text(
             text = message,
@@ -731,15 +723,16 @@ private fun BottomQuickButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val backgroundColor = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val contentColor = if (selected) PlayerOnAccentColor else Color.White
-    val shape = RoundedCornerShape(14.dp)
+    val colors = rememberMuBoxColors()
+    val backgroundColor = if (selected) colors.playerChipSelected else colors.playerChip
+    val contentColor = colors.playerOsdText
+    val shape = RoundedCornerShape(PlayerOsdDefaults.OsdCornerDp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 52.dp, height = 28.dp)
             .background(backgroundColor, shape)
-            .border(1.dp, if (selected) PlayerAccentColor.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.15f), shape)
+            .border(1.dp, if (selected) colors.playerChipSelected.copy(alpha = 0.42f) else colors.playerOsdBorder, shape)
             .semantics { this.contentDescription = contentDescription },
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp),
     ) {
@@ -785,6 +778,7 @@ private fun ControlGroup(
     label: String,
     content: @Composable () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -793,7 +787,7 @@ private fun ControlGroup(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.7f),
+            color = colors.playerOsdText.copy(alpha = 0.7f),
             modifier = Modifier.weight(0.24f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -813,15 +807,16 @@ private fun CompactTextButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val bg = if (selected) PlayerChipSelectedColor else PlayerChipColor
-    val fg = if (selected) PlayerOnAccentColor else Color.White
-    val shape = RoundedCornerShape(18.dp)
+    val colors = rememberMuBoxColors()
+    val bg = if (selected) colors.playerChipSelected else colors.playerChip
+    val fg = colors.playerOsdText
+    val shape = RoundedCornerShape(PlayerOsdDefaults.OsdCornerDp)
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .size(width = 78.dp, height = 36.dp)
             .background(bg, shape)
-            .border(1.dp, if (selected) PlayerAccentColor.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.15f), shape),
+            .border(1.dp, if (selected) colors.playerChipSelected.copy(alpha = 0.42f) else colors.playerOsdBorder, shape),
     ) {
         Text(
             text = text,
@@ -833,15 +828,8 @@ private fun CompactTextButton(
 }
 
 internal val playbackSpeedPresets = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
-internal val PlayerOverlayColor = Color(0x66000000)
-internal val PlayerSheetColor = Color(0xCC0F172A)
-internal val PlayerAccentColor = Color(0xFFEC4899)
-internal val PlayerOnAccentColor = Color(0xFFFFFFFF)
-internal val PlayerCenterPlayButtonColor = Color(0x4D000000)
-internal val PlayerProgressTrackColor = Color(0x4DFFFFFF)
-internal val PlayerProgressColor = Color(0xFFEC4899)
-internal val PlayerChipColor = Color(0x33FFFFFF)
-internal val PlayerChipSelectedColor = PlayerAccentColor
+internal const val PLAYER_TOP_BAR_MAX_WIDTH_FRACTION = 0.62f
+internal const val PLAYER_BOTTOM_CONTROLS_MAX_WIDTH_FRACTION = 0.70f
 internal const val PLAYER_CENTER_PLAY_BUTTON_TOUCH_SIZE_DP = 80
 internal const val PLAYER_CENTER_PLAY_BUTTON_VISUAL_SIZE_DP = 64
 internal val PLAYER_PANEL_CORNER_DP = com.example.comicdav.ui.MuBoxMetrics.PlayerPanelCornerDp.value.toInt()

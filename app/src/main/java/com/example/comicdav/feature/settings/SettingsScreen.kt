@@ -3,12 +3,10 @@ package com.example.comicdav.feature.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,11 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -31,9 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,13 +41,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.data.AppSettings
+import com.example.comicdav.data.displayLabel
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
-import com.example.comicdav.ui.MuBoxSettingsGroup
+import com.example.comicdav.ui.MuBoxActionRow
+import com.example.comicdav.ui.MuBoxBoxedList
+import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxPropertyRow
+import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
@@ -247,13 +247,18 @@ fun SettingsScreen(
         SettingsPage.ROOT -> Unit
     }
 
-    SettingsPageShell(modifier = modifier) {
-        SettingsPageHeader(
-            title = "设置",
-            subtitle = "通用设置、内容偏好、缓存和记录",
-        )
+    val colors = rememberMuBoxColors()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 0.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        MuBoxHeaderBar(title = "设置")
 
-        SettingsGroup(title = "通用") {
+        MuBoxBoxedList(title = "通用") {
             DropdownRow(
                 title = "配色方案",
                 selected = settings.colorPalette,
@@ -261,32 +266,34 @@ fun SettingsScreen(
                 label = AppColorPalette::settingsLabel,
                 onSelected = onColorPaletteChange,
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "屏幕旋转锁定",
-                subtitle = "锁定当前屏幕方向",
                 checked = settings.screenRotationLockEnabled,
                 onCheckedChange = onScreenRotationLockChange,
+                subtitle = "锁定当前屏幕方向",
             )
         }
 
-        SettingsGroup(title = "内容设置") {
-            NavigationRow(
+        MuBoxBoxedList(title = "内容设置") {
+            MuBoxActionRow(
                 title = "漫画设置",
-                subtitle = "阅读方向、翻页、预取、封面和诊断",
                 onClick = { currentPage = SettingsPage.COMIC },
+                subtitle = "阅读方向、翻页、预取、封面和诊断",
+                trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
             )
-            NavigationRow(
+            MuBoxActionRow(
                 title = "视频设置",
-                subtitle = "播放、WebDAV 流式读取、解码和封面",
                 onClick = { currentPage = SettingsPage.VIDEO },
+                subtitle = "播放、WebDAV 流式读取、解码和封面",
+                trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
             )
         }
 
-        SettingsGroup(title = "下载记录") {
+        MuBoxBoxedList(title = "下载记录") {
             if (downloadRecords.isEmpty()) {
-                StaticInfoRow(
+                MuBoxPropertyRow(
                     title = "暂无下载记录",
-                    subtitle = "从 WebDAV 下载到本地后会显示在这里",
+                    value = "从 WebDAV 下载到本地后会显示在这里",
                 )
             } else {
                 ClickableInfoRow(
@@ -297,10 +304,10 @@ fun SettingsScreen(
             }
         }
 
-        SettingsGroup(title = "缓存") {
-            StaticInfoRow(
+        MuBoxBoxedList(title = "缓存") {
+            MuBoxPropertyRow(
                 title = "缓存占用",
-                subtitle = formatCacheSize(cacheAnalysis.totalBytes),
+                value = formatCacheSize(cacheAnalysis.totalBytes),
             )
             CacheActionRow(
                 title = "远程整本缓存",
@@ -330,124 +337,16 @@ fun SettingsScreen(
                 limitMb = settings.diskCacheLimitMb,
                 onLimitChange = onDiskCacheLimitChange,
             )
-            Text(
-                text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
-    }
-}
-
-@Composable
-private fun SettingsPageShell(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun SettingsPageHeader(
-    title: String,
-    subtitle: String,
-    onBack: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (onBack != null) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .padding(end = 4.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = CircleShape,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun NavigationRow(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .heightIn(min = settingsControlRowMinHeightDp().dp)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.muted,
+        Text(
+            text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -467,13 +366,24 @@ private fun ComicSettingsPage(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsPageShell(modifier = modifier) {
-        SettingsPageHeader(
+    val colors = rememberMuBoxColors()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 0.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        MuBoxHeaderBar(
             title = "漫画设置",
-            subtitle = "阅读方向、翻页、预取、封面和诊断",
-            onBack = onBack,
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
         )
-        SettingsGroup(title = "漫画设置") {
+        MuBoxBoxedList(title = "漫画设置") {
             ChoiceRow(
                 title = "阅读方向",
                 options = ReadingDirection.entries,
@@ -481,17 +391,17 @@ private fun ComicSettingsPage(
                 label = ReadingDirection::label,
                 onSelected = onReadingDirectionChange,
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "音量键翻页",
-                subtitle = "使用音量键向前或向后翻页",
                 checked = settings.volumeKeysTurnPagesEnabled,
                 onCheckedChange = onVolumeKeysTurnPagesChange,
+                subtitle = "使用音量键向前或向后翻页",
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "双指缩放",
-                subtitle = "在阅读时用双指放大并拖动查看细节",
                 checked = settings.readerPinchZoomEnabled,
                 onCheckedChange = onReaderPinchZoomEnabledChange,
+                subtitle = "在阅读时用双指放大并拖动查看细节",
             )
             DropdownRow(
                 title = "WebDAV 预取页数",
@@ -507,23 +417,23 @@ private fun ComicSettingsPage(
                 label = ReaderLoggingMode::label,
                 onSelected = onReaderLoggingModeChange,
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "AVIF 图片",
-                subtitle = "需要 Android 14+；旧系统会忽略这个开关",
                 checked = settings.avifImagesEnabled,
                 onCheckedChange = onAvifImagesEnabledChange,
+                subtitle = "需要 Android 14+；旧系统会忽略这个开关",
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "书架封面",
-                subtitle = "从 WebDAV 漫画提取首图并显示在书架",
                 checked = settings.libraryCoversEnabled,
                 onCheckedChange = onLibraryCoversEnabledChange,
+                subtitle = "从 WebDAV 漫画提取首图并显示在书架",
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "启用自动翻页",
-                subtitle = "按固定间隔前进到下一页",
                 checked = settings.autoPageEnabled,
                 onCheckedChange = onAutoPageEnabledChange,
+                subtitle = "按固定间隔前进到下一页",
             )
             AutoPageSpeedRow(
                 speedMillis = settings.autoPageSpeedMillis,
@@ -550,24 +460,35 @@ private fun VideoSettingsPage(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SettingsPageShell(modifier = modifier) {
-        SettingsPageHeader(
+    val colors = rememberMuBoxColors()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 0.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        MuBoxHeaderBar(
             title = "视频设置",
-            subtitle = "播放、WebDAV 流式读取、解码和封面",
-            onBack = onBack,
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
         )
-        SettingsGroup(title = "视频设置") {
-            SwitchRow(
+        MuBoxBoxedList(title = "视频设置") {
+            MuBoxSwitchRow(
                 title = "恢复播放位置",
-                subtitle = "再次打开同一视频时从上次退出位置继续",
                 checked = settings.videoResumeEnabled,
                 onCheckedChange = onVideoResumeEnabledChange,
+                subtitle = "再次打开同一视频时从上次退出位置继续",
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "WebDAV 视频 seek 优化",
-                subtitle = "缓存小段视频并合并重复 seek 请求",
                 checked = settings.videoSeekOptimizationEnabled,
                 onCheckedChange = onVideoSeekOptimizationEnabledChange,
+                subtitle = "缓存小段视频并合并重复 seek 请求",
             )
             DropdownRow(
                 title = "向前预读",
@@ -625,11 +546,11 @@ private fun VideoSettingsPage(
                 label = ::videoPlayerOrientationModeLabel,
                 onSelected = onVideoPlayerOrientationModeChange,
             )
-            SwitchRow(
+            MuBoxSwitchRow(
                 title = "提取加入影视库的视频缩略图作为封面",
-                subtitle = "收藏视频时自动提取一帧作为影视库封面",
                 checked = settings.videoLibraryThumbnailsEnabled,
                 onCheckedChange = onVideoLibraryThumbnailsEnabledChange,
+                subtitle = "收藏视频时自动提取一帧作为影视库封面",
             )
         }
     }
@@ -643,17 +564,21 @@ private fun DownloadRecordsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .background(colors.background)
+            .padding(horizontal = 16.dp, vertical = 0.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        SettingsPageHeader(
+        MuBoxHeaderBar(
             title = "下载记录",
-            subtitle = if (records.isEmpty()) "暂无下载记录" else "${records.size} 本漫画",
-            onBack = onBack,
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
         )
 
         if (records.isEmpty()) {
@@ -691,6 +616,7 @@ private fun DownloadRecordRow(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -703,11 +629,30 @@ private fun DownloadRecordRow(
         color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
     ) {
-        StaticInfoRow(
-            title = record.fileName,
-            subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
-                decodeWebDavPathForDisplay(record.remotePath),
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = settingsStaticRowMinHeightDp().dp)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = record.fileName,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
+                    decodeWebDavPathForDisplay(record.remotePath),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -747,13 +692,7 @@ internal fun ReadingDirection.label(): String =
         ReadingDirection.VERTICAL_CONTINUOUS -> "纵向滚动（无间隙）"
     }
 
-internal fun AppColorPalette.settingsLabel(): String =
-    when (this) {
-        AppColorPalette.DEFAULT -> "影院深色"
-        AppColorPalette.SEPIA -> "纸张护眼"
-        AppColorPalette.NIGHT -> "夜间深色"
-        AppColorPalette.HIGH_CONTRAST -> "高对比"
-    }
+internal fun AppColorPalette.settingsLabel(): String = displayLabel()
 
 private fun ReaderLoggingMode.label(): String =
     when (this) {
@@ -787,102 +726,18 @@ internal fun settingsControlRowMinHeightDp(): Int = 64
 internal fun settingsStaticRowMinHeightDp(): Int = 58
 
 @Composable
-private fun SettingsGroup(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    MuBoxSettingsGroup(title = title, modifier = modifier, content = content)
-}
-
-@Composable
 private fun ClickableInfoRow(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    StaticInfoRow(
+    MuBoxActionRow(
         title = title,
+        onClick = onClick,
+        modifier = modifier,
         subtitle = subtitle,
-        modifier = modifier.clickable(onClick = onClick),
     )
-}
-
-@Composable
-private fun SwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = settingsControlRowMinHeightDp().dp)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = colors.text,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-        )
-    }
-}
-
-@Composable
-private fun StaticInfoRow(
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = settingsStaticRowMinHeightDp().dp)
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = colors.text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.muted,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
 }
 
 @Composable

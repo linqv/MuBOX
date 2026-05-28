@@ -24,19 +24,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,48 +48,11 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
-import com.example.comicdav.ui.muBoxColorsFor
+import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
-
-internal data class VideoLibraryScreenColors(
-    val backgroundTop: Color,
-    val backgroundBottom: Color,
-    val surface: Color,
-    val surfaceRaised: Color,
-    val posterTop: Color,
-    val posterBottom: Color,
-    val accent: Color,
-    val onAccent: Color,
-    val text: Color,
-    val muted: Color,
-    val errorSurface: Color,
-    val errorText: Color,
-    val border: Color,
-    val thumbnailScrim: Color,
-    val onThumbnailScrim: Color,
-)
-
-internal fun videoLibraryScreenColors(colorScheme: ColorScheme): VideoLibraryScreenColors {
-    val tokens = muBoxColorsFor(colorScheme)
-    return VideoLibraryScreenColors(
-        backgroundTop = tokens.background,
-        backgroundBottom = colorScheme.surfaceContainerLowest,
-        surface = tokens.panel,
-        surfaceRaised = tokens.panelHigh,
-        posterTop = colorScheme.surfaceVariant,
-        posterBottom = colorScheme.surfaceContainerLowest,
-        accent = tokens.mediaAccent,
-        onAccent = tokens.onMediaAccent,
-        text = tokens.text,
-        muted = tokens.muted,
-        errorSurface = tokens.errorSurface,
-        errorText = tokens.errorText,
-        border = tokens.border,
-        thumbnailScrim = colorScheme.scrim,
-        onThumbnailScrim = colorScheme.inverseOnSurface,
-    )
-}
 
 @Composable
 fun VideoLibraryScreen(
@@ -104,47 +65,26 @@ fun VideoLibraryScreen(
     selectedItemId: Long? = null,
     modifier: Modifier = Modifier,
 ) {
-    val colors = videoLibraryScreenColors(MaterialTheme.colorScheme)
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(colors.backgroundTop, colors.backgroundBottom),
-                ),
-            )
+            .background(colors.background)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "影视库",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = videoLibraryCountLabel(uiState.items.size),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.muted,
-                )
-            }
-            androidx.compose.material3.TextButton(
-                onClick = onOpenDirectories,
-                modifier = Modifier.defaultMinSize(minHeight = 44.dp),
-                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                    contentColor = colors.accent,
-                ),
-            ) {
-                Text("来源")
-            }
-        }
+        MuBoxHeaderBar(
+            title = "影视库",
+            actions = {
+                TextButton(onClick = onOpenDirectories) { Text("来源") }
+            },
+        )
+        Text(
+            text = videoLibraryCountLabel(uiState.items.size),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.muted,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
 
         if (uiState.message != null || uiState.error != null) {
             com.example.comicdav.ui.MuBoxMessagePanel(
@@ -173,7 +113,6 @@ fun VideoLibraryScreen(
                 state.items.isEmpty() -> {
                     EmptyVideoLibrary(
                         onOpenDirectories = onOpenDirectories,
-                        colors = colors,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -192,7 +131,6 @@ fun VideoLibraryScreen(
                                 onLongClick = { onSelectItem(item) },
                                 thumbnailsEnabled = thumbnailsEnabled,
                                 isSelected = selectedItemId == item.item.id,
-                                colors = colors,
                             )
                         }
                     }
@@ -205,9 +143,9 @@ fun VideoLibraryScreen(
 @Composable
 private fun EmptyVideoLibrary(
     onOpenDirectories: () -> Unit,
-    colors: VideoLibraryScreenColors,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -216,7 +154,7 @@ private fun EmptyVideoLibrary(
         Icon(
             imageVector = Icons.Filled.PlayArrow,
             contentDescription = null,
-            tint = colors.accent,
+            tint = colors.mediaAccent,
             modifier = Modifier
                 .padding(bottom = 22.dp)
                 .size(64.dp),
@@ -244,8 +182,8 @@ private fun EmptyVideoLibrary(
                 modifier = Modifier.defaultMinSize(minWidth = 140.dp, minHeight = 48.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.accent,
-                    contentColor = colors.onAccent,
+                    containerColor = colors.mediaAccent,
+                    contentColor = colors.onMediaAccent,
                 ),
             ) {
                 Text("来源")
@@ -262,14 +200,14 @@ private fun VideoLibraryCard(
     onLongClick: () -> Unit,
     thumbnailsEnabled: Boolean,
     isSelected: Boolean,
-    colors: VideoLibraryScreenColors,
     modifier: Modifier = Modifier,
 ) {
-    val cardShape = RoundedCornerShape(16.dp)
+    val colors = rememberMuBoxColors()
+    val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     val borderModifier = if (isSelected) {
         Modifier.border(
             width = 1.5.dp,
-            color = colors.accent,
+            color = colors.mediaAccent,
             shape = cardShape,
         )
     } else {
@@ -290,11 +228,11 @@ private fun VideoLibraryCard(
             ),
         shape = cardShape,
         color = if (isSelected) {
-            colors.accent.copy(alpha = 0.14f)
+            colors.mediaAccent.copy(alpha = 0.14f)
         } else {
-            colors.surface.copy(alpha = 0.92f)
+            colors.panel.copy(alpha = 0.92f)
         },
-        shadowElevation = if (isSelected) 10.dp else 3.dp,
+        shadowElevation = 0.dp,
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -304,22 +242,15 @@ private fun VideoLibraryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind())),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
                 tonalElevation = 0.dp,
-                shadowElevation = if (isSelected) 8.dp else 5.dp,
-                color = colors.posterBottom,
+                shadowElevation = 0.dp,
+                color = colors.raisedSurface,
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    colors.posterTop,
-                                    colors.posterBottom,
-                                ),
-                            ),
-                        ),
+                        .background(colors.raisedSurface),
                     contentAlignment = Alignment.Center,
                 ) {
                     val thumbnailFile = item.item.thumbnailPath
@@ -339,21 +270,21 @@ private fun VideoLibraryCard(
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            colors.thumbnailScrim.copy(alpha = 0.62f),
-                                            colors.thumbnailScrim.copy(alpha = 0.1f),
-                                            colors.thumbnailScrim.copy(alpha = 0f),
-                                            colors.thumbnailScrim.copy(alpha = 0.78f),
+                                            Color.Black.copy(alpha = 0.4f),
+                                            Color.Transparent,
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.3f),
                                         ),
                                     ),
                                 ),
                         )
                     } else {
-                        FallbackVideoTitle(item.item.displayName, colors = colors)
+                        FallbackVideoTitle(item.item.displayName)
                     }
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
                         contentDescription = null,
-                        tint = colors.onThumbnailScrim,
+                        tint = Color.White,
                         modifier = Modifier.size(48.dp),
                     )
                     Surface(
@@ -361,13 +292,13 @@ private fun VideoLibraryCard(
                             .align(Alignment.TopStart)
                             .padding(8.dp),
                         shape = RoundedCornerShape(7.dp),
-                        color = colors.thumbnailScrim.copy(alpha = 0.62f),
-                        border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
+                        color = Color.Black.copy(alpha = 0.62f),
+                        border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.28f)),
                     ) {
                         Text(
                             text = videoSourceLabel(item.item.sourceType),
                             style = MaterialTheme.typography.labelSmall,
-                            color = colors.accent,
+                            color = colors.mediaAccent,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
@@ -397,22 +328,12 @@ private fun VideoLibraryCard(
 }
 
 @Composable
-private fun FallbackVideoTitle(
-    title: String,
-    colors: VideoLibraryScreenColors,
-) {
+private fun FallbackVideoTitle(title: String) {
+    val colors = rememberMuBoxColors()
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        colors.posterTop,
-                        colors.surfaceRaised,
-                        colors.posterBottom,
-                    ),
-                ),
-            )
+            .background(colors.raisedSurface)
             .padding(14.dp),
         contentAlignment = Alignment.Center,
     ) {
