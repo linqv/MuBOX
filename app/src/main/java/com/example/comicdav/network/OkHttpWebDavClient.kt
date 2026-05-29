@@ -1,7 +1,10 @@
 package com.example.comicdav.network
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
@@ -10,6 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.net.URI
 import java.net.URLDecoder
 import java.util.Locale
@@ -102,61 +106,47 @@ class OkHttpWebDavClient(
         endInclusive: Long?,
         registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse = withContext(Dispatchers.IO) {
+        executeRangeStreamWithRetries(
+            path = path,
+            start = start,
+            endInclusive = endInclusive,
+            registerCancellation = registerCancellation,
+        )
+    }
+
+    private suspend fun executeRangeStreamWithRetries(
+        path: String,
+        start: Long,
+        endInclusive: Long?,
+        registerCancellation: (Closeable) -> Unit,
+    ): WebDavStreamResponse {
         val rangeHeader = buildRangeHeader(start, endInclusive)
-        val request = requestBuilder(path, WebDavOperation.RANGE_GET, rangeHeader)
-            .get()
-            .header("Range", rangeHeader)
-            .build()
-        request.withFailureDiagnostics {
+        var retryIndex = 0
+        while (true) {
+            val request = requestBuilder(path, WebDavOperation.RANGE_GET, rangeHeader)
+                .get()
+                .header("Range", rangeHeader)
+                .build()
             val call = httpClient.newCall(request)
             registerCancellation(Closeable { call.cancel() })
-            val response = call.execute()
-            when (response.code) {
-                206 -> {
-                    val body = response.body
-                    try {
-                        val contentRangeHeader = response.header("Content-Range")
-                        val parsedRange = validateContentRange(
-                            header = contentRangeHeader,
-                            expectedStart = start,
-                            expectedEndInclusive = endInclusive,
-                        )
-                        val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
-                        val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
-                        val declaredContentLength = body.contentLength()
-                        if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
-                            throw WebDavException.InvalidContentRange(
-                                "Expected response body length $expectedContentLength but got $declaredContentLength",
-                            )
-                        }
-                        val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
-                        val stream = body.byteStream()
-                        val close = { response.close() }
-                        WebDavStreamResponse(
-                            stream = stream,
-                            statusCode = response.code,
-                            contentLength = contentLength,
-                            contentRange = parsedRange,
-                            contentType = response.header("Content-Type"),
-                            totalSize = totalSize,
-                            close = close,
-                        )
-                    } catch (error: Throwable) {
-                        response.close()
-                        throw error
-                    }
+            try {
+                return executeRangeStream(
+                    call = call,
+                    request = request,
+                    start = start,
+                    endInclusive = endInclusive,
+                )
+            } catch (error: Throwable) {
+                if (call.isCanceled()) {
+                    throw CancellationException("range request cancelled").also { it.initCause(error) }
                 }
-                200 -> {
-                    response.close()
-                    throw WebDavException.RangeNotSupported()
+                val retryDelayMs = rangeRetryDelayMs(error, retryIndex)
+                if (retryDelayMs == null) {
+                    diagnostics.logFailure(request, error)
+                    throw error
                 }
-                else -> {
-                    response.close()
-                    throw WebDavException.HttpStatus(
-                        response.code,
-                        httpFailureMessage("Range GET", response.code, request),
-                    )
-                }
+                retryIndex++
+                delay(retryDelayMs)
             }
         }
     }
@@ -289,6 +279,70 @@ class OkHttpWebDavClient(
     private fun httpFailureMessage(operation: String, statusCode: Int, request: Request): String =
         "$operation failed with HTTP $statusCode: ${diagnostics.sanitizedUrl(request.url)}"
 
+    private fun executeRangeStream(
+        call: Call,
+        request: Request,
+        start: Long,
+        endInclusive: Long?,
+    ): WebDavStreamResponse {
+        val response = call.execute()
+        when (response.code) {
+            206 -> {
+                val body = response.body
+                try {
+                    val contentRangeHeader = response.header("Content-Range")
+                    val parsedRange = validateContentRange(
+                        header = contentRangeHeader,
+                        expectedStart = start,
+                        expectedEndInclusive = endInclusive,
+                    )
+                    val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
+                    val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
+                    val declaredContentLength = body.contentLength()
+                    if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
+                        throw WebDavException.InvalidContentRange(
+                            "Expected response body length $expectedContentLength but got $declaredContentLength",
+                        )
+                    }
+                    val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
+                    val stream = body.byteStream()
+                    val close = { response.close() }
+                    return WebDavStreamResponse(
+                        stream = stream,
+                        statusCode = response.code,
+                        contentLength = contentLength,
+                        contentRange = parsedRange,
+                        contentType = response.header("Content-Type"),
+                        totalSize = totalSize,
+                        close = close,
+                    )
+                } catch (error: Throwable) {
+                    response.close()
+                    throw error
+                }
+            }
+            200 -> {
+                response.close()
+                throw WebDavException.RangeNotSupported()
+            }
+            else -> {
+                response.close()
+                throw WebDavException.HttpStatus(
+                    response.code,
+                    httpFailureMessage("Range GET", response.code, request),
+                )
+            }
+        }
+    }
+
+    private fun rangeRetryDelayMs(error: Throwable, retryIndex: Int): Long? {
+        if (retryIndex >= RANGE_RETRY_DELAYS_MS.size || error is CancellationException) return null
+        val statusCode = (error as? WebDavException.HttpStatus)?.statusCode
+        if (statusCode in RETRYABLE_RANGE_STATUS_CODES) return RANGE_RETRY_DELAYS_MS[retryIndex]
+        if (error is IOException) return RANGE_RETRY_DELAYS_MS[retryIndex]
+        return null
+    }
+
     private inline fun <T> Request.withFailureDiagnostics(block: () -> T): T {
         try {
             return block()
@@ -348,5 +402,7 @@ class OkHttpWebDavClient(
 
     companion object {
         private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""")
+        private val RETRYABLE_RANGE_STATUS_CODES = setOf(429, 500, 502, 503, 504)
+        private val RANGE_RETRY_DELAYS_MS = longArrayOf(150L, 400L)
     }
 }

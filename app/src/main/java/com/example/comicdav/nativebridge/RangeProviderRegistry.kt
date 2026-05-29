@@ -17,7 +17,7 @@ object RangeProviderRegistry {
 
     @JvmStatic
     fun unregister(fileId: Long) {
-        providers.remove(fileId)
+        providers.remove(fileId)?.close()
     }
 
     @JvmStatic
@@ -58,6 +58,11 @@ object RangeProviderRegistry {
         requireValidRange(start, endInclusive)
         protectedRanges.forEach { range -> requireValidRange(range.first, range.last) }
         return provider(fileId).prefetchRange(start, endInclusive, priority, protectedRanges)
+    }
+
+    @JvmStatic
+    fun cancelPrefetches(fileId: Long) {
+        providers[fileId]?.cancelPrefetches()
     }
 
     private fun requireValidRange(start: Long, endInclusive: Long) {

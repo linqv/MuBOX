@@ -3,7 +3,9 @@ package com.example.comicdav.network
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLogCategory
 import com.example.comicdav.nativebridge.RangeProvider
+import java.io.Closeable
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 
 // WebDavRangeProvider implements the RangeProvider interface called synchronously from Rust
@@ -23,7 +25,10 @@ class WebDavRangeProvider(
     private val lock = Any()
     private val cache = RangeWindowCache(maxCacheBytes)
     private val inFlightRanges = mutableListOf<InFlightRange>()
+    private val fetchCancellations = mutableMapOf<CompletableDeferred<ByteArray>, Closeable>()
+    private val cancelledFetches = mutableSetOf<CompletableDeferred<ByteArray>>()
     private var latestProtectedRanges: List<LongRange> = emptyList()
+    private var closed = false
 
     override fun size(fileId: Long): Long = size
 
@@ -44,25 +49,50 @@ class WebDavRangeProvider(
             .coerceAtMost(size - 1)
             .coerceAtLeast(endInclusive)
         val decision = synchronized(lock) {
-            coveringDemandInFlight(start, endInclusive)?.let { existing ->
+            checkOpenLocked()
+            coveringInFlight(start, endInclusive)?.let { existing ->
                 FetchDecision.Join(existing)
-            } ?: coveringDemandInFlight(start, expandedEnd)?.let { existing ->
+            } ?: coveringInFlight(start, expandedEnd)?.let { existing ->
                 FetchDecision.Join(existing)
             } ?: FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand))
         }
         if (decision is FetchDecision.Join) {
-            return awaitInFlight(decision.inFlight, start, endInclusive)
+            return try {
+                awaitInFlight(decision.inFlight, start, endInclusive)
+            } catch (error: Throwable) {
+                if (decision.inFlight.owner != InFlightOwner.Prefetch || isClosed()) {
+                    throw error
+                }
+                emitDiagnostic {
+                    "range_inflight_join_fallback path=$path start=$start end=$endInclusive " +
+                        "windowStart=${decision.inFlight.start} windowEnd=${decision.inFlight.endInclusive} " +
+                        "owner=${decision.inFlight.owner.logValue} error=${error::class.simpleName}"
+                }
+                fetchReadRange(start, endInclusive, expandedEnd)
+            }
         }
-        val fetch = (decision as FetchDecision.Fetch).fetch
+        return fetchReadRange(start, endInclusive, expandedEnd, (decision as FetchDecision.Fetch).fetch)
+    }
+
+    private fun fetchReadRange(
+        start: Long,
+        endInclusive: Long,
+        expandedEnd: Long,
+        registeredFetch: RegisteredFetch? = null,
+    ): ByteArray {
+        val fetch = registeredFetch ?: synchronized(lock) {
+            checkOpenLocked()
+            FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand)).fetch
+        }
         emitDiagnostic { "range_cache_miss path=$path start=$start end=$endInclusive expandedEnd=$expandedEnd" }
         val bytes = try {
-            runBlocking {
-                client.readRange(path, fetch.start, fetch.endInclusive)
-            }
+            readNetworkRange(fetch)
         } catch (error: Throwable) {
-            failInFlight(fetch, error)
+            val cancelled = failInFlight(fetch, error)
+            if (cancelled) throw CancellationException("range fetch cancelled")
             throw error
         }
+        throwIfCancelled(fetch)
         val postFetch = synchronized(lock) {
             val storeDecision = storeReadRange(fetch, start, endInclusive, bytes)
             val result = cache.find(start, endInclusive)?.bytes
@@ -151,6 +181,7 @@ class WebDavRangeProvider(
         }
 
         val decision = synchronized(lock) {
+            checkOpenLocked()
             coveringInFlight(start, clampedEnd)?.let { existing ->
                 FetchDecision.Join(existing)
             } ?: FetchDecision.Fetch(registerInFlight(start, clampedEnd, InFlightOwner.Prefetch))
@@ -165,13 +196,13 @@ class WebDavRangeProvider(
 
         emitDiagnostic { "range_prefetch_start path=$path start=${fetch.start} end=${fetch.endInclusive}" }
         val bytes = try {
-            runBlocking {
-                client.readRange(path, fetch.start, fetch.endInclusive)
-            }
+            readNetworkRange(fetch)
         } catch (error: Throwable) {
-            failInFlight(fetch, error)
+            val cancelled = failInFlight(fetch, error)
+            if (cancelled) throw CancellationException("range prefetch cancelled")
             throw error
         }
+        throwIfCancelled(fetch)
         val postFetch = synchronized(lock) {
             val storeDecision = storePrefetchRange(fetch, bytes, priority, rememberedProtectedRanges)
             PostFetchResult(
@@ -208,6 +239,14 @@ class WebDavRangeProvider(
         return postFetch.storeResult.stored
     }
 
+    override fun cancelPrefetches() {
+        cancelInFlightRanges(owner = InFlightOwner.Prefetch, closeProvider = false)
+    }
+
+    override fun close() {
+        cancelInFlightRanges(owner = null, closeProvider = true)
+    }
+
     private fun storePrefetchRange(
         fetch: RegisteredFetch,
         bytes: ByteArray,
@@ -230,9 +269,6 @@ class WebDavRangeProvider(
     private fun coveringInFlight(start: Long, endInclusive: Long): InFlightRange? =
         inFlightRanges.firstOrNull { it.covers(start, endInclusive) }
 
-    private fun coveringDemandInFlight(start: Long, endInclusive: Long): InFlightRange? =
-        inFlightRanges.firstOrNull { it.owner == InFlightOwner.Demand && it.covers(start, endInclusive) }
-
     private fun registerInFlight(
         start: Long,
         endInclusive: Long,
@@ -251,15 +287,26 @@ class WebDavRangeProvider(
     private fun completeInFlight(fetch: RegisteredFetch, bytes: ByteArray) {
         synchronized(lock) {
             inFlightRanges.removeAll { it.deferred === fetch.deferred }
+            fetchCancellations.remove(fetch.deferred)
+            cancelledFetches.remove(fetch.deferred)
         }
         fetch.deferred.complete(bytes)
     }
 
-    private fun failInFlight(fetch: RegisteredFetch, error: Throwable) {
-        synchronized(lock) {
+    private fun failInFlight(fetch: RegisteredFetch, error: Throwable): Boolean {
+        val cancelled = synchronized(lock) {
             inFlightRanges.removeAll { it.deferred === fetch.deferred }
+            fetchCancellations.remove(fetch.deferred)
+            cancelledFetches.remove(fetch.deferred)
         }
-        fetch.deferred.completeExceptionally(error)
+        fetch.deferred.completeExceptionally(
+            if (cancelled) {
+                CancellationException("range fetch cancelled")
+            } else {
+                error
+            },
+        )
+        return cancelled
     }
 
     private fun awaitInFlight(inFlight: InFlightRange, start: Long, endInclusive: Long): ByteArray {
@@ -269,6 +316,79 @@ class WebDavRangeProvider(
         }
         val bytes = runBlocking { inFlight.deferred.await() }
         return inFlight.slice(bytes, start, endInclusive)
+    }
+
+    private fun readNetworkRange(fetch: RegisteredFetch): ByteArray =
+        runBlocking {
+            try {
+                val response = client.openRangeStream(
+                    path = path,
+                    start = fetch.start,
+                    endInclusive = fetch.endInclusive,
+                    registerCancellation = { closeable ->
+                        registerCancellation(fetch, closeable)
+                    },
+                )
+                try {
+                    response.stream.readBytes()
+                } finally {
+                    response.close()
+                }
+            } catch (error: UnsupportedOperationException) {
+                client.readRange(path, fetch.start, fetch.endInclusive)
+            }
+        }
+
+    private fun registerCancellation(fetch: RegisteredFetch, closeable: Closeable) {
+        val closeImmediately = synchronized(lock) {
+            if (inFlightRanges.any { it.deferred === fetch.deferred }) {
+                fetchCancellations[fetch.deferred] = closeable
+                false
+            } else {
+                true
+            }
+        }
+        if (closeImmediately) {
+            closeable.close()
+        }
+    }
+
+    private fun cancelInFlightRanges(owner: InFlightOwner?, closeProvider: Boolean) {
+        val cancellations: List<Closeable>
+        val deferreds: List<CompletableDeferred<ByteArray>>
+        synchronized(lock) {
+            if (closeProvider) {
+                closed = true
+            }
+            val cancelledRanges = inFlightRanges
+                .filter { range -> owner == null || range.owner == owner }
+            if (cancelledRanges.isEmpty()) return
+            val cancelledDeferreds = cancelledRanges.map { it.deferred }.toSet()
+            cancelledFetches += cancelledDeferreds
+            inFlightRanges.removeAll { it.deferred in cancelledDeferreds }
+            cancellations = cancelledRanges.mapNotNull { fetchCancellations.remove(it.deferred) }
+            deferreds = cancelledRanges.map { it.deferred }
+        }
+        cancellations.forEach { closeable ->
+            runCatching { closeable.close() }
+        }
+        val error = CancellationException("range fetch cancelled")
+        deferreds.forEach { deferred ->
+            deferred.completeExceptionally(error)
+        }
+    }
+
+    private fun throwIfCancelled(fetch: RegisteredFetch) {
+        if (synchronized(lock) { cancelledFetches.contains(fetch.deferred) }) {
+            failInFlight(fetch, CancellationException("range fetch cancelled"))
+            throw CancellationException("range fetch cancelled")
+        }
+    }
+
+    private fun isClosed(): Boolean = synchronized(lock) { closed }
+
+    private fun checkOpenLocked() {
+        if (closed) throw CancellationException("range provider closed")
     }
 
     private fun storeReadRange(

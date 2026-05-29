@@ -49,6 +49,32 @@ class ReaderViewModelTest {
 
         assertEquals(listOf(0, 3), session.loadedPages.take(2))
     }
+
+    @Test
+    fun closeReaderCancelsSessionPrefetchesBeforeAsyncClose() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        mainDispatcher.set(dispatcher)
+        val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
+        val viewModel = ReaderViewModel(
+            ioDispatcher = dispatcher,
+            elapsedRealtimeMs = { testScheduler.currentTime },
+        )
+
+        viewModel.openExistingSession(
+            openedSession = session,
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "comic",
+        )
+        runCurrent()
+
+        viewModel.closeReader()
+
+        assertEquals(1, session.cancelPrefetchesCalls)
+        assertEquals(0, session.closeCalls)
+        runCurrent()
+        assertEquals(1, session.closeCalls)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -67,6 +93,8 @@ private class RecordingComicSession(
     override val forwardPrefetchPageCount: Int,
 ) : ComicReaderSession {
     val loadedPages = mutableListOf<Int>()
+    var cancelPrefetchesCalls = 0
+    var closeCalls = 0
 
     override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
         loadedPages += pageIndex
@@ -75,5 +103,11 @@ private class RecordingComicSession(
         return outputFile
     }
 
-    override fun close() = Unit
+    override fun cancelPrefetches() {
+        cancelPrefetchesCalls++
+    }
+
+    override fun close() {
+        closeCalls++
+    }
 }

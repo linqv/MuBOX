@@ -1,5 +1,6 @@
 package com.example.comicdav.network
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import okhttp3.Credentials
 import okhttp3.MediaType
@@ -88,6 +89,49 @@ class OkHttpWebDavClientTest {
 
         assertTrue(result.exceptionOrNull() is WebDavException.RangeNotSupported)
         assertEquals("bytes=0-3", server.takeRequest().getHeader("Range"))
+    }
+
+    @Test
+    fun readRangeRetriesTransientServerFailure() = runTest {
+        server.enqueue(MockResponse().setResponseCode(502))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-2/3")
+                .setBody("abc"),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val bytes = client.readRange("/movie.mp4", start = 0L, endInclusive = 2L)
+
+        assertArrayEquals("abc".toByteArray(), bytes)
+        assertEquals("bytes=0-2", server.takeRequest().getHeader("Range"))
+        assertEquals("bytes=0-2", server.takeRequest().getHeader("Range"))
+    }
+
+    @Test
+    fun cancelledRangeRequestDoesNotRetry() = runTest {
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+        var cancellationRegistrations = 0
+
+        val result = runCatching {
+            client.openRangeStream("/movie.mp4", start = 0L, endInclusive = 2L) { closeable ->
+                cancellationRegistrations++
+                closeable.close()
+            }
+        }
+
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertEquals(1, cancellationRegistrations)
+        assertEquals(0, server.requestCount)
     }
 
     @Test

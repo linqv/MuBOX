@@ -12,4 +12,6 @@ interface RangeProvider {
         priority: Int,
         protectedRanges: List<LongRange>,
     ): Boolean = prefetchRange(start, endInclusive)
+    fun cancelPrefetches() = Unit
+    fun close() = Unit
 }

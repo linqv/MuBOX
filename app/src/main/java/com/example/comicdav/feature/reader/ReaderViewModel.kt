@@ -358,6 +358,7 @@ class ReaderViewModel(
         )
         cancelPlannedRangePrefetches(reason = "stale_generation", keepPages = emptySet())
         resetPlannedRangeScope()
+        activeSession?.cancelPrefetches()
         viewportJob?.cancel()
         viewportJob = null
         generation++
