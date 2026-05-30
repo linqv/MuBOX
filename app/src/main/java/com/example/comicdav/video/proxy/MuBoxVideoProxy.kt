@@ -205,7 +205,7 @@ class MuBoxVideoProxy(
     private suspend fun handleHead(output: OutputStream, entry: RegisteredVideoStream) {
         val request = entry.request
         val info = runCatchingCancellable {
-            val client = entry.openClient() ?: return@runCatchingCancellable null
+            val client = entry.client() ?: return@runCatchingCancellable null
             request.size?.let {
                 RemoteFileInfo(request.remotePath, it, request.etag, request.lastModified, true)
             } ?: client.head(request.remotePath)
@@ -231,7 +231,7 @@ class MuBoxVideoProxy(
 
     private suspend fun handleGet(output: OutputStream, rangeHeader: String?, entry: RegisteredVideoStream) {
         val request = entry.request
-        val client = entry.openClient() ?: run {
+        val client = entry.client() ?: run {
             writeResponse(output, 404, emptyMap(), null)
             return
         }
@@ -319,16 +319,18 @@ class MuBoxVideoProxy(
             } else {
                 null
             }
-            val responseContentLength = if (statusCode == 200 && response.contentLength < 0) {
-                info.size
-            } else {
-                response.contentLength
+            val responseContentLength = when {
+                statusCode == 206 && contentRange != null -> contentRange.endInclusive - contentRange.start + 1L
+                statusCode == 200 && response.contentLength < 0 -> info.size
+                else -> response.contentLength
             }
             val headers = linkedMapOf(
-                "Content-Length" to responseContentLength.toString(),
                 "Content-Type" to (response.contentType ?: request.mimeType ?: "application/octet-stream"),
                 "Accept-Ranges" to "bytes",
             )
+            if (responseContentLength >= 0L) {
+                headers["Content-Length"] = responseContentLength.toString()
+            }
             if (contentRange != null) {
                 headers["Content-Range"] = "bytes ${contentRange.start}-${contentRange.endInclusive}/${contentRange.totalSize}"
             }

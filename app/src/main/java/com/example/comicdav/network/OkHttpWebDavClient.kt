@@ -1,8 +1,10 @@
 package com.example.comicdav.network
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Credentials
@@ -16,7 +18,12 @@ import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.net.URLDecoder
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class OkHttpWebDavClient(
     private val baseUrl: String,
@@ -25,6 +32,7 @@ class OkHttpWebDavClient(
     httpClient: OkHttpClient = HttpClients.webDav,
     private val diagnostics: WebDavNetworkDiagnostics = WebDavNetworkDiagnostics(),
 ) : WebDavClient {
+    private val urlResolver = WebDavUrlResolver(baseUrl)
     private val httpClient: OkHttpClient = run {
         val upstreamEvents = httpClient.eventListenerFactory
         val diagnosticEvents = diagnostics.eventListenerFactory()
@@ -38,22 +46,13 @@ class OkHttpWebDavClient(
     }
 
     override suspend fun list(path: String): List<WebDavItem> = withContext(Dispatchers.IO) {
-        val body = """<?xml version="1.0" encoding="utf-8" ?>
-            <d:propfind xmlns:d="DAV:">
-                <d:prop>
-                    <d:resourcetype />
-                    <d:getcontentlength />
-                    <d:getetag />
-                    <d:getlastmodified />
-                </d:prop>
-            </d:propfind>
-        """.trimIndent().toRequestBody("application/xml; charset=utf-8".toMediaType())
+        val body = propfindRequestBody()
         val request = requestBuilder(path, WebDavOperation.PROPFIND)
             .method("PROPFIND", body)
             .header("Depth", "1")
             .build()
         request.withFailureDiagnostics {
-            httpClient.newCall(request).execute().use { response ->
+            httpClient.withNonStreamingResponse(request) { response ->
                 if (!response.isSuccessful) {
                     throw WebDavException.HttpStatus(
                         response.code,
@@ -67,24 +66,39 @@ class OkHttpWebDavClient(
 
     override suspend fun head(path: String): RemoteFileInfo = withContext(Dispatchers.IO) {
         val request = requestBuilder(path, WebDavOperation.HEAD).head().build()
-        request.withFailureDiagnostics {
-            httpClient.newCall(request).execute().use { response ->
+        val headResult = request.withFailureDiagnostics {
+            httpClient.withNonStreamingResponse(request) { response ->
                 if (!response.isSuccessful) {
-                    throw WebDavException.HttpStatus(
-                        response.code,
-                        httpFailureMessage("HEAD", response.code, request),
-                    )
+                    if (response.code in HEAD_FALLBACK_STATUS_CODES) {
+                        HeadResponseResult.FallbackToPropfind(supportsRange = false)
+                    } else {
+                        throw WebDavException.HttpStatus(
+                            response.code,
+                            httpFailureMessage("HEAD", response.code, request),
+                        )
+                    }
+                } else {
+                    val supportsRange = response.supportsRange()
+                    val size = response.header("Content-Length")?.toLongOrNull()
+                    if (size == null) {
+                        HeadResponseResult.FallbackToPropfind(supportsRange = supportsRange)
+                    } else {
+                        HeadResponseResult.Info(
+                            RemoteFileInfo(
+                                path = path,
+                                size = size,
+                                etag = response.header("ETag"),
+                                lastModified = parseHttpDateMillis(response.header("Last-Modified")),
+                                supportsRange = supportsRange,
+                            ),
+                        )
+                    }
                 }
-                val size = response.header("Content-Length")?.toLongOrNull()
-                    ?: throw WebDavException.MissingMetadata("HEAD response is missing Content-Length")
-                RemoteFileInfo(
-                    path = path,
-                    size = size,
-                    etag = response.header("ETag"),
-                    lastModified = response.header("Last-Modified")?.hashCode()?.toLong(),
-                    supportsRange = response.header("Accept-Ranges")?.equals("bytes", ignoreCase = true) == true,
-                )
             }
+        }
+        when (headResult) {
+            is HeadResponseResult.Info -> headResult.info
+            is HeadResponseResult.FallbackToPropfind -> propfindMetadata(path, supportsRange = headResult.supportsRange)
         }
     }
 
@@ -143,7 +157,7 @@ class OkHttpWebDavClient(
                 val retryDelayMs = rangeRetryDelayMs(error, retryIndex)
                 if (retryDelayMs == null) {
                     diagnostics.logFailure(request, error)
-                    throw error
+                    throw error.asNetworkExceptionIfNeeded()
                 }
                 retryIndex++
                 delay(retryDelayMs)
@@ -191,7 +205,7 @@ class OkHttpWebDavClient(
         withContext(Dispatchers.IO) {
             val request = requestBuilder(path, WebDavOperation.DOWNLOAD).get().build()
             request.withFailureDiagnostics {
-                httpClient.newCall(request).execute().use { response ->
+                httpClient.withCancellableResponse(request, callTimeoutSeconds = null) { response, ensureActive ->
                     if (!response.isSuccessful) {
                         throw WebDavException.HttpStatus(
                             response.code,
@@ -201,73 +215,91 @@ class OkHttpWebDavClient(
                     val body = response.body
                     target.parentFile?.mkdirs()
                     var total = 0L
+                    var lastReportedTotal = 0L
+                    fun reportProgress(force: Boolean = false) {
+                        if (force || total - lastReportedTotal >= DOWNLOAD_PROGRESS_STEP_BYTES) {
+                            onBytesRead(total)
+                            lastReportedTotal = total
+                        }
+                    }
                     body.byteStream().use { input ->
                         target.outputStream().use { output ->
                             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                             while (true) {
+                                ensureActive()
                                 val read = input.read(buffer)
                                 if (read == -1) break
                                 output.write(buffer, 0, read)
                                 total += read
-                                onBytesRead(total)
+                                reportProgress()
                             }
                         }
                     }
+                    if (total != lastReportedTotal) {
+                        reportProgress(force = true)
+                    }
                     total
                 }
+        }
+    }
+
+    private suspend inline fun <T> OkHttpClient.withNonStreamingResponse(
+        request: Request,
+        crossinline block: (okhttp3.Response) -> T,
+    ): T = withCancellableResponse(
+        request = request,
+        callTimeoutSeconds = NON_STREAMING_CALL_TIMEOUT_SECONDS,
+    ) { response, _ -> block(response) }
+
+    private suspend inline fun <T> OkHttpClient.withCancellableResponse(
+        request: Request,
+        callTimeoutSeconds: Long?,
+        crossinline block: (okhttp3.Response, ensureActive: () -> Unit) -> T,
+    ): T = suspendCancellableCoroutine { continuation ->
+        val call = newCall(request)
+        if (callTimeoutSeconds != null) {
+            call.timeout().timeout(callTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        continuation.invokeOnCancellation { call.cancel() }
+        val ensureActive = {
+            continuation.context.ensureActive()
+            if (call.isCanceled()) {
+                throw CancellationException("request cancelled")
             }
         }
+        try {
+            ensureActive()
+            val result = call.execute().use { response -> block(response, ensureActive) }
+            if (continuation.isActive) {
+                continuation.resume(result)
+            }
+        } catch (error: Throwable) {
+            val mapped = if (call.isCanceled() && error !is CancellationException) {
+                CancellationException("request cancelled").also { it.initCause(error) }
+            } else {
+                error
+            }
+            if (continuation.isActive) {
+                continuation.resumeWithException(mapped)
+            }
+        }
+    }
 
     private fun requestBuilder(
         path: String,
         operation: WebDavOperation,
         rangeHeader: String? = null,
-    ): Request.Builder =
-        Request.Builder()
-            .url(resolveUrl(path))
+    ): Request.Builder {
+        val resolvedUrl = urlResolver.resolve(path)
+        return Request.Builder()
+            .url(resolvedUrl)
             .tag(WebDavRequestTag::class.java, diagnostics.requestTag(operation, path, rangeHeader))
             .also { builder ->
-                if (!username.isNullOrBlank() && password != null) {
-                    builder.header("Authorization", Credentials.basic(username, password))
+                if (!username.isNullOrBlank() && password != null && urlResolver.isSameOrigin(resolvedUrl)) {
+                    builder.header("Authorization", Credentials.basic(username, password, Charsets.UTF_8))
                 }
             }
-
-    private fun resolveUrl(path: String): String {
-        if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
-            return path
-        }
-
-        val base = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        val baseUri = URI(base)
-        val basePath = baseUri.rawPath.orEmpty()
-        val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
-        val decodedMountedPrefix = decodePath(mountedPrefix)
-        val encodedMountedPrefix = encodePath(decodedMountedPrefix)
-        val requestPath = normalizeRequestPath(
-            path = path,
-            mountedPrefixes = listOf(mountedPrefix, decodedMountedPrefix, encodedMountedPrefix),
-        )
-        return URI(base).resolve(requestPath).toString()
     }
-
-    private fun normalizeRequestPath(
-        path: String,
-        mountedPrefixes: List<String>,
-    ): String {
-        if (mountedPrefixes.any { path.startsWith(it) }) {
-            return path
-        }
-        if (mountedPrefixes.any { path.startsWith(it.trimStart('/')) }) {
-            return "/$path"
-        }
-        return path.trimStart('/')
-    }
-
-    private fun decodePath(path: String): String =
-        URLDecoder.decode(path, Charsets.UTF_8.name())
-
-    private fun encodePath(path: String): String =
-        URI(null, null, path, null).toASCIIString()
 
     private fun buildRangeHeader(start: Long, endInclusive: Long?): String =
         if (endInclusive == null) {
@@ -348,9 +380,56 @@ class OkHttpWebDavClient(
             return block()
         } catch (error: Throwable) {
             diagnostics.logFailure(this, error)
-            throw error
+            throw error.asNetworkExceptionIfNeeded()
         }
     }
+
+    private fun Throwable.asNetworkExceptionIfNeeded(): Throwable =
+        when (this) {
+            is WebDavException -> this
+            is CancellationException -> this
+            is IOException -> WebDavException.Network(message ?: "Network request failed", this)
+            else -> this
+        }
+
+    private fun okhttp3.Response.supportsRange(): Boolean =
+        header("Accept-Ranges")?.equals("bytes", ignoreCase = true) == true
+
+    private sealed class HeadResponseResult {
+        data class Info(val info: RemoteFileInfo) : HeadResponseResult()
+        data class FallbackToPropfind(val supportsRange: Boolean) : HeadResponseResult()
+    }
+
+    private suspend fun propfindMetadata(path: String, supportsRange: Boolean): RemoteFileInfo {
+        val request = requestBuilder(path, WebDavOperation.PROPFIND)
+            .method("PROPFIND", propfindRequestBody())
+            .header("Depth", "0")
+            .build()
+        return request.withFailureDiagnostics {
+            httpClient.withNonStreamingResponse(request) { response ->
+                if (!response.isSuccessful) {
+                    throw WebDavException.HttpStatus(
+                        response.code,
+                        httpFailureMessage("PROPFIND", response.code, request),
+                    )
+                }
+                WebDavXmlParser.parseMetadata(response.body.byteStream(), request.url.encodedPath, supportsRange)
+                    ?.copy(path = path)
+                    ?: throw WebDavException.MissingMetadata("PROPFIND response is missing Content-Length")
+            }
+        }
+    }
+
+    private fun propfindRequestBody() = """<?xml version="1.0" encoding="utf-8" ?>
+        <d:propfind xmlns:d="DAV:">
+            <d:prop>
+                <d:resourcetype />
+                <d:getcontentlength />
+                <d:getetag />
+                <d:getlastmodified />
+            </d:prop>
+        </d:propfind>
+    """.trimIndent().toRequestBody("application/xml; charset=utf-8".toMediaType())
 
     private fun parseContentRange(header: String?): ContentRange? {
         val value = header ?: return null
@@ -403,6 +482,86 @@ class OkHttpWebDavClient(
     companion object {
         private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""")
         private val RETRYABLE_RANGE_STATUS_CODES = setOf(429, 500, 502, 503, 504)
+        private val HEAD_FALLBACK_STATUS_CODES = setOf(405, 501)
         private val RANGE_RETRY_DELAYS_MS = longArrayOf(150L, 400L)
+        private const val NON_STREAMING_CALL_TIMEOUT_SECONDS = 30L
+        private const val DOWNLOAD_PROGRESS_STEP_BYTES = 256L * 1024L
+
+        internal fun parseHttpDateMillis(value: String?): Long? =
+            value
+                ?.takeIf { it.isNotBlank() }
+                ?.let { header ->
+                    try {
+                        ZonedDateTime.parse(header, DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant()
+                            .toEpochMilli()
+                    } catch (_: DateTimeParseException) {
+                        null
+                    }
+                }
+    }
+
+    private class WebDavUrlResolver(baseUrl: String) {
+        private val base: String = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+        private val baseUri: URI = URI(base)
+        private val baseOrigin = Origin.from(baseUri)
+        private val mountedPrefixes: List<String> = run {
+            val basePath = baseUri.rawPath.orEmpty()
+            val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
+            val decodedMountedPrefix = decodePath(mountedPrefix)
+            val encodedMountedPrefix = encodePath(decodedMountedPrefix)
+            listOf(mountedPrefix, decodedMountedPrefix, encodedMountedPrefix)
+        }
+
+        fun resolve(path: String): String {
+            if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
+                return path
+            }
+
+            val requestPath = normalizeRequestPath(path)
+            return baseUri.resolve(requestPath).toString()
+        }
+
+        fun isSameOrigin(url: String): Boolean =
+            runCatching { Origin.from(URI(url)) == baseOrigin }.getOrDefault(false)
+
+        private fun normalizeRequestPath(path: String): String {
+            if (mountedPrefixes.any { path.startsWith(it) }) {
+                return path
+            }
+            if (mountedPrefixes.any { path.startsWith(it.trimStart('/')) }) {
+                return "/$path"
+            }
+            return path.trimStart('/')
+        }
+
+        private fun decodePath(path: String): String =
+            URLDecoder.decode(path.replace("+", "%2B"), Charsets.UTF_8.name())
+
+        private fun encodePath(path: String): String =
+            URI(null, null, path, null).toASCIIString()
+
+        private data class Origin(
+            val scheme: String?,
+            val host: String?,
+            val port: Int,
+        ) {
+            companion object {
+                fun from(uri: URI): Origin =
+                    Origin(
+                        scheme = uri.scheme?.lowercase(Locale.ROOT),
+                        host = uri.host?.lowercase(Locale.ROOT),
+                        port = resolvedPort(uri),
+                    )
+
+                private fun resolvedPort(uri: URI): Int =
+                    when {
+                        uri.port >= 0 -> uri.port
+                        uri.scheme.equals("http", ignoreCase = true) -> 80
+                        uri.scheme.equals("https", ignoreCase = true) -> 443
+                        else -> -1
+                    }
+            }
+        }
     }
 }

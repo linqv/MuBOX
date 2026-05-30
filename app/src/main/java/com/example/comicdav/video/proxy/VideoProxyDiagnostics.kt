@@ -36,6 +36,7 @@ internal class VideoProxyDiagnostics(
 
         private val USER_INFO_URL_REGEX = Regex("://[^/@\\s]+@")
         private val AUTHORIZATION_REGEX = Regex("(?i)(authorization\\s*[:=]\\s*)[^\\n,]+")
-        private val SECRET_QUERY_REGEX = Regex("(?i)\\b(password|passwd|token|access_token|refresh_token|secret)=([^\\s&]+)")
+        private val SECRET_QUERY_REGEX =
+            Regex("(?i)\\b(password|passwd|token|access[_-]?token|refresh[_-]?token|secret|api[_-]?key|key|signature|sig|credential)=([^\\s&]+)")
     }
 }

@@ -172,6 +172,39 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun registeredStreamReusesOpenedWebDavClientAcrossRequests() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        var openCount = 0
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = {
+                openCount += 1
+                client
+            },
+            coroutineScope = scope,
+            portRange = 0..0,
+        )
+        proxy = localProxy
+        localProxy.start()
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+            proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false),
+        )
+
+        httpRequest(streamUrl, method = "GET", range = "bytes=0-2")
+        httpRequest(streamUrl, method = "GET", range = "bytes=3-4")
+
+        assertEquals(1, openCount)
+    }
+
+    @Test
     fun explicitRangeLargerThanSegmentUsesDirectRemoteRange() = runTest {
         val maxOptimizedBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES
         val bytes = ByteArray((maxOptimizedBytes + 2L).toInt()) { (it % 251).toByte() }

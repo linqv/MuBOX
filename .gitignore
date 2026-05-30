@@ -22,6 +22,7 @@ app/src/test/**
 !app/src/test/java/com/
 !app/src/test/java/com/example/
 !app/src/test/java/com/example/comicdav/
+!app/src/test/java/com/example/comicdav/Android16TargetSdkBehaviorTest.kt
 !app/src/test/java/com/example/comicdav/feature/
 !app/src/test/java/com/example/comicdav/feature/reader/
 !app/src/test/java/com/example/comicdav/feature/reader/ReaderDiagnosticLogTest.kt
@@ -44,6 +45,7 @@ app/src/test/**
 !app/src/test/java/com/example/comicdav/network/
 !app/src/test/java/com/example/comicdav/network/OkHttpWebDavClientTest.kt
 !app/src/test/java/com/example/comicdav/network/WebDavRangeProviderCacheOnlyTest.kt
+!app/src/test/java/com/example/comicdav/network/WebDavXmlParserTest.kt
 !app/src/test/java/com/example/comicdav/nativebridge/
 !app/src/test/java/com/example/comicdav/nativebridge/RustAndroidBuildInputsTest.kt
 **/src/androidTest/

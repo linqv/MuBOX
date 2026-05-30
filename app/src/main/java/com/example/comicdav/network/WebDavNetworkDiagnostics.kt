@@ -32,8 +32,17 @@ class WebDavRequestTag(
 ) {
     internal val timings = WebDavNetworkTiming()
     private val failureLogged = AtomicBoolean(false)
+    private val pathIdLock = Any()
+    private var cachedPathId: String? = null
 
     internal fun markFailureLogged(): Boolean = failureLogged.compareAndSet(false, true)
+
+    internal fun pathIdFor(url: HttpUrl, buildPathId: (HttpUrl) -> String): String {
+        cachedPathId?.let { return it }
+        return synchronized(pathIdLock) {
+            cachedPathId ?: buildPathId(url).also { cachedPathId = it }
+        }
+    }
 }
 
 class WebDavNetworkDiagnostics(
@@ -93,8 +102,11 @@ class WebDavNetworkDiagnostics(
             append(" port=")
             append(request.url.port)
             append(" pathId=")
-            append("webdav:")
-            append(shortHash(sanitizedUrl(request.url)))
+            append(
+                tag?.pathIdFor(request.url) { url ->
+                    "webdav:${shortHash(sanitizedUrl(url))}"
+                } ?: "webdav:${shortHash(sanitizedUrl(request.url))}",
+            )
             pathExtension(tag?.path)?.let { extension ->
                 append(" pathExt=")
                 append(extension)

@@ -1,6 +1,8 @@
 package com.example.comicdav.video.proxy
 
 import com.example.comicdav.network.WebDavClient
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class VideoStreamRequest(
     val streamId: String,
@@ -14,7 +16,17 @@ data class VideoStreamRequest(
     val proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
 )
 
-internal data class RegisteredVideoStream(
+internal class RegisteredVideoStream(
     val request: VideoStreamRequest,
-    val openClient: suspend () -> WebDavClient?,
-)
+    private val openClient: suspend () -> WebDavClient?,
+) {
+    private val clientMutex = Mutex()
+    private var cachedClient: WebDavClient? = null
+
+    suspend fun client(): WebDavClient? {
+        cachedClient?.let { return it }
+        return clientMutex.withLock {
+            cachedClient ?: openClient()?.also { cachedClient = it }
+        }
+    }
+}

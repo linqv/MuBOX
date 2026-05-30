@@ -5,6 +5,9 @@ import java.io.InputStream
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
@@ -21,6 +24,30 @@ object WebDavXmlParser {
                 response.toItem(base)?.let(::add)
             }
         }
+    }
+
+    fun parseMetadata(input: InputStream, requestPath: String, supportsRange: Boolean): RemoteFileInfo? {
+        val document = documentBuilderFactory().newDocumentBuilder().parse(input)
+        val responses = document.getElementsByTagNameNS("*", "response")
+        val normalizedRequestPath = normalizeFilePath(requestPath)
+
+        for (index in 0 until responses.length) {
+            val response = responses.item(index) as? Element ?: continue
+            val href = response.childText("href") ?: continue
+            val path = normalizeFilePath(normalizeHref(href, basePath = parentDirectoryPath(requestPath)))
+            if (!isSameFilePath(path, normalizedRequestPath)) continue
+
+            val props = response.successfulPropElements()
+            val size = props.firstChildText("getcontentlength")?.toLongOrNull() ?: return null
+            return RemoteFileInfo(
+                path = normalizedRequestPath,
+                size = size,
+                etag = props.firstChildText("getetag")?.ifEmpty { null },
+                lastModified = parseHttpDateMillis(props.firstChildText("getlastmodified")),
+                supportsRange = supportsRange,
+            )
+        }
+        return null
     }
 
     private fun documentBuilderFactory(): DocumentBuilderFactory =
@@ -45,7 +72,8 @@ object WebDavXmlParser {
 
     private fun Element.toItem(basePath: String): WebDavItem? {
         val href = childText("href") ?: return null
-        val isDirectory = hasDescendant("collection")
+        val props = successfulPropElements()
+        val isDirectory = props.any { it.hasDescendant("collection") }
         val path = normalizeItemPath(normalizeHref(href, basePath), isDirectory)
         val comparablePath = if (isDirectory) normalizeDirectoryPath(path) else path
         if (isSamePath(comparablePath, basePath)) return null
@@ -54,9 +82,9 @@ object WebDavXmlParser {
             name = decodedName(path),
             path = path,
             isDirectory = isDirectory,
-            size = childText("getcontentlength")?.toLongOrNull(),
-            etag = childText("getetag")?.ifEmpty { null },
-            lastModified = null,
+            size = props.firstChildText("getcontentlength")?.toLongOrNull(),
+            etag = props.firstChildText("getetag")?.ifEmpty { null },
+            lastModified = parseHttpDateMillis(props.firstChildText("getlastmodified")),
         )
     }
 
@@ -69,10 +97,39 @@ object WebDavXmlParser {
     private fun Element.hasDescendant(localName: String): Boolean =
         getElementsByTagNameNS("*", localName).length > 0
 
+    private fun Element.successfulPropElements(): List<Element> {
+        val propstats = getElementsByTagNameNS("*", "propstat")
+        if (propstats.length == 0) {
+            return listOfNotNull(firstDirectOrDescendant("prop"))
+        }
+        return buildList {
+            for (index in 0 until propstats.length) {
+                val propstat = propstats.item(index) as? Element ?: continue
+                if (!propstat.isSuccessfulPropstat()) continue
+                propstat.firstDirectOrDescendant("prop")?.let(::add)
+            }
+        }
+    }
+
+    private fun Element.isSuccessfulPropstat(): Boolean {
+        val status = childText("status") ?: return true
+        return STATUS_CODE.find(status)?.groupValues?.getOrNull(1)?.toIntOrNull() in 200..299
+    }
+
+    private fun Element.firstDirectOrDescendant(localName: String): Element? {
+        val nodes = getElementsByTagNameNS("*", localName)
+        return if (nodes.length == 0) null else nodes.item(0) as? Element
+    }
+
+    private fun List<Element>.firstChildText(localName: String): String? =
+        firstNotNullOfOrNull { prop -> prop.childText(localName) }
+
     private fun normalizeDirectoryPath(path: String): String = if (path.endsWith("/")) path else "$path/"
 
     private fun normalizeItemPath(path: String, isDirectory: Boolean): String =
         if (isDirectory) normalizeDirectoryPath(path) else path
+
+    private fun normalizeFilePath(path: String): String = path.trimEnd('/').ifBlank { "/" }
 
     private fun normalizeHref(href: String, basePath: String): String {
         val path = href.trim()
@@ -106,12 +163,37 @@ object WebDavXmlParser {
     private fun isSamePath(left: String, right: String): Boolean =
         decodedPath(normalizeDirectoryPath(left)) == decodedPath(normalizeDirectoryPath(right))
 
+    private fun isSameFilePath(left: String, right: String): Boolean =
+        decodedPath(normalizeFilePath(left)) == decodedPath(normalizeFilePath(right))
+
     private fun decodedPath(path: String): String =
-        URLDecoder.decode(path, StandardCharsets.UTF_8.name())
+        URLDecoder.decode(path.replace("+", "%2B"), StandardCharsets.UTF_8.name())
 
     private fun decodedName(path: String): String {
         val trimmed = path.trimEnd('/')
         val encoded = trimmed.substringAfterLast('/')
-        return URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+        return URLDecoder.decode(encoded.replace("+", "%2B"), StandardCharsets.UTF_8.name())
     }
+
+    private fun parentDirectoryPath(path: String): String {
+        val normalized = path.takeIf { it.isNotBlank() } ?: "/"
+        val withoutTrailingSlash = normalized.trimEnd('/')
+        val lastSlashIndex = withoutTrailingSlash.lastIndexOf('/')
+        return if (lastSlashIndex <= 0) "/" else withoutTrailingSlash.substring(0, lastSlashIndex + 1)
+    }
+
+    private fun parseHttpDateMillis(value: String?): Long? =
+        value
+            ?.takeIf { it.isNotBlank() }
+            ?.let { header ->
+                try {
+                    ZonedDateTime.parse(header, DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant()
+                        .toEpochMilli()
+                } catch (_: DateTimeParseException) {
+                    null
+                }
+            }
+
+    private val STATUS_CODE = Regex("""\b(\d{3})\b""")
 }

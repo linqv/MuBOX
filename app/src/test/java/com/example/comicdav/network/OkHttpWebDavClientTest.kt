@@ -1,10 +1,16 @@
 package com.example.comicdav.network
 
 import java.io.Closeable
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okhttp3.Credentials
+import okhttp3.Call
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -218,6 +224,278 @@ class OkHttpWebDavClientTest {
         }
 
         assertTrue(result.exceptionOrNull() is WebDavException.HttpStatus)
+    }
+
+    @Test
+    fun headParsesLastModifiedHeaderAsEpochMillis() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Length", "3")
+                .setHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val info = client.head("/movie.mp4")
+
+        assertEquals(1_445_412_480_000L, info.lastModified)
+    }
+
+    @Test
+    fun headFallsBackToDepthZeroPropfindWhenContentLengthIsMissing() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
+                .removeHeader("Content-Length"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(207)
+                .setHeader("Content-Type", "application/xml")
+                .setBody(
+                    """<?xml version="1.0"?>
+                    <d:multistatus xmlns:d="DAV:">
+                        <d:response>
+                            <d:href>/dav/movie.mp4</d:href>
+                            <d:propstat>
+                                <d:prop>
+                                    <d:getcontentlength>123</d:getcontentlength>
+                                    <d:getetag>"etag-1"</d:getetag>
+                                    <d:getlastmodified>Wed, 21 Oct 2015 07:28:00 GMT</d:getlastmodified>
+                                </d:prop>
+                                <d:status>HTTP/1.1 200 OK</d:status>
+                            </d:propstat>
+                        </d:response>
+                    </d:multistatus>
+                    """.trimIndent(),
+                ),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val info = client.head("/movie.mp4")
+
+        assertEquals("/movie.mp4", info.path)
+        assertEquals(123L, info.size)
+        assertEquals("\"etag-1\"", info.etag)
+        assertEquals(1_445_412_480_000L, info.lastModified)
+        assertEquals("HEAD", server.takeRequest().method)
+        val propfind = server.takeRequest()
+        assertEquals("PROPFIND", propfind.method)
+        assertEquals("0", propfind.getHeader("Depth"))
+    }
+
+    @Test
+    fun basicAuthUsesUtf8Credentials() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Length", "3"),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = "用户",
+            password = "秘密",
+        )
+
+        client.head("/movie.mp4")
+
+        assertEquals(
+            Credentials.basic("用户", "秘密", Charsets.UTF_8),
+            server.takeRequest().getHeader("Authorization"),
+        )
+    }
+
+    @Test
+    fun headWrapsIOExceptionAsNetworkException() = runTest {
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor {
+                throw IOException("network down")
+            }
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = "http://example.test/dav/",
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+
+        val result = runCatching { client.head("/movie.mp4") }
+        val error = result.exceptionOrNull()
+
+        assertTrue(error is WebDavException.Network)
+        assertTrue(error?.message.orEmpty().contains("network down"))
+    }
+
+    @Test
+    fun headAndPropfindUseBoundedCallTimeout() = runTest {
+        val timeoutNanos = mutableListOf<Long>()
+        val httpClient = OkHttpClient.Builder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .addInterceptor { chain ->
+                timeoutNanos += chain.call().timeout().timeoutNanos()
+                when (chain.request().method) {
+                    "PROPFIND" -> Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(207)
+                        .message("Multi-Status")
+                        .body("""<d:multistatus xmlns:d="DAV:" />""".toResponseBody())
+                        .build()
+                    "HEAD" -> Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .header("Content-Length", "3")
+                        .body("".toResponseBody())
+                        .build()
+                    else -> error("Unexpected method ${chain.request().method}")
+                }
+            }
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = "http://example.test/dav/",
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+
+        client.list("/")
+        client.head("/movie.mp4")
+
+        assertEquals(
+            listOf(
+                TimeUnit.SECONDS.toNanos(30),
+                TimeUnit.SECONDS.toNanos(30),
+            ),
+            timeoutNanos,
+        )
+    }
+
+    @Test
+    fun downloadThrottlesProgressCallbacksAndReportsFinalByteCount() = runTest {
+        val bytes = ByteArray(1024 * 1024) { (it % 251).toByte() }
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(Buffer().write(bytes)),
+        )
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+        val target = File.createTempFile("webdav-download", ".bin")
+        target.deleteOnExit()
+        val progress = mutableListOf<Long>()
+
+        val total = client.download("/movie.mp4", target) { downloaded ->
+            progress += downloaded
+        }
+
+        assertEquals(bytes.size.toLong(), total)
+        assertArrayEquals(bytes, target.readBytes())
+        assertEquals(bytes.size.toLong(), progress.last())
+        assertTrue("progress=$progress", progress.size <= 6)
+    }
+
+    @Test
+    fun downloadDoesNotSetOverallCallTimeout() = runTest {
+        val timeoutNanos = mutableListOf<Long>()
+        val httpClient = OkHttpClient.Builder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .addInterceptor { chain ->
+                timeoutNanos += chain.call().timeout().timeoutNanos()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("abc".toResponseBody())
+                    .build()
+            }
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = "http://example.test/dav/",
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+        val target = File.createTempFile("webdav-download-timeout", ".bin")
+        target.deleteOnExit()
+
+        val total = client.download("/movie.mp4", target) {}
+
+        assertEquals(3L, total)
+        assertEquals(listOf(0L), timeoutNanos)
+    }
+
+    @Test
+    fun cancelledDownloadCancelsHttpCall() = runTest {
+        val startedCall = CompletableDeferred<Call>()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(Buffer().write(ByteArray(1024 * 1024)))
+                .throttleBody(1, 1, TimeUnit.SECONDS),
+        )
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                startedCall.complete(chain.call())
+                chain.proceed(chain.request())
+            }
+            .readTimeout(5, TimeUnit.SECONDS)
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+        val target = File.createTempFile("webdav-download-cancel", ".bin")
+        target.deleteOnExit()
+        val job = launch {
+            runCatching { client.download("/movie.mp4", target) {} }
+        }
+
+        val call = startedCall.await()
+        job.cancel()
+        delay(50)
+
+        assertTrue(call.isCanceled())
+        job.join()
+    }
+
+    @Test
+    fun diagnosticRequestTagCachesPathId() {
+        val tag = WebDavRequestTag(
+            operation = WebDavOperation.HEAD,
+            path = "/movie.mp4",
+            rangeHeader = null,
+        )
+        var buildCount = 0
+
+        val first = tag.pathIdFor(server.url("/dav/movie.mp4?token=first")) {
+            buildCount++
+            "webdav:first"
+        }
+        val second = tag.pathIdFor(server.url("/dav/movie.mp4?token=second")) {
+            buildCount++
+            "webdav:second"
+        }
+
+        assertEquals("webdav:first", first)
+        assertEquals(first, second)
+        assertEquals(1, buildCount)
     }
 
     @Test
