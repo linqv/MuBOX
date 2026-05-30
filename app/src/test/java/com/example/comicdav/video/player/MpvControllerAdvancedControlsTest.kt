@@ -3,8 +3,10 @@ package com.example.comicdav.video.player
 import `is`.xyz.mpv.MPVNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.system.measureTimeMillis
 
 class MpvControllerAdvancedControlsTest {
     @Test
@@ -175,6 +177,26 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun observedPositionUpdatesProgressWithoutReplacingFullPlayerState() {
+        val controller = MpvController(AdvancedFakeMpvEngine())
+        val stateBeforePosition = controller.state.value
+
+        controller.onPositionChanged(42.0)
+
+        assertEquals(42_000L, controller.progress.value.positionMillis)
+        assertSame(stateBeforePosition, controller.state.value)
+    }
+
+    @Test
+    fun observedVolumeSeedsGestureVolumeBaseline() {
+        val controller = MpvController(AdvancedFakeMpvEngine())
+
+        controller.onVolumeChanged(100.0)
+
+        assertEquals(100, controller.state.value.gestureState.volumePercent)
+    }
+
+    @Test
     fun observedVideoParamsIncludeRotationMetadata() {
         val controller = MpvController(AdvancedFakeMpvEngine())
 
@@ -215,6 +237,17 @@ class MpvControllerAdvancedControlsTest {
 
         assertTrue(controller.state.value.gestureState.controlsLocked)
         assertEquals(emptyMap<String, Boolean>(), engine.booleanProperties)
+    }
+
+    @Test
+    fun destroyDoesNotUseFixedCallerThreadSleep() {
+        val controller = MpvController(AdvancedFakeMpvEngine())
+
+        val elapsedMillis = measureTimeMillis {
+            controller.destroy()
+        }
+
+        assertTrue("destroy blocked caller for ${elapsedMillis}ms", elapsedMillis < 80L)
     }
 
     private fun trackNode(

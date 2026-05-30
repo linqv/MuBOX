@@ -205,7 +205,7 @@ class VideoSeekOptimizerTest {
         ).close()
 
         eventually {
-            assertEquals(setOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCalls.toSet())
+            assertEquals(setOf(0L to 7L, 8L to 15L, 16L to 23L), client.openRangeCallsSnapshot().toSet())
         }
     }
 
@@ -556,6 +556,11 @@ class VideoSeekOptimizerTest {
     private open class RecordingClient(private val bytes: ByteArray) : WebDavClient {
         val openRangeCalls: MutableList<Pair<Long, Long>> = Collections.synchronizedList(mutableListOf())
         val closedResponses = AtomicInteger(0)
+
+        fun openRangeCallsSnapshot(): List<Pair<Long, Long>> =
+            synchronized(openRangeCalls) {
+                openRangeCalls.toList()
+            }
 
         override suspend fun list(path: String): List<WebDavItem> = emptyList()
 

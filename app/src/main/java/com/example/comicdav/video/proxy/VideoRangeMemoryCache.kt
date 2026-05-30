@@ -15,6 +15,10 @@ class VideoRangeMemoryCache(
         entries[SegmentKey(streamId, segmentIndex)]?.snapshot()
     }
 
+    internal fun getSegmentReference(streamId: String, segmentIndex: Long): Segment? = synchronized(lock) {
+        entries[SegmentKey(streamId, segmentIndex)]
+    }
+
     fun getSegmentSlice(
         streamId: String,
         segmentIndex: Long,

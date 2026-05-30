@@ -71,11 +71,32 @@ internal class VideoSeekOptimizer(
         if (shouldStreamSmallRangeDirectly(firstSegmentIndex, lastSegmentIndex, requestedBytes)) {
             val cachedSlice = cache.getSegmentSlice(request.streamId, firstSegmentIndex, start, endInclusive)
             if (cachedSlice == null) {
+                if (inFlight.containsKey(SegmentKey(request.streamId, firstSegmentIndex))) {
+                    val segment = getOrFetchSegment(
+                        client = client,
+                        request = request,
+                        totalSize = totalSize,
+                        segmentIndex = firstSegmentIndex,
+                        diagnostics = diagnostics,
+                        waiterKind = WaiterKind.FOREGROUND,
+                    )
+                    val slice = segment.slice(start, endInclusive)
+                    return WebDavStreamResponse(
+                        stream = ByteArrayInputStream(slice),
+                        statusCode = 206,
+                        contentLength = requestedBytes.toLong(),
+                        contentRange = ContentRange(start, endInclusive, totalSize),
+                        contentType = request.mimeType,
+                        totalSize = totalSize,
+                        close = {},
+                    )
+                }
                 diagnostics.summary { "small_range_direct stream=${diagnostics.streamId(request.streamId)}" }
                 diagnostics.detail {
                     "small_range_direct stream=${diagnostics.streamId(request.streamId)} " +
                         "range=$start-$endInclusive threshold=$smallRangeDirectThresholdBytes"
                 }
+                val directResponse = client.openRangeStream(request.remotePath, start, endInclusive)
                 if (!isFullSegmentRange(firstSegmentIndex, totalSize, start, endInclusive)) {
                     scheduleSegmentWarmup(
                         client = client,
@@ -86,7 +107,7 @@ internal class VideoSeekOptimizer(
                         generation = foregroundGeneration,
                     )
                 }
-                return client.openRangeStream(request.remotePath, start, endInclusive)
+                return directResponse
             }
         }
 
@@ -200,7 +221,7 @@ internal class VideoSeekOptimizer(
         diagnostics: VideoProxyDiagnostics,
         waiterKind: WaiterKind,
     ): VideoRangeMemoryCache.Segment {
-        cache.getSegment(request.streamId, segmentIndex)?.let { segment ->
+        cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
             diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
             diagnostics.detail {
                 "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
@@ -214,9 +235,10 @@ internal class VideoSeekOptimizer(
 
         val created = AtomicBoolean(false)
         val key = SegmentKey(request.streamId, segmentIndex)
+        var createdEntry: InFlightSegment? = null
         val inFlightSegment = inFlight.computeIfAbsent(key) {
             created.set(true)
-            val deferred = coroutineScope.async(Dispatchers.IO) {
+            val deferred = coroutineScope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 fetchSegment(
                     client = client,
                     request = request,
@@ -226,10 +248,14 @@ internal class VideoSeekOptimizer(
                 )
             }
             InFlightSegment(deferred).also { newEntry ->
-                deferred.invokeOnCompletion {
-                    inFlight.remove(key, newEntry)
-                }
+                createdEntry = newEntry
             }
+        }
+        createdEntry?.let { newEntry ->
+            newEntry.deferred.invokeOnCompletion {
+                inFlight.remove(key, newEntry)
+            }
+            newEntry.deferred.start()
         }
 
         if (!created.get()) {
@@ -252,7 +278,7 @@ internal class VideoSeekOptimizer(
         segmentIndex: Long,
         diagnostics: VideoProxyDiagnostics,
     ): VideoRangeMemoryCache.Segment {
-        cache.getSegment(request.streamId, segmentIndex)?.let { segment ->
+        cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
             diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
             diagnostics.detail {
                 "cache_hit stream=${diagnostics.streamId(request.streamId)} " +

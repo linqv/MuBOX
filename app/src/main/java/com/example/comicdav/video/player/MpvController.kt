@@ -40,6 +40,11 @@ data class MpvPlayerState(
         get() = subtitleTracks.size > 1
 }
 
+data class VideoPlaybackProgressState(
+    val durationMillis: Long = 0L,
+    val positionMillis: Long = 0L,
+)
+
 data class VideoGestureState(
     val controlsLocked: Boolean = false,
     val isTemporarySpeedActive: Boolean = false,
@@ -238,6 +243,8 @@ class MpvController(
 ) {
     private val _state = MutableStateFlow(MpvPlayerState())
     val state: StateFlow<MpvPlayerState> = _state.asStateFlow()
+    private val _progress = MutableStateFlow(VideoPlaybackProgressState())
+    val progress: StateFlow<VideoPlaybackProgressState> = _progress.asStateFlow()
     @Volatile
     private var isCleaning = false
     @Volatile
@@ -252,11 +259,15 @@ class MpvController(
         displayName: String,
         startPositionMillis: Long = 0L,
         subtitles: List<VideoSubtitleOpenRequest> = emptyList(),
+        onFileLoaded: () -> Unit = {},
     ) {
         if (!canWriteEngine()) return
         pendingResumeSeekMillis = startPositionMillis.takeIf { it > 0L }
+        _progress.value = VideoPlaybackProgressState(positionMillis = startPositionMillis.coerceAtLeast(0L))
         _state.value = _state.value.copy(
             displayName = displayName,
+            durationMillis = 0L,
+            positionMillis = startPositionMillis.coerceAtLeast(0L),
             errorMessage = null,
             activeHwdec = null,
             activeVideoDecoder = null,
@@ -265,10 +276,8 @@ class MpvController(
         )
         engine.setPropertyString("force-media-title", displayName)
         engine.loadFile(uri) {
+            onFileLoaded()
             addSubtitles(subtitles)
-        }
-        if (startPositionMillis > 0L) {
-            _state.value = _state.value.copy(positionMillis = startPositionMillis)
         }
     }
 
@@ -299,11 +308,12 @@ class MpvController(
 
     fun seekTo(positionMillis: Long) {
         if (!canWriteEngine()) return
-        val durationMillis = _state.value.durationMillis
+        val durationMillis = _progress.value.durationMillis
         val clampedPosition = when {
             durationMillis > 0L -> positionMillis.coerceIn(0L, durationMillis)
             else -> positionMillis.coerceAtLeast(0L)
         }
+        _progress.value = _progress.value.copy(positionMillis = clampedPosition)
         _state.value = _state.value.copy(positionMillis = clampedPosition)
         engine.command("seek", (clampedPosition / 1000.0).toString(), "absolute")
     }
@@ -470,7 +480,7 @@ class MpvController(
         if (!canHandleGesture()) return
         val deltaMillis = if (forward) DOUBLE_TAP_SEEK_MILLIS else -DOUBLE_TAP_SEEK_MILLIS
         val hudText = if (forward) "快进 10秒" else "快退 10秒"
-        seekTo(_state.value.positionMillis + deltaMillis)
+        seekTo(_progress.value.positionMillis + deltaMillis)
         _state.value = _state.value.copy(
             gestureState = _state.value.gestureState.copy(hudMessage = hudText),
         )
@@ -478,16 +488,16 @@ class MpvController(
 
     fun beginHorizontalSwipeSeek() {
         if (!canHandleGesture()) return
-        horizontalSwipeStartPositionMillis = _state.value.positionMillis
+        horizontalSwipeStartPositionMillis = _progress.value.positionMillis
         horizontalSwipeAccumulatedFraction = 0.0
     }
 
     fun handleHorizontalSwipeSeek(deltaFraction: Float) {
         if (!canHandleGesture()) return
-        val durationMillis = _state.value.durationMillis
+        val durationMillis = _progress.value.durationMillis
         if (durationMillis <= 0L || deltaFraction == 0f) return
 
-        val startPosition = horizontalSwipeStartPositionMillis ?: _state.value.positionMillis.also {
+        val startPosition = horizontalSwipeStartPositionMillis ?: _progress.value.positionMillis.also {
             horizontalSwipeStartPositionMillis = it
             horizontalSwipeAccumulatedFraction = 0.0
         }
@@ -495,7 +505,7 @@ class MpvController(
         val requestedDelta = (durationMillis * horizontalSwipeAccumulatedFraction).roundToLong()
 
         val targetPosition = (startPosition + requestedDelta).coerceIn(0L, durationMillis)
-        val currentPosition = _state.value.positionMillis
+        val currentPosition = _progress.value.positionMillis
         val actualDelta = targetPosition - startPosition
         if (targetPosition == currentPosition && actualDelta == 0L) return
 
@@ -627,20 +637,32 @@ class MpvController(
     }
 
     fun onPlaybackEnded() {
-        val durationMillis = _state.value.durationMillis
+        val durationMillis = _progress.value.durationMillis
+        val endedPositionMillis = if (durationMillis > 0L) durationMillis else 0L
+        _progress.value = _progress.value.copy(positionMillis = endedPositionMillis)
         _state.value = _state.value.copy(
             isPaused = true,
-            positionMillis = if (durationMillis > 0L) durationMillis else 0L,
+            positionMillis = endedPositionMillis,
         )
     }
 
     fun onDurationChanged(durationSeconds: Double) {
-        _state.value = _state.value.copy(durationMillis = secondsToMillis(durationSeconds))
+        val durationMillis = secondsToMillis(durationSeconds)
+        _progress.value = _progress.value.copy(durationMillis = durationMillis)
+        _state.value = _state.value.copy(durationMillis = durationMillis)
         seekToPendingResumePosition()
     }
 
     fun onPositionChanged(positionSeconds: Double) {
-        _state.value = _state.value.copy(positionMillis = secondsToMillis(positionSeconds))
+        _progress.value = _progress.value.copy(positionMillis = secondsToMillis(positionSeconds))
+    }
+
+    fun onVolumeChanged(volume: Double) {
+        _state.value = _state.value.copy(
+            gestureState = _state.value.gestureState.copy(
+                volumePercent = volume.roundToInt().coerceIn(MIN_GESTURE_PERCENT, MAX_GESTURE_PERCENT),
+            ),
+        )
     }
 
     fun onError(message: String) {
@@ -661,9 +683,6 @@ class MpvController(
             }
             attemptCleanup(cleanupFailures) {
                 engine.command("quit")
-            }
-            attemptCleanup(cleanupFailures) {
-                Thread.sleep(100)
             }
         } finally {
             attemptCleanup(cleanupFailures) {
@@ -768,7 +787,7 @@ class MpvController(
 
     private fun seekToPendingResumePosition() {
         val pendingPositionMillis = pendingResumeSeekMillis ?: return
-        if (_state.value.durationMillis <= 0L || !canWriteEngine()) return
+        if (_progress.value.durationMillis <= 0L || !canWriteEngine()) return
         pendingResumeSeekMillis = null
         seekTo(pendingPositionMillis)
     }

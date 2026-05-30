@@ -14,8 +14,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +45,6 @@ class MuBoxVideoProxy(
     private val registry = StreamRegistry()
     private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope)
     private val closed = AtomicBoolean(false)
-    private val nextId = AtomicLong(1)
     private val startMutex = Mutex()
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
@@ -76,7 +75,7 @@ class MuBoxVideoProxy(
         proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
         openClient: suspend () -> WebDavClient?,
     ): String {
-        val streamId = nextId.getAndIncrement().toString()
+        val streamId = UUID.randomUUID().toString()
         registry.put(
             streamId,
             RegisteredVideoStream(

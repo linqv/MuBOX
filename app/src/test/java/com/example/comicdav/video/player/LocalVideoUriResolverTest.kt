@@ -105,6 +105,32 @@ class LocalVideoUriResolverTest {
         assertEquals("[SUBTITLE]\n00:00:01.00,00:00:02.00\n你好\n", File(resolved).readText())
     }
 
+    @Test
+    fun managedPlaybackUriClosesUnusedDetachedResourceOnlyOnce() {
+        var closeCount = 0
+        val uri = ManagedPlaybackUri("fd://42") {
+            closeCount += 1
+        }
+
+        uri.closeIfUnused()
+        uri.closeIfUnused()
+
+        assertEquals(1, closeCount)
+    }
+
+    @Test
+    fun managedPlaybackUriDoesNotCloseAfterOwnershipIsTransferred() {
+        var closeCount = 0
+        val uri = ManagedPlaybackUri("fd://42") {
+            closeCount += 1
+        }
+
+        uri.markConsumed()
+        uri.closeIfUnused()
+
+        assertEquals(0, closeCount)
+    }
+
     private fun registerProvider(provider: ContentProvider) {
         provider.attachInfo(
             context,

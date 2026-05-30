@@ -41,6 +41,7 @@ import com.example.comicdav.video.proxy.VideoProxyManager
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +49,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 private val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
@@ -74,8 +74,10 @@ class VideoPlayerActivity : ComponentActivity() {
     private lateinit var audioFocusController: VideoAudioFocusController
     private lateinit var playbackLifecyclePolicy: VideoPlaybackLifecyclePolicy
     private lateinit var playbackStateStore: VideoPlaybackStateStore
+    private lateinit var progressSaver: VideoPlaybackProgressSaver
     private lateinit var orientationSession: VideoPlayerOrientationSession
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var mpvObserverRegistered = false
     private var mpvInitialized = false
     private var isCleaningUp = false
@@ -83,6 +85,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var playbackKey: String? = null
     private var resumeEnabled = true
     private var loadJob: Job? = null
+    private var progressSaveJob: Job? = null
     private val systemBarsHandler = Handler(Looper.getMainLooper())
     private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
 
@@ -124,6 +127,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     "duration" -> controller.onDurationChanged(value)
                     "time-pos" -> controller.onPositionChanged(value)
                     "speed" -> controller.onSpeedChanged(value)
+                    "volume" -> controller.onVolumeChanged(value)
                     "audio-delay" -> controller.onAudioDelayChanged(value)
                     "video-params/aspect" -> controller.onVideoAspectChanged(value)
                     "video-out-params/aspect" -> controller.onVideoOutAspectChanged(value)
@@ -184,6 +188,13 @@ class VideoPlayerActivity : ComponentActivity() {
             .toEnumOrDefault(MpvProfileMode.FAST)
         val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
         playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
+        progressSaver = VideoPlaybackProgressSaver(playbackPersistenceScope) { key, positionMillis, durationMillis ->
+            playbackStateStore.savePosition(
+                playbackKey = key,
+                positionMillis = positionMillis,
+                durationMillis = durationMillis,
+            )
+        }
         if (uri.isNullOrBlank()) {
             finish()
             return
@@ -213,15 +224,10 @@ class VideoPlayerActivity : ComponentActivity() {
                 }
             },
         )
-        val mpvPrepared = prepareMpv()
-        if (mpvPrepared) {
-            controller.setVideoOutputMode(initialVideoOutputMode)
-            controller.setGpuApiMode(initialGpuApiMode)
-            controller.setDecoderMode(initialVideoDecoderMode)
-        }
         setContent {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
+                val progress by controller.progress.collectAsState()
                 LaunchedEffect(
                     state.videoParams.width,
                     state.videoParams.height,
@@ -242,6 +248,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 }
                 VideoPlayerScreen(
                     state = state,
+                    progress = progress,
                     mpvView = mpvView,
                     onClose = ::closePlayer,
                     onPlayPause = controller::togglePlayPause,
@@ -275,28 +282,31 @@ class VideoPlayerActivity : ComponentActivity() {
             }
         }
 
-        if (mpvPrepared) {
-            loadJob = activityScope.launch {
-                val startPositionMillis = loadVideoStartPosition(
-                    resumeEnabled = resumeEnabled,
-                    playbackKey = playbackKey,
-                    loadPosition = { key ->
-                        withContext(Dispatchers.IO) {
-                            playbackStateStore.loadPosition(key)
-                        }
-                    },
-                    onFailure = { error ->
-                        System.err.println("Failed to load video resume position: ${error.message ?: error::class.java.simpleName}")
-                    },
-                )
-                if (!canLoadMpv()) return@launch
-                loadMpv(
-                    uri = uri,
-                    displayName = displayName,
-                    startPositionMillis = startPositionMillis,
-                    subtitles = subtitles,
-                )
-            }
+        loadJob = activityScope.launch {
+            if (!prepareMpv()) return@launch
+            controller.setVideoOutputMode(initialVideoOutputMode)
+            controller.setGpuApiMode(initialGpuApiMode)
+            controller.setDecoderMode(initialVideoDecoderMode)
+            val startPositionMillis = loadVideoStartPosition(
+                resumeEnabled = resumeEnabled,
+                playbackKey = playbackKey,
+                loadPosition = { key ->
+                    withContext(Dispatchers.IO) {
+                        playbackStateStore.loadPosition(key)
+                    }
+                },
+                onFailure = { error ->
+                    System.err.println("Failed to load video resume position: ${error.message ?: error::class.java.simpleName}")
+                },
+            )
+            if (!canLoadMpv()) return@launch
+            val loaded = loadMpv(
+                uri = uri,
+                displayName = displayName,
+                startPositionMillis = startPositionMillis,
+                subtitles = subtitles,
+            )
+            if (loaded) startPlaybackProgressAutoSave()
         }
     }
 
@@ -412,9 +422,10 @@ class VideoPlayerActivity : ComponentActivity() {
     private fun cleanupPlayer() {
         if (isCleaningUp) return
         cancelPendingLoad()
+        stopPlaybackProgressAutoSave()
         isCleaningUp = true
         try {
-            savePlaybackPositionNow()
+            savePlaybackPositionAsync()
             runCatching {
                 if (::audioFocusController.isInitialized) {
                     audioFocusController.abandon()
@@ -435,77 +446,139 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun prepareMpv(): Boolean =
-        runCatching {
-            Utils.copyAssets(this)
+    private suspend fun prepareMpv(): Boolean {
+        return try {
+            withContext(Dispatchers.IO) {
+                Utils.copyAssets(this@VideoPlayerActivity)
+            }
+            if (isFinishing) return false
             mpvView.initialize(filesDir.path, cacheDir.path)
             mpvInitialized = true
             MPVLib.addObserver(mpvObserver)
             mpvObserverRegistered = true
-        }.onFailure { error ->
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
             controller.onError(error.message ?: "视频播放器初始化失败")
-        }.isSuccess
+            false
+        }
+    }
 
-    private fun loadMpv(
+    private suspend fun loadMpv(
         uri: String,
         displayName: String,
         startPositionMillis: Long,
         subtitles: List<VideoSubtitleOpenRequest>,
-    ) {
-        if (!canLoadMpv()) return
-        runCatching {
-            val isWebDav = intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV
-            val localUriResolver = LocalVideoUriResolver(this)
-            val playableUri = if (intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV) {
-                uri
-            } else {
-                localUriResolver.resolve(uri)
+    ): Boolean {
+        if (!canLoadMpv()) return false
+        val resolvedInput = try {
+            withContext(Dispatchers.IO) {
+                resolvePlaybackInput(
+                    uri = uri,
+                    subtitles = subtitles,
+                    isWebDav = intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV,
+                )
             }
-            val playableSubtitles = subtitles.map { subtitle ->
-                if (isWebDav) {
-                    subtitle
-                } else {
-                    subtitle.copy(uri = localUriResolver.resolveSubtitle(subtitle.uri, subtitle.displayName))
-                }
-            }
-            if (!canLoadMpv()) return
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            controller.onError(error.message ?: "视频播放器初始化失败")
+            return false
+        }
+        var consumedByMpv = false
+        try {
+            if (!canLoadMpv()) return false
             if (audioFocusController.request()) {
                 controller.load(
-                    playableUri,
+                    resolvedInput.videoUri.uri,
                     displayName,
                     startPositionMillis = startPositionMillis,
-                    subtitles = playableSubtitles,
+                    subtitles = resolvedInput.subtitleRequests(),
+                    onFileLoaded = {
+                        resolvedInput.videoUri.markConsumed()
+                    },
                 )
+                resolvedInput.markConsumed()
+                consumedByMpv = true
+                return true
             } else {
                 controller.markPaused(true)
                 controller.onError("无法获取音频焦点，已暂停播放")
+                return false
             }
-        }.onFailure { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
             controller.onError(error.message ?: "视频播放器初始化失败")
+            return false
+        } finally {
+            if (!consumedByMpv) {
+                resolvedInput.closeIfUnused()
+            }
         }
     }
 
     private fun canLoadMpv(): Boolean =
         mpvInitialized && !isCleaningUp && !isFinishing
 
-    private fun savePlaybackPositionNow() {
+    private fun savePlaybackPositionAsync() {
         if (!resumeEnabled || !::playbackStateStore.isInitialized || !::controller.isInitialized) return
         val key = playbackKey?.takeIf { it.isNotBlank() } ?: return
-        val state = controller.state.value
-        runCatching {
-            runBlocking(Dispatchers.IO) {
-                playbackStateStore.savePosition(
-                    playbackKey = key,
-                    positionMillis = state.positionMillis,
-                    durationMillis = state.durationMillis,
-                )
-            }
-        }
+        val progress = controller.progress.value
+        progressSaver.saveAsync(
+            playbackKey = key,
+            positionMillis = progress.positionMillis,
+            durationMillis = progress.durationMillis,
+        )
     }
 
     private fun cancelPendingLoad() {
         loadJob?.cancel()
         loadJob = null
+    }
+
+    private fun startPlaybackProgressAutoSave() {
+        if (!resumeEnabled || progressSaveJob != null) return
+        progressSaveJob = activityScope.launch {
+            while (true) {
+                delay(PLAYBACK_PROGRESS_SAVE_INTERVAL_MILLIS)
+                savePlaybackPositionAsync()
+            }
+        }
+    }
+
+    private fun stopPlaybackProgressAutoSave() {
+        progressSaveJob?.cancel()
+        progressSaveJob = null
+    }
+
+    private fun resolvePlaybackInput(
+        uri: String,
+        subtitles: List<VideoSubtitleOpenRequest>,
+        isWebDav: Boolean,
+    ): ResolvedPlaybackInput {
+        if (isWebDav) {
+            return ResolvedPlaybackInput(
+                videoUri = ManagedPlaybackUri(uri),
+                subtitles = subtitles.map { subtitle ->
+                    ResolvedSubtitlePlaybackUri(
+                        uri = ManagedPlaybackUri(subtitle.uri),
+                        displayName = subtitle.displayName,
+                    )
+                },
+            )
+        }
+        val localUriResolver = LocalVideoUriResolver(this)
+        return ResolvedPlaybackInput(
+            videoUri = localUriResolver.resolveForPlayback(uri),
+            subtitles = subtitles.map { subtitle ->
+                ResolvedSubtitlePlaybackUri(
+                    uri = localUriResolver.resolveSubtitleForPlayback(subtitle.uri, subtitle.displayName),
+                    displayName = subtitle.displayName,
+                )
+            },
+        )
     }
 
     private fun handleBrightnessGesture(deltaPercent: Int) {
@@ -647,6 +720,7 @@ class VideoPlayerActivity : ComponentActivity() {
 @Composable
 private fun VideoPlayerScreen(
     state: MpvPlayerState,
+    progress: VideoPlaybackProgressState,
     mpvView: MuBoxMpvView,
     onClose: () -> Unit,
     onPlayPause: () -> Unit,
@@ -815,14 +889,14 @@ private fun VideoPlayerScreen(
                     },
                     onSeekBackward = {
                         controlsVisible = true
-                        onSeek((state.positionMillis - SEEK_STEP_MILLIS).coerceAtLeast(0L))
+                        onSeek((progress.positionMillis - SEEK_STEP_MILLIS).coerceAtLeast(0L))
                     },
                     onSeekForward = {
                         controlsVisible = true
                         onSeek(
                             seekForwardTargetMillis(
-                                positionMillis = state.positionMillis,
-                                durationMillis = state.durationMillis,
+                                positionMillis = progress.positionMillis,
+                                durationMillis = progress.durationMillis,
                             ),
                         )
                     },
@@ -830,6 +904,7 @@ private fun VideoPlayerScreen(
                 )
                 PlayerBottomControls(
                     state = state,
+                    progress = progress,
                     onSeek = {
                         controlsVisible = true
                         onSeek(it)
@@ -842,6 +917,35 @@ private fun VideoPlayerScreen(
 }
 
 private const val PLAYER_STATUS_BAR_REHIDE_MILLIS = 3_000L
+private const val PLAYBACK_PROGRESS_SAVE_INTERVAL_MILLIS = 10_000L
+
+private data class ResolvedPlaybackInput(
+    val videoUri: ManagedPlaybackUri,
+    val subtitles: List<ResolvedSubtitlePlaybackUri>,
+) {
+    fun subtitleRequests(): List<VideoSubtitleOpenRequest> =
+        subtitles.map { subtitle ->
+            VideoSubtitleOpenRequest(
+                uri = subtitle.uri.uri,
+                displayName = subtitle.displayName,
+            )
+        }
+
+    fun markConsumed() {
+        videoUri.markConsumed()
+        subtitles.forEach { it.uri.markConsumed() }
+    }
+
+    fun closeIfUnused() {
+        videoUri.closeIfUnused()
+        subtitles.forEach { it.uri.closeIfUnused() }
+    }
+}
+
+private data class ResolvedSubtitlePlaybackUri(
+    val uri: ManagedPlaybackUri,
+    val displayName: String,
+)
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =
     this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default

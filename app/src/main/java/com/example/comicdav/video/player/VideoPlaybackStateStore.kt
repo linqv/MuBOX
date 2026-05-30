@@ -5,8 +5,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class VideoPlaybackStateStore(
     private val dataStore: DataStore<Preferences>,
@@ -35,6 +39,32 @@ class VideoPlaybackStateStore(
 
     private fun positionPreferenceKey(playbackKey: String): Preferences.Key<Long> =
         longPreferencesKey("video_position_${playbackKey.sha256Hex()}")
+}
+
+internal class VideoPlaybackProgressSaver(
+    private val scope: CoroutineScope,
+    private val savePosition: suspend (String, Long, Long) -> Unit,
+) {
+    private var latestSaveJob: Job? = null
+
+    fun saveAsync(
+        playbackKey: String?,
+        positionMillis: Long,
+        durationMillis: Long,
+    ): Job? {
+        val key = playbackKey?.takeIf { it.isNotBlank() } ?: return null
+        latestSaveJob?.cancel()
+        latestSaveJob = scope.launch {
+            try {
+                savePosition(key, positionMillis, durationMillis)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                System.err.println("Failed to save video playback position: ${error.message ?: error::class.java.simpleName}")
+            }
+        }
+        return latestSaveJob
+    }
 }
 
 fun localVideoPlaybackKey(uri: String, size: Long?, lastModified: Long?): String =

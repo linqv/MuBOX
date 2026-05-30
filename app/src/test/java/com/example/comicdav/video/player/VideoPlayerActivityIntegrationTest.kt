@@ -9,23 +9,24 @@ class VideoPlayerActivityIntegrationTest {
     fun activityResolvesLocalUriAndRequestsAudioFocusBeforeLoading() {
         val source = activitySourceFile().readText()
 
-        assertTrue(source.contains("localUriResolver.resolve(uri)"))
+        assertTrue(source.contains("withContext(Dispatchers.IO)"))
+        assertTrue(source.contains("resolvePlaybackInput("))
         assertTrue(source.contains("audioFocusController.request()"))
         assertTrue(source.contains("controller.load("))
-        assertTrue(source.contains("playableUri"))
+        assertTrue(source.contains("resolvedInput.videoUri.uri"))
         assertTrue(source.contains("startPositionMillis = startPositionMillis"))
-        assertTrue(source.contains("subtitles = playableSubtitles"))
+        assertTrue(source.contains("subtitles = resolvedInput.subtitleRequests()"))
     }
 
     @Test
-    fun activityRegistersMpvSurfaceCallbackBeforeComposeAttachesView() {
+    fun activityPreparesMpvFromLoadJobAfterComposeCanAttachView() {
         val source = activitySourceFile().readText()
-        val prepareIndex = source.indexOf("val mpvPrepared = prepareMpv()")
         val contentIndex = source.indexOf("setContent {")
+        val prepareIndex = source.indexOf("if (!prepareMpv()) return@launch")
 
-        assertTrue("VideoPlayerActivity should prepare mpv before setContent attaches SurfaceView", prepareIndex >= 0)
         assertTrue("VideoPlayerActivity should call setContent", contentIndex >= 0)
-        assertTrue("mpv SurfaceHolder callback must be registered before AndroidView attaches", prepareIndex < contentIndex)
+        assertTrue("VideoPlayerActivity should prepare mpv from the load coroutine", prepareIndex >= 0)
+        assertTrue("Compose should be attached before async mpv preparation", contentIndex < prepareIndex)
     }
 
     @Test
@@ -40,6 +41,17 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue("VideoPlayerActivity should load mpv after resume lookup", loadMpvIndex >= 0)
         assertTrue("resume position lookup can run after SurfaceView is attached", contentIndex < loadPositionIndex)
         assertTrue("mpv load must wait for resume position", loadPositionIndex < loadMpvIndex)
+    }
+
+    @Test
+    fun activityStartsProgressAutosaveOnlyAfterMpvLoadSucceeds() {
+        val source = activitySourceFile().readText()
+        val loadMpvIndex = source.indexOf("val loaded = loadMpv(")
+        val autosaveIndex = source.indexOf("if (loaded) startPlaybackProgressAutoSave()")
+
+        assertTrue("VideoPlayerActivity should capture whether mpv load succeeded", loadMpvIndex >= 0)
+        assertTrue("VideoPlayerActivity should start autosave only after successful mpv load", autosaveIndex >= 0)
+        assertTrue("autosave must not run before resume position is applied", loadMpvIndex < autosaveIndex)
     }
 
     @Test

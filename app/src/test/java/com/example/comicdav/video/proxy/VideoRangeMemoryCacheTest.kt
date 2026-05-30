@@ -3,7 +3,9 @@ package com.example.comicdav.video.proxy
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class VideoRangeMemoryCacheTest {
@@ -27,6 +29,22 @@ class VideoRangeMemoryCacheTest {
         assertArrayEquals("abcd".toByteArray(), segment?.bytes)
         assertEquals(4L, cache.totalBytes())
         assertEquals(1, cache.segmentCount())
+    }
+
+    @Test
+    fun getSegmentKeepsDefensiveSnapshotButInternalReferenceAvoidsCopy() {
+        val cache = VideoRangeMemoryCache()
+        val bytes = byteArrayOf(1, 2, 3)
+
+        cache.putSegment(streamId = "stream", segmentIndex = 0L, start = 0L, bytes = bytes)
+
+        val snapshot = cache.getSegment("stream", 0L)
+        val reference = cache.getSegmentReference("stream", 0L)
+
+        assertNotSame(snapshot, reference)
+        assertArrayEquals(byteArrayOf(1, 2, 3), snapshot!!.bytes)
+        assertArrayEquals(byteArrayOf(1, 2, 3), reference!!.bytes)
+        assertSame(reference, cache.getSegmentReference("stream", 0L))
     }
 
     @Test

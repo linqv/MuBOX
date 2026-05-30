@@ -387,6 +387,29 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun registerGeneratesUnpredictableNonSequentialStreamIds() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val firstUrl = startProxy(client = client, size = 10L)
+        val secondUrl = proxy!!.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+        )
+
+        val firstId = streamIdFromUrl(firstUrl)
+        val secondId = streamIdFromUrl(secondUrl)
+        assertTrue(firstId != secondId)
+        assertTrue(firstId != "1" && secondId != "2")
+        assertEquals(36, firstId.length)
+    }
+
+    @Test
     fun unregisteredStreamReturnsNotFound() = runTest {
         val client = RecordingClient("0123456789".toByteArray())
         val streamUrl = startProxy(client = client, size = 10L)

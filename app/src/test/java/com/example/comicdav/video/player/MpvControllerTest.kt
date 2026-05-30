@@ -78,6 +78,30 @@ class MpvControllerTest {
     }
 
     @Test
+    fun loadReportsFileLoadedBeforeAddingSubtitles() {
+        val engine = FakeMpvEngine().apply {
+            commandFailures += listOf("sub-add", "fd://11", "select", "movie.srt")
+        }
+        val controller = MpvController(engine)
+        var fileLoaded = false
+
+        val result = runCatching {
+            controller.load(
+                uri = "fd://10",
+                displayName = "movie.mkv",
+                subtitles = listOf(VideoSubtitleOpenRequest(uri = "fd://11", displayName = "movie.srt")),
+                onFileLoaded = {
+                    fileLoaded = true
+                },
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(fileLoaded)
+        assertEquals(listOf(listOf("loadfile", "fd://10")), engine.commands)
+    }
+
+    @Test
     fun addSubtitlesSelectsFirstTrackAndKeepsAdditionalTracksAuto() {
         val engine = FakeMpvEngine()
         val controller = MpvController(engine)
@@ -133,7 +157,7 @@ class MpvControllerTest {
 
         assertTrue(controller.state.value.isPaused)
         assertEquals(123_400L, controller.state.value.durationMillis)
-        assertEquals(12_500L, controller.state.value.positionMillis)
+        assertEquals(12_500L, controller.progress.value.positionMillis)
         assertEquals("Cannot open file", controller.state.value.errorMessage)
     }
 

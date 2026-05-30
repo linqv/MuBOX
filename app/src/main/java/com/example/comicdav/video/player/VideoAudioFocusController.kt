@@ -39,6 +39,8 @@ class VideoAudioFocusController private constructor(
             VideoAudioFocusChange.Duck,
             VideoAudioFocusChange.Gain,
             VideoAudioFocusChange.Other,
+            // Duck is handled by the system (automatic ducking); Gain needs no action
+            // because transient loss already pauses and the user resumes explicitly.
             -> Unit
         }
     }
@@ -170,6 +172,9 @@ private class AndroidVideoAudioFocusGateway(
             .build()
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(attributes)
+            // Keep willPauseWhenDucked=false so the system performs automatic ducking
+            // (API 26+, non-speech content). The Duck callback is intentionally not used.
+            .setWillPauseWhenDucked(false)
             .setOnAudioFocusChangeListener { focusChange ->
                 listener.onAudioFocusChange(focusChange.toVideoAudioFocusChange())
             }

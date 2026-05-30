@@ -139,6 +139,7 @@ internal fun PlayerLockButton(
 @Composable
 internal fun PlayerBottomControls(
     state: MpvPlayerState,
+    progress: VideoPlaybackProgressState,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -162,14 +163,14 @@ internal fun PlayerBottomControls(
             overflow = TextOverflow.Ellipsis,
         )
         ThinSeekBar(
-            positionMillis = state.positionMillis,
-            durationMillis = state.durationMillis,
+            positionMillis = progress.positionMillis,
+            durationMillis = progress.durationMillis,
             onSeek = onSeek,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatVideoTime(state.positionMillis), style = MaterialTheme.typography.labelMedium, color = Color.White)
-            Text(formatVideoTime(state.durationMillis), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+            Text(formatVideoTime(progress.positionMillis), style = MaterialTheme.typography.labelMedium, color = Color.White)
+            Text(formatVideoTime(progress.durationMillis), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
         }
     }
 }

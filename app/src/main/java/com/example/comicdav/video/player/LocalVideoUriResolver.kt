@@ -2,29 +2,55 @@ package com.example.comicdav.video.player
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import java.io.FileOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
-class LocalVideoUriResolver(
+internal class ManagedPlaybackUri(
+    val uri: String,
+    private val closeUnusedResource: () -> Unit = {},
+) {
+    private val consumed = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
+
+    fun markConsumed() {
+        consumed.set(true)
+    }
+
+    fun closeIfUnused() {
+        if (!consumed.get() && closed.compareAndSet(false, true)) {
+            closeUnusedResource()
+        }
+    }
+}
+
+internal class LocalVideoUriResolver(
     private val context: Context,
 ) {
-    fun resolve(uriText: String): String {
-        val uri = Uri.parse(uriText)
-        if (uri.scheme != "content") return uriText
+    fun resolve(uriText: String): String =
+        resolveForPlayback(uriText).also { it.markConsumed() }.uri
 
-        return resolveMediaStoreDataPath(uri)
+    fun resolveForPlayback(uriText: String): ManagedPlaybackUri {
+        val uri = Uri.parse(uriText)
+        if (uri.scheme != "content") return ManagedPlaybackUri(uriText)
+
+        return resolveMediaStoreDataPath(uri)?.let(::ManagedPlaybackUri)
             ?: resolveFileDescriptorUri(uri, uriText)
     }
 
-    fun resolveSubtitle(uriText: String, displayName: String): String {
-        val uri = Uri.parse(uriText)
-        if (uri.scheme != "content") return uriText
+    fun resolveSubtitle(uriText: String, displayName: String): String =
+        resolveSubtitleForPlayback(uriText, displayName).also { it.markConsumed() }.uri
 
-        return resolveMediaStoreDataPath(uri)
-            ?: copyContentUriToNamedCacheFile(uri, uriText, displayName)
+    fun resolveSubtitleForPlayback(uriText: String, displayName: String): ManagedPlaybackUri {
+        val uri = Uri.parse(uriText)
+        if (uri.scheme != "content") return ManagedPlaybackUri(uriText)
+
+        return resolveMediaStoreDataPath(uri)?.let(::ManagedPlaybackUri)
+            ?: copyContentUriToNamedCacheFile(uri, uriText, displayName)?.let(::ManagedPlaybackUri)
             ?: resolveFileDescriptorUri(uri, uriText)
     }
 
@@ -59,12 +85,15 @@ class LocalVideoUriResolver(
             target.absolutePath
         }.getOrNull()
 
-    private fun resolveFileDescriptorUri(uri: Uri, uriText: String): String =
+    private fun resolveFileDescriptorUri(uri: Uri, uriText: String): ManagedPlaybackUri =
         runCatching {
             context.contentResolver.openFileDescriptor(uri, "r")
                 ?.use { descriptor ->
                     // detachFd transfers ownership to mpv before the descriptor wrapper is closed.
-                    "fd://${descriptor.detachFd()}"
+                    val detachedFd = descriptor.detachFd()
+                    ManagedPlaybackUri("fd://$detachedFd") {
+                        ParcelFileDescriptor.adoptFd(detachedFd).close()
+                    }
                 }
                 ?: throw IllegalStateException("内容提供方没有返回可读取的文件描述符")
         }.getOrElse { error ->
