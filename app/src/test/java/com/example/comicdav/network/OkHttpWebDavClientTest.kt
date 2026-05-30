@@ -1,5 +1,7 @@
 package com.example.comicdav.network
 
+import java.io.Closeable
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import okhttp3.Credentials
@@ -132,6 +134,40 @@ class OkHttpWebDavClientTest {
         assertTrue(result.exceptionOrNull() is CancellationException)
         assertEquals(1, cancellationRegistrations)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun cancelledRangeResponseDoesNotLogFailureDiagnostics() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-1048575/1048576")
+                .setBody(Buffer().write(ByteArray(1024 * 1024)))
+                .throttleBody(1, 1, TimeUnit.SECONDS),
+        )
+        val failureLogs = mutableListOf<String>()
+        val client = OkHttpWebDavClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+            httpClient = OkHttpClient.Builder()
+                .readTimeout(1, TimeUnit.SECONDS)
+                .build(),
+            diagnostics = recordingDiagnostics(failureLogs = failureLogs),
+        )
+        var cancellation: Closeable? = null
+
+        val response = client.openRangeStream("/movie.mp4", start = 0L, endInclusive = 1_048_575L) { closeable ->
+            cancellation = closeable
+        }
+        cancellation?.close()
+        try {
+            runCatching { response.stream.readBytes() }
+        } finally {
+            response.close()
+        }
+
+        assertTrue(failureLogs.isEmpty())
     }
 
     @Test

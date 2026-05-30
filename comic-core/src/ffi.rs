@@ -68,6 +68,8 @@ impl PlannedRangeDto {
 enum SessionReader {
     Local(FileRangeReader),
     Remote(JniRangeReader),
+    #[cfg(test)]
+    Test(Box<dyn RangeReader + Send>),
 }
 
 enum SessionKind {
@@ -83,6 +85,8 @@ impl RangeReader for SessionReader {
         match self {
             SessionReader::Local(reader) => reader.size(),
             SessionReader::Remote(reader) => reader.size(),
+            #[cfg(test)]
+            SessionReader::Test(reader) => reader.size(),
         }
     }
 
@@ -90,6 +94,17 @@ impl RangeReader for SessionReader {
         match self {
             SessionReader::Local(reader) => reader.read_range(start, end_inclusive),
             SessionReader::Remote(reader) => reader.read_range(start, end_inclusive),
+            #[cfg(test)]
+            SessionReader::Test(reader) => reader.read_range(start, end_inclusive),
+        }
+    }
+
+    fn read_cached_range(&self, start: u64, end_inclusive: u64) -> Result<Option<Vec<u8>>> {
+        match self {
+            SessionReader::Local(reader) => reader.read_cached_range(start, end_inclusive),
+            SessionReader::Remote(reader) => reader.read_cached_range(start, end_inclusive),
+            #[cfg(test)]
+            SessionReader::Test(reader) => reader.read_cached_range(start, end_inclusive),
         }
     }
 }
@@ -777,8 +792,11 @@ fn last_error_message_string() -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::SessionReader;
     use super::{comic_close, comic_open_local, comic_page_count};
     use super::{last_error_message_string, set_last_error};
+    use crate::zip::RangeReader;
+    use anyhow::Result;
     use std::ffi::CString;
     use std::fs::File;
     use std::io::Write;
@@ -818,6 +836,33 @@ mod tests {
 
         comic_close(handle);
         assert_eq!(-1, comic_page_count(handle));
+    }
+
+    #[test]
+    fn session_reader_forwards_cache_only_reads() {
+        let reader = SessionReader::Test(Box::new(CacheOnlyReader));
+
+        let cached = reader.read_cached_range(10, 12).unwrap();
+
+        assert_eq!(Some(vec![10, 11, 12]), cached);
+    }
+
+    struct CacheOnlyReader;
+
+    impl RangeReader for CacheOnlyReader {
+        fn size(&self) -> Result<u64> {
+            Ok(100)
+        }
+
+        fn read_range(&self, _start: u64, _end_inclusive: u64) -> Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn read_cached_range(&self, start: u64, end_inclusive: u64) -> Result<Option<Vec<u8>>> {
+            Ok(Some(
+                (start..=end_inclusive).map(|byte| byte as u8).collect(),
+            ))
+        }
     }
 
     fn make_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> NamedTempFile {

@@ -216,7 +216,7 @@ class WebDavNetworkDiagnostics(
 
         override fun requestFailed(call: Call, ioe: IOException) {
             tag?.timings?.end(Stage.REQUEST_BODY)
-            diagnostics.logFailure(call.request(), ioe)
+            logFailureUnlessCanceled(call, ioe)
         }
 
         override fun responseHeadersStart(call: Call) {
@@ -238,7 +238,7 @@ class WebDavNetworkDiagnostics(
 
         override fun responseFailed(call: Call, ioe: IOException) {
             tag?.timings?.end(Stage.RESPONSE_BODY)
-            diagnostics.logFailure(call.request(), ioe)
+            logFailureUnlessCanceled(call, ioe)
         }
 
         override fun callEnd(call: Call) {
@@ -249,6 +249,11 @@ class WebDavNetworkDiagnostics(
 
         override fun callFailed(call: Call, ioe: IOException) {
             tag?.timings?.callEnd()
+            logFailureUnlessCanceled(call, ioe)
+        }
+
+        private fun logFailureUnlessCanceled(call: Call, ioe: IOException) {
+            if (call.isCanceled()) return
             diagnostics.logFailure(call.request(), ioe)
         }
     }

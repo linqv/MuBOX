@@ -240,7 +240,7 @@ class WebDavRangeProvider(
     }
 
     override fun cancelPrefetches() {
-        cancelInFlightRanges(owner = InFlightOwner.Prefetch, closeProvider = false)
+        cancelInFlightRanges(owner = null, closeProvider = false)
     }
 
     override fun close() {

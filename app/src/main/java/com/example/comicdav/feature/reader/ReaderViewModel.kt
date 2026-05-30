@@ -415,9 +415,11 @@ class ReaderViewModel(
     private fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val forwardPrefetchPages = activeSession.forwardPrefetchPageCount.coerceAtLeast(0)
+        val extractForwardPrefetchPages = activeSession.forwardPrefetchPageCount
+            .coerceAtLeast(0)
+            .coerceAtMost(MAX_EXTRACT_PREFETCH_AHEAD)
         val backwardPrefetchPages = activeSession.backwardPrefetchPageCount.coerceAtLeast(0)
-        if (forwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
+        if (extractForwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
             ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                 "prefetch_skipped reason=session_disabled page=$pageIndex"
             }
@@ -426,13 +428,13 @@ class ReaderViewModel(
         val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = forwardPrefetchPages,
+            forwardPages = extractForwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
         val retentionWindow = retainedPagePrefetchWindow(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = forwardPrefetchPages,
+            forwardPages = extractForwardPrefetchPages,
             desiredWindow = desiredWindow,
             reason = reason,
         )
@@ -444,7 +446,7 @@ class ReaderViewModel(
         val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = forwardPrefetchPages,
+            forwardPages = extractForwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
             .filterNot { uiState.pageFiles.containsKey(it) }
@@ -483,6 +485,7 @@ class ReaderViewModel(
                 } catch (error: CancellationException) {
                     // Expected lifecycle cancellation is logged by the reconciler.
                 } catch (error: Throwable) {
+                    if (error.isExpectedReaderCancellation()) return@launch
                     val laterPages = missingNeighbors.drop(order + 1)
                     cancelPagePrefetches(
                         reason = "dependency_failed",
@@ -707,14 +710,19 @@ class ReaderViewModel(
         cancelPlannedRangePrefetches(reason = "stale_plan", keepPages = retainedPages)
         if (mergedRanges.isEmpty()) return
 
-        val prefetchRanges = mergedRanges.flatMap(::missingPlannedRangeSegments)
+        val budgetedPrefetch = limitPlannedRangesByBudget(
+            mergedRanges.flatMap(::missingPlannedRangeSegments),
+        )
+        val prefetchRanges = budgetedPrefetch.ranges
         if (prefetchRanges.isEmpty()) return
 
         val plannedBytes = prefetchRanges.sumOf { it.endInclusive - it.start + 1 }
         ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
-            "planned_range_prefetch_plan count=${prefetchRanges.size} bytes=$plannedBytes generation=$expectedGeneration"
+            "planned_range_prefetch_plan count=${prefetchRanges.size} bytes=$plannedBytes " +
+                "skippedCount=${budgetedPrefetch.skippedCount} skippedBytes=${budgetedPrefetch.skippedBytes} " +
+                "generation=$expectedGeneration"
         }
-        prefetchRanges.sortedBy { it.priority }.forEach { range ->
+        prefetchRanges.forEach { range ->
             val key = range.key()
             val protectedRanges = protectedPlannedByteRanges(prefetchRanges, excludedKey = key)
             val job = plannedRangeScope.launch(start = CoroutineStart.LAZY) {
@@ -735,6 +743,7 @@ class ReaderViewModel(
                 } catch (error: CancellationException) {
                     // Expected stale-plan cancellation is logged by the reconciler.
                 } catch (error: Throwable) {
+                    if (error.isExpectedReaderCancellation()) return@launch
                     if (expectedGeneration == generation) {
                         ReaderDiagnosticLog.error(
                             "planned_range_prefetch_failed start=${range.start} end=${range.endInclusive}",
@@ -1023,6 +1032,16 @@ class ReaderViewModel(
         }
     }
 
+    private fun Throwable.isExpectedReaderCancellation(): Boolean {
+        if (this is CancellationException) return true
+        cause?.let { cause ->
+            if (cause.isExpectedReaderCancellation()) return true
+        }
+        val text = message ?: return false
+        return text.contains("CancellationException") &&
+            EXPECTED_READER_CANCELLATION_MESSAGES.any { text.contains(it) }
+    }
+
     private companion object {
         const val PREFETCH_START_DELAY_MS = 150L
         const val PREFETCH_STAGGER_MS = 1L
@@ -1036,5 +1055,12 @@ class ReaderViewModel(
         const val LOAD_REASON_INITIAL = "initial"
         const val LOAD_REASON_SELECT = "select"
         const val LOAD_REASON_PREFETCH = "prefetch"
+        val EXPECTED_READER_CANCELLATION_MESSAGES = listOf(
+            "range fetch cancelled",
+            "range prefetch cancelled",
+            "range request cancelled",
+            "range provider closed",
+            "reader session changed",
+        )
     }
 }

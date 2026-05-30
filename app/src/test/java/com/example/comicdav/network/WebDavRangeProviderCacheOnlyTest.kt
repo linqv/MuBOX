@@ -201,6 +201,48 @@ class WebDavRangeProviderCacheOnlyTest {
     }
 
     @Test
+    fun cancelPrefetchesCancelsInFlightDemandRequestForReaderClose() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val readStarted = CountDownLatch(1)
+        val cancellationRegistered = CountDownLatch(1)
+        val cancellationCalled = CountDownLatch(1)
+        val client = CancellableBlockingWebDavClient(
+            bytes = bytes,
+            readStarted = readStarted,
+            cancellationRegistered = cancellationRegistered,
+            cancellationCalled = cancellationCalled,
+        )
+        val provider = WebDavRangeProvider(
+            client = client,
+            path = "/books/book.cbz",
+            size = bytes.size.toLong(),
+            readAheadBytes = 0,
+            logDiagnostic = {},
+        )
+        val readError = AtomicReference<Throwable?>()
+        val readThread = Thread {
+            readError.set(runCatching { provider.readRange(fileId = 1L, start = 40, endInclusive = 79) }.exceptionOrNull())
+        }
+
+        readThread.start()
+        assertTrue(readStarted.await(1, TimeUnit.SECONDS))
+        assertTrue(cancellationRegistered.await(1, TimeUnit.SECONDS))
+
+        try {
+            provider.cancelPrefetches()
+
+            assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
+            readThread.join(1_000)
+            assertFalse(readThread.isAlive)
+            assertTrue(readError.get() is CancellationException)
+            assertEquals(listOf(40L to 79L), client.rangeCalls)
+        } finally {
+            provider.close()
+            readThread.join(1_000)
+        }
+    }
+
+    @Test
     fun registryExposesCacheOnlyRangeRead() {
         val bytes = ByteArray(128) { it.toByte() }
         val provider = WebDavRangeProvider(
