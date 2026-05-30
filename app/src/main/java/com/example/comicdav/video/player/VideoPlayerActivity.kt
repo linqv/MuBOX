@@ -453,6 +453,7 @@ class VideoPlayerActivity : ComponentActivity() {
             }
             if (isFinishing) return false
             mpvView.initialize(filesDir.path, cacheDir.path)
+            mpvView.attachExistingSurfaceIfReady()
             mpvInitialized = true
             MPVLib.addObserver(mpvObserver)
             mpvObserverRegistered = true

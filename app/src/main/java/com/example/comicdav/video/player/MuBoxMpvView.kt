@@ -60,14 +60,28 @@ class MuBoxMpvView(
     override fun postInitOptions() = Unit
 
     override fun surfaceCreated(holder: SurfaceHolder) {
+        if (surfaceAttached) return
         surfaceAttached = true
         super.surfaceCreated(holder)
         flushPendingAfterLoadfileActions()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        if (!surfaceAttached) return
         surfaceAttached = false
         super.surfaceDestroyed(holder)
+    }
+
+    fun attachExistingSurfaceIfReady() {
+        if (surfaceAttached) return
+        val surface = holder.surface ?: return
+        if (!surface.isValid) return
+
+        surfaceCreated(holder)
+        val frame = holder.surfaceFrame
+        if (frame.width() > 0 && frame.height() > 0) {
+            surfaceChanged(holder, 0, frame.width(), frame.height())
+        }
     }
 
     override fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {

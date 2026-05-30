@@ -138,6 +138,165 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun sameSocketServesSequentialRangeRequests() = runTest {
+        val client = RecordingClient("0123456789".toByteArray())
+        val url = startProxy(client = client, size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(
+                buildRequest(parsed, method = "GET", range = "bytes=0-2"),
+            )
+            val first = exchange.readResponse()
+            exchange.writeRequest(
+                buildRequest(parsed, method = "GET", range = "bytes=3-5"),
+            )
+            val second = exchange.readResponse()
+
+            assertEquals(206, first.code)
+            assertEquals("keep-alive", first.header("Connection"))
+            assertArrayEquals("012".toByteArray(), first.body)
+            assertEquals(206, second.code)
+            assertArrayEquals("345".toByteArray(), second.body)
+        }
+    }
+
+    @Test
+    fun connectionCloseResponseClosesSocketAfterBody() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(
+                buildRequest(parsed, method = "GET", range = "bytes=0-2", connection = "close"),
+            )
+            val response = exchange.readResponse()
+
+            assertEquals(206, response.code)
+            assertEquals("close", response.header("Connection"))
+            assertArrayEquals("012".toByteArray(), response.body)
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
+    fun fullBodyGetWithKnownLengthCanBeFollowedByRangeOnSameSocket() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "GET"))
+            val full = exchange.readResponse()
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=8-9"))
+            val range = exchange.readResponse()
+
+            assertEquals(200, full.code)
+            assertEquals("10", full.header("Content-Length"))
+            assertEquals("keep-alive", full.header("Connection"))
+            assertArrayEquals("0123456789".toByteArray(), full.body)
+            assertEquals(206, range.code)
+            assertArrayEquals("89".toByteArray(), range.body)
+        }
+    }
+
+    @Test
+    fun rangeResponseWithLongerUpstreamBodyClosesSocketAfterDeclaredLength() = runTest {
+        val url = startProxy(client = MismatchedRangeBodyClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=2-4"))
+            val response = exchange.readResponse()
+
+            assertEquals(206, response.code)
+            assertEquals("3", response.header("Content-Length"))
+            assertEquals(3, response.body.size)
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
+    fun rangeResponseWithShorterUpstreamBodyClosesSocket() = runTest {
+        val url = startProxy(client = MismatchedRangeBodyClient("01".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=0-2"))
+            val response = exchange.readResponseUntilClosed()
+
+            assertEquals(206, response.code)
+            assertEquals("3", response.header("Content-Length"))
+            assertArrayEquals("01".toByteArray(), response.body)
+        }
+    }
+
+    @Test
+    fun headCanBeFollowedByGetOnSameSocket() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "HEAD"))
+            val head = exchange.readResponse(expectBody = false)
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=6-9"))
+            val get = exchange.readResponse()
+
+            assertEquals(200, head.code)
+            assertEquals("10", head.header("Content-Length"))
+            assertEquals("keep-alive", head.header("Connection"))
+            assertArrayEquals(ByteArray(0), head.body)
+            assertEquals(206, get.code)
+            assertArrayEquals("6789".toByteArray(), get.body)
+        }
+    }
+
+    @Test
+    fun http10KeepsAliveOnlyWhenRequested() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(
+                buildRequest(parsed, method = "GET", version = "HTTP/1.0", range = "bytes=0-1", connection = "keep-alive"),
+            )
+            val first = exchange.readResponse()
+            exchange.writeRequest(
+                buildRequest(parsed, method = "GET", version = "HTTP/1.0", range = "bytes=2-3", connection = "close"),
+            )
+            val second = exchange.readResponse()
+
+            assertEquals(206, first.code)
+            assertEquals("keep-alive", first.header("Connection"))
+            assertArrayEquals("01".toByteArray(), first.body)
+            assertEquals(206, second.code)
+            assertEquals("close", second.header("Connection"))
+            assertArrayEquals("23".toByteArray(), second.body)
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
     fun repeatedRangeRequestUsesCacheWhenSeekOptimizationIsEnabled() = runTest {
         val client = RecordingClient("0123456789".toByteArray())
         val url = startProxy(
@@ -460,6 +619,24 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun rangeNotSatisfiableClosesConnection() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=20-30"))
+            val response = exchange.readResponse()
+
+            assertEquals(416, response.code)
+            assertEquals("close", response.header("Connection"))
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
     fun registerGeneratesUnpredictableNonSequentialStreamIds() = runTest {
         val client = RecordingClient("0123456789".toByteArray())
         val firstUrl = startProxy(client = client, size = 10L)
@@ -576,6 +753,25 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun remoteStreamFailureClosesConnection() = runTest {
+        val client = FailingClient(streamError = WebDavException.InvalidContentRange("bad range"))
+        val url = startProxy(client = client, size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(buildRequest(parsed, method = "GET", range = "bytes=0-2"))
+            val response = exchange.readResponse()
+
+            assertEquals(502, response.code)
+            assertEquals("close", response.header("Connection"))
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
     fun openEndedRemoteStreamFailureDoesNotRetryDirectRange() = runTest {
         val client = FailingClient(streamError = WebDavException.InvalidContentRange("bad range"))
         val url = startProxy(client = client, size = 10L)
@@ -679,6 +875,32 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun oversizedRequestHeaderClosesConnection() = runTest {
+        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
+        val parsed = URL(url)
+
+        Socket(parsed.host, parsed.port).use { socket ->
+            socket.soTimeout = 2_000
+            val exchange = RawHttpExchange(socket)
+
+            exchange.writeRequest(
+                buildString {
+                    append("GET ${parsed.path} HTTP/1.1\r\n")
+                    append("Host: ${parsed.host}:${parsed.port}\r\n")
+                    append("X-Fill: ")
+                    append("x".repeat(70 * 1024))
+                    append("\r\n\r\n")
+                },
+            )
+            val response = exchange.readResponse()
+
+            assertEquals(431, response.code)
+            assertEquals("close", response.header("Connection"))
+            exchange.assertClosed()
+        }
+    }
+
+    @Test
     fun idleHeaderConnectionTimesOutAndProxyStaysUsable() = runTest {
         val localProxy = MuBoxVideoProxy(
             clientProvider = { RecordingClient("0123456789".toByteArray()) },
@@ -760,6 +982,20 @@ class MuBoxVideoProxyTest {
 
     private fun streamIdFromUrl(url: String): String =
         URL(url).path.removePrefix("/stream/").substringBefore('/')
+
+    private fun buildRequest(
+        parsed: URL,
+        method: String,
+        version: String = "HTTP/1.1",
+        range: String? = null,
+        connection: String? = null,
+    ): String = buildString {
+        append("$method ${parsed.path} $version\r\n")
+        append("Host: ${parsed.host}:${parsed.port}\r\n")
+        range?.let { append("Range: $it\r\n") }
+        connection?.let { append("Connection: $it\r\n") }
+        append("\r\n")
+    }
 
     private fun httpRequest(url: String, method: String, range: String? = null): HttpResponse {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -858,6 +1094,136 @@ class MuBoxVideoProxyTest {
         val body: ByteArray,
     )
 
+    private data class RawHttpResponse(
+        val code: Int,
+        val headers: Map<String, String>,
+        val body: ByteArray,
+    ) {
+        fun header(name: String): String? =
+            headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+    }
+
+    private class RawHttpExchange(
+        private val socket: Socket,
+    ) {
+        private val input = socket.getInputStream()
+        private val output = socket.getOutputStream()
+
+        fun writeRequest(request: String) {
+            output.write(request.toByteArray(Charsets.ISO_8859_1))
+            output.flush()
+        }
+
+        fun readResponse(expectBody: Boolean = true): RawHttpResponse {
+            val headerBytes = readHeaderBytes()
+            val headerBlock = headerBytes.toString(Charsets.ISO_8859_1)
+            val (code, headers) = parseHeaderBlock(headerBlock)
+            val contentLength = headers.entries
+                .firstOrNull { it.key.equals("Content-Length", ignoreCase = true) }
+                ?.value
+                ?.toIntOrNull()
+                ?: 0
+            val body = if (expectBody && contentLength > 0) {
+                readExactly(contentLength)
+            } else {
+                ByteArray(0)
+            }
+            return RawHttpResponse(code, headers, body)
+        }
+
+        fun readResponseUntilClosed(): RawHttpResponse {
+            val headerBytes = readHeaderBytes()
+            val headerBlock = headerBytes.toString(Charsets.ISO_8859_1)
+            val (code, headers) = parseHeaderBlock(headerBlock)
+            val body = ByteArrayOutputStream()
+            while (true) {
+                val next = try {
+                    input.read()
+                } catch (error: SocketTimeoutException) {
+                    throw AssertionError("timed out waiting for server to close the socket", error)
+                }
+                if (next == -1) {
+                    return RawHttpResponse(code, headers, body.toByteArray())
+                }
+                body.write(next)
+            }
+        }
+
+        fun assertClosed() {
+            val previousTimeout = socket.soTimeout
+            socket.soTimeout = 500
+            try {
+                val next = input.read()
+                assertEquals("expected server to close the socket", -1, next)
+            } catch (error: SocketTimeoutException) {
+                throw AssertionError("timed out waiting for server to close the socket", error)
+            } finally {
+                socket.soTimeout = previousTimeout
+            }
+        }
+
+        private fun parseHeaderBlock(headerBlock: String): Pair<Int, Map<String, String>> {
+            val lines = headerBlock.split("\r\n").filter { it.isNotEmpty() }
+            val statusLine = lines.firstOrNull() ?: error("missing status line")
+            val code = statusLine.split(' ', limit = 3).getOrNull(1)?.toIntOrNull()
+                ?: error("missing status code in $statusLine")
+            val headers = lines.drop(1).mapNotNull { line ->
+                val separator = line.indexOf(':')
+                if (separator <= 0) {
+                    null
+                } else {
+                    line.substring(0, separator) to line.substring(separator + 1).trim()
+                }
+            }.toMap()
+            return code to headers
+        }
+
+        private fun readHeaderBytes(): ByteArray {
+            val buffer = ByteArrayOutputStream()
+            val terminator = "\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
+            while (true) {
+                val next = input.read()
+                if (next == -1) {
+                    throw AssertionError("connection closed before response headers")
+                }
+                buffer.write(next)
+                val bytes = buffer.toByteArray()
+                val headerEnd = bytes.indexOfPattern(terminator)
+                if (headerEnd >= 0) {
+                    return bytes.copyOfRange(0, headerEnd)
+                }
+            }
+        }
+
+        private fun readExactly(length: Int): ByteArray {
+            val body = ByteArray(length)
+            var offset = 0
+            while (offset < length) {
+                val count = input.read(body, offset, length - offset)
+                if (count == -1) {
+                    throw AssertionError("connection closed before $length body bytes")
+                }
+                offset += count
+            }
+            return body
+        }
+
+        private fun ByteArray.indexOfPattern(pattern: ByteArray): Int {
+            if (pattern.isEmpty() || size < pattern.size) return -1
+            for (index in 0..size - pattern.size) {
+                var matched = true
+                for (patternIndex in pattern.indices) {
+                    if (this[index + patternIndex] != pattern[patternIndex]) {
+                        matched = false
+                        break
+                    }
+                }
+                if (matched) return index
+            }
+            return -1
+        }
+    }
+
     private class RecordingClient(
         private val bytes: ByteArray,
     ) : WebDavClient {
@@ -903,6 +1269,36 @@ class MuBoxVideoProxyTest {
                 close = {},
             )
         }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+    }
+
+    private class MismatchedRangeBodyClient(
+        private val rangeBody: ByteArray,
+    ) : WebDavClient {
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 10L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("readRange is not used by video proxy tests")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse =
+            WebDavStreamResponse(
+                stream = ByteArrayInputStream(rangeBody),
+                statusCode = 206,
+                contentLength = rangeBody.size.toLong(),
+                contentRange = null,
+                contentType = "video/mp4",
+                totalSize = 10L,
+                close = {},
+            )
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by video proxy tests")

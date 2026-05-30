@@ -47,6 +47,25 @@ class ViewBackedMpvEngineTest {
     }
 
     @Test
+    fun muboxMpvViewAttachesSurfaceThatAlreadyExistsWhenMpvIsInitializedLate() {
+        val source = mpvViewSourceFile().readText()
+        val activitySource = activitySourceFile().readText()
+
+        assertTrue(source.contains("fun attachExistingSurfaceIfReady()"))
+        assertTrue(source.contains("holder.surface"))
+        assertTrue(source.contains("surface.isValid"))
+        assertTrue(source.contains("surfaceCreated(holder)"))
+        assertTrue(source.contains("surfaceChanged(holder, 0, frame.width(), frame.height())"))
+
+        val initializeIndex = activitySource.indexOf("mpvView.initialize(filesDir.path, cacheDir.path)")
+        val attachIndex = activitySource.indexOf("mpvView.attachExistingSurfaceIfReady()")
+
+        assertTrue(initializeIndex >= 0)
+        assertTrue(attachIndex >= 0)
+        assertTrue(initializeIndex < attachIndex)
+    }
+
+    @Test
     fun muboxMpvViewAppliesConfiguredMpvProfileBeforeOtherVideoOptions() {
         val source = mpvViewSourceFile().readText()
 
