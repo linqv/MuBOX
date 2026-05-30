@@ -4,6 +4,7 @@ import com.example.comicdav.network.ContentRange
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavStreamResponse
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
@@ -11,8 +12,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
-import kotlin.math.max
-import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -112,29 +111,20 @@ internal class VideoSeekOptimizer(
         }
 
         val slices = ArrayList<ByteArray>()
-        for (segmentIndex in firstSegmentIndex..lastSegmentIndex) {
-            val segmentStart = segmentIndex * segmentBytes
-            val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
-            val sliceStart = max(start, segmentStart)
-            val sliceEnd = min(endInclusive, segmentEnd)
-            val cachedSlice = cache.getSegmentSlice(request.streamId, segmentIndex, sliceStart, sliceEnd)
+        for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
+            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics)
             if (cachedSlice != null) {
-                diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
-                diagnostics.detail {
-                    "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
-                        "segment=$segmentIndex range=$segmentStart-$segmentEnd cache_bytes=${cache.totalBytes()}"
-                }
                 slices += cachedSlice
             } else {
                 val segment = getOrFetchSegment(
                     client = client,
                     request = request,
                     totalSize = totalSize,
-                    segmentIndex = segmentIndex,
+                    segmentIndex = segmentSlice.segmentIndex,
                     diagnostics = diagnostics,
                     waiterKind = WaiterKind.FOREGROUND,
                 )
-                slices += segment.slice(sliceStart, sliceEnd)
+                slices += segment.slice(segmentSlice.sliceStart, segmentSlice.sliceEnd)
             }
         }
 
@@ -157,6 +147,85 @@ internal class VideoSeekOptimizer(
             totalSize = totalSize,
             close = {},
         )
+    }
+
+    suspend fun openStreamingRangeWithCacheWarmup(
+        client: WebDavClient,
+        request: VideoStreamRequest,
+        totalSize: Long,
+        start: Long,
+        endInclusive: Long,
+        settings: VideoProxySettings,
+    ): WebDavStreamResponse {
+        ensureOpen()
+        require(totalSize >= 0L) { "totalSize must not be negative" }
+        require(start >= 0L) { "start must not be negative" }
+        require(endInclusive >= start) { "endInclusive must be greater than or equal to start" }
+        require(endInclusive < totalSize) { "endInclusive must be inside totalSize" }
+
+        if (!settings.seekOptimizationEnabled) {
+            return client.openRangeStream(request.remotePath, start, endInclusive)
+        }
+
+        val diagnostics = VideoProxyDiagnostics(settings.diagnosticsMode)
+        val firstSegmentIndex = segmentIndexFor(start)
+        val lastSegmentIndex = segmentIndexFor(endInclusive)
+        val foregroundSegments = segmentIndexesBetween(firstSegmentIndex, lastSegmentIndex)
+        val foregroundGeneration = beginForegroundGeneration(
+            streamId = request.streamId,
+            foregroundSegments = foregroundSegments,
+        )
+
+        cachedRangeResponseOrNull(
+            request = request,
+            totalSize = totalSize,
+            start = start,
+            endInclusive = endInclusive,
+            diagnostics = diagnostics,
+        )?.let { cachedResponse ->
+            schedulePrefetchSegments(
+                client = client,
+                request = request,
+                totalSize = totalSize,
+                segmentIndexes = openEndedForwardSegmentIndexes(
+                    streamId = request.streamId,
+                    foregroundSegmentCount = foregroundSegments.size,
+                    highestSegmentIndex = lastSegmentIndex,
+                    totalSize = totalSize,
+                    settings = settings,
+                ),
+                diagnostics = diagnostics,
+                generation = foregroundGeneration,
+            )
+            return cachedResponse
+        }
+
+        diagnostics.summary { "open_ended_direct stream=${diagnostics.streamId(request.streamId)}" }
+        diagnostics.detail {
+            "open_ended_direct stream=${diagnostics.streamId(request.streamId)} range=$start-$endInclusive"
+        }
+        val directResponse = client.openRangeStream(request.remotePath, start, endInclusive)
+        val cachingResponse = directResponse.withSegmentCaching(
+            request = request,
+            totalSize = totalSize,
+            start = start,
+            diagnostics = diagnostics,
+        )
+        schedulePrefetchSegments(
+            client = client,
+            request = request,
+            totalSize = totalSize,
+            segmentIndexes = openEndedForwardSegmentIndexes(
+                streamId = request.streamId,
+                foregroundSegmentCount = foregroundSegments.size,
+                highestSegmentIndex = lastSegmentIndex,
+                totalSize = totalSize,
+                settings = settings,
+            ),
+            diagnostics = diagnostics,
+            generation = foregroundGeneration,
+        )
+        return cachingResponse
     }
 
     fun removeStream(streamId: String) {
@@ -183,6 +252,125 @@ internal class VideoSeekOptimizer(
         inFlight.clear()
         activeResponses.keys.toList().forEach(::closeActiveResponses)
         cache.clear()
+    }
+
+    private fun cachedRangeResponseOrNull(
+        request: VideoStreamRequest,
+        totalSize: Long,
+        start: Long,
+        endInclusive: Long,
+        diagnostics: VideoProxyDiagnostics,
+    ): WebDavStreamResponse? {
+        val requestedBytes = checkedRequestedByteCount(start, endInclusive)
+        val slices = ArrayList<ByteArray>()
+        for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
+            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics) ?: return null
+            slices += cachedSlice
+        }
+        return WebDavStreamResponse(
+            stream = ByteArraySlicesInputStream(slices),
+            statusCode = 206,
+            contentLength = requestedBytes.toLong(),
+            contentRange = ContentRange(start, endInclusive, totalSize),
+            contentType = request.mimeType,
+            totalSize = totalSize,
+            close = {},
+        )
+    }
+
+    private fun segmentSlices(
+        totalSize: Long,
+        start: Long,
+        endInclusive: Long,
+    ): List<RequestedSegmentSlice> {
+        val firstSegmentIndex = segmentIndexFor(start)
+        val lastSegmentIndex = segmentIndexFor(endInclusive)
+        val slices = ArrayList<RequestedSegmentSlice>()
+        for (segmentIndex in firstSegmentIndex..lastSegmentIndex) {
+            val segmentStart = segmentIndex * segmentBytes
+            val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
+            slices += RequestedSegmentSlice(
+                segmentIndex = segmentIndex,
+                segmentStart = segmentStart,
+                segmentEnd = segmentEnd,
+                sliceStart = maxOf(start, segmentStart),
+                sliceEnd = minOf(endInclusive, segmentEnd),
+            )
+        }
+        return slices
+    }
+
+    private fun cachedSegmentSliceOrNull(
+        request: VideoStreamRequest,
+        segmentSlice: RequestedSegmentSlice,
+        diagnostics: VideoProxyDiagnostics,
+    ): ByteArray? {
+        val cachedSlice = cache.getSegmentSlice(
+            streamId = request.streamId,
+            segmentIndex = segmentSlice.segmentIndex,
+            start = segmentSlice.sliceStart,
+            endInclusive = segmentSlice.sliceEnd,
+        ) ?: return null
+        diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
+        diagnostics.detail {
+            "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
+                "segment=${segmentSlice.segmentIndex} range=${segmentSlice.segmentStart}-${segmentSlice.segmentEnd} " +
+                "cache_bytes=${cache.totalBytes()}"
+        }
+        return cachedSlice
+    }
+
+    private fun openEndedForwardSegmentIndexes(
+        streamId: String,
+        foregroundSegmentCount: Int,
+        highestSegmentIndex: Long,
+        totalSize: Long,
+        settings: VideoProxySettings,
+    ): List<Long> {
+        val segmentIndexes = ArrayList<Long>()
+        val forwardSegmentCount = foregroundSegmentCount.coerceAtLeast(1)
+        // Open-ended proxy responses are bounded in local chunks (currently 8 MiB),
+        // which span several cache segments. Treat STANDARD/AGGRESSIVE as chunk
+        // counts here so sequential bytes=X- requests can be fully cache-covered.
+        for (offset in 1..settings.forwardPrefetchMode.segmentCount) {
+            for (segmentOffset in 1..forwardSegmentCount) {
+                val segmentIndex = highestSegmentIndex + ((offset - 1) * forwardSegmentCount) + segmentOffset
+                val segmentStart = segmentIndex * segmentBytes
+                if (segmentStart >= totalSize) continue
+                if (!cache.containsSegment(streamId, segmentIndex)) {
+                    segmentIndexes += segmentIndex
+                }
+            }
+        }
+        return segmentIndexes.distinct()
+    }
+
+    private fun WebDavStreamResponse.withSegmentCaching(
+        request: VideoStreamRequest,
+        totalSize: Long,
+        start: Long,
+        diagnostics: VideoProxyDiagnostics,
+    ): WebDavStreamResponse {
+        val upstreamClose = close
+        val cachingStream = SegmentCachingInputStream(
+            delegate = stream,
+            request = request,
+            totalSize = totalSize,
+            firstByteOffset = start,
+            segmentBytes = segmentBytes,
+            cache = cache,
+            diagnostics = diagnostics,
+        )
+        return copy(
+            stream = cachingStream,
+            close = {
+                try {
+                    cachingStream.close()
+                } finally {
+                    upstreamClose()
+                }
+            },
+        )
     }
 
     private suspend fun openDirectRange(
@@ -622,6 +810,14 @@ internal class VideoSeekOptimizer(
         val segmentIndex: Long,
     )
 
+    private data class RequestedSegmentSlice(
+        val segmentIndex: Long,
+        val segmentStart: Long,
+        val segmentEnd: Long,
+        val sliceStart: Long,
+        val sliceEnd: Long,
+    )
+
     private class InFlightSegment(
         val deferred: Deferred<VideoRangeMemoryCache.Segment>,
     ) {
@@ -701,6 +897,107 @@ internal class VideoSeekOptimizer(
                 total += count
             }
             return if (total == 0) -1 else total
+        }
+    }
+
+    private class SegmentCachingInputStream(
+        private val delegate: InputStream,
+        private val request: VideoStreamRequest,
+        private val totalSize: Long,
+        private val firstByteOffset: Long,
+        private val segmentBytes: Long,
+        private val cache: VideoRangeMemoryCache,
+        private val diagnostics: VideoProxyDiagnostics,
+    ) : InputStream() {
+        private var nextOffset = firstByteOffset
+        private var segmentIndex = firstByteOffset / segmentBytes
+        private var segmentStart = segmentIndex * segmentBytes
+        private var segmentBuffer = ByteArrayOutputStream()
+        private var closed = false
+
+        override fun read(): Int {
+            val value = delegate.read()
+            if (value >= 0) {
+                recordByte(value.toByte())
+            } else {
+                flushCompletedSegmentAtEndOfStream()
+            }
+            return value
+        }
+
+        override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+            val count = delegate.read(buffer, off, len)
+            if (count > 0) {
+                recordBytes(buffer, off, count)
+            } else if (count == -1) {
+                flushCompletedSegmentAtEndOfStream()
+            }
+            return count
+        }
+
+        override fun close() {
+            if (closed) return
+            closed = true
+            delegate.close()
+        }
+
+        private fun recordByte(byte: Byte) {
+            segmentBuffer.write(byte.toInt())
+            nextOffset += 1L
+            finishSegmentIfBoundaryReached()
+        }
+
+        private fun recordBytes(buffer: ByteArray, off: Int, len: Int) {
+            var sourceOffset = off
+            var remaining = len
+            while (remaining > 0) {
+                val bytesUntilSegmentEnd = (segmentStart + expectedSegmentBytes()) - nextOffset
+                if (bytesUntilSegmentEnd <= 0L) {
+                    finishSegmentIfBoundaryReached()
+                    continue
+                }
+                val count = minOf(remaining.toLong(), bytesUntilSegmentEnd).toInt()
+                segmentBuffer.write(buffer, sourceOffset, count)
+                sourceOffset += count
+                remaining -= count
+                nextOffset += count.toLong()
+                finishSegmentIfBoundaryReached()
+            }
+        }
+
+        private fun finishSegmentIfBoundaryReached() {
+            val expectedBytes = expectedSegmentBytes()
+            val reachedSegmentBoundary = nextOffset >= segmentStart + expectedBytes
+            if (!reachedSegmentBoundary) return
+            if (segmentBuffer.size().toLong() == expectedBytes) {
+                storeSegment()
+            }
+            advanceSegment()
+        }
+
+        private fun flushCompletedSegmentAtEndOfStream() {
+            if (segmentBuffer.size() > 0 && segmentBuffer.size().toLong() == expectedSegmentBytes()) {
+                storeSegment()
+                advanceSegment()
+            }
+        }
+
+        private fun expectedSegmentBytes(): Long =
+            (segmentStart + segmentBytes).coerceAtMost(totalSize) - segmentStart
+
+        private fun storeSegment() {
+            val bytes = segmentBuffer.toByteArray()
+            val stored = cache.putSegment(request.streamId, segmentIndex, segmentStart, bytes)
+            diagnostics.detail {
+                "stream_cache_store stream=${diagnostics.streamId(request.streamId)} " +
+                    "segment=$segmentIndex range=$segmentStart-${segmentStart + bytes.size - 1L} stored=$stored cache_bytes=${cache.totalBytes()}"
+            }
+        }
+
+        private fun advanceSegment() {
+            segmentIndex += 1L
+            segmentStart = segmentIndex * segmentBytes
+            segmentBuffer = ByteArrayOutputStream()
         }
     }
 

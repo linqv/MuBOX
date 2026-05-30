@@ -279,6 +279,15 @@ class MuBoxVideoProxy(
                         endInclusive = range.endInclusive,
                     )
                 }
+            } else if (range.isOpenEnded) {
+                seekOptimizer.openStreamingRangeWithCacheWarmup(
+                    client = client,
+                    request = request,
+                    totalSize = info.size,
+                    start = range.start,
+                    endInclusive = range.endInclusive,
+                    settings = request.proxySettings,
+                )
             } else {
                 client.openRangeStream(
                     path = request.remotePath,
@@ -359,6 +368,7 @@ class MuBoxVideoProxy(
                 start = start,
                 endInclusive = totalSize - 1,
                 seekOptimizationEligible = false,
+                isOpenEnded = false,
             )
         }
         val start = startValue.toLongOrNull() ?: return ParsedRange.Invalid
@@ -371,6 +381,7 @@ class MuBoxVideoProxy(
             start = start,
             endInclusive = boundedEnd,
             seekOptimizationEligible = hasExplicitEnd,
+            isOpenEnded = !hasExplicitEnd,
         )
     }
 
@@ -466,6 +477,7 @@ class MuBoxVideoProxy(
             val start: Long,
             val endInclusive: Long,
             val seekOptimizationEligible: Boolean,
+            val isOpenEnded: Boolean,
         ) : ParsedRange() {
             val byteCount: Long
                 get() = endInclusive - start + 1L

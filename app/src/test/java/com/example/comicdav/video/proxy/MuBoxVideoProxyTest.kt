@@ -327,12 +327,12 @@ class MuBoxVideoProxyTest {
 
         assertEquals(206, response.code)
         assertEquals("bytes 2-9/10", response.headers["Content-Range"])
-        assertEquals(listOf(2L to 9L), client.openRangeCalls)
+        assertEquals(2L to 9L, client.openRangeCalls.first())
         assertArrayEquals("23456789".toByteArray(), response.body)
     }
 
     @Test
-    fun openEndedRangeUsesDirectRemoteRangeToPreserveStreamingStartup() = runTest {
+    fun openEndedRangeWarmsCacheAndUsesCachedSegmentsOnLaterOpenEndedRequest() = runTest {
         val segmentBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES.toInt()
         val bytes = ByteArray(segmentBytes + 8) { (it % 251).toByte() }
         val client = RecordingClient(bytes)
@@ -352,10 +352,50 @@ class MuBoxVideoProxyTest {
         assertEquals(
             listOf(
                 0L to bytes.lastIndex.toLong(),
-                (segmentBytes - 4).toLong() to bytes.lastIndex.toLong(),
             ),
             client.openRangeCalls,
         )
+    }
+
+    @Test
+    fun openEndedRangePrefetchesNextLocalChunkForSequentialPlayback() = runTest {
+        val segmentBytes = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES.toInt()
+        val chunkBytes = segmentBytes * 4
+        val bytes = ByteArray(chunkBytes * 3) { (it % 251).toByte() }
+        val client = RecordingClient(bytes)
+        val url = startProxy(
+            client = client,
+            size = bytes.size.toLong(),
+            proxySettings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.STANDARD),
+        )
+        fun segmentRange(index: Int): Pair<Long, Long?> {
+            val start = index.toLong() * segmentBytes.toLong()
+            val end = (start + segmentBytes.toLong() - 1L).coerceAtMost(bytes.lastIndex.toLong())
+            return start to end
+        }
+        val expectedAfterFirst = listOf(0L to chunkBytes.toLong() - 1L) +
+            (4 until 8).map(::segmentRange)
+        val expectedAfterSecond = expectedAfterFirst + (8 until 12).map(::segmentRange)
+
+        val first = httpRequest(url, method = "GET", range = "bytes=0-")
+        eventually {
+            assertEquals(expectedAfterFirst, client.openRangeCalls)
+        }
+
+        val second = httpRequest(url, method = "GET", range = "bytes=$chunkBytes-")
+        eventually {
+            assertEquals(expectedAfterSecond, client.openRangeCalls)
+        }
+        val third = httpRequest(url, method = "GET", range = "bytes=${chunkBytes * 2}-")
+
+        assertEquals(206, first.code)
+        assertEquals(206, second.code)
+        assertEquals(206, third.code)
+        assertArrayEquals(bytes.copyOfRange(0, chunkBytes), first.body)
+        assertArrayEquals(bytes.copyOfRange(chunkBytes, chunkBytes * 2), second.body)
+        assertArrayEquals(bytes.copyOfRange(chunkBytes * 2, bytes.size), third.body)
+        assertFalse(client.openRangeCalls.contains(chunkBytes.toLong() to chunkBytes.toLong() * 2L - 1L))
+        assertFalse(client.openRangeCalls.contains(chunkBytes.toLong() * 2L to bytes.lastIndex.toLong()))
     }
 
     @Test
@@ -533,6 +573,17 @@ class MuBoxVideoProxyTest {
         val response = httpRequest(url, method = "GET", range = "bytes=0-2")
 
         assertEquals(502, response.code)
+    }
+
+    @Test
+    fun openEndedRemoteStreamFailureDoesNotRetryDirectRange() = runTest {
+        val client = FailingClient(streamError = WebDavException.InvalidContentRange("bad range"))
+        val url = startProxy(client = client, size = 10L)
+
+        val response = httpRequest(url, method = "GET", range = "bytes=0-")
+
+        assertEquals(502, response.code)
+        assertEquals(1, client.openRangeCallCount.get())
     }
 
     @Test
@@ -810,8 +861,8 @@ class MuBoxVideoProxyTest {
     private class RecordingClient(
         private val bytes: ByteArray,
     ) : WebDavClient {
-        val openRangeCalls = mutableListOf<Pair<Long, Long?>>()
-        val fullStreamCalls = mutableListOf<String>()
+        val openRangeCalls = CopyOnWriteArrayList<Pair<Long, Long?>>()
+        val fullStreamCalls = CopyOnWriteArrayList<String>()
 
         override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
 
@@ -927,6 +978,8 @@ class MuBoxVideoProxyTest {
         private val headError: Throwable? = null,
         private val streamError: Throwable? = null,
     ) : WebDavClient {
+        val openRangeCallCount = AtomicInteger(0)
+
         override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
 
         override suspend fun head(path: String): RemoteFileInfo {
@@ -942,6 +995,7 @@ class MuBoxVideoProxyTest {
             start: Long,
             endInclusive: Long?,
         ): WebDavStreamResponse {
+            openRangeCallCount.incrementAndGet()
             streamError?.let { throw it }
             val chunk = "012".toByteArray()
             return WebDavStreamResponse(
