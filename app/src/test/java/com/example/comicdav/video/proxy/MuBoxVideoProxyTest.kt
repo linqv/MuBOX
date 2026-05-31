@@ -8,7 +8,9 @@ import com.example.comicdav.network.WebDavStreamResponse
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.PrintStream
 import java.net.HttpURLConnection
@@ -106,6 +108,27 @@ class MuBoxVideoProxyTest {
         val socket = proxy!!.serverSocketForTest()
 
         assertEquals("127.0.0.1", socket.inetAddress.hostAddress)
+    }
+
+    @Test
+    fun defaultPortUsesOperatingSystemAssignedPort() = runTest {
+        var requestedPort: Int? = null
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient("0123456789".toByteArray()) },
+            coroutineScope = scope,
+            serverSocketFactory = { host, port ->
+                requestedPort = port
+                ServerSocket().apply {
+                    bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
+                }
+            },
+        )
+        proxy = localProxy
+
+        localProxy.start()
+
+        assertEquals(0, requestedPort)
+        assertTrue(localProxy.serverSocketForTest().localPort > 0)
     }
 
     @Test
@@ -693,6 +716,31 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun unregisterCancelsOpeningDirectRangeRequest() = runTest {
+        val client = CancellableOpeningRangeClient()
+        val streamUrl = startProxy(
+            client = client,
+            size = 10L,
+            proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false),
+        )
+        val streamId = streamIdFromUrl(streamUrl)
+        val requestThread = thread(start = true) {
+            runCatching {
+                httpRequest(streamUrl, method = "GET", range = "bytes=0-2")
+            }
+        }
+        assertTrue(client.openStarted.await(2, TimeUnit.SECONDS))
+
+        proxy?.unregister(streamId)
+        val cancelled = client.cancelled.await(500, TimeUnit.MILLISECONDS)
+        client.release()
+        requestThread.join(1_000)
+
+        assertTrue("unregister should cancel the in-flight WebDAV call before response headers", cancelled)
+        assertTrue("proxy should use the cancellable WebDavClient overload", client.cancellableOverloadUsed.get())
+    }
+
+    @Test
     fun clientDisconnectDuringRangeStreamDoesNotBreakProxy() = runTest {
         val exceptionCount = AtomicInteger(0)
         val localScope = CoroutineScope(
@@ -932,6 +980,62 @@ class MuBoxVideoProxyTest {
         assertTrue(timedOut)
         assertEquals(206, response.code)
         assertArrayEquals("012".toByteArray(), response.body)
+    }
+
+    @Test
+    fun transientAcceptFailureDoesNotStopProxy() = runTest {
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { RecordingClient("0123456789".toByteArray()) },
+            coroutineScope = scope,
+            portRange = 0..0,
+            serverSocketFactory = { host, port ->
+                FlakyAcceptServerSocket(
+                    InetSocketAddress(InetAddress.getByName(host), port),
+                )
+            },
+        )
+        proxy = localProxy
+        localProxy.start()
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+        )
+
+        val response = httpRequest(streamUrl, method = "GET", range = "bytes=0-2")
+
+        assertEquals(206, response.code)
+        assertArrayEquals("012".toByteArray(), response.body)
+    }
+
+    @Test
+    fun statisticsTrackRangeRemoteStatusCacheHitsAndPrefetchState() = runTest {
+        val bytes = ByteArray((VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES * 3L).toInt()) { (it % 251).toByte() }
+        val client = RecordingClient(bytes)
+        val streamUrl = startProxy(
+            client = client,
+            size = bytes.size.toLong(),
+            proxySettings = VideoProxySettings.DEFAULT.copy(forwardPrefetchMode = VideoForwardPrefetchMode.STANDARD),
+        )
+        val streamId = streamIdFromUrl(streamUrl)
+
+        httpRequest(streamUrl, method = "GET", range = "bytes=0-${256 * 1024}")
+        eventually {
+            val stats = proxy!!.statistics(streamId) ?: error("missing proxy statistics")
+            assertEquals("bytes=0-262144", stats.currentRange)
+            assertEquals(206, stats.remoteHttpStatus)
+            assertTrue("prefetch state should be reported", stats.prefetchState?.isNotBlank() == true)
+        }
+        httpRequest(streamUrl, method = "GET", range = "bytes=1-3")
+
+        val stats = proxy!!.statistics(streamId) ?: error("missing proxy statistics")
+        assertTrue("cache hits should be counted after overlapping optimized request", stats.memoryCacheHits > 0L)
     }
 
     private suspend fun startProxy(
@@ -1503,6 +1607,56 @@ class MuBoxVideoProxyTest {
             error("download is not used by video proxy tests")
     }
 
+    private class CancellableOpeningRangeClient : WebDavClient {
+        val openStarted = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        val cancellableOverloadUsed = AtomicBoolean(false)
+        private val released = CountDownLatch(1)
+
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+
+        override suspend fun head(path: String): RemoteFileInfo =
+            RemoteFileInfo(path, 10L, etag = null, lastModified = null, supportsRange = true)
+
+        override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+            error("readRange is not used by video proxy tests")
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+        ): WebDavStreamResponse {
+            openStarted.countDown()
+            released.await(2, TimeUnit.SECONDS)
+            throw IOException("released")
+        }
+
+        override suspend fun openRangeStream(
+            path: String,
+            start: Long,
+            endInclusive: Long?,
+            registerCancellation: (Closeable) -> Unit,
+        ): WebDavStreamResponse {
+            cancellableOverloadUsed.set(true)
+            registerCancellation(
+                Closeable {
+                    cancelled.countDown()
+                    released.countDown()
+                },
+            )
+            openStarted.countDown()
+            released.await(2, TimeUnit.SECONDS)
+            throw IOException("released")
+        }
+
+        override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+            error("download is not used by video proxy tests")
+
+        fun release() {
+            released.countDown()
+        }
+    }
+
     private class UnknownTotalRangeClient : WebDavClient {
         private val bytes = "0123456789".toByteArray()
 
@@ -1534,5 +1688,22 @@ class MuBoxVideoProxyTest {
 
         override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by video proxy tests")
+    }
+
+    private class FlakyAcceptServerSocket(
+        bindAddress: InetSocketAddress,
+    ) : ServerSocket() {
+        private val failedOnce = AtomicBoolean(false)
+
+        init {
+            bind(bindAddress, 50)
+        }
+
+        override fun accept(): Socket {
+            if (failedOnce.compareAndSet(false, true)) {
+                throw java.io.IOException("transient accept failure")
+            }
+            return super.accept()
+        }
     }
 }

@@ -76,6 +76,11 @@ object VideoProxyManager {
         close(session.streamIds)
     }
 
+    fun statistics(streamId: String): VideoProxyRuntimeStats? =
+        synchronized(lifecycleLock) {
+            proxy?.statistics(streamId)
+        }
+
     fun shutdown() {
         synchronized(lifecycleLock) {
             shutdownLocked()

@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 class MuBoxVideoProxy(
     private val clientProvider: suspend (String) -> WebDavClient? = { null },
     private val coroutineScope: CoroutineScope,
-    private val portRange: IntRange = 49152..65535,
+    private val portRange: IntRange = 0..0,
     private val requestHeaderTimeoutMillis: Int = DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS,
     private val maxRequestHeaderBytes: Int = DEFAULT_MAX_REQUEST_HEADER_BYTES,
     private val maxRequestsPerConnection: Int = DEFAULT_MAX_REQUESTS_PER_CONNECTION,
@@ -44,7 +44,8 @@ class MuBoxVideoProxy(
     }
 
     private val registry = StreamRegistry()
-    private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope)
+    private val statsStore = VideoProxyStatsStore()
+    private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope, statsSink = statsStore)
     private val closed = AtomicBoolean(false)
     private val startMutex = Mutex()
     private var serverSocket: ServerSocket? = null
@@ -94,14 +95,19 @@ class MuBoxVideoProxy(
                 openClient = openClient,
             ),
         )
+        statsStore.registerStream(streamId)
         return "$baseUrl/stream/$streamId/${request.displayName.toUrlPathSegment()}"
     }
 
     fun unregister(streamId: String): Boolean {
         val removed = registry.remove(streamId) != null
         seekOptimizer.removeStream(streamId)
+        statsStore.removeStream(streamId)
         return removed
     }
+
+    fun statistics(streamId: String): VideoProxyRuntimeStats? =
+        statsStore.snapshot(streamId)
 
     private fun bindPort(): ServerSocket {
         var lastError: IOException? = null
@@ -117,7 +123,15 @@ class MuBoxVideoProxy(
 
     private suspend fun acceptLoop(socket: ServerSocket) {
         while (!closed.get()) {
-            val client = runCatching { socket.accept() }.getOrNull() ?: break
+            val client = try {
+                socket.accept()
+            } catch (error: IOException) {
+                if (closed.get() || socket.isClosed) {
+                    break
+                }
+                logAcceptFailure(error)
+                continue
+            }
             coroutineScope.launch(Dispatchers.IO) {
                 try {
                     handleConnection(client)
@@ -261,9 +275,16 @@ class MuBoxVideoProxy(
             null -> null
             ParsedRange.Invalid -> null
         }
+        statsStore.updateCurrentRange(request.streamId, range?.toRangeHeaderValue())
+        statsStore.updateDiagnosticMessage(request.streamId, null)
+        statsStore.updateRemoteStatus(request.streamId, null)
+        val requestCancellation = RequestCancellation()
+        if (!registry.addActive(request.streamId, requestCancellation)) {
+            return writeSimpleResponse(writer, 404)
+        }
         val response = try {
             if (range == null) {
-                client.openFullStream(request.remotePath)
+                client.openFullStream(request.remotePath, requestCancellation::add)
             } else if (shouldUseSeekOptimizer(request, range)) {
                 runCatchingCancellable {
                     seekOptimizer.openRangeStream(
@@ -273,6 +294,7 @@ class MuBoxVideoProxy(
                         start = range.start,
                         endInclusive = range.endInclusive,
                         settings = request.proxySettings,
+                        registerCancellation = requestCancellation::add,
                     )
                 }.getOrElse { error ->
                     VideoProxyDiagnostics(request.proxySettings.diagnosticsMode).summary {
@@ -284,6 +306,7 @@ class MuBoxVideoProxy(
                         path = request.remotePath,
                         start = range.start,
                         endInclusive = range.endInclusive,
+                        registerCancellation = requestCancellation::add,
                     )
                 }
             } else if (range.isOpenEnded) {
@@ -294,12 +317,14 @@ class MuBoxVideoProxy(
                     start = range.start,
                     endInclusive = range.endInclusive,
                     settings = request.proxySettings,
+                    registerCancellation = requestCancellation::add,
                 )
             } else {
                 client.openRangeStream(
                     path = request.remotePath,
                     start = range.start,
                     endInclusive = range.endInclusive,
+                    registerCancellation = requestCancellation::add,
                 )
             }
         } catch (error: CancellationException) {
@@ -307,7 +332,10 @@ class MuBoxVideoProxy(
         } catch (error: Exception) {
             logProxyFailure("GET stream", request, error)
             return writeSimpleResponse(writer, 502)
+        } finally {
+            registry.removeActive(request.streamId, requestCancellation)
         }
+        statsStore.updateRemoteStatus(request.streamId, response.statusCode)
         val responseCloseable = Closeable { response.close() }
         if (!registry.addActive(request.streamId, responseCloseable)) {
             responseCloseable.close()
@@ -425,6 +453,9 @@ class MuBoxVideoProxy(
     private fun ContentRange.toHeaderValue(): String =
         "bytes $start-$endInclusive/$totalSize"
 
+    private fun ParsedRange.Valid.toRangeHeaderValue(): String =
+        "bytes=$start-$endInclusive"
+
     private fun Boolean.toLocalHttpConnection(): LocalHttpConnection =
         if (this) LocalHttpConnection.KEEP_ALIVE else LocalHttpConnection.CLOSE
 
@@ -471,6 +502,10 @@ class MuBoxVideoProxy(
         System.err.println("Video proxy client disconnected: ${error.message ?: error::class.java.simpleName}")
     }
 
+    private fun logAcceptFailure(error: IOException) {
+        System.err.println("Video proxy accept failed: ${error.message ?: error::class.java.simpleName}")
+    }
+
     private fun logConnectionFailure(error: Throwable) {
         System.err.println("Video proxy connection failed: ${error.message ?: error::class.java.simpleName}")
     }
@@ -481,6 +516,7 @@ class MuBoxVideoProxy(
         serverSocket?.close()
         seekOptimizer.close()
         registry.close()
+        statsStore.clear()
     }
 
     private sealed class ParsedRange {
@@ -497,6 +533,35 @@ class MuBoxVideoProxy(
     }
 
     private class RequestHeaderTooLarge : IOException()
+
+    private class RequestCancellation : Closeable {
+        private val closed = AtomicBoolean(false)
+        private val closeables = java.util.concurrent.ConcurrentHashMap.newKeySet<Closeable>()
+
+        fun add(closeable: Closeable) {
+            if (closed.get()) {
+                closeable.closeQuietly()
+                return
+            }
+            closeables += closeable
+            if (closed.get()) {
+                closeables -= closeable
+                closeable.closeQuietly()
+            }
+        }
+
+        override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            closeables.forEach { closeable ->
+                closeable.closeQuietly()
+                closeables -= closeable
+            }
+        }
+
+        private fun Closeable.closeQuietly() {
+            runCatching { close() }
+        }
+    }
 
     companion object {
         private const val LOOPBACK_HOST = "127.0.0.1"

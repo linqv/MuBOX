@@ -28,7 +28,7 @@ interface WebDavClient {
         path: String,
         registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse =
-        openRangeStream(path = path, start = 0L, endInclusive = null, registerCancellation = registerCancellation)
+        openFullStream(path = path)
     suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long
 }
 

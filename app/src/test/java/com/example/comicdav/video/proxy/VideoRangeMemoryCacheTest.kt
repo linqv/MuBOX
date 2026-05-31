@@ -48,6 +48,18 @@ class VideoRangeMemoryCacheTest {
     }
 
     @Test
+    fun putOwnedSegmentStoresExclusiveInternalBytesWithoutCopying() {
+        val cache = VideoRangeMemoryCache()
+        val bytes = byteArrayOf(1, 2, 3)
+
+        cache.putOwnedSegment(streamId = "stream", segmentIndex = 0L, start = 0L, bytes = bytes)
+
+        val reference = cache.getSegmentReference("stream", 0L)
+        assertSame(bytes, reference!!.bytes)
+        assertArrayEquals(byteArrayOf(1, 2, 3), cache.getSegment("stream", 0L)?.bytes)
+    }
+
+    @Test
     fun putSegmentEvictsLeastRecentlyUsedSegmentsByByteCapacity() {
         val cache = VideoRangeMemoryCache(maxBytes = 8)
         cache.putSegment("stream-1", 0L, 0L, "aaaa".toByteArray())

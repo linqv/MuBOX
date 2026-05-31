@@ -215,6 +215,7 @@ internal fun ThinSeekBar(
 internal fun PlayerMenuPanel(
     state: MpvPlayerState,
     mediaContext: VideoPlayerMediaContext,
+    proxyStatistics: VideoProxyStatistics? = null,
     onDismiss: () -> Unit,
     onSpeedSelected: (Double) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
@@ -277,6 +278,7 @@ internal fun PlayerMenuPanel(
                 snapshot = buildVideoPlayerStatisticsSnapshot(
                     mediaContext = mediaContext,
                     state = state,
+                    proxy = proxyStatistics,
                 ),
             )
         }

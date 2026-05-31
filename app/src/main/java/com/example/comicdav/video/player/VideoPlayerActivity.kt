@@ -38,6 +38,7 @@ import com.example.comicdav.video.VideoSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.proxy.MuBoxVideoProxy
 import com.example.comicdav.video.proxy.VideoProxyManager
+import com.example.comicdav.video.proxy.VideoProxyRuntimeStats
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
@@ -81,11 +82,12 @@ class VideoPlayerActivity : ComponentActivity() {
     private var mpvObserverRegistered = false
     private var mpvInitialized = false
     private var isCleaningUp = false
-    private var webDavStreamIds: List<String> = emptyList()
+    private var webDavStreamIds by mutableStateOf<List<String>>(emptyList())
     private var playbackKey: String? = null
     private var resumeEnabled = true
     private var loadJob: Job? = null
     private var progressSaveJob: Job? = null
+    private var proxyStatistics by mutableStateOf<VideoProxyStatistics?>(null)
     private val systemBarsHandler = Handler(Looper.getMainLooper())
     private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
 
@@ -228,6 +230,17 @@ class VideoPlayerActivity : ComponentActivity() {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
                 val progress by controller.progress.collectAsState()
+                LaunchedEffect(webDavStreamIds) {
+                    if (webDavStreamIds.isEmpty()) {
+                        proxyStatistics = null
+                        return@LaunchedEffect
+                    }
+                    while (true) {
+                        proxyStatistics = VideoProxyManager.statistics(webDavStreamIds.first())
+                            ?.toPlayerStatistics()
+                        delay(PROXY_STATISTICS_SAMPLE_INTERVAL_MILLIS)
+                    }
+                }
                 LaunchedEffect(
                     state.videoParams.width,
                     state.videoParams.height,
@@ -278,6 +291,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     onClearHud = controller::clearGestureHud,
                     mediaContext = mediaContext,
                     controlsAutoHideMillis = controlsAutoHideMillis,
+                    proxyStatistics = proxyStatistics,
                 )
             }
         }
@@ -431,8 +445,6 @@ class VideoPlayerActivity : ComponentActivity() {
                     audioFocusController.abandon()
                 }
             }
-            webDavStreamIds.forEach(VideoProxyManager::close)
-            webDavStreamIds = emptyList()
             if (mpvObserverRegistered) {
                 MPVLib.removeObserver(mpvObserver)
                 mpvObserverRegistered = false
@@ -441,6 +453,10 @@ class VideoPlayerActivity : ComponentActivity() {
                 controller.destroy()
                 mpvInitialized = false
             }
+            webDavStreamIds.forEach { streamId ->
+                VideoProxyManager.close(streamId)
+            }
+            webDavStreamIds = emptyList()
         } finally {
             isCleaningUp = false
         }
@@ -747,6 +763,7 @@ private fun VideoPlayerScreen(
     onClearHud: () -> Unit,
     mediaContext: VideoPlayerMediaContext,
     controlsAutoHideMillis: Int,
+    proxyStatistics: VideoProxyStatistics?,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -862,6 +879,7 @@ private fun VideoPlayerScreen(
                 PlayerMenuPanel(
                     state = state,
                     mediaContext = mediaContext,
+                    proxyStatistics = proxyStatistics,
                     onDismiss = { menuVisible = false },
                     onSpeedSelected = onSpeedSelected,
                     onScaleModeSelected = onScaleModeSelected,
@@ -919,6 +937,18 @@ private fun VideoPlayerScreen(
 
 private const val PLAYER_STATUS_BAR_REHIDE_MILLIS = 3_000L
 private const val PLAYBACK_PROGRESS_SAVE_INTERVAL_MILLIS = 10_000L
+private const val PROXY_STATISTICS_SAMPLE_INTERVAL_MILLIS = 1_000L
+
+private fun VideoProxyRuntimeStats.toPlayerStatistics(): VideoProxyStatistics =
+    VideoProxyStatistics(
+        currentRange = currentRange,
+        remoteHttpStatus = remoteHttpStatus,
+        downloadBytesPerSecond = null,
+        memoryCacheHits = memoryCacheHits,
+        prefetchState = prefetchState,
+        seekFirstFrameMillis = null,
+        diagnosticMessage = diagnosticMessage,
+    )
 
 private data class ResolvedPlaybackInput(
     val videoUri: ManagedPlaybackUri,

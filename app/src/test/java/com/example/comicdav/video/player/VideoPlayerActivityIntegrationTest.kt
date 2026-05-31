@@ -64,6 +64,19 @@ class VideoPlayerActivityIntegrationTest {
     }
 
     @Test
+    fun cleanupStopsMpvBeforeClosingWebDavProxyStreams() {
+        val source = activitySourceFile().readText()
+        val cleanupStart = source.indexOf("private fun cleanupPlayer()")
+        val destroyIndex = source.indexOf("controller.destroy()", cleanupStart)
+        val closeIndex = source.indexOf("VideoProxyManager.close", cleanupStart)
+
+        assertTrue("cleanupPlayer should exist", cleanupStart >= 0)
+        assertTrue("cleanup should destroy mpv", destroyIndex >= 0)
+        assertTrue("cleanup should close WebDAV proxy streams", closeIndex >= 0)
+        assertTrue("mpv must stop before proxy streams are closed", destroyIndex < closeIndex)
+    }
+
+    @Test
     fun activityHandlesEndFileWithoutWritingPauseBackToMpv() {
         val source = activitySourceFile().readText()
 
@@ -145,6 +158,24 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("Text(\"信息\""))
         assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(Icons.Filled.Info, \"播放信息\")"))
         assertTrue(source.contains("snapshot.redacted().debugLines()"))
+    }
+
+    @Test
+    fun webDavPlayerSamplesProxyStatisticsForInfoPanel() {
+        val source = videoPlayerPackageSource()
+
+        assertTrue(source.contains("private var proxyStatistics by"))
+        assertTrue(source.contains("VideoProxyManager.statistics"))
+        assertTrue(source.contains("proxy = proxyStatistics"))
+        assertTrue(source.contains("LaunchedEffect(webDavStreamIds)"))
+    }
+
+    @Test
+    fun webDavProxyStatisticsSamplerStopsWhenStreamsAreCleared() {
+        val source = activitySourceFile().readText()
+
+        assertTrue(source.contains("private var webDavStreamIds by mutableStateOf<List<String>>(emptyList())"))
+        assertTrue(source.contains("webDavStreamIds = emptyList()"))
     }
 
     @Test

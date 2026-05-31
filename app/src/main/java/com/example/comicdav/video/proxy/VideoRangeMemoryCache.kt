@@ -28,23 +28,11 @@ class VideoRangeMemoryCache(
         entries[SegmentKey(streamId, segmentIndex)]?.slice(start, endInclusive)
     }
 
-    fun putSegment(streamId: String, segmentIndex: Long, start: Long, bytes: ByteArray): Boolean = synchronized(lock) {
-        require(segmentIndex >= 0L) { "segmentIndex must not be negative" }
-        require(start >= 0L) { "start must not be negative" }
-        if (bytes.size.toLong() > maxBytes) return false
+    fun putSegment(streamId: String, segmentIndex: Long, start: Long, bytes: ByteArray): Boolean =
+        putSegmentInternal(streamId, segmentIndex, start, bytes.copyOf())
 
-        val key = SegmentKey(streamId, segmentIndex)
-        entries.remove(key)?.let { byteCount -= it.bytes.size.toLong() }
-        entries[key] = Segment(
-            streamId = streamId,
-            segmentIndex = segmentIndex,
-            start = start,
-            bytes = bytes.copyOf(),
-        )
-        byteCount += bytes.size.toLong()
-        trimToSize()
-        true
-    }
+    internal fun putOwnedSegment(streamId: String, segmentIndex: Long, start: Long, bytes: ByteArray): Boolean =
+        putSegmentInternal(streamId, segmentIndex, start, bytes)
 
     fun containsSegment(streamId: String, segmentIndex: Long): Boolean = synchronized(lock) {
         entries.containsKey(SegmentKey(streamId, segmentIndex))
@@ -69,6 +57,29 @@ class VideoRangeMemoryCache(
     fun totalBytes(): Long = synchronized(lock) { byteCount }
 
     fun segmentCount(): Int = synchronized(lock) { entries.size }
+
+    private fun putSegmentInternal(
+        streamId: String,
+        segmentIndex: Long,
+        start: Long,
+        bytes: ByteArray,
+    ): Boolean = synchronized(lock) {
+        require(segmentIndex >= 0L) { "segmentIndex must not be negative" }
+        require(start >= 0L) { "start must not be negative" }
+        if (bytes.size.toLong() > maxBytes) return false
+
+        val key = SegmentKey(streamId, segmentIndex)
+        entries.remove(key)?.let { byteCount -= it.bytes.size.toLong() }
+        entries[key] = Segment(
+            streamId = streamId,
+            segmentIndex = segmentIndex,
+            start = start,
+            bytes = bytes,
+        )
+        byteCount += bytes.size.toLong()
+        trimToSize()
+        true
+    }
 
     private fun trimToSize() {
         val iterator = entries.iterator()

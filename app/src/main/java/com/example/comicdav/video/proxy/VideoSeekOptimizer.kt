@@ -28,6 +28,7 @@ internal class VideoSeekOptimizer(
     private val segmentBytes: Long = VideoRangeMemoryCache.DEFAULT_SEGMENT_BYTES,
     private val smallRangeDirectThresholdBytes: Long =
         (segmentBytes / 8L).coerceAtMost(DEFAULT_SMALL_RANGE_DIRECT_THRESHOLD_BYTES),
+    private val statsSink: VideoProxyStatsSink = VideoProxyStatsSink.Noop,
 ) : Closeable {
     init {
         require(segmentBytes > 0L) { "segmentBytes must be positive" }
@@ -47,6 +48,7 @@ internal class VideoSeekOptimizer(
         start: Long,
         endInclusive: Long,
         settings: VideoProxySettings,
+        registerCancellation: (Closeable) -> Unit = {},
     ): WebDavStreamResponse {
         ensureOpen()
         require(totalSize >= 0L) { "totalSize must not be negative" }
@@ -55,7 +57,7 @@ internal class VideoSeekOptimizer(
         require(endInclusive < totalSize) { "endInclusive must be inside totalSize" }
 
         if (!settings.seekOptimizationEnabled) {
-            return openDirectRange(client, request, totalSize, start, endInclusive)
+            return openDirectRange(client, request, totalSize, start, endInclusive, registerCancellation)
         }
 
         val diagnostics = VideoProxyDiagnostics(settings.diagnosticsMode)
@@ -95,7 +97,14 @@ internal class VideoSeekOptimizer(
                     "small_range_direct stream=${diagnostics.streamId(request.streamId)} " +
                         "range=$start-$endInclusive threshold=$smallRangeDirectThresholdBytes"
                 }
-                val directResponse = client.openRangeStream(request.remotePath, start, endInclusive)
+                statsSink.updateDiagnosticMessage(request.streamId, "small_range_direct range=$start-$endInclusive")
+                val directResponse = client.openRangeStream(
+                    path = request.remotePath,
+                    start = start,
+                    endInclusive = endInclusive,
+                    registerCancellation = registerCancellation,
+                )
+                statsSink.updateRemoteStatus(request.streamId, directResponse.statusCode)
                 if (!isFullSegmentRange(firstSegmentIndex, totalSize, start, endInclusive)) {
                     scheduleSegmentWarmup(
                         client = client,
@@ -156,6 +165,7 @@ internal class VideoSeekOptimizer(
         start: Long,
         endInclusive: Long,
         settings: VideoProxySettings,
+        registerCancellation: (Closeable) -> Unit = {},
     ): WebDavStreamResponse {
         ensureOpen()
         require(totalSize >= 0L) { "totalSize must not be negative" }
@@ -164,7 +174,12 @@ internal class VideoSeekOptimizer(
         require(endInclusive < totalSize) { "endInclusive must be inside totalSize" }
 
         if (!settings.seekOptimizationEnabled) {
-            return client.openRangeStream(request.remotePath, start, endInclusive)
+            return client.openRangeStream(
+                path = request.remotePath,
+                start = start,
+                endInclusive = endInclusive,
+                registerCancellation = registerCancellation,
+            )
         }
 
         val diagnostics = VideoProxyDiagnostics(settings.diagnosticsMode)
@@ -204,7 +219,14 @@ internal class VideoSeekOptimizer(
         diagnostics.detail {
             "open_ended_direct stream=${diagnostics.streamId(request.streamId)} range=$start-$endInclusive"
         }
-        val directResponse = client.openRangeStream(request.remotePath, start, endInclusive)
+        statsSink.updateDiagnosticMessage(request.streamId, "open_ended_direct range=$start-$endInclusive")
+        val directResponse = client.openRangeStream(
+            path = request.remotePath,
+            start = start,
+            endInclusive = endInclusive,
+            registerCancellation = registerCancellation,
+        )
+        statsSink.updateRemoteStatus(request.streamId, directResponse.statusCode)
         val cachingResponse = directResponse.withSegmentCaching(
             request = request,
             totalSize = totalSize,
@@ -240,6 +262,7 @@ internal class VideoSeekOptimizer(
             .filter { it.streamId == streamId }
             .forEach(::closeActiveResponses)
         cache.removeStream(streamId)
+        statsSink.updatePrefetchState(streamId, null)
     }
 
     override fun close() {
@@ -312,6 +335,7 @@ internal class VideoSeekOptimizer(
             endInclusive = segmentSlice.sliceEnd,
         ) ?: return null
         diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
+        statsSink.incrementCacheHit(request.streamId)
         diagnostics.detail {
             "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
                 "segment=${segmentSlice.segmentIndex} range=${segmentSlice.segmentStart}-${segmentSlice.segmentEnd} " +
@@ -379,8 +403,15 @@ internal class VideoSeekOptimizer(
         totalSize: Long,
         start: Long,
         endInclusive: Long,
+        registerCancellation: (Closeable) -> Unit,
     ): WebDavStreamResponse {
-        val response = client.openRangeStream(request.remotePath, start, endInclusive)
+        val response = client.openRangeStream(
+            path = request.remotePath,
+            start = start,
+            endInclusive = endInclusive,
+            registerCancellation = registerCancellation,
+        )
+        statsSink.updateRemoteStatus(request.streamId, response.statusCode)
         try {
             val bytes = response.stream.readBytes()
             val expectedBytes = endInclusive - start + 1L
@@ -411,6 +442,7 @@ internal class VideoSeekOptimizer(
     ): VideoRangeMemoryCache.Segment {
         cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
             diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
+            statsSink.incrementCacheHit(request.streamId)
             diagnostics.detail {
                 "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
                     "segment=$segmentIndex range=${segment.start}-${segment.endInclusive} cache_bytes=${cache.totalBytes()}"
@@ -468,6 +500,7 @@ internal class VideoSeekOptimizer(
     ): VideoRangeMemoryCache.Segment {
         cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
             diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
+            statsSink.incrementCacheHit(request.streamId)
             diagnostics.detail {
                 "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
                     "segment=$segmentIndex range=${segment.start}-${segment.endInclusive} cache_bytes=${cache.totalBytes()}"
@@ -480,6 +513,7 @@ internal class VideoSeekOptimizer(
         val expectedBytes = segmentEnd - segmentStart + 1L
         val startedAt = System.nanoTime()
         diagnostics.summary { "remote_fetch stream=${diagnostics.streamId(request.streamId)}" }
+        statsSink.updateDiagnosticMessage(request.streamId, "remote_fetch segment=$segmentIndex range=$segmentStart-$segmentEnd")
         diagnostics.detail {
             "remote_fetch stream=${diagnostics.streamId(request.streamId)} " +
                 "segment=$segmentIndex range=$segmentStart-$segmentEnd"
@@ -495,6 +529,7 @@ internal class VideoSeekOptimizer(
         } finally {
             requestCloseable?.let { removeActiveResponse(key, it) }
         }
+        statsSink.updateRemoteStatus(request.streamId, response.statusCode)
         val responseCloseable = Closeable { response.close() }
         addActiveResponse(key, responseCloseable)
         try {
@@ -510,7 +545,7 @@ internal class VideoSeekOptimizer(
                 start = segmentStart,
                 bytes = bytes,
             )
-            val stored = cache.putSegment(request.streamId, segmentIndex, segmentStart, bytes)
+            val stored = cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
             val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L
             diagnostics.detail {
                 "remote_fetch_complete stream=${diagnostics.streamId(request.streamId)} " +
@@ -549,11 +584,13 @@ internal class VideoSeekOptimizer(
             val key = SegmentKey(request.streamId, segmentIndex)
             if (cache.containsSegment(request.streamId, segmentIndex)) {
                 diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=cache_hit" }
+                statsSink.updatePrefetchState(request.streamId, "skipped cache_hit")
                 diagnostics.detail { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex reason=cache_hit" }
                 continue
             }
             if (inFlight.containsKey(key)) {
                 diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=inflight" }
+                statsSink.updatePrefetchState(request.streamId, "skipped inflight")
                 diagnostics.detail { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex reason=inflight" }
                 continue
             }
@@ -611,6 +648,7 @@ internal class VideoSeekOptimizer(
                     val key = SegmentKey(request.streamId, segmentIndex)
                     if (cache.containsSegment(request.streamId, segmentIndex)) {
                         diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=cache_hit" }
+                        statsSink.updatePrefetchState(request.streamId, "skipped cache_hit")
                         diagnostics.detail {
                             "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
                                 "segment=$segmentIndex reason=cache_hit"
@@ -619,6 +657,7 @@ internal class VideoSeekOptimizer(
                     }
                     if (inFlight.containsKey(key)) {
                         diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=inflight" }
+                        statsSink.updatePrefetchState(request.streamId, "skipped inflight")
                         diagnostics.detail {
                             "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
                                 "segment=$segmentIndex reason=inflight"
@@ -638,6 +677,7 @@ internal class VideoSeekOptimizer(
                 throw error
             } catch (error: Exception) {
                 if (isCurrentPrefetchGeneration(request.streamId, generation)) {
+                    statsSink.updatePrefetchState(request.streamId, "failed ${error.javaClass.simpleName}")
                     diagnostics.summary {
                         "prefetch_failed stream=${diagnostics.streamId(request.streamId)} " +
                             "error=${error.message ?: error::class.java.simpleName}"
@@ -654,6 +694,7 @@ internal class VideoSeekOptimizer(
 
         if (registerPrefetchJob(request.streamId, generation, keys, job)) {
             diagnostics.summary { "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)}" }
+            statsSink.updatePrefetchState(request.streamId, "scheduled ${segmentIndexes.joinToString(",")}")
             diagnostics.detail {
                 "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)} " +
                     "segments=${segmentIndexes.joinToString(",")}"
@@ -712,6 +753,7 @@ internal class VideoSeekOptimizer(
             prefetchStates.remove(streamId)?.copyForCancellation()
         }
         state?.let(::cancelPrefetchState)
+        statsSink.updatePrefetchState(streamId, null)
     }
 
     private fun isCurrentPrefetchGeneration(streamId: String, generation: Long): Boolean =
@@ -987,7 +1029,7 @@ internal class VideoSeekOptimizer(
 
         private fun storeSegment() {
             val bytes = segmentBuffer.toByteArray()
-            val stored = cache.putSegment(request.streamId, segmentIndex, segmentStart, bytes)
+            val stored = cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
             diagnostics.detail {
                 "stream_cache_store stream=${diagnostics.streamId(request.streamId)} " +
                     "segment=$segmentIndex range=$segmentStart-${segmentStart + bytes.size - 1L} stored=$stored cache_bytes=${cache.totalBytes()}"
