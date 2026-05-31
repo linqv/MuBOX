@@ -2,6 +2,7 @@ package com.example.comicdav.nativebridge
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -105,6 +106,29 @@ class NativeWorkerThreadContractTest {
         )
     }
 
+    @Test
+    fun remoteComicSessionAdvancesPrefetchOnPageDemand() {
+        val session = ComicSession(
+            native = NoopComicNative,
+            handle = 1,
+            pageCount = 1,
+            rangeProviderFileId = 7,
+        )
+
+        assertTrue(session.advancePrefetchOnPageDemand)
+    }
+
+    @Test
+    fun localComicSessionDoesNotAdvancePrefetchOnPageDemand() {
+        val session = ComicSession(
+            native = NoopComicNative,
+            handle = 1,
+            pageCount = 1,
+        )
+
+        assertFalse(session.advancePrefetchOnPageDemand)
+    }
+
     private fun assertAnnotationAboveFunction(file: File, funSignature: String) {
         val lines = file.readLines()
         val idx = lines.indexOfFirst { it.contains(funSignature) }
@@ -114,5 +138,44 @@ class NativeWorkerThreadContractTest {
             "@WorkerThread should appear above '$funSignature' in ${file.name}",
             preceding.contains("@WorkerThread"),
         )
+    }
+
+    private object NoopComicNative : ComicNativeFacade {
+        override fun openLocal(path: String, avifImagesEnabled: Boolean): Long = 1
+
+        override fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long = 1
+
+        override fun openRemote(
+            fileId: Long,
+            size: Long,
+            cacheDir: String,
+            comicKey: String,
+            validator: String,
+            avifImagesEnabled: Boolean,
+        ): Long = 1
+
+        override fun pageCount(handle: Long): Int = 1
+
+        override fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int = 0
+
+        override fun updateViewport(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+        ): Int = 0
+
+        override fun diagnostics(handle: Long): String = ""
+
+        override fun plannedRanges(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+        ): String = "v1"
+
+        override fun close(handle: Long) = Unit
+
+        override fun lastErrorMessage(): String = ""
     }
 }

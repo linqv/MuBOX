@@ -174,6 +174,37 @@ class ReaderViewModelTest {
             ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
         }
     }
+
+    @Test
+    fun readyDemandPageRefreshesPlannedRangesWhenSessionAdvancesOnDemand() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        mainDispatcher.set(dispatcher)
+        val session = RecordingComicSession(
+            pageCount = 8,
+            forwardPrefetchPageCount = 4,
+            advancePrefetchOnPageDemand = true,
+        )
+        val viewModel = ReaderViewModel(
+            ioDispatcher = dispatcher,
+            elapsedRealtimeMs = { testScheduler.currentTime },
+        )
+
+        viewModel.openExistingSession(
+            openedSession = session,
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "comic",
+        )
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+        session.plannedRangePages.clear()
+
+        viewModel.reportPageDemand(1, "pager_target")
+        runCurrent()
+
+        assertEquals(listOf(1), session.plannedRangePages)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -192,9 +223,11 @@ private class RecordingComicSession(
     override val forwardPrefetchPageCount: Int,
     private val plannedRanges: List<PlannedRemoteRange> = emptyList(),
     private val pageErrors: Map<Int, Throwable> = emptyMap(),
+    override val advancePrefetchOnPageDemand: Boolean = false,
 ) : ComicReaderSession {
     val loadedPages = mutableListOf<Int>()
     val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
+    val plannedRangePages = mutableListOf<Int>()
     var cancelPrefetchesCalls = 0
     var closeCalls = 0
 
@@ -206,8 +239,10 @@ private class RecordingComicSession(
         return outputFile
     }
 
-    override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> =
-        plannedRanges
+    override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
+        plannedRangePages += pageIndex
+        return plannedRanges
+    }
 
     override fun prefetchRange(
         start: Long,

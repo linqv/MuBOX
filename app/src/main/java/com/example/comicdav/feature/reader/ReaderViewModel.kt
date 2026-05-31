@@ -377,6 +377,7 @@ class ReaderViewModel(
         if (ready) {
             val activeSession = session
             if (activeSession?.advancePrefetchOnPageDemand == true && source.shouldAdvancePrefetchOnDemand()) {
+                scheduleViewportUpdate(activeSession, pageIndex, generation)
                 prefetchNeighbors(pageIndex, reason = source)
             }
             return

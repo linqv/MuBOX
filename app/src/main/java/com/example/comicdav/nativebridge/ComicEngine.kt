@@ -165,6 +165,7 @@ class ComicSession internal constructor(
     private val onClose: () -> Unit = {},
     override val forwardPrefetchPageCount: Int = 4,
 ) : ComicReaderSession {
+    override val advancePrefetchOnPageDemand: Boolean = rangeProviderFileId != null
     private var isClosed = false
 
     override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
