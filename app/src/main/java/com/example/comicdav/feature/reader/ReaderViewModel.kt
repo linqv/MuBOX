@@ -390,7 +390,7 @@ class ReaderViewModel(
     }
 
     private fun String.shouldAdvancePrefetchOnDemand(): Boolean =
-        this == "pager_target" || this == "continuous_visible"
+        this == "pager_current" || this == "pager_target" || this == "continuous_visible"
 
     fun reportImageLoadStarted(pageIndex: Int) {
         diagnostics.recordImageLoadStarted(pageIndex)

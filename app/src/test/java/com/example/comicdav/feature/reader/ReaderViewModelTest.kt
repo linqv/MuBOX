@@ -205,6 +205,48 @@ class ReaderViewModelTest {
 
         assertEquals(listOf(1), session.plannedRangePages)
     }
+
+    @Test
+    fun readyCurrentPageDemandAddsTrailingPlannedRangeForConfiguredWebDavWindow() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        mainDispatcher.set(dispatcher)
+        val forwardWindow = 12
+        val session = RecordingComicSession(
+            pageCount = 20,
+            forwardPrefetchPageCount = forwardWindow,
+            advancePrefetchOnPageDemand = true,
+            plannedRangesForPage = { page ->
+                plannedRangesForWindow(pageIndex = page, pageCount = 20, forwardPages = forwardWindow)
+            },
+        )
+        val viewModel = ReaderViewModel(
+            ioDispatcher = dispatcher,
+            elapsedRealtimeMs = { testScheduler.currentTime },
+        )
+
+        viewModel.openExistingSession(
+            openedSession = session,
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "comic",
+        )
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+        assertEquals(listOf(0, 1, 2, 3), session.loadedPages)
+        assertEquals((0..12).map { plannedRangeForPage(it).key() }, session.prefetchedRanges)
+        session.plannedRangePages.clear()
+        session.prefetchedRanges.clear()
+
+        viewModel.reportPageDemand(1, "pager_current")
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+
+        assertEquals(listOf(1), session.plannedRangePages)
+        assertEquals(listOf(plannedRangeForPage(13).key()), session.prefetchedRanges)
+        assertEquals(listOf(0, 1, 2, 3, 4), session.loadedPages)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -222,6 +264,7 @@ private class RecordingComicSession(
     override val pageCount: Int,
     override val forwardPrefetchPageCount: Int,
     private val plannedRanges: List<PlannedRemoteRange> = emptyList(),
+    private val plannedRangesForPage: (Int) -> List<PlannedRemoteRange> = { plannedRanges },
     private val pageErrors: Map<Int, Throwable> = emptyMap(),
     override val advancePrefetchOnPageDemand: Boolean = false,
 ) : ComicReaderSession {
@@ -241,7 +284,7 @@ private class RecordingComicSession(
 
     override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
         plannedRangePages += pageIndex
-        return plannedRanges
+        return plannedRangesForPage(pageIndex)
     }
 
     override fun prefetchRange(
@@ -270,6 +313,24 @@ private fun plannedRange(start: Long, sizeBytes: Long, priority: Int): PlannedRe
         pages = listOf(priority),
         priority = priority,
     )
+
+private fun plannedRangeForPage(pageIndex: Int): PlannedRemoteRange =
+    PlannedRemoteRange(
+        start = pageIndex * 1024L,
+        endInclusive = pageIndex * 1024L + 511L,
+        pages = listOf(pageIndex),
+        priority = pageIndex,
+    )
+
+private fun plannedRangesForWindow(
+    pageIndex: Int,
+    pageCount: Int,
+    forwardPages: Int,
+): List<PlannedRemoteRange> =
+    (listOf(pageIndex) + (1..forwardPages).map { pageIndex + it } + listOf(pageIndex - 1))
+        .filter { it in 0 until pageCount }
+        .distinct()
+        .map(::plannedRangeForPage)
 
 private fun PlannedRemoteRange.key(): Pair<Long, Long> =
     start to endInclusive
