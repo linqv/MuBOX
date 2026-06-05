@@ -1,9 +1,7 @@
 package com.example.comicdav.feature.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,7 +39,6 @@ import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.displayLabel
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
@@ -68,10 +62,6 @@ import com.example.comicdav.video.player.videoOutputModeLabel
 import com.example.comicdav.video.player.videoPlayerOrientationModeLabel
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -84,7 +74,6 @@ private enum class SettingsPage {
     ROOT,
     COMIC,
     VIDEO,
-    DOWNLOAD_RECORDS,
 }
 
 internal data class SettingsGroupLayout(
@@ -101,10 +90,6 @@ internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
         SettingsGroupLayout(
             title = "内容设置",
             rows = listOf("漫画设置", "视频设置"),
-        ),
-        SettingsGroupLayout(
-            title = "下载记录",
-            rows = listOf("下载记录"),
         ),
         SettingsGroupLayout(
             title = "缓存",
@@ -185,10 +170,6 @@ fun SettingsScreen(
     onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
     onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit = {},
     onVideoLibraryThumbnailsEnabledChange: (Boolean) -> Unit = {},
-    downloadRecords: List<DownloadRecord> = emptyList(),
-    selectedDownloadRecord: DownloadRecord? = null,
-    onSelectDownloadRecord: (DownloadRecord) -> Unit = {},
-    onClearSelectedDownloadRecord: () -> Unit = {},
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
     onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
@@ -197,26 +178,10 @@ fun SettingsScreen(
     var currentPage by remember { mutableStateOf(SettingsPage.ROOT) }
 
     BackHandler(enabled = currentPage != SettingsPage.ROOT) {
-        if (currentPage == SettingsPage.DOWNLOAD_RECORDS) {
-            onClearSelectedDownloadRecord()
-        }
         currentPage = SettingsPage.ROOT
     }
 
     when (currentPage) {
-        SettingsPage.DOWNLOAD_RECORDS -> {
-            DownloadRecordsScreen(
-                records = downloadRecords,
-                selectedRecord = selectedDownloadRecord,
-                onSelectRecord = onSelectDownloadRecord,
-                onBack = {
-                    onClearSelectedDownloadRecord()
-                    currentPage = SettingsPage.ROOT
-                },
-                modifier = modifier,
-            )
-            return
-        }
         SettingsPage.COMIC -> {
             ComicSettingsPage(
                 settings = settings,
@@ -296,21 +261,6 @@ fun SettingsScreen(
                 subtitle = "播放、WebDAV 流式读取、解码和封面",
                 trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
             )
-        }
-
-        MuBoxBoxedList(title = "下载记录") {
-            if (downloadRecords.isEmpty()) {
-                MuBoxPropertyRow(
-                    title = "暂无下载记录",
-                    value = "从 WebDAV 下载到本地后会显示在这里",
-                )
-            } else {
-                ClickableInfoRow(
-                    title = "下载记录",
-                    subtitle = "${downloadRecords.size} 本漫画，点开查看完整记录",
-                    onClick = { currentPage = SettingsPage.DOWNLOAD_RECORDS },
-                )
-            }
         }
 
         MuBoxBoxedList(title = "缓存") {
@@ -573,106 +523,6 @@ private fun VideoSettingsPage(
     }
 }
 
-@Composable
-private fun DownloadRecordsScreen(
-    records: List<DownloadRecord>,
-    selectedRecord: DownloadRecord?,
-    onSelectRecord: (DownloadRecord) -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(horizontal = 16.dp, vertical = 0.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        MuBoxHeaderBar(
-            title = "下载记录",
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        )
-
-        if (records.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "从 WebDAV 下载到本地后会显示在这里",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(records, key = { "${it.accountId.orEmpty()}\u001F${it.remotePath}\u001F${it.fileName}" }) { record ->
-                    DownloadRecordRow(
-                        record = record,
-                        isSelected = selectedRecord.sameDownloadRecord(record),
-                        onSelect = { onSelectRecord(record) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DownloadRecordRow(
-    record: DownloadRecord,
-    isSelected: Boolean,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onSelect,
-                onLongClickLabel = "下载记录操作",
-            ),
-        shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = settingsStaticRowMinHeightDp().dp)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = record.fileName,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
-                    decodeWebDavPathForDisplay(record.remotePath),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
 internal fun coerceAutoPageSpeed(speedSeconds: Int): Int =
     speedSeconds.coerceIn(MinAutoPageSpeedSeconds, MaxAutoPageSpeedSeconds)
 
@@ -734,30 +584,7 @@ private fun VideoProxyDiagnosticsMode.label(): String =
         VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
 
-private fun formatDownloadTime(downloadedAtMillis: Long): String =
-    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(downloadedAtMillis))
-
-private fun DownloadRecord?.sameDownloadRecord(other: DownloadRecord): Boolean =
-    this != null && fileName == other.fileName && remotePath == other.remotePath
-
 internal fun settingsControlRowMinHeightDp(): Int = 64
-
-internal fun settingsStaticRowMinHeightDp(): Int = 58
-
-@Composable
-private fun ClickableInfoRow(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    MuBoxActionRow(
-        title = title,
-        onClick = onClick,
-        modifier = modifier,
-        subtitle = subtitle,
-    )
-}
 
 @Composable
 private fun CacheActionRow(

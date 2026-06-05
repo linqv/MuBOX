@@ -4,11 +4,17 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import com.example.comicdav.data.DownloadRecord
+import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.feature.webdav.DownloadProgressUi
+import com.example.comicdav.network.RemoteFileInfo
+import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -44,6 +50,29 @@ internal class DownloadProgressThrottler(
 internal fun DownloadProgressUi.toReaderLoadingProgress(): ReaderLoadingProgress =
     ReaderLoadingProgress(downloadedBytes = downloadedBytes, totalBytes = totalBytes)
 
+internal fun shouldRemoveVideoDownloadRecordAfterDelete(
+    documentDeleteSucceeded: Boolean,
+    documentStillResolvable: Boolean,
+): Boolean =
+    documentDeleteSucceeded || !documentStillResolvable
+
+internal fun videoDownloadDocumentStillResolvable(context: Context, uri: Uri): Boolean =
+    runCatching {
+        val stream = context.contentResolver.openInputStream(uri)
+        stream?.use { }
+        stream != null
+    }.getOrElse { error ->
+        if (error.causedByFileNotFound()) {
+            false
+        } else {
+            ReaderDiagnosticLog.error("resolve_video_download_file_failed uri=$uri", error)
+            true
+        }
+    }
+
+internal fun Throwable.causedByFileNotFound(): Boolean =
+    generateSequence(this as Throwable?) { it.cause }.any { it is FileNotFoundException }
+
 internal suspend fun copyStreamWithProgress(
     input: InputStream,
     output: OutputStream,
@@ -73,6 +102,30 @@ internal fun sanitizeDownloadedVideoFileName(fileName: String): String {
     return sanitized.ifBlank { "video-download" }
 }
 
+internal data class DataFolderDownloadResult(
+    val localUri: String,
+    val sizeBytes: Long,
+)
+
+internal fun downloadedFileParentDocumentUri(folderTreeUri: Uri): Uri =
+    DocumentsContract.buildDocumentUriUsingTree(
+        folderTreeUri,
+        DocumentsContract.getTreeDocumentId(folderTreeUri),
+    )
+
+internal fun mimeTypeForDownloadFileName(fileName: String): String =
+    com.example.comicdav.video.mimeTypeForMediaFileName(fileName)
+        ?: when (fileName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)) {
+            "cbz", "zip" -> "application/zip"
+            "cb7", "7z" -> "application/x-7z-compressed"
+            "cbt", "tar" -> "application/x-tar"
+            "pdf" -> "application/pdf"
+            "epub" -> "application/epub+zip"
+            "mobi" -> "application/x-mobipocket-ebook"
+            "azw3" -> "application/vnd.amazon.ebook"
+            else -> "application/octet-stream"
+        }
+
 internal suspend fun downloadWebDavVideoToDataFolder(
     context: Context,
     folderTreeUri: Uri,
@@ -81,30 +134,40 @@ internal suspend fun downloadWebDavVideoToDataFolder(
     fileName: String,
     expectedSize: Long,
     onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
-): String = withContext(Dispatchers.IO) {
-    val resolver = context.applicationContext.contentResolver
-    val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
-        folderTreeUri,
-        DocumentsContract.getTreeDocumentId(folderTreeUri),
-    )
-    val videosDirectoryUri = findOrCreateChildDocument(
+): String =
+    downloadWebDavFileToDataFolder(
         context = context,
-        parentDocumentUri = rootDocumentUri,
-        displayName = "videos",
-        mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
-    )
+        folderTreeUri = folderTreeUri,
+        client = client,
+        remotePath = remotePath,
+        fileName = fileName,
+        expectedSize = expectedSize,
+        onProgress = onProgress,
+    ).localUri
+
+internal suspend fun downloadWebDavFileToDataFolder(
+    context: Context,
+    folderTreeUri: Uri,
+    client: WebDavClient,
+    remotePath: String,
+    fileName: String,
+    expectedSize: Long,
+    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+): DataFolderDownloadResult = withContext(Dispatchers.IO) {
+    val resolver = context.applicationContext.contentResolver
+    val parentDocumentUri = downloadedFileParentDocumentUri(folderTreeUri)
     val safeName = sanitizeDownloadedVideoFileName(fileName)
-    findChildDocumentUri(context, videosDirectoryUri, "$safeName.tmp")?.let { tmp ->
+    findChildDocumentUri(context, parentDocumentUri, "$safeName.tmp")?.let { tmp ->
         DocumentsContract.deleteDocument(resolver, tmp)
     }
     val tmpUri = requireNotNull(
         DocumentsContract.createDocument(
             resolver,
-            videosDirectoryUri,
-            com.example.comicdav.video.mimeTypeForMediaFileName(fileName) ?: "application/octet-stream",
+            parentDocumentUri,
+            mimeTypeForDownloadFileName(fileName),
             "$safeName.tmp",
         ),
-    ) { "无法在数据文件夹创建视频临时文件" }
+    ) { "无法在数据文件夹创建下载临时文件" }
 
     try {
         val downloadJob = currentCoroutineContext().job
@@ -137,17 +200,47 @@ internal suspend fun downloadWebDavVideoToDataFolder(
         if (expectedSize > 0L && downloaded != expectedSize) {
             error("Downloaded $downloaded bytes, expected $expectedSize")
         }
-        findChildDocumentUri(context, videosDirectoryUri, safeName)?.let { existing ->
+        findChildDocumentUri(context, parentDocumentUri, safeName)?.let { existing ->
             check(DocumentsContract.deleteDocument(resolver, existing)) { "无法替换已有视频文件" }
         }
         val finalUri = requireNotNull(
             DocumentsContract.renameDocument(resolver, tmpUri, safeName),
         ) { "无法保存视频文件" }
-        finalUri.toString()
+        DataFolderDownloadResult(localUri = finalUri.toString(), sizeBytes = downloaded)
     } catch (error: Throwable) {
         runCatching { DocumentsContract.deleteDocument(resolver, tmpUri) }
         throw error
     }
+}
+
+internal suspend fun downloadWebDavComicRecordToDataFolder(
+    context: Context,
+    folderTreeUri: Uri,
+    client: WebDavClient,
+    accountId: String,
+    remotePath: String,
+    fileName: String,
+    info: RemoteFileInfo,
+    downloadedAtMillis: Long,
+    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+): DownloadRecord {
+    val result = downloadWebDavFileToDataFolder(
+        context = context,
+        folderTreeUri = folderTreeUri,
+        client = client,
+        remotePath = remotePath,
+        fileName = fileName,
+        expectedSize = info.size,
+        onProgress = onProgress,
+    )
+    return DownloadRecord(
+        fileName = fileName,
+        remotePath = remotePath,
+        sizeBytes = result.sizeBytes,
+        downloadedAtMillis = downloadedAtMillis,
+        accountId = accountId,
+        localUri = result.localUri,
+    )
 }
 
 private fun findOrCreateChildDocument(

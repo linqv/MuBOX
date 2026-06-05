@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.DownloadRecord
+import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
@@ -79,6 +80,7 @@ internal enum class AppTab {
     SOURCES,
     LIBRARY,
     VIDEO_LIBRARY,
+    DOWNLOADS,
     SETTINGS;
 
     val label: String
@@ -86,6 +88,7 @@ internal enum class AppTab {
             SOURCES -> ComicDavCopy.sourcesTab
             LIBRARY -> ComicDavCopy.libraryTab
             VIDEO_LIBRARY -> ComicDavCopy.videoLibraryTab
+            DOWNLOADS -> ComicDavCopy.downloadsTab
             SETTINGS -> ComicDavCopy.settingsTab
         }
 
@@ -94,6 +97,7 @@ internal enum class AppTab {
             SOURCES -> Icons.Filled.Folder
             LIBRARY -> Icons.AutoMirrored.Filled.LibraryBooks
             VIDEO_LIBRARY -> Icons.Filled.PlayArrow
+            DOWNLOADS -> Icons.Filled.Download
             SETTINGS -> Icons.Filled.Settings
         }
 }
@@ -172,6 +176,7 @@ internal fun selectionBottomBar(
     selectedLibraryItem: LibraryItemWithSources?,
     selectedVideoLibraryItem: VideoLibraryItemWithSources?,
     selectedDownloadRecord: DownloadRecord?,
+    selectedVideoDownloadRecord: VideoDownloadRecord?,
     onDownloadWebDavFile: (WebDavItem) -> Unit,
     onDownloadWebDavVideo: (WebDavItem) -> Unit,
     onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
@@ -186,6 +191,8 @@ internal fun selectionBottomBar(
     onDeleteVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
     onDeleteDownloadRecord: (DownloadRecord) -> Unit,
     onAddDownloadRecordToLibrary: (DownloadRecord) -> Unit,
+    onPlayVideoDownloadRecord: (VideoDownloadRecord) -> Unit,
+    onDeleteVideoDownloadRecord: (VideoDownloadRecord) -> Unit,
     onCancel: () -> Unit,
 ): (@Composable () -> Unit)? {
     val actions = when {
@@ -234,6 +241,11 @@ internal fun selectionBottomBar(
             SelectionAction("删除", Icons.Filled.Delete) { onDeleteDownloadRecord(selectedDownloadRecord) },
             SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
             SelectionAction("加入书架", Icons.Filled.Book) { onAddDownloadRecordToLibrary(selectedDownloadRecord) },
+        )
+        selectedVideoDownloadRecord != null -> listOf(
+            SelectionAction("播放", Icons.Filled.PlayArrow) { onPlayVideoDownloadRecord(selectedVideoDownloadRecord) },
+            SelectionAction("删除", Icons.Filled.Delete) { onDeleteVideoDownloadRecord(selectedVideoDownloadRecord) },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
         )
         else -> return null
     }
@@ -350,6 +362,23 @@ internal fun parentWebDavDirectoryPath(remotePath: String): String {
         withoutTrailingSlash.substring(0, slashIndex + 1)
     }
 }
+
+internal fun hasActiveAppSelection(
+    webDavFileSelected: Boolean,
+    directoryComicSelected: Boolean,
+    directoryVideoSelected: Boolean,
+    libraryItemSelected: Boolean,
+    videoLibraryItemSelected: Boolean,
+    downloadRecordSelected: Boolean,
+    videoDownloadRecordSelected: Boolean,
+): Boolean =
+    webDavFileSelected ||
+        directoryComicSelected ||
+        directoryVideoSelected ||
+        libraryItemSelected ||
+        videoLibraryItemSelected ||
+        downloadRecordSelected ||
+        videoDownloadRecordSelected
 
 internal fun parentDocumentUriForLocalVideo(videoUri: android.net.Uri): android.net.Uri? {
     return runCatching {

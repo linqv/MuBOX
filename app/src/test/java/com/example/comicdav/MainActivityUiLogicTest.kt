@@ -12,9 +12,9 @@ import java.io.File
 
 class MainActivityUiLogicTest {
     @Test
-    fun appTabsIncludeVideoLibraryBetweenLibraryAndSettings() {
+    fun appTabsIncludeDownloadsBetweenVideoLibraryAndSettings() {
         assertEquals(
-            listOf("来源", "书架", "影视库", "设置"),
+            listOf("来源", "书架", "影视库", "下载", "设置"),
             appTabLabels(),
         )
     }
@@ -40,6 +40,33 @@ class MainActivityUiLogicTest {
         assertEquals(
             listOf("重新提取缩略图", "移除", "删除缩略图", "取消"),
             selectionActionLabelsForVideoLibraryItem(),
+        )
+    }
+
+    @Test
+    fun videoDownloadSelectionCountsAsActiveSelectionForBackHandling() {
+        assertEquals(
+            true,
+            hasActiveAppSelection(
+                webDavFileSelected = false,
+                directoryComicSelected = false,
+                directoryVideoSelected = false,
+                libraryItemSelected = false,
+                videoLibraryItemSelected = false,
+                downloadRecordSelected = false,
+                videoDownloadRecordSelected = true,
+            ),
+        )
+    }
+
+    @Test
+    fun videoDownloadRecordIsKeptWhenDocumentDeleteReturnsFalse() {
+        assertEquals(
+            false,
+            shouldRemoveVideoDownloadRecordAfterDelete(
+                documentDeleteSucceeded = false,
+                documentStillResolvable = true,
+            ),
         )
     }
 

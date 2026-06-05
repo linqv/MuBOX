@@ -6,7 +6,6 @@ import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
@@ -163,10 +162,6 @@ internal fun SettingsTabContent(
     settings: AppSettings,
     appSettingsStore: AppSettingsStore,
     scope: CoroutineScope,
-    downloadRecords: List<DownloadRecord>,
-    selectedDownloadRecord: DownloadRecord?,
-    onSelectDownloadRecord: (DownloadRecord) -> Unit,
-    onClearSelectedDownloadRecord: () -> Unit,
     cacheAnalysis: ComicCacheAnalysis,
     cacheActionMessage: String?,
     onClearCacheCategory: (ComicCacheCategory) -> Unit,
@@ -246,10 +241,6 @@ internal fun SettingsTabContent(
         onVideoLibraryThumbnailsEnabledChange = { value ->
             scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(value) }
         },
-        downloadRecords = downloadRecords,
-        selectedDownloadRecord = selectedDownloadRecord,
-        onSelectDownloadRecord = onSelectDownloadRecord,
-        onClearSelectedDownloadRecord = onClearSelectedDownloadRecord,
         cacheAnalysis = cacheAnalysis,
         cacheActionMessage = cacheActionMessage,
         onClearCacheCategory = onClearCacheCategory,

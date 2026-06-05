@@ -13,6 +13,7 @@ data class DownloadRecord(
     val sizeBytes: Long,
     val downloadedAtMillis: Long,
     val accountId: String? = null,
+    val localUri: String? = null,
 )
 
 class DownloadRecordStore(
@@ -67,17 +68,19 @@ private fun encodeRecord(record: DownloadRecord): String =
         record.sizeBytes.toString(),
         record.downloadedAtMillis.toString(),
         record.accountId.orEmpty().sanitizeRecordField(),
+        record.localUri.orEmpty().sanitizeRecordField(),
     ).joinToString(separator = "\t")
 
 private fun decodeRecord(raw: String): DownloadRecord? {
     val parts = raw.split('\t')
-    if (parts.size !in 4..5) return null
+    if (parts.size !in 4..6) return null
     return DownloadRecord(
         fileName = parts[0],
         remotePath = parts[1],
         sizeBytes = parts[2].toLongOrNull() ?: return null,
         downloadedAtMillis = parts[3].toLongOrNull() ?: return null,
         accountId = parts.getOrNull(4)?.takeIf { it.isNotBlank() },
+        localUri = parts.getOrNull(5)?.takeIf { it.isNotBlank() },
     )
 }
 

@@ -15,7 +15,6 @@ class SettingsScreenUiTest {
     @Test
     fun settingsRowsExposeStableControlPanelMetrics() {
         assertEquals(64, settingsControlRowMinHeightDp())
-        assertEquals(58, settingsStaticRowMinHeightDp())
     }
 
     @Test
@@ -23,7 +22,7 @@ class SettingsScreenUiTest {
         val layout = rootSettingsGroupLayout()
 
         assertEquals(
-            listOf("通用", "内容设置", "下载记录", "缓存"),
+            listOf("通用", "内容设置", "缓存"),
             layout.map { it.title },
         )
     }

@@ -653,6 +653,7 @@ class VideoPlayerActivity : ComponentActivity() {
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 .putExtra(EXTRA_SOURCE, SOURCE_LOCAL)
                 .putExtra(EXTRA_URI, request.uri)
                 .putExtra(EXTRA_DISPLAY_NAME, request.displayName)

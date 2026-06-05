@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,7 +37,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.SavedWebDavAccount
@@ -65,6 +65,7 @@ import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.reader.readerImageFormatCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings
+import com.example.comicdav.feature.downloads.DownloadsScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryViewModel
 import com.example.comicdav.feature.webdav.DownloadProgressUi
@@ -185,6 +186,7 @@ fun ComicDavApp() {
     var selectedLibraryItem by remember { mutableStateOf<LibraryItemWithSources?>(null) }
     var selectedVideoLibraryItem by remember { mutableStateOf<VideoLibraryItemWithSources?>(null) }
     var selectedDownloadRecord by remember { mutableStateOf<DownloadRecord?>(null) }
+    var selectedVideoDownloadRecord by remember { mutableStateOf<VideoDownloadRecord?>(null) }
     var pendingLocalVideoOpen by remember { mutableStateOf<LocalVideoOpenRequest?>(null) }
     var pendingWebDavVideoOpen by remember { mutableStateOf<WebDavVideoOpenRequest?>(null) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
@@ -207,6 +209,7 @@ fun ComicDavApp() {
     val videoDownloadStore = container.videoDownloadStore
     val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings(videoResumeEnabled = false))
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
+    val videoDownloadRecords by videoDownloadStore.records.collectAsState(initial = emptyList())
     fun clearSelection() {
         selectedWebDavFile = null
         selectedDirectoryComic = null
@@ -214,6 +217,7 @@ fun ComicDavApp() {
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
         selectedDownloadRecord = null
+        selectedVideoDownloadRecord = null
     }
     fun refreshCacheAnalysis() {
         scope.launch {
@@ -221,6 +225,16 @@ fun ComicDavApp() {
                 analyzeComicCache(context.cacheDir)
             }
         }
+    }
+    fun cancelActiveDownload() {
+        activeDownloadJob?.cancel()
+        activeDownloadJob = null
+        downloadProgress = null
+        localOpenError = null
+        webDavActionMessage = "已取消下载"
+    }
+    fun reportDownloadProgress(downloaded: Long, total: Long) {
+        scope.launch { downloadProgress = DownloadProgressUi(downloaded, total) }
     }
     LaunchedEffect(context.cacheDir) {
         cacheAnalysis = withContext(Dispatchers.IO) {
@@ -678,16 +692,23 @@ fun ComicDavApp() {
     fun downloadWebDavComicToLocal(item: WebDavItem) {
         val client = webDavViewModel.activeClient()
         val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
+        val folderUriText = dataFolderUriText
         if (client == null) {
             localOpenError = "请先连接 WebDAV，再下载漫画"
             webDavActionMessage = null
             return
         }
+        if (folderUriText.isNullOrBlank()) {
+            localOpenError = "请先选择 MuBOX 数据文件夹，再下载漫画"
+            webDavActionMessage = null
+            return
+        }
+        activeDownloadJob?.cancel()
         downloadProgress = null
         localOpenError = null
         webDavActionMessage = null
-        scope.launch {
-            runCatching {
+        val job = scope.launch {
+            try {
                 val info = item.size?.let { knownSize ->
                     RemoteFileInfo(
                         path = item.path,
@@ -697,48 +718,31 @@ fun ComicDavApp() {
                         supportsRange = true,
                     )
                 } ?: client.head(item.path)
-                val key = ComicCacheKey.fromRemote(
-                    accountId = accountId,
-                    remotePath = item.path,
-                    size = info.size,
-                    etag = info.etag,
-                    lastModified = info.lastModified,
+                val record = downloadWebDavComicRecordToDataFolder(
+                    context, Uri.parse(folderUriText), client, accountId, item.path, item.name, info, System.currentTimeMillis(), ::reportDownloadProgress,
                 )
-                remoteCache.download(
-                    client = client,
-                    remotePath = item.path,
-                    key = key,
-                    expectedSize = info.size,
-                ) { downloaded, total ->
-                    scope.launch {
-                        downloadProgress = DownloadProgressUi(downloaded, total)
-                    }
+                downloadRecordStore.addRecord(record)
+                downloadProgress = null
+                webDavActionMessage = "已下载 ${item.name} 到数据文件夹"
+                fileDirectoryViewModel.showMessage("已下载 ${item.name} 到数据文件夹")
+            } catch (error: CancellationException) {
+                downloadProgress = null
+                if (activeDownloadJob == currentCoroutineContext().job) {
+                    webDavActionMessage = "已取消下载"
                 }
-                info.size
-            }.fold(
-                onSuccess = { sizeBytes ->
-                    downloadRecordStore.addRecord(
-                        DownloadRecord(
-                            fileName = item.name,
-                            remotePath = item.path,
-                            sizeBytes = sizeBytes,
-                            downloadedAtMillis = System.currentTimeMillis(),
-                            accountId = accountId,
-                        ),
-                    )
-                    refreshCacheAnalysis()
-                    downloadProgress = null
-                    webDavActionMessage = "已下载 ${item.name} 到本地"
-                    fileDirectoryViewModel.showMessage("已下载 ${item.name} 到本地")
-                },
-                onFailure = { error ->
-                    downloadProgress = null
-                    localOpenError = error.message ?: "下载到本地失败"
-                    ReaderDiagnosticLog.error("download_webdav_comic_failed path=${item.path}", error)
-                    fileDirectoryViewModel.showError(error.message ?: "下载到本地失败")
-                },
-            )
+                throw error
+            } catch (error: Throwable) {
+                downloadProgress = null
+                localOpenError = error.message ?: "下载到本地失败"
+                ReaderDiagnosticLog.error("download_webdav_comic_failed path=${item.path}", error)
+                fileDirectoryViewModel.showError(error.message ?: "下载到本地失败")
+            } finally {
+                if (activeDownloadJob == currentCoroutineContext().job) {
+                    activeDownloadJob = null
+                }
+            }
         }
+        activeDownloadJob = job
     }
 
     fun downloadWebDavVideoToLocal(item: WebDavItem) {
@@ -779,11 +783,7 @@ fun ComicDavApp() {
                     fileName = item.name,
                     expectedSize = info.size,
                 ) { downloaded, total ->
-                    if (progressThrottler.shouldReport(downloaded, total)) {
-                        scope.launch {
-                            downloadProgress = DownloadProgressUi(downloaded, total)
-                        }
-                    }
+                    if (progressThrottler.shouldReport(downloaded, total)) reportDownloadProgress(downloaded, total)
                 }
                 videoDownloadStore.addRecord(
                     VideoDownloadRecord(
@@ -801,7 +801,9 @@ fun ComicDavApp() {
                 fileDirectoryViewModel.showMessage("已下载 ${item.name} 到数据文件夹")
             } catch (error: CancellationException) {
                 downloadProgress = null
-                webDavActionMessage = "已取消下载"
+                if (activeDownloadJob == currentCoroutineContext().job) {
+                    webDavActionMessage = "已取消下载"
+                }
                 throw error
             } catch (error: Throwable) {
                 downloadProgress = null
@@ -905,11 +907,17 @@ fun ComicDavApp() {
         onSuccess: (String) -> Unit,
         onFailure: (String) -> Unit,
     ) {
+        val folderUriText = dataFolderUriText
+        if (folderUriText.isNullOrBlank()) {
+            onFailure("请先选择 MuBOX 数据文件夹，再下载漫画")
+            return
+        }
+        activeDownloadJob?.cancel()
         downloadProgress = null
         localOpenError = null
         webDavActionMessage = null
-        scope.launch {
-            runCatching {
+        val job = scope.launch {
+            try {
                 val client = resolveWebDavClientForAccount(accountId) ?: error("请先连接 $accountId，再下载漫画")
                 val info = size?.let { knownSize ->
                     RemoteFileInfo(
@@ -920,46 +928,29 @@ fun ComicDavApp() {
                         supportsRange = true,
                     )
                 } ?: client.head(remotePath)
-                val key = ComicCacheKey.fromRemote(
-                    accountId = accountId,
-                    remotePath = remotePath,
-                    size = info.size,
-                    etag = info.etag,
-                    lastModified = info.lastModified,
+                val record = downloadWebDavComicRecordToDataFolder(
+                    context, Uri.parse(folderUriText), client, accountId, remotePath, fileName, info, System.currentTimeMillis(), ::reportDownloadProgress,
                 )
-                remoteCache.download(
-                    client = client,
-                    remotePath = remotePath,
-                    key = key,
-                    expectedSize = info.size,
-                ) { downloaded, total ->
-                    scope.launch {
-                        downloadProgress = DownloadProgressUi(downloaded, total)
-                    }
+                downloadRecordStore.addRecord(record)
+                downloadProgress = null
+                onSuccess("已下载 $fileName 到数据文件夹")
+            } catch (error: CancellationException) {
+                downloadProgress = null
+                if (activeDownloadJob == currentCoroutineContext().job) {
+                    webDavActionMessage = "已取消下载"
                 }
-                info.size
-            }.fold(
-                onSuccess = { sizeBytes ->
-                    downloadRecordStore.addRecord(
-                        DownloadRecord(
-                            fileName = fileName,
-                            remotePath = remotePath,
-                            sizeBytes = sizeBytes,
-                            downloadedAtMillis = System.currentTimeMillis(),
-                            accountId = accountId,
-                        ),
-                    )
-                    refreshCacheAnalysis()
-                    downloadProgress = null
-                    onSuccess("已下载 $fileName 到本地")
-                },
-                onFailure = { error ->
-                    downloadProgress = null
-                    ReaderDiagnosticLog.error("download_remote_comic_failed path=$remotePath", error)
-                    onFailure(error.message ?: "下载到本地失败")
-                },
-            )
+                throw error
+            } catch (error: Throwable) {
+                downloadProgress = null
+                ReaderDiagnosticLog.error("download_remote_comic_failed path=$remotePath", error)
+                onFailure(error.message ?: "下载到本地失败")
+            } finally {
+                if (activeDownloadJob == currentCoroutineContext().job) {
+                    activeDownloadJob = null
+                }
+            }
         }
+        activeDownloadJob = job
     }
 
     fun downloadLibraryWebDavComic(item: LibraryItemWithSources) {
@@ -1297,6 +1288,76 @@ fun ComicDavApp() {
         }
     }
 
+    fun playVideoDownloadRecord(record: VideoDownloadRecord) {
+        selectedVideoDownloadRecord = null
+        pendingWebDavVideoOpen = null
+        val request = LocalVideoOpenRequest(
+            uri = record.localUri,
+            displayName = record.fileName,
+            size = record.sizeBytes.takeIf { it > 0L },
+            lastModified = record.downloadedAtMillis,
+        )
+        pendingLocalVideoOpen = request
+        localOpenError = null
+        runCatching {
+            context.startActivity(
+                VideoPlayerActivity.localIntent(
+                    context = context,
+                    request = request,
+                    resumeEnabled = appSettings.videoResumeEnabled,
+                    videoOutputMode = appSettings.videoOutputMode,
+                    gpuApiMode = appSettings.gpuApiMode,
+                    videoDecoderMode = appSettings.videoDecoderMode,
+                    mpvProfileMode = appSettings.mpvProfileMode,
+                    controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
+                    playerOrientationMode = appSettings.videoPlayerOrientationMode,
+                ),
+            )
+        }.onFailure { error ->
+            ReaderDiagnosticLog.error("play_video_download_failed uri=${record.localUri}", error)
+            localOpenError = error.message ?: "无法播放该视频，文件可能已被删除"
+        }
+    }
+
+    fun deleteVideoDownloadRecord(record: VideoDownloadRecord) {
+        scope.launch {
+            val uri = Uri.parse(record.localUri)
+            val shouldRemoveRecord = withContext(Dispatchers.IO) {
+                var documentStillResolvable = true
+                val documentDeleteSucceeded = runCatching {
+                    DocumentsContract.deleteDocument(context.contentResolver, uri)
+                }.fold(
+                    onSuccess = { deleted ->
+                        if (!deleted) {
+                            documentStillResolvable = videoDownloadDocumentStillResolvable(context, uri)
+                            ReaderDiagnosticLog.event(
+                                "delete_video_download_file_returned_false uri=$uri resolvable=$documentStillResolvable",
+                            )
+                        }
+                        deleted
+                    },
+                    onFailure = { error ->
+                        ReaderDiagnosticLog.error("delete_video_download_file_failed uri=$uri", error)
+                        documentStillResolvable = !error.causedByFileNotFound()
+                        false
+                    },
+                )
+                shouldRemoveVideoDownloadRecordAfterDelete(
+                    documentDeleteSucceeded = documentDeleteSucceeded,
+                    documentStillResolvable = documentStillResolvable,
+                )
+            }
+            if (shouldRemoveRecord) {
+                videoDownloadStore.removeRecord(record)
+                selectedVideoDownloadRecord = null
+                localOpenError = null
+                webDavActionMessage = "已删除 ${record.fileName}"
+            } else {
+                localOpenError = "无法删除 ${record.fileName}，下载记录已保留"
+            }
+        }
+    }
+
     fun closeReaderFromNavigation() {
         ReaderDiagnosticLog.event("reader_navigation_close")
         readerViewModel.closeReader()
@@ -1398,6 +1459,33 @@ fun ComicDavApp() {
         }
     }
 
+    fun openDownloadRecordComic(record: DownloadRecord) {
+        selectedDownloadRecord = null
+        val localUri = record.localUri
+        if (!localUri.isNullOrBlank()) {
+            openDirectLocalComic(
+                Uri.parse(localUri),
+                record.fileName,
+                localComicCacheKey("download", localUri, record.sizeBytes, record.downloadedAtMillis),
+                "open_download_local_ready",
+                "open_download_local_failed uri=$localUri",
+                onFailure = { error ->
+                    localOpenError = error.message ?: "无法打开这条下载记录，文件可能已被删除"
+                },
+            )
+            return
+        }
+
+        val accountId = record.accountId
+            ?: webDavViewModel.activeAccountId()
+            ?: webDavViewModel.accountId().takeIf { it.substringBefore("|").isNotBlank() }
+        if (accountId.isNullOrBlank()) {
+            localOpenError = "这条下载记录缺少 WebDAV 账号，也没有本地文件位置"
+            return
+        }
+        openRemoteComic(accountId, record.remotePath, record.sizeBytes, null, null)
+    }
+
     fun startAddingWebDavSource() {
         localOpenError = null
         webDavActionMessage = null
@@ -1468,6 +1556,7 @@ fun ComicDavApp() {
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
         selectedDownloadRecord = null
+        selectedVideoDownloadRecord = null
     }
 
     fun selectDirectoryVideoItem(item: FileDirectoryBrowserItem) {
@@ -1477,6 +1566,7 @@ fun ComicDavApp() {
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
         selectedDownloadRecord = null
+        selectedVideoDownloadRecord = null
     }
 
     fun dismissFileDirectoryMessage() {
@@ -1502,25 +1592,25 @@ fun ComicDavApp() {
         webDavActionMessage = null
     }
 
+    val hasActiveSelection = hasActiveAppSelection(
+        webDavFileSelected = selectedWebDavFile != null,
+        directoryComicSelected = selectedDirectoryComic != null,
+        directoryVideoSelected = selectedDirectoryVideo != null,
+        libraryItemSelected = selectedLibraryItem != null,
+        videoLibraryItemSelected = selectedVideoLibraryItem != null,
+        downloadRecordSelected = selectedDownloadRecord != null,
+        videoDownloadRecordSelected = selectedVideoDownloadRecord != null,
+    )
+
     BackHandler(
-        enabled = selectedWebDavFile != null ||
-            selectedDirectoryComic != null ||
-            selectedDirectoryVideo != null ||
-            selectedLibraryItem != null ||
-            selectedVideoLibraryItem != null ||
-            selectedDownloadRecord != null ||
+        enabled = hasActiveSelection ||
             isReaderOpen ||
             isWebDavOpen ||
             fileDirectoryUiState.currentTitle != null ||
             selectedTab != AppTab.SOURCES,
     ) {
         when {
-            selectedWebDavFile != null ||
-                selectedDirectoryComic != null ||
-                selectedDirectoryVideo != null ||
-                selectedLibraryItem != null ||
-                selectedVideoLibraryItem != null ||
-                selectedDownloadRecord != null -> clearSelection()
+            hasActiveSelection -> clearSelection()
             isReaderOpen -> closeReaderFromNavigation()
             isWebDavOpen -> {
                 if (!webDavViewModel.handleBack()) {
@@ -1614,6 +1704,7 @@ fun ComicDavApp() {
                             selectedLibraryItem = selectedLibraryItem,
                             selectedVideoLibraryItem = selectedVideoLibraryItem,
                             selectedDownloadRecord = selectedDownloadRecord,
+                            selectedVideoDownloadRecord = selectedVideoDownloadRecord,
                             onDownloadWebDavFile = { item ->
                                 clearSelection()
                                 downloadWebDavComicToLocal(item)
@@ -1649,6 +1740,8 @@ fun ComicDavApp() {
                             onDeleteVideoLibraryThumbnail = ::deleteVideoLibraryThumbnail,
                             onDeleteDownloadRecord = ::deleteDownloadRecord,
                             onAddDownloadRecordToLibrary = ::addDownloadRecordToLibrary,
+                            onPlayVideoDownloadRecord = ::playVideoDownloadRecord,
+                            onDeleteVideoDownloadRecord = ::deleteVideoDownloadRecord,
                             onCancel = ::clearSelection,
                         ),
                     ) { contentModifier ->
@@ -1684,6 +1777,7 @@ fun ComicDavApp() {
                                                 selectedLibraryItem = null
                                                 selectedVideoLibraryItem = null
                                                 selectedDownloadRecord = null
+                                                selectedVideoDownloadRecord = null
                                             },
                                             onSaveDirectory = {
                                                 val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
@@ -1708,13 +1802,7 @@ fun ComicDavApp() {
                                             downloadProgress = downloadProgress,
                                             downloadError = localOpenError,
                                             actionMessage = webDavActionMessage,
-                                            onCancelDownload = {
-                                                activeDownloadJob?.cancel()
-                                                activeDownloadJob = null
-                                                downloadProgress = null
-                                                localOpenError = null
-                                                webDavActionMessage = "已取消下载"
-                                            },
+                                            onCancelDownload = ::cancelActiveDownload,
                                             selectedFile = selectedWebDavFile,
                                             modifier = contentModifier,
                                         )
@@ -1861,6 +1949,7 @@ fun ComicDavApp() {
                                         selectedWebDavFile = null
                                         selectedDirectoryComic = null
                                         selectedDownloadRecord = null
+                                        selectedVideoDownloadRecord = null
                                     },
                                     onOpenDirectories = {
                                         localOpenError = null
@@ -1887,6 +1976,7 @@ fun ComicDavApp() {
                                         selectedDirectoryVideo = null
                                         selectedLibraryItem = null
                                         selectedDownloadRecord = null
+                                        selectedVideoDownloadRecord = null
                                     },
                                     onOpenDirectories = {
                                         localOpenError = null
@@ -1901,24 +1991,43 @@ fun ComicDavApp() {
                                     modifier = contentModifier,
                                 )
                             }
-                            AppTab.SETTINGS -> {
-                                SettingsTabContent(
-                                    settings = appSettings,
-                                    appSettingsStore = appSettingsStore,
-                                    scope = scope,
-                                    downloadRecords = downloadRecords,
-                                    selectedDownloadRecord = selectedDownloadRecord,
-                                    onSelectDownloadRecord = { record ->
+                            AppTab.DOWNLOADS -> {
+                                DownloadsScreen(
+                                    comicDownloads = downloadRecords,
+                                    videoDownloads = videoDownloadRecords,
+                                    selectedComicDownload = selectedDownloadRecord,
+                                    selectedVideoDownload = selectedVideoDownloadRecord,
+                                    activeDownload = downloadProgress,
+                                    onOpenComicDownload = ::openDownloadRecordComic,
+                                    onSelectComicDownload = { record ->
                                         selectedDownloadRecord = record
+                                        selectedVideoDownloadRecord = null
                                         selectedWebDavFile = null
                                         selectedDirectoryComic = null
                                         selectedDirectoryVideo = null
                                         selectedLibraryItem = null
                                         selectedVideoLibraryItem = null
                                     },
-                                    onClearSelectedDownloadRecord = {
+                                    onSelectVideoDownload = { record ->
+                                        selectedVideoDownloadRecord = record
                                         selectedDownloadRecord = null
+                                        selectedWebDavFile = null
+                                        selectedDirectoryComic = null
+                                        selectedDirectoryVideo = null
+                                        selectedLibraryItem = null
+                                        selectedVideoLibraryItem = null
                                     },
+                                    onPlayVideoDownload = ::playVideoDownloadRecord,
+                                    onCancelActiveDownload = ::cancelActiveDownload,
+                                    actionMessage = localOpenError ?: webDavActionMessage,
+                                    modifier = contentModifier,
+                                )
+                            }
+                            AppTab.SETTINGS -> {
+                                SettingsTabContent(
+                                    settings = appSettings,
+                                    appSettingsStore = appSettingsStore,
+                                    scope = scope,
                                     cacheAnalysis = cacheAnalysis,
                                     cacheActionMessage = cacheActionMessage,
                                     onClearCacheCategory = { category ->

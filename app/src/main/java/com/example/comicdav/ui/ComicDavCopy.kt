@@ -4,6 +4,7 @@ object ComicDavCopy {
     const val sourcesTab = "来源"
     const val libraryTab = "书架"
     const val videoLibraryTab = "影视库"
+    const val downloadsTab = "下载"
     const val settingsTab = "设置"
     const val sourcesTitle = "来源"
     const val libraryTitle = "书架"
