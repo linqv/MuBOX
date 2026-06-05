@@ -1288,6 +1288,37 @@ fun ComicDavApp() {
         }
     }
 
+    fun removeComicDownloadRecord(record: DownloadRecord) {
+        deleteDownloadRecord(record)
+    }
+
+    fun deleteComicDownloadFile(record: DownloadRecord) {
+        val uri = Uri.parse(record.localUri)
+        scope.launch {
+            val shouldRemoveRecord = withContext(Dispatchers.IO) {
+                val documentDeleteSucceeded = runCatching {
+                    DocumentsContract.deleteDocument(context.contentResolver, uri)
+                }.fold(
+                    onSuccess = { deleted -> deleted },
+                    onFailure = { error ->
+                        ReaderDiagnosticLog.error("delete_comic_download_file_failed uri=$uri", error)
+                        false
+                    },
+                )
+                shouldRemoveVideoDownloadRecordAfterDelete(
+                    documentDeleteSucceeded = documentDeleteSucceeded,
+                    documentStillResolvable = true,
+                )
+            }
+            if (shouldRemoveRecord) {
+                downloadRecordStore.removeRecord(record)
+                webDavActionMessage = "已删除 ${record.fileName}"
+            } else {
+                localOpenError = "无法删除 ${record.fileName}，下载记录已保留"
+            }
+        }
+    }
+
     fun playVideoDownloadRecord(record: VideoDownloadRecord) {
         selectedVideoDownloadRecord = null
         pendingWebDavVideoOpen = null
@@ -1355,6 +1386,13 @@ fun ComicDavApp() {
             } else {
                 localOpenError = "无法删除 ${record.fileName}，下载记录已保留"
             }
+        }
+    }
+
+    fun removeVideoDownloadRecord(record: VideoDownloadRecord) {
+        scope.launch {
+            videoDownloadStore.removeRecord(record)
+            webDavActionMessage = "已从列表移除 ${record.fileName}"
         }
     }
 
