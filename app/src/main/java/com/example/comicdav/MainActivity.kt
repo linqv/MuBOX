@@ -64,7 +64,7 @@ import com.example.comicdav.feature.reader.installReaderImageLoader
 import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.feature.reader.readerImageFormatCacheKey
 import com.example.comicdav.feature.settings.SettingsScreen
-import com.example.comicdav.feature.settings.pageCacheLimitBytesForMb
+import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryViewModel
 import com.example.comicdav.feature.webdav.DownloadProgressUi
@@ -306,11 +306,19 @@ fun ComicDavApp() {
         }
     }
 
-    LaunchedEffect(appSettings.diskCacheLimitMb) {
-        val pageCacheLimitBytes = pageCacheLimitBytesForMb(appSettings.diskCacheLimitMb)
+    LaunchedEffect(appSettings.pageImageCacheEnabled, appSettings.diskCacheLimitMb) {
+        val pageCacheLimitBytes = pageCacheLimitBytesForSettings(
+            pageImageCacheEnabled = appSettings.pageImageCacheEnabled,
+            limitMb = appSettings.diskCacheLimitMb,
+        )
+        readerViewModel.updatePageImageCacheEnabled(appSettings.pageImageCacheEnabled)
         readerViewModel.updatePageCacheMaxBytes(pageCacheLimitBytes)
         withContext(Dispatchers.IO) {
-            ReaderPageCache.prune(context.cacheDir, maxBytes = pageCacheLimitBytes)
+            if (appSettings.pageImageCacheEnabled) {
+                ReaderPageCache.prune(context.cacheDir, maxBytes = pageCacheLimitBytes)
+            } else {
+                clearComicCacheCategory(context.cacheDir, ComicCacheCategory.READER_PAGES)
+            }
         }
         refreshCacheAnalysis()
     }

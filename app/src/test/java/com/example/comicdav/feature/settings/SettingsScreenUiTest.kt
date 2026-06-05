@@ -47,6 +47,29 @@ class SettingsScreenUiTest {
     }
 
     @Test
+    fun rootSettingsLayoutExposesPageImageCacheToggleBeforeLimit() {
+        val cacheRows = rootSettingsGroupLayout().rowsInGroup("缓存")
+
+        assertTrue(cacheRows.indexOf("页面图片缓存") < cacheRows.indexOf("页面图片缓存上限"))
+        assertTrue(cacheRows.indexOf("页面图片缓存上限") < cacheRows.indexOf("页面图片缓存占用"))
+    }
+
+    @Test
+    fun diskCacheLimitOptionsStartAtFiveHundredMb() {
+        assertEquals(500, coerceDiskCacheLimitMb(0))
+        assertEquals(500, coerceDiskCacheLimitMb(500))
+        assertEquals(1024, coerceDiskCacheLimitMb(1024))
+        assertEquals(5120, coerceDiskCacheLimitMb(9000))
+        assertEquals("500 MB", diskCacheLimitLabel(0))
+    }
+
+    @Test
+    fun pageCacheLimitUsesZeroBytesWhenPageImageCacheDisabled() {
+        assertEquals(0L, pageCacheLimitBytesForSettings(pageImageCacheEnabled = false, limitMb = 1024))
+        assertEquals(1_073_741_824L, pageCacheLimitBytesForSettings(pageImageCacheEnabled = true, limitMb = 1024))
+    }
+
+    @Test
     fun comicSettingsLayoutContainsComicSpecificSettings() {
         val comicRows = comicSettingsGroupLayout().rowsInGroup("漫画设置")
 

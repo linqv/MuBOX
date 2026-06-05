@@ -62,6 +62,7 @@ data class AppSettings(
     val screenRotationLockEnabled: Boolean = false,
     val volumeKeysTurnPagesEnabled: Boolean = false,
     val readerPinchZoomEnabled: Boolean = false,
+    val pageImageCacheEnabled: Boolean = true,
     val diskCacheLimitMb: Int = 1024,
     val webDavPrefetchPageCount: Int = 4,
     val libraryCoversEnabled: Boolean = true,
@@ -85,6 +86,7 @@ class AppSettingsStore(
     private val dataStore: DataStore<Preferences>,
 ) {
     val settings: Flow<AppSettings> = dataStore.data.map { preferences ->
+        val storedDiskCacheLimitMb = preferences[DISK_CACHE_LIMIT_MB]
         AppSettings(
             readingDirection = preferences[READING_DIRECTION].toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
             readerLoggingMode = preferences[READER_LOGGING_MODE].toEnumOrNull<ReaderLoggingMode>()
@@ -96,7 +98,8 @@ class AppSettingsStore(
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
             readerPinchZoomEnabled = preferences[READER_PINCH_ZOOM_ENABLED] ?: false,
-            diskCacheLimitMb = coerceStoredDiskCacheLimitMb(preferences[DISK_CACHE_LIMIT_MB] ?: 1024),
+            pageImageCacheEnabled = preferences[PAGE_IMAGE_CACHE_ENABLED] ?: (storedDiskCacheLimitMb != 0),
+            diskCacheLimitMb = coerceStoredDiskCacheLimitMb(storedDiskCacheLimitMb ?: 1024),
             webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
             libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
             videoResumeEnabled = preferences[VIDEO_RESUME_ENABLED] ?: true,
@@ -174,6 +177,12 @@ class AppSettingsStore(
     suspend fun updateReaderPinchZoomEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[READER_PINCH_ZOOM_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updatePageImageCacheEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PAGE_IMAGE_CACHE_ENABLED] = enabled
         }
     }
 
@@ -272,6 +281,7 @@ class AppSettingsStore(
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")
         val VOLUME_KEYS_TURN_PAGES_ENABLED = booleanPreferencesKey("volume_keys_turn_pages_enabled")
         val READER_PINCH_ZOOM_ENABLED = booleanPreferencesKey("reader_pinch_zoom_enabled")
+        val PAGE_IMAGE_CACHE_ENABLED = booleanPreferencesKey("page_image_cache_enabled")
         val DISK_CACHE_LIMIT_MB = intPreferencesKey("disk_cache_limit_gb")
         val WEB_DAV_PREFETCH_PAGE_COUNT = intPreferencesKey("webdav_prefetch_page_count")
         val LIBRARY_COVERS_ENABLED = booleanPreferencesKey("library_covers_enabled")
@@ -289,14 +299,14 @@ class AppSettingsStore(
     }
 }
 
-private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
+private val SupportedDiskCacheLimitMb = listOf(500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
 private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
-    if (limitMb in 1..5) {
-        limitMb * 1024
-    } else {
-        coerceDiskCacheLimitMb(limitMb)
+    when {
+        limitMb == 0 -> 1024
+        limitMb in 1..5 -> limitMb * 1024
+        else -> coerceDiskCacheLimitMb(limitMb)
     }
 
 private fun coerceDiskCacheLimitMb(limitMb: Int): Int =

@@ -84,6 +84,17 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun pageImageCacheDefaultsOnAndCanBeUpdated() = runTest {
+        val store = createStore("page_image_cache_enabled.preferences_pb")
+
+        assertTrue(store.settings.first().pageImageCacheEnabled)
+
+        store.updatePageImageCacheEnabled(false)
+
+        assertFalse(store.settings.first().pageImageCacheEnabled)
+    }
+
+    @Test
     fun readerPinchZoomDefaultsOff() = runTest {
         val store = createStore("reader_pinch_zoom_default.preferences_pb")
 

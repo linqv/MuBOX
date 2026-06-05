@@ -77,7 +77,7 @@ import kotlin.math.roundToInt
 
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
-private val SupportedDiskCacheLimitMb = listOf(0, 500, 1024, 2048, 3072, 4096, 5120)
+private val SupportedDiskCacheLimitMb = listOf(500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
 
 private enum class SettingsPage {
@@ -108,7 +108,15 @@ internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
         ),
         SettingsGroupLayout(
             title = "缓存",
-            rows = listOf("缓存占用", "远程整本缓存", "WebDAV 索引缓存", "页面图片缓存", "书架封面缓存", "磁盘缓存上限"),
+            rows = listOf(
+                "缓存占用",
+                "远程整本缓存",
+                "WebDAV 索引缓存",
+                "页面图片缓存",
+                "页面图片缓存上限",
+                "页面图片缓存占用",
+                "书架封面缓存",
+            ),
         ),
     )
 
@@ -162,6 +170,7 @@ fun SettingsScreen(
     onScreenRotationLockChange: (Boolean) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
     onReaderPinchZoomEnabledChange: (Boolean) -> Unit = {},
+    onPageImageCacheEnabledChange: (Boolean) -> Unit = {},
     onDiskCacheLimitChange: (Int) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
@@ -321,8 +330,20 @@ fun SettingsScreen(
                 enabled = cacheAnalysis.remoteIndexBytes > 0L,
                 onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_INDEX) },
             )
-            CacheActionRow(
+            MuBoxSwitchRow(
                 title = "页面图片缓存",
+                checked = settings.pageImageCacheEnabled,
+                onCheckedChange = onPageImageCacheEnabledChange,
+                subtitle = "关闭后不复用页面文件",
+            )
+            if (settings.pageImageCacheEnabled) {
+                DiskCacheLimitRow(
+                    limitMb = settings.diskCacheLimitMb,
+                    onLimitChange = onDiskCacheLimitChange,
+                )
+            }
+            CacheActionRow(
+                title = "页面图片缓存占用",
                 subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
                 enabled = cacheAnalysis.readerPagesBytes > 0L,
                 onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
@@ -332,10 +353,6 @@ fun SettingsScreen(
                 subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
                 enabled = cacheAnalysis.libraryCoversBytes > 0L,
                 onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
-            )
-            DiskCacheLimitRow(
-                limitMb = settings.diskCacheLimitMb,
-                onLimitChange = onDiskCacheLimitChange,
             )
         }
         Text(
@@ -674,9 +691,11 @@ internal fun coerceWebDavPrefetchPageCount(pageCount: Int): Int =
 internal fun pageCacheLimitBytesForMb(limitMb: Int): Long =
     coerceDiskCacheLimitMb(limitMb) * 1024L * 1024L
 
+internal fun pageCacheLimitBytesForSettings(pageImageCacheEnabled: Boolean, limitMb: Int): Long =
+    if (pageImageCacheEnabled) pageCacheLimitBytesForMb(limitMb) else 0L
+
 internal fun diskCacheLimitLabel(limitMb: Int): String =
     when (val coercedLimit = coerceDiskCacheLimitMb(limitMb)) {
-        0 -> "0 MB"
         500 -> "500 MB"
         else -> "${coercedLimit / 1024} GB"
     }
@@ -943,12 +962,12 @@ private fun DiskCacheLimitRow(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "磁盘缓存上限",
+                    text = "页面图片缓存上限",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
-                    text = "仅限制页面图片，不含 WebDAV 整本下载和索引",
+                    text = "仅限制阅读器页面图片，不含 WebDAV 整本下载和索引",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

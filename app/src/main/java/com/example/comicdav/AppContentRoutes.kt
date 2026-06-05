@@ -201,6 +201,9 @@ internal fun SettingsTabContent(
         onReaderPinchZoomEnabledChange = { value ->
             scope.launch { appSettingsStore.updateReaderPinchZoomEnabled(value) }
         },
+        onPageImageCacheEnabledChange = { value ->
+            scope.launch { appSettingsStore.updatePageImageCacheEnabled(value) }
+        },
         onDiskCacheLimitChange = { value ->
             scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
         },

@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -246,6 +247,33 @@ class ReaderViewModelTest {
         assertEquals(listOf(1), session.plannedRangePages)
         assertEquals(listOf(plannedRangeForPage(13).key()), session.prefetchedRanges)
         assertEquals((0..13).toList(), session.loadedPages)
+    }
+
+    @Test
+    fun disabledPageImageCacheBypassesExistingCachedPageFile() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        mainDispatcher.set(dispatcher)
+        val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
+        val viewModel = ReaderViewModel(
+            ioDispatcher = dispatcher,
+            elapsedRealtimeMs = { testScheduler.currentTime },
+        )
+        viewModel.updatePageImageCacheEnabled(false)
+        val cachedFile = ReaderPageCache.pageFile(temp.root, "comic", 0)
+        cachedFile.writeBytes(byteArrayOf(42))
+
+        viewModel.openExistingSession(
+            openedSession = session,
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "comic",
+        )
+        runCurrent()
+
+        assertEquals(listOf(0), session.loadedPages)
+        assertNotEquals(cachedFile.absolutePath, viewModel.uiState.pageFiles[0]?.absolutePath)
+        assertEquals(listOf(0.toByte()), viewModel.uiState.pageFiles[0]?.readBytes()?.toList())
+        assertEquals(listOf(42.toByte()), cachedFile.readBytes().toList())
     }
 }
 

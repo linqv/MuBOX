@@ -54,8 +54,12 @@ class ReaderViewModel(
     private var cacheDir: File? = null
     private var comicKey: String? = null
     private var pageCacheKey: String? = null
+    private var activeReaderKey: String? = null
+    private var activeTransientPageKey: String? = null
     @Volatile
     private var pageCacheMaxBytes: Long = ReaderPageCache.DEFAULT_MAX_BYTES
+    @Volatile
+    private var pageImageCacheEnabled: Boolean = true
     @Volatile
     private var generation = 0
     private var remoteOpenJob: Job? = null
@@ -76,6 +80,10 @@ class ReaderViewModel(
         pageCacheMaxBytes = maxBytes.coerceAtLeast(0L)
     }
 
+    fun updatePageImageCacheEnabled(enabled: Boolean) {
+        pageImageCacheEnabled = enabled
+    }
+
     fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
         closeCurrentSession()
         diagnostics.reset()
@@ -84,6 +92,8 @@ class ReaderViewModel(
         this.pageCacheKey = comicKey ?: "local-${path.hashCode()}"
         val openGeneration = generation
         val activeReaderKey = readerInstanceKey(requireNotNull(this.pageCacheKey), openGeneration)
+        this.activeReaderKey = activeReaderKey
+        this.activeTransientPageKey = activeReaderKey
         ReaderDiagnosticLog.event("open_local_start initialPage=$initialPage generation=$openGeneration key=$activeReaderKey")
         uiState = ReaderUiState(isLoading = true, readerKey = activeReaderKey)
         viewModelScope.launch {
@@ -159,6 +169,8 @@ class ReaderViewModel(
         this.pageCacheKey = pageCacheKey
         ReaderDiagnosticLog.event("open_session_start initialPage=$initialPage generation=$openGeneration key=$comicKey")
         val activeReaderKey = readerInstanceKey(comicKey, openGeneration)
+        this.activeReaderKey = activeReaderKey
+        this.activeTransientPageKey = readerInstanceKey(pageCacheKey, openGeneration)
         uiState = ReaderUiState(isLoading = true, readerKey = activeReaderKey)
         viewModelScope.launch {
             runCatching {
@@ -341,6 +353,8 @@ class ReaderViewModel(
 
     private fun closeCurrentSession() {
         val activeSession = session
+        val transientCacheDir = cacheDir
+        val transientPageKey = activeTransientPageKey
         ReaderDiagnosticLog.event("close_current_session generation=$generation hasSession=${activeSession != null}")
         if (activeSession != null) {
             diagnostics.localSessionSummary()?.let { summary ->
@@ -363,9 +377,16 @@ class ReaderViewModel(
         viewportJob = null
         generation++
         activeSession?.let(::closeSessionAsync)
+        if (transientCacheDir != null && transientPageKey != null) {
+            cleanupScope.launch {
+                ReaderPageCache.clearTransientPages(transientCacheDir, transientPageKey)
+            }
+        }
         session = null
         comicKey = null
         pageCacheKey = null
+        activeReaderKey = null
+        activeTransientPageKey = null
     }
 
     fun reportPageDemand(pageIndex: Int, source: String) {
@@ -568,8 +589,17 @@ class ReaderViewModel(
                     if (expectedGeneration != generation) {
                         throw CancellationException("reader session changed")
                     }
-                    val outputFile = ReaderPageCache.pageFile(cacheDir, pageCacheKey, index)
-                    if (outputFile.isFile && outputFile.length() > 0L) {
+                    val cacheEnabled = pageImageCacheEnabled
+                    val outputFile = if (cacheEnabled) {
+                        ReaderPageCache.pageFile(cacheDir, pageCacheKey, index)
+                    } else {
+                        ReaderPageCache.transientPageFile(
+                            cacheDir = cacheDir,
+                            readerKey = readerInstanceKey(pageCacheKey ?: "default", expectedGeneration),
+                            pageIndex = index,
+                        )
+                    }
+                    if (cacheEnabled && outputFile.isFile && outputFile.length() > 0L) {
                         outputFile.setLastModified(System.currentTimeMillis())
                         val durationMs = (elapsedRealtimeMs() - loadStartedAtMs).coerceAtLeast(0L)
                         ReaderDiagnosticLog.detail(ReaderLogCategory.PAGE_LOAD) {
@@ -609,7 +639,9 @@ class ReaderViewModel(
                             extractMs = extractMs,
                             fileSize = loadedFile.length(),
                         )
-                        pageCacheFileToPrune = loadedFile
+                        if (cacheEnabled) {
+                            pageCacheFileToPrune = loadedFile
+                        }
                         loadedFile
                     }
                 }
