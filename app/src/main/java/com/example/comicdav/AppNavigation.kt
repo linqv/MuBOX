@@ -175,8 +175,6 @@ internal fun selectionBottomBar(
     selectedDirectoryVideo: FileDirectoryBrowserItem?,
     selectedLibraryItem: LibraryItemWithSources?,
     selectedVideoLibraryItem: VideoLibraryItemWithSources?,
-    selectedDownloadRecord: DownloadRecord?,
-    selectedVideoDownloadRecord: VideoDownloadRecord?,
     onDownloadWebDavFile: (WebDavItem) -> Unit,
     onDownloadWebDavVideo: (WebDavItem) -> Unit,
     onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
@@ -189,10 +187,6 @@ internal fun selectionBottomBar(
     onRemoveVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
     onRefreshVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
     onDeleteVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
-    onDeleteDownloadRecord: (DownloadRecord) -> Unit,
-    onAddDownloadRecordToLibrary: (DownloadRecord) -> Unit,
-    onPlayVideoDownloadRecord: (VideoDownloadRecord) -> Unit,
-    onDeleteVideoDownloadRecord: (VideoDownloadRecord) -> Unit,
     onCancel: () -> Unit,
 ): (@Composable () -> Unit)? {
     val actions = when {
@@ -235,16 +229,6 @@ internal fun selectionBottomBar(
             },
             SelectionAction("移除", Icons.Filled.Delete) { onRemoveVideoLibraryItem(selectedVideoLibraryItem) },
             SelectionAction("删除缩略图", Icons.Filled.Delete) { onDeleteVideoLibraryThumbnail(selectedVideoLibraryItem) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
-        selectedDownloadRecord != null -> listOf(
-            SelectionAction("删除", Icons.Filled.Delete) { onDeleteDownloadRecord(selectedDownloadRecord) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            SelectionAction("加入书架", Icons.Filled.Book) { onAddDownloadRecordToLibrary(selectedDownloadRecord) },
-        )
-        selectedVideoDownloadRecord != null -> listOf(
-            SelectionAction("播放", Icons.Filled.PlayArrow) { onPlayVideoDownloadRecord(selectedVideoDownloadRecord) },
-            SelectionAction("删除", Icons.Filled.Delete) { onDeleteVideoDownloadRecord(selectedVideoDownloadRecord) },
             SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
         )
         else -> return null

@@ -185,8 +185,6 @@ fun ComicDavApp() {
     var selectedDirectoryVideo by remember { mutableStateOf<FileDirectoryBrowserItem?>(null) }
     var selectedLibraryItem by remember { mutableStateOf<LibraryItemWithSources?>(null) }
     var selectedVideoLibraryItem by remember { mutableStateOf<VideoLibraryItemWithSources?>(null) }
-    var selectedDownloadRecord by remember { mutableStateOf<DownloadRecord?>(null) }
-    var selectedVideoDownloadRecord by remember { mutableStateOf<VideoDownloadRecord?>(null) }
     var pendingLocalVideoOpen by remember { mutableStateOf<LocalVideoOpenRequest?>(null) }
     var pendingWebDavVideoOpen by remember { mutableStateOf<WebDavVideoOpenRequest?>(null) }
     var localOpenError by remember { mutableStateOf<String?>(null) }
@@ -216,8 +214,6 @@ fun ComicDavApp() {
         selectedDirectoryVideo = null
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
-        selectedDownloadRecord = null
-        selectedVideoDownloadRecord = null
     }
     fun refreshCacheAnalysis() {
         scope.launch {
@@ -1270,7 +1266,6 @@ fun ComicDavApp() {
                 )
             }.fold(
                 onSuccess = {
-                    selectedDownloadRecord = null
                     libraryViewModel.showMessage("已将 ${record.fileName} 加入书架")
                 },
                 onFailure = { error ->
@@ -1284,7 +1279,6 @@ fun ComicDavApp() {
     fun deleteDownloadRecord(record: DownloadRecord) {
         scope.launch {
             downloadRecordStore.removeRecord(record)
-            selectedDownloadRecord = null
         }
     }
 
@@ -1320,7 +1314,6 @@ fun ComicDavApp() {
     }
 
     fun playVideoDownloadRecord(record: VideoDownloadRecord) {
-        selectedVideoDownloadRecord = null
         pendingWebDavVideoOpen = null
         val request = LocalVideoOpenRequest(
             uri = record.localUri,
@@ -1380,7 +1373,6 @@ fun ComicDavApp() {
             }
             if (shouldRemoveRecord) {
                 videoDownloadStore.removeRecord(record)
-                selectedVideoDownloadRecord = null
                 localOpenError = null
                 webDavActionMessage = "已删除 ${record.fileName}"
             } else {
@@ -1498,7 +1490,6 @@ fun ComicDavApp() {
     }
 
     fun openDownloadRecordComic(record: DownloadRecord) {
-        selectedDownloadRecord = null
         val localUri = record.localUri
         if (!localUri.isNullOrBlank()) {
             openDirectLocalComic(
@@ -1593,8 +1584,6 @@ fun ComicDavApp() {
         selectedDirectoryVideo = null
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
-        selectedDownloadRecord = null
-        selectedVideoDownloadRecord = null
     }
 
     fun selectDirectoryVideoItem(item: FileDirectoryBrowserItem) {
@@ -1603,8 +1592,6 @@ fun ComicDavApp() {
         selectedDirectoryComic = null
         selectedLibraryItem = null
         selectedVideoLibraryItem = null
-        selectedDownloadRecord = null
-        selectedVideoDownloadRecord = null
     }
 
     fun dismissFileDirectoryMessage() {
@@ -1739,8 +1726,6 @@ fun ComicDavApp() {
                             selectedDirectoryVideo = selectedDirectoryVideo,
                             selectedLibraryItem = selectedLibraryItem,
                             selectedVideoLibraryItem = selectedVideoLibraryItem,
-                            selectedDownloadRecord = selectedDownloadRecord,
-                            selectedVideoDownloadRecord = selectedVideoDownloadRecord,
                             onDownloadWebDavFile = { item ->
                                 clearSelection()
                                 downloadWebDavComicToLocal(item)
@@ -1774,10 +1759,6 @@ fun ComicDavApp() {
                             onRemoveVideoLibraryItem = ::removeVideoLibraryItem,
                             onRefreshVideoLibraryThumbnail = ::refreshVideoLibraryThumbnail,
                             onDeleteVideoLibraryThumbnail = ::deleteVideoLibraryThumbnail,
-                            onDeleteDownloadRecord = ::deleteDownloadRecord,
-                            onAddDownloadRecordToLibrary = ::addDownloadRecordToLibrary,
-                            onPlayVideoDownloadRecord = ::playVideoDownloadRecord,
-                            onDeleteVideoDownloadRecord = ::deleteVideoDownloadRecord,
                             onCancel = ::clearSelection,
                         ),
                     ) { contentModifier ->
@@ -1812,8 +1793,6 @@ fun ComicDavApp() {
                                                 selectedDirectoryVideo = null
                                                 selectedLibraryItem = null
                                                 selectedVideoLibraryItem = null
-                                                selectedDownloadRecord = null
-                                                selectedVideoDownloadRecord = null
                                             },
                                             onSaveDirectory = {
                                                 val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
@@ -1984,8 +1963,6 @@ fun ComicDavApp() {
                                         selectedLibraryItem = item
                                         selectedWebDavFile = null
                                         selectedDirectoryComic = null
-                                        selectedDownloadRecord = null
-                                        selectedVideoDownloadRecord = null
                                     },
                                     onOpenDirectories = {
                                         localOpenError = null
@@ -2011,8 +1988,6 @@ fun ComicDavApp() {
                                         selectedDirectoryComic = null
                                         selectedDirectoryVideo = null
                                         selectedLibraryItem = null
-                                        selectedDownloadRecord = null
-                                        selectedVideoDownloadRecord = null
                                     },
                                     onOpenDirectories = {
                                         localOpenError = null
@@ -2031,30 +2006,21 @@ fun ComicDavApp() {
                                 DownloadsScreen(
                                     comicDownloads = downloadRecords,
                                     videoDownloads = videoDownloadRecords,
-                                    selectedComicDownload = selectedDownloadRecord,
-                                    selectedVideoDownload = selectedVideoDownloadRecord,
                                     activeDownload = downloadProgress,
                                     onOpenComicDownload = ::openDownloadRecordComic,
-                                    onSelectComicDownload = { record ->
-                                        selectedDownloadRecord = record
-                                        selectedVideoDownloadRecord = null
-                                        selectedWebDavFile = null
-                                        selectedDirectoryComic = null
-                                        selectedDirectoryVideo = null
-                                        selectedLibraryItem = null
-                                        selectedVideoLibraryItem = null
-                                    },
-                                    onSelectVideoDownload = { record ->
-                                        selectedVideoDownloadRecord = record
-                                        selectedDownloadRecord = null
-                                        selectedWebDavFile = null
-                                        selectedDirectoryComic = null
-                                        selectedDirectoryVideo = null
-                                        selectedLibraryItem = null
-                                        selectedVideoLibraryItem = null
-                                    },
                                     onPlayVideoDownload = ::playVideoDownloadRecord,
                                     onCancelActiveDownload = ::cancelActiveDownload,
+                                    onRemoveComicRecord = ::removeComicDownloadRecord,
+                                    onRemoveVideoRecord = ::removeVideoDownloadRecord,
+                                    onDeleteComicFile = ::deleteComicDownloadFile,
+                                    onDeleteVideoFile = ::deleteVideoDownloadRecord,
+                                    onShowDetails = {
+                                        fileDirectoryViewModel.showMessage("暂无详情页面")
+                                    },
+                                    onOpenSources = {
+                                        localOpenError = null
+                                        selectedTabName = AppTab.SOURCES.name
+                                    },
                                     actionMessage = localOpenError ?: webDavActionMessage,
                                     modifier = contentModifier,
                                 )
