@@ -56,7 +56,7 @@ class ReaderViewModelTest {
     }
 
     @Test
-    fun openSessionLimitsExtractPrefetchAheadWindow() = runTest {
+    fun openSessionExtractPrefetchUsesConfiguredForwardWindow() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         mainDispatcher.set(dispatcher)
         val session = RecordingComicSession(pageCount = 20, forwardPrefetchPageCount = 12)
@@ -75,7 +75,7 @@ class ReaderViewModelTest {
         advanceTimeBy(200)
         runCurrent()
 
-        assertEquals(listOf(0, 1, 2, 3), session.loadedPages)
+        assertEquals((0..12).toList(), session.loadedPages)
     }
 
     @Test
@@ -233,7 +233,7 @@ class ReaderViewModelTest {
         runCurrent()
         advanceTimeBy(200)
         runCurrent()
-        assertEquals(listOf(0, 1, 2, 3), session.loadedPages)
+        assertEquals((0..12).toList(), session.loadedPages)
         assertEquals((0..12).map { plannedRangeForPage(it).key() }, session.prefetchedRanges)
         session.plannedRangePages.clear()
         session.prefetchedRanges.clear()
@@ -245,7 +245,7 @@ class ReaderViewModelTest {
 
         assertEquals(listOf(1), session.plannedRangePages)
         assertEquals(listOf(plannedRangeForPage(13).key()), session.prefetchedRanges)
-        assertEquals(listOf(0, 1, 2, 3, 4), session.loadedPages)
+        assertEquals((0..13).toList(), session.loadedPages)
     }
 }
 

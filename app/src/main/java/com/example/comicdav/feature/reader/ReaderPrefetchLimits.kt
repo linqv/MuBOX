@@ -11,9 +11,6 @@ internal const val MAX_PLANNED_RANGE_CONCURRENCY = 2
 /** Maximum concurrent low-priority planned-range prefetch operations. */
 internal const val MAX_LOW_PRIORITY_PLANNED_RANGE_CONCURRENCY = 1
 
-/** Maximum forward pages to extract ahead; page extraction is serialized per reader session. */
-internal const val MAX_EXTRACT_PREFETCH_AHEAD = 3
-
 /** Keep planned byte prefetch under the range cache capacity with room for current reads. */
 internal const val PREFETCH_PLAN_MAX_BYTES = 48L * 1024L * 1024L
 

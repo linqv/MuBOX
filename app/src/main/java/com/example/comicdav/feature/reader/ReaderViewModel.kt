@@ -416,11 +416,9 @@ class ReaderViewModel(
     private fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
         val activeSession = session ?: return
         val activeCacheDir = cacheDir ?: return
-        val extractForwardPrefetchPages = activeSession.forwardPrefetchPageCount
-            .coerceAtLeast(0)
-            .coerceAtMost(MAX_EXTRACT_PREFETCH_AHEAD)
+        val forwardPrefetchPages = activeSession.forwardPrefetchPageCount.coerceAtLeast(0)
         val backwardPrefetchPages = activeSession.backwardPrefetchPageCount.coerceAtLeast(0)
-        if (extractForwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
+        if (forwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
             ReaderDiagnosticLog.detail(ReaderLogCategory.PREFETCH) {
                 "prefetch_skipped reason=session_disabled page=$pageIndex"
             }
@@ -429,13 +427,13 @@ class ReaderViewModel(
         val desiredWindow = ReaderPrefetchPlanner.desiredPageWindow(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = extractForwardPrefetchPages,
+            forwardPages = forwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
         val retentionWindow = retainedPagePrefetchWindow(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = extractForwardPrefetchPages,
+            forwardPages = forwardPrefetchPages,
             desiredWindow = desiredWindow,
             reason = reason,
         )
@@ -447,7 +445,7 @@ class ReaderViewModel(
         val missingNeighbors = ReaderPrefetchPlanner.neighborPrefetchPages(
             pageIndex = pageIndex,
             pageCount = activeSession.pageCount,
-            forwardPages = extractForwardPrefetchPages,
+            forwardPages = forwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
             .filterNot { uiState.pageFiles.containsKey(it) }
