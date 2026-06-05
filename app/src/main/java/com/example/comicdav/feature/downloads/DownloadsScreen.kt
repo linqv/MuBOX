@@ -1,15 +1,13 @@
 package com.example.comicdav.feature.downloads
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,40 +20,44 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.feature.webdav.DownloadProgressUi
-import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.example.comicdav.video.MediaKind
 
 @Composable
 fun DownloadsScreen(
     comicDownloads: List<DownloadRecord>,
     videoDownloads: List<VideoDownloadRecord>,
-    selectedComicDownload: DownloadRecord?,
-    selectedVideoDownload: VideoDownloadRecord?,
     activeDownload: DownloadProgressUi?,
     onOpenComicDownload: (DownloadRecord) -> Unit,
-    onSelectComicDownload: (DownloadRecord) -> Unit,
-    onSelectVideoDownload: (VideoDownloadRecord) -> Unit,
     onPlayVideoDownload: (VideoDownloadRecord) -> Unit,
     onCancelActiveDownload: () -> Unit,
+    onRemoveComicRecord: (DownloadRecord) -> Unit,
+    onRemoveVideoRecord: (VideoDownloadRecord) -> Unit,
+    onDeleteComicFile: (DownloadRecord) -> Unit,
+    onDeleteVideoFile: (VideoDownloadRecord) -> Unit,
+    onShowDetails: () -> Unit,
+    onOpenSources: () -> Unit,
     actionMessage: String?,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
-    val isEmpty = comicDownloads.isEmpty() && videoDownloads.isEmpty() && activeDownload == null
+    var sheetRecord by remember { mutableStateOf<SheetRecord?>(null) }
 
     Column(
         modifier = modifier
@@ -75,73 +77,105 @@ fun DownloadsScreen(
             )
         }
 
+        val totalCount = comicDownloads.size + videoDownloads.size
+        if (totalCount > 0) {
+            Text(
+                text = subtitleFor(comicDownloads, videoDownloads),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+            )
+        }
+
+        val isEmpty = comicDownloads.isEmpty() && videoDownloads.isEmpty() && activeDownload == null
         if (isEmpty) {
-            Box(
+            DownloadsEmptyState(onOpenSources = onOpenSources)
+        } else {
+            LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Text(
-                    text = "从来源下载漫画或视频后会显示在这里\n长按条目可进行管理",
-                    color = colors.muted,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            return@Column
-        }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 12.dp,
-                bottom = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            if (activeDownload != null) {
-                item(key = "active-download") {
-                    ActiveDownloadCard(
-                        progress = activeDownload,
-                        onCancel = onCancelActiveDownload,
-                    )
+                if (activeDownload != null) {
+                    item(key = "active-download") {
+                        ActiveDownloadCard(
+                            progress = activeDownload,
+                            onCancel = onCancelActiveDownload,
+                        )
+                    }
                 }
-            }
-
-            if (comicDownloads.isNotEmpty()) {
-                item(key = "comic-header") {
-                    SectionTitle(title = "漫画下载 (${comicDownloads.size})")
+                if (comicDownloads.isNotEmpty()) {
+                    item(key = "comic-header") {
+                        SectionTitle(title = "漫画下载 (${comicDownloads.size})")
+                    }
+                    items(
+                        comicDownloads,
+                        key = { "comic\u001F${it.accountId.orEmpty()}\u001F${it.remotePath}\u001F${it.fileName}" },
+                    ) { record ->
+                        DownloadItemCard(
+                            title = record.fileName,
+                            sizeBytes = record.sizeBytes,
+                            downloadedAtMillis = record.downloadedAtMillis,
+                            remotePath = record.remotePath,
+                            mediaKind = MediaKind.Comic,
+                            coverUri = null,
+                            isSelected = false,
+                            onClick = { onOpenComicDownload(record) },
+                            onLongClick = { sheetRecord = SheetRecord.Comic(record) },
+                        )
+                    }
                 }
-                items(
-                    comicDownloads,
-                    key = { "comic\u001F${it.accountId.orEmpty()}\u001F${it.remotePath}\u001F${it.fileName}" },
-                ) { record ->
-                    ComicDownloadRow(
-                        record = record,
-                        isSelected = selectedComicDownload.sameComicDownload(record),
-                        onOpen = { onOpenComicDownload(record) },
-                        onSelect = { onSelectComicDownload(record) },
-                    )
-                }
-            }
-
-            if (videoDownloads.isNotEmpty()) {
-                item(key = "video-header") {
-                    SectionTitle(title = "视频下载 (${videoDownloads.size})")
-                }
-                items(
-                    videoDownloads,
-                    key = { "video\u001F${it.accountId}\u001F${it.remotePath}" },
-                ) { record ->
-                    VideoDownloadRow(
-                        record = record,
-                        isSelected = selectedVideoDownload.sameVideoDownload(record),
-                        onPlay = { onPlayVideoDownload(record) },
-                        onSelect = { onSelectVideoDownload(record) },
-                    )
+                if (videoDownloads.isNotEmpty()) {
+                    item(key = "video-header") {
+                        SectionTitle(title = "视频下载 (${videoDownloads.size})")
+                    }
+                    items(
+                        videoDownloads,
+                        key = { "video\u001F${it.accountId}\u001F${it.remotePath}" },
+                    ) { record ->
+                        DownloadItemCard(
+                            title = record.fileName,
+                            sizeBytes = record.sizeBytes,
+                            downloadedAtMillis = record.downloadedAtMillis,
+                            remotePath = record.remotePath,
+                            mediaKind = MediaKind.Video,
+                            coverUri = null,
+                            isSelected = false,
+                            onClick = { onPlayVideoDownload(record) },
+                            onLongClick = { sheetRecord = SheetRecord.Video(record) },
+                        )
+                    }
                 }
             }
         }
+    }
+
+    sheetRecord?.let { record ->
+        DownloadActionsSheet(
+            record = record,
+            onDismiss = { sheetRecord = null },
+            onOpen = {
+                when (record) {
+                    is SheetRecord.Comic -> onOpenComicDownload(record.record)
+                    is SheetRecord.Video -> onPlayVideoDownload(record.record)
+                }
+            },
+            onShowDetails = onShowDetails,
+            onRemoveRecord = {
+                when (record) {
+                    is SheetRecord.Comic -> onRemoveComicRecord(record.record)
+                    is SheetRecord.Video -> onRemoveVideoRecord(record.record)
+                }
+            },
+            onDeleteFile = {
+                when (record) {
+                    is SheetRecord.Comic -> onDeleteComicFile(record.record)
+                    is SheetRecord.Video -> onDeleteVideoFile(record.record)
+                }
+            },
+        )
     }
 }
 
@@ -168,7 +202,12 @@ private fun ActiveDownloadCard(
     } else {
         null
     }
-    MuBoxBoxedList(title = "正在下载") {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.raisedSurface,
+        border = BorderStroke(1.dp, colors.border),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -177,17 +216,18 @@ private fun ActiveDownloadCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (fraction != null) {
-                        "下载中… ${(fraction * 100).toInt()}%"
-                    } else {
-                        "下载中…"
-                    },
+                    text = if (fraction != null) "下载中… ${(fraction * 100).toInt()}%" else "下载中…",
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     color = colors.text,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 IconButton(onClick = onCancel) {
-                    Icon(Icons.Filled.Close, contentDescription = "取消下载", tint = colors.muted)
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "取消下载",
+                        tint = colors.muted,
+                    )
                 }
             }
             if (fraction != null) {
@@ -211,124 +251,11 @@ private fun ActiveDownloadCard(
     }
 }
 
-internal enum class DownloadEntryKind {
-    COMIC,
-    VIDEO,
+private fun subtitleFor(
+    comicDownloads: List<DownloadRecord>,
+    videoDownloads: List<VideoDownloadRecord>,
+): String {
+    val total = comicDownloads.size + videoDownloads.size
+    val totalSize = comicDownloads.sumOf { it.sizeBytes } + videoDownloads.sumOf { it.sizeBytes }
+    return "共 $total 项 · 占用 ${formatCacheSize(totalSize)}"
 }
-
-internal enum class DownloadEntryPrimaryAction {
-    OPEN_COMIC,
-    PLAY_VIDEO,
-}
-
-internal fun primaryActionForDownloadEntry(kind: DownloadEntryKind): DownloadEntryPrimaryAction =
-    when (kind) {
-        DownloadEntryKind.COMIC -> DownloadEntryPrimaryAction.OPEN_COMIC
-        DownloadEntryKind.VIDEO -> DownloadEntryPrimaryAction.PLAY_VIDEO
-    }
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ComicDownloadRow(
-    record: DownloadRecord,
-    isSelected: Boolean,
-    onOpen: () -> Unit,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val onClick: () -> Unit = when (primaryActionForDownloadEntry(DownloadEntryKind.COMIC)) {
-        DownloadEntryPrimaryAction.OPEN_COMIC -> onOpen
-        DownloadEntryPrimaryAction.PLAY_VIDEO -> ({})
-    }
-    DownloadEntryRow(
-        title = record.fileName,
-        subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
-            decodeWebDavPathForDisplay(record.remotePath),
-        isSelected = isSelected,
-        onClick = onClick,
-        onLongClick = onSelect,
-        modifier = modifier,
-    )
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun VideoDownloadRow(
-    record: VideoDownloadRecord,
-    isSelected: Boolean,
-    onPlay: () -> Unit,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val onClick: () -> Unit = when (primaryActionForDownloadEntry(DownloadEntryKind.VIDEO)) {
-        DownloadEntryPrimaryAction.OPEN_COMIC -> ({})
-        DownloadEntryPrimaryAction.PLAY_VIDEO -> onPlay
-    }
-    DownloadEntryRow(
-        title = record.fileName,
-        subtitle = "${formatCacheSize(record.sizeBytes)} · ${formatDownloadTime(record.downloadedAtMillis)}\n" +
-            decodeWebDavPathForDisplay(record.remotePath),
-        isSelected = isSelected,
-        onClick = onClick,
-        onLongClick = onSelect,
-        modifier = modifier,
-    )
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DownloadEntryRow(
-    title: String,
-    subtitle: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-                onLongClickLabel = "下载管理",
-            ),
-        shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 58.dp)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-private fun formatDownloadTime(downloadedAtMillis: Long): String =
-    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(downloadedAtMillis))
-
-private fun DownloadRecord?.sameComicDownload(other: DownloadRecord): Boolean =
-    this != null && fileName == other.fileName && remotePath == other.remotePath
-
-private fun VideoDownloadRecord?.sameVideoDownload(other: VideoDownloadRecord): Boolean =
-    this != null && accountId == other.accountId && remotePath == other.remotePath
