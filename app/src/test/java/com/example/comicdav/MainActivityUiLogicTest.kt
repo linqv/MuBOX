@@ -44,17 +44,25 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun videoDownloadSelectionCountsAsActiveSelectionForBackHandling() {
+    fun downloadsScreenNoLongerHasMultiSelectSelection() {
         assertEquals(
             true,
             hasActiveAppSelection(
                 webDavFileSelected = false,
                 directoryComicSelected = false,
                 directoryVideoSelected = false,
+                libraryItemSelected = true,
+                videoLibraryItemSelected = false,
+            ),
+        )
+        assertEquals(
+            false,
+            hasActiveAppSelection(
+                webDavFileSelected = false,
+                directoryComicSelected = false,
+                directoryVideoSelected = false,
                 libraryItemSelected = false,
                 videoLibraryItemSelected = false,
-                downloadRecordSelected = false,
-                videoDownloadRecordSelected = true,
             ),
         )
     }

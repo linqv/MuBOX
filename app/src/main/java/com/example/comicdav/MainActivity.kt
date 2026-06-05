@@ -1636,8 +1636,6 @@ fun ComicDavApp() {
         directoryVideoSelected = selectedDirectoryVideo != null,
         libraryItemSelected = selectedLibraryItem != null,
         videoLibraryItemSelected = selectedVideoLibraryItem != null,
-        downloadRecordSelected = selectedDownloadRecord != null,
-        videoDownloadRecordSelected = selectedVideoDownloadRecord != null,
     )
 
     BackHandler(

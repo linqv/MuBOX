@@ -369,16 +369,12 @@ internal fun hasActiveAppSelection(
     directoryVideoSelected: Boolean,
     libraryItemSelected: Boolean,
     videoLibraryItemSelected: Boolean,
-    downloadRecordSelected: Boolean,
-    videoDownloadRecordSelected: Boolean,
 ): Boolean =
     webDavFileSelected ||
         directoryComicSelected ||
         directoryVideoSelected ||
         libraryItemSelected ||
-        videoLibraryItemSelected ||
-        downloadRecordSelected ||
-        videoDownloadRecordSelected
+        videoLibraryItemSelected
 
 internal fun parentDocumentUriForLocalVideo(videoUri: android.net.Uri): android.net.Uri? {
     return runCatching {
