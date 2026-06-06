@@ -78,6 +78,47 @@ class VideoDownloadCacheTest {
         assertFalse(targetDirectory.resolve("movie.mp4").exists())
     }
 
+    @Test
+    fun fileLruPrunerReusesDirectoryStateAndSyncsKnownProtectedFile() {
+        val root = temporaryFolder.newFolder("lru-state")
+        val oldFile = root.resolve("old.bin")
+        oldFile.writeBytes(ByteArray(8) { 1 })
+        oldFile.setLastModified(1_000L)
+        val survivor = root.resolve("survivor.bin")
+        survivor.writeBytes(ByteArray(1) { 2 })
+        survivor.setLastModified(2_000L)
+        FileLruPruner.prune(root, maxBytes = 100L, protectedFiles = setOf(survivor))
+
+        val newFile = root.resolve("new.bin")
+        newFile.writeBytes(ByteArray(8) { 3 })
+        newFile.setLastModified(3_000L)
+
+        val removed = FileLruPruner.prune(root, maxBytes = 10L, protectedFiles = setOf(newFile))
+
+        assertEquals(1, removed)
+        assertFalse(oldFile.exists())
+        assertTrue(survivor.exists())
+        assertTrue(newFile.exists())
+    }
+
+    @Test
+    fun fileLruPrunerWithoutProtectedFilesRefreshesDirectoryState() {
+        val root = temporaryFolder.newFolder("lru-refresh")
+        val first = root.resolve("first.bin")
+        first.writeBytes(ByteArray(8) { 1 })
+        first.setLastModified(2_000L)
+        FileLruPruner.prune(root, maxBytes = 100L, protectedFiles = setOf(first))
+        val externallyAdded = root.resolve("external.bin")
+        externallyAdded.writeBytes(ByteArray(8) { 2 })
+        externallyAdded.setLastModified(1_000L)
+
+        val removed = FileLruPruner.prune(root, maxBytes = 10L)
+
+        assertEquals(1, removed)
+        assertTrue(first.exists())
+        assertFalse(externallyAdded.exists())
+    }
+
     private class RecordingDownloadClient(
         private val bytes: ByteArray,
     ) : WebDavClient {

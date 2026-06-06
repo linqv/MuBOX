@@ -2,6 +2,7 @@ package com.example.comicdav.network
 
 import org.w3c.dom.Element
 import java.io.InputStream
+import java.io.StringReader
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -9,12 +10,14 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import javax.xml.XMLConstants
+import javax.xml.parsers.DocumentBuilder
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
+import org.xml.sax.InputSource
 
 object WebDavXmlParser {
     fun parse(input: InputStream, basePath: String): List<WebDavItem> {
-        val document = documentBuilderFactory().newDocumentBuilder().parse(input)
+        val document = secureDocumentBuilder().parse(input)
         val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = null) ?: "/")
         val responses = document.getElementsByTagNameNS("*", "response")
 
@@ -27,7 +30,7 @@ object WebDavXmlParser {
     }
 
     fun parse(input: InputStream, basePath: String, baseOrigin: String?): List<WebDavItem> {
-        val document = documentBuilderFactory().newDocumentBuilder().parse(input)
+        val document = secureDocumentBuilder().parse(input)
         val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = baseOrigin) ?: "/")
         val responses = document.getElementsByTagNameNS("*", "response")
 
@@ -40,7 +43,7 @@ object WebDavXmlParser {
     }
 
     fun parseMetadata(input: InputStream, requestPath: String, supportsRange: Boolean): RemoteFileInfo? {
-        val document = documentBuilderFactory().newDocumentBuilder().parse(input)
+        val document = secureDocumentBuilder().parse(input)
         val responses = document.getElementsByTagNameNS("*", "response")
         val normalizedRequestPath = normalizeFilePath(requestPath)
 
@@ -64,23 +67,42 @@ object WebDavXmlParser {
         return null
     }
 
+    private fun secureDocumentBuilder(): DocumentBuilder =
+        documentBuilderFactory().newDocumentBuilder().apply {
+            setEntityResolver { _, _ -> InputSource(StringReader("")) }
+        }
+
     private fun documentBuilderFactory(): DocumentBuilderFactory =
         configureSecurely(DocumentBuilderFactory.newInstance())
 
     internal fun configureSecurely(factory: DocumentBuilderFactory): DocumentBuilderFactory =
         factory.apply {
             isNamespaceAware = true
-            setFeatureIfSupported(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-            setFeatureIfSupported("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeatureIfSupported("http://xml.org/sax/features/external-general-entities", false)
-            setFeatureIfSupported("http://xml.org/sax/features/external-parameter-entities", false)
+            isXIncludeAware = false
+            isExpandEntityReferences = false
+            setRequiredFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            setRequiredFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setRequiredFeature("http://xml.org/sax/features/external-general-entities", false)
+            setRequiredFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setRequiredFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setAttributeIfSupported(ACCESS_EXTERNAL_DTD, "")
+            setAttributeIfSupported(ACCESS_EXTERNAL_SCHEMA, "")
         }
 
-    private fun DocumentBuilderFactory.setFeatureIfSupported(feature: String, value: Boolean) {
+    private fun DocumentBuilderFactory.setRequiredFeature(feature: String, value: Boolean) {
         try {
             setFeature(feature, value)
-        } catch (_: ParserConfigurationException) {
-            // Android parser implementations vary; unsupported hardening features should not block PROPFIND parsing.
+        } catch (error: ParserConfigurationException) {
+            throw ParserConfigurationException("Required XML secure feature is not supported: $feature")
+                .also { it.initCause(error) }
+        }
+    }
+
+    private fun DocumentBuilderFactory.setAttributeIfSupported(name: String, value: String) {
+        try {
+            setAttribute(name, value)
+        } catch (_: IllegalArgumentException) {
+            // The required feature gates above block XXE. These JAXP attributes are extra hardening where present.
         }
     }
 
@@ -238,4 +260,6 @@ object WebDavXmlParser {
             }
 
     private val STATUS_CODE = Regex("""\b(\d{3})\b""")
+    private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
+    private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 }

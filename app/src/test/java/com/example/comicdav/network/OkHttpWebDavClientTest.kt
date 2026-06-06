@@ -347,6 +347,52 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
+    fun rejectsCrossOriginAbsoluteUrlEvenWhenPathEmbedsPlaintextUrl() = runTest {
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor {
+                error("Request should be rejected before the HTTP client executes it")
+            }
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = "https://example.test/dav/",
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+
+        val result = runCatching {
+            client.head("https://attacker.test/redirect/http://internal.local")
+        }
+
+        assertTrue(result.exceptionOrNull() is WebDavException.Network)
+    }
+
+    @Test
+    fun rejectsRedirectToDifferentOriginBeforeTargetRequestIsSent() = runTest {
+        MockWebServer().use { redirectedServer ->
+            redirectedServer.start()
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", redirectedServer.url("/internal/movie.mp4").toString()),
+            )
+            val client = testClient(
+                baseUrl = server.url("/dav/").toString(),
+                username = null,
+                password = null,
+            )
+
+            val result = runCatching {
+                client.head("/movie.mp4")
+            }
+
+            assertTrue(result.exceptionOrNull() is WebDavException.Network)
+            assertEquals(1, server.requestCount)
+            assertEquals(0, redirectedServer.requestCount)
+        }
+    }
+
+    @Test
     fun headAndPropfindUseBoundedCallTimeout() = runTest {
         val timeoutNanos = mutableListOf<Long>()
         val httpClient = OkHttpClient.Builder()

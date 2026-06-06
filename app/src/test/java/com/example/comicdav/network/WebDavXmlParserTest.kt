@@ -1,5 +1,6 @@
 package com.example.comicdav.network
 
+import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilder
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
@@ -8,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.xml.sax.SAXException
 
 class WebDavXmlParserTest {
     @Test
@@ -182,13 +184,34 @@ class WebDavXmlParserTest {
     }
 
     @Test
-    fun secureFeatureConfigurationIgnoresUnsupportedParserFeatures() {
+    fun rejectsDoctypeDeclarations() {
+        val xml = """<?xml version="1.0"?>
+            <!DOCTYPE d:multistatus [
+                <!ENTITY xxe SYSTEM "file:///etc/passwd">
+            ]>
+            <d:multistatus xmlns:d="DAV:">
+                <d:response><d:href>/comics/&xxe;</d:href></d:response>
+            </d:multistatus>
+        """.trimIndent()
+
+        val result = runCatching {
+            WebDavXmlParser.parse(xml.byteInputStream(), basePath = "/comics/")
+        }
+
+        assertTrue(result.exceptionOrNull() is SAXException)
+    }
+
+    @Test
+    fun secureFeatureConfigurationFailsClosedWhenRequiredFeatureIsUnsupported() {
         val factory = RejectingFeatureFactory()
 
-        WebDavXmlParser.configureSecurely(factory)
+        val result = runCatching {
+            WebDavXmlParser.configureSecurely(factory)
+        }
 
+        assertTrue(result.exceptionOrNull() is ParserConfigurationException)
         assertTrue(factory.isNamespaceAware)
-        assertTrue(factory.rejectedFeatures.contains("http://javax.xml.XMLConstants/feature/secure-processing"))
+        assertTrue(factory.rejectedFeatures.contains(XMLConstants.FEATURE_SECURE_PROCESSING))
     }
 
     private class RejectingFeatureFactory : DocumentBuilderFactory() {

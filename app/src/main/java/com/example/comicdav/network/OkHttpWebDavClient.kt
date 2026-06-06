@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.EventListener
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -31,7 +33,7 @@ class OkHttpWebDavClient(
     private val password: String?,
     httpClient: OkHttpClient = HttpClients.webDav,
     private val diagnostics: WebDavNetworkDiagnostics = WebDavNetworkDiagnostics(),
-    private val allowPlaintextHttp: Boolean = baseUrl.trim().startsWith("http://", ignoreCase = true),
+    private val allowPlaintextHttp: Boolean = isPlaintextHttpUrl(baseUrl),
 ) : WebDavClient {
     private val urlResolver = WebDavUrlResolver(baseUrl)
     private val httpClient: OkHttpClient = run {
@@ -43,6 +45,10 @@ class OkHttpWebDavClient(
                     upstreamEvents.create(call).plus(diagnosticEvents.create(call))
                 },
             )
+            .addNetworkInterceptor { chain ->
+                requireAllowedEndpoint(chain.request().url)
+                chain.proceed(chain.request())
+            }
             .build()
     }
 
@@ -292,7 +298,7 @@ class OkHttpWebDavClient(
         rangeHeader: String? = null,
     ): Request.Builder {
         val resolvedUrl = urlResolver.resolve(path)
-        requireAllowedTransport(resolvedUrl)
+        requireAllowedEndpoint(resolvedUrl)
         return Request.Builder()
             .url(resolvedUrl)
             .tag(WebDavRequestTag::class.java, diagnostics.requestTag(operation, path, rangeHeader))
@@ -303,12 +309,12 @@ class OkHttpWebDavClient(
             }
     }
 
-    private fun requireAllowedTransport(url: String) {
-        if (
-            url.startsWith("http://", ignoreCase = true) &&
-            (!allowPlaintextHttp || !urlResolver.isSameOrigin(url))
-        ) {
-            throw WebDavException.Network("Plaintext HTTP is not allowed: $url")
+    private fun requireAllowedEndpoint(url: HttpUrl) {
+        if (!urlResolver.isSameOrigin(url)) {
+            throw WebDavException.Network("Cross-origin WebDAV request is not allowed: ${diagnostics.sanitizedUrl(url)}")
+        }
+        if (url.scheme == "http" && !allowPlaintextHttp) {
+            throw WebDavException.Network("Plaintext HTTP is not allowed: ${diagnostics.sanitizedUrl(url)}")
         }
     }
 
@@ -498,6 +504,9 @@ class OkHttpWebDavClient(
         private const val NON_STREAMING_CALL_TIMEOUT_SECONDS = 30L
         private const val DOWNLOAD_PROGRESS_STEP_BYTES = 256L * 1024L
 
+        private fun isPlaintextHttpUrl(value: String): Boolean =
+            value.trim().toHttpUrlOrNull()?.scheme == "http"
+
         internal fun parseHttpDateMillis(value: String?): Long? =
             value
                 ?.takeIf { it.isNotBlank() }
@@ -515,7 +524,9 @@ class OkHttpWebDavClient(
     private class WebDavUrlResolver(baseUrl: String) {
         private val base: String = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         private val baseUri: URI = URI(base)
-        private val baseOrigin = Origin.from(baseUri)
+        private val baseHttpUrl: HttpUrl = base.toHttpUrlOrNull()
+            ?: throw WebDavException.Network("Invalid WebDAV base URL: $baseUrl")
+        private val baseOrigin = Origin.from(baseHttpUrl)
         private val mountedPrefixes: List<String> = run {
             val basePath = baseUri.rawPath.orEmpty()
             val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
@@ -524,22 +535,31 @@ class OkHttpWebDavClient(
             listOf(mountedPrefix, decodedMountedPrefix, encodedMountedPrefix)
         }
 
-        fun resolve(path: String): String {
-            if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
-                return path
+        fun resolve(path: String): HttpUrl {
+            val trimmedPath = path.trim()
+            if (trimmedPath.startsWith("http://", ignoreCase = true) ||
+                trimmedPath.startsWith("https://", ignoreCase = true)
+            ) {
+                return trimmedPath.toHttpUrlOrNull()
+                    ?: throw WebDavException.Network("Invalid WebDAV request URL")
             }
 
             val requestPath = normalizeRequestPath(path)
-            return baseUri.resolve(requestPath).toString()
+            val resolved = baseUri.resolve(requestPath).toString()
+            return resolved.toHttpUrlOrNull()
+                ?: throw WebDavException.Network("Invalid WebDAV request URL")
         }
 
-        fun isSameOrigin(url: String): Boolean =
-            runCatching { Origin.from(URI(url)) == baseOrigin }.getOrDefault(false)
+        fun isSameOrigin(url: HttpUrl): Boolean =
+            Origin.from(url) == baseOrigin
 
         fun baseOrigin(): String? {
-            val scheme = baseOrigin.scheme ?: return null
-            val host = baseOrigin.host ?: return null
-            return "$scheme://$host:${baseOrigin.port}"
+            val host = if (baseOrigin.host.contains(":")) {
+                "[${baseOrigin.host}]"
+            } else {
+                baseOrigin.host
+            }
+            return "${baseOrigin.scheme}://$host:${baseOrigin.port}"
         }
 
         private fun normalizeRequestPath(path: String): String {
@@ -559,25 +579,17 @@ class OkHttpWebDavClient(
             URI(null, null, path, null).toASCIIString()
 
         private data class Origin(
-            val scheme: String?,
-            val host: String?,
+            val scheme: String,
+            val host: String,
             val port: Int,
         ) {
             companion object {
-                fun from(uri: URI): Origin =
+                fun from(url: HttpUrl): Origin =
                     Origin(
-                        scheme = uri.scheme?.lowercase(Locale.ROOT),
-                        host = uri.host?.lowercase(Locale.ROOT),
-                        port = resolvedPort(uri),
+                        scheme = url.scheme.lowercase(Locale.ROOT),
+                        host = url.host.lowercase(Locale.ROOT),
+                        port = url.port,
                     )
-
-                private fun resolvedPort(uri: URI): Int =
-                    when {
-                        uri.port >= 0 -> uri.port
-                        uri.scheme.equals("http", ignoreCase = true) -> 80
-                        uri.scheme.equals("https", ignoreCase = true) -> 443
-                        else -> -1
-                    }
             }
         }
     }
