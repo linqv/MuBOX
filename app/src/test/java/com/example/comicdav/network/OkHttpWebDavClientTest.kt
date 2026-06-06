@@ -286,6 +286,53 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
+    fun listWrapsMalformedPropfindXmlAsInvalidResponse() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(207)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""<?xml version="0.0"?><d:multistatus xmlns:d="DAV:" />"""),
+        )
+        val client = testClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val result = runCatching {
+            client.list("/")
+        }
+
+        val error = result.exceptionOrNull()
+        assertTrue(error is WebDavException.InvalidResponse)
+        assertEquals("Invalid WebDAV PROPFIND response", error?.message)
+        assertTrue(error?.cause != null)
+    }
+
+    @Test
+    fun listRejectsNonMultistatusPropfindXmlAsInvalidResponse() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(207)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""<html><body>login required</body></html>"""),
+        )
+        val client = testClient(
+            baseUrl = server.url("/dav/").toString(),
+            username = null,
+            password = null,
+        )
+
+        val result = runCatching {
+            client.list("/")
+        }
+
+        val error = result.exceptionOrNull()
+        assertTrue(error is WebDavException.InvalidResponse)
+        assertEquals("Invalid WebDAV PROPFIND response", error?.message)
+    }
+
+    @Test
     fun basicAuthUsesUtf8Credentials() = runTest {
         server.enqueue(
             MockResponse()
@@ -368,27 +415,31 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
-    fun rejectsRedirectToDifferentOriginBeforeTargetRequestIsSent() = runTest {
+    fun rangeRequestFollowsCrossOriginRedirectWithoutForwardingAuthorization() = runTest {
         MockWebServer().use { redirectedServer ->
             redirectedServer.start()
             server.enqueue(
                 MockResponse()
                     .setResponseCode(302)
-                    .setHeader("Location", redirectedServer.url("/internal/movie.mp4").toString()),
+                    .setHeader("Location", redirectedServer.url("/download/movie.mp4").toString()),
+            )
+            redirectedServer.enqueue(
+                MockResponse()
+                    .setResponseCode(206)
+                    .setHeader("Content-Range", "bytes 0-2/3")
+                    .setBody("abc"),
             )
             val client = testClient(
                 baseUrl = server.url("/dav/").toString(),
-                username = null,
-                password = null,
+                username = "alice",
+                password = "secret",
             )
 
-            val result = runCatching {
-                client.head("/movie.mp4")
-            }
+            val bytes = client.readRange("/movie.mp4", start = 0L, endInclusive = 2L)
 
-            assertTrue(result.exceptionOrNull() is WebDavException.Network)
-            assertEquals(1, server.requestCount)
-            assertEquals(0, redirectedServer.requestCount)
+            assertArrayEquals("abc".toByteArray(), bytes)
+            assertEquals(Credentials.basic("alice", "secret", Charsets.UTF_8), server.takeRequest().getHeader("Authorization"))
+            assertEquals(null, redirectedServer.takeRequest().getHeader("Authorization"))
         }
     }
 

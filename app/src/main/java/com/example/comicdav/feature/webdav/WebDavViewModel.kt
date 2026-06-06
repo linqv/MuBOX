@@ -45,6 +45,14 @@ const val WEB_DAV_STATUS_NOT_CONNECTED = "未连接"
 const val WEB_DAV_STATUS_CONNECTING = "正在连接..."
 const val WEB_DAV_STATUS_CONNECTED = "已连接"
 
+internal fun webDavConnectionFailureMessage(error: Throwable): String = when (error) {
+    is WebDavException.RangeNotSupported -> "服务器不支持 Range 请求"
+    is WebDavException.InvalidContentRange -> error.message ?: "Content-Range 无效"
+    is WebDavException.InvalidResponse -> "服务器返回的不是有效的 WebDAV 目录列表，请检查 WebDAV 地址是否正确"
+    is WebDavException.HttpStatus -> error.message ?: "HTTP ${error.statusCode}"
+    else -> error.message ?: "发生未知错误"
+}
+
 class WebDavViewModel(
     private val clientFactory: WebDavClientFactory = { baseUrl, username, password ->
         OkHttpWebDavClient(
@@ -216,7 +224,7 @@ class WebDavViewModel(
                     )
                 },
                 onFailure = { error ->
-                    val message = error.userMessage()
+                    val message = webDavConnectionFailureMessage(error)
                     uiState = if (keepBrowserState) {
                         uiState.copy(
                             status = WEB_DAV_STATUS_CONNECTED,
@@ -229,13 +237,6 @@ class WebDavViewModel(
                 },
             )
         }
-    }
-
-    private fun Throwable.userMessage(): String = when (this) {
-        is WebDavException.RangeNotSupported -> "服务器不支持 Range 请求"
-        is WebDavException.InvalidContentRange -> message ?: "Content-Range 无效"
-        is WebDavException.HttpStatus -> message ?: "HTTP $statusCode"
-        else -> message ?: "发生未知错误"
     }
 
     private fun parentDirectoryPath(path: String): String? {

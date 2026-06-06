@@ -1,12 +1,14 @@
 package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.network.WebDavException
 import com.example.comicdav.network.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class WebDavBrowserScreenTest {
@@ -67,6 +69,20 @@ class WebDavBrowserScreenTest {
             "路径 /bad%ZZ/",
             webDavDisplayPathLabel("/bad%ZZ/"),
         )
+    }
+
+    @Test
+    fun invalidWebDavResponseMessageDoesNotExposeParserDetails() {
+        val message = webDavConnectionFailureMessage(
+            WebDavException.InvalidResponse(
+                "Invalid WebDAV PROPFIND response",
+                IllegalArgumentException("This parser does not support specification \"Unknown\" version \"0.0\""),
+            ),
+        )
+
+        assertEquals("服务器返回的不是有效的 WebDAV 目录列表，请检查 WebDAV 地址是否正确", message)
+        assertFalse(message.contains("parser", ignoreCase = true))
+        assertFalse(message.contains("Unknown"))
     }
 
     private fun webDavFile(name: String): WebDavItem =

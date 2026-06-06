@@ -46,7 +46,7 @@ class OkHttpWebDavClient(
                 },
             )
             .addNetworkInterceptor { chain ->
-                requireAllowedEndpoint(chain.request().url)
+                requireAllowedTransport(chain.request().url)
                 chain.proceed(chain.request())
             }
             .build()
@@ -313,6 +313,10 @@ class OkHttpWebDavClient(
         if (!urlResolver.isSameOrigin(url)) {
             throw WebDavException.Network("Cross-origin WebDAV request is not allowed: ${diagnostics.sanitizedUrl(url)}")
         }
+        requireAllowedTransport(url)
+    }
+
+    private fun requireAllowedTransport(url: HttpUrl) {
         if (url.scheme == "http" && !allowPlaintextHttp) {
             throw WebDavException.Network("Plaintext HTTP is not allowed: ${diagnostics.sanitizedUrl(url)}")
         }

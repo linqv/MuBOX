@@ -40,5 +40,6 @@ sealed class WebDavException(message: String, cause: Throwable? = null) : Except
     class RangeNotSupported(message: String = "Server does not support byte range requests") :
         WebDavException(message)
     class InvalidContentRange(message: String) : WebDavException(message)
+    class InvalidResponse(message: String, cause: Throwable? = null) : WebDavException(message, cause)
     class Network(message: String, cause: Throwable? = null) : WebDavException(message, cause)
 }

@@ -1,5 +1,6 @@
 package com.example.comicdav.network
 
+import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.io.InputStream
 import java.io.StringReader
@@ -14,10 +15,11 @@ import javax.xml.parsers.DocumentBuilder
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
 import org.xml.sax.InputSource
+import org.xml.sax.SAXException
 
 object WebDavXmlParser {
     fun parse(input: InputStream, basePath: String): List<WebDavItem> {
-        val document = secureDocumentBuilder().parse(input)
+        val document = parsePropfindDocument(input)
         val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = null) ?: "/")
         val responses = document.getElementsByTagNameNS("*", "response")
 
@@ -30,7 +32,7 @@ object WebDavXmlParser {
     }
 
     fun parse(input: InputStream, basePath: String, baseOrigin: String?): List<WebDavItem> {
-        val document = secureDocumentBuilder().parse(input)
+        val document = parsePropfindDocument(input)
         val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = baseOrigin) ?: "/")
         val responses = document.getElementsByTagNameNS("*", "response")
 
@@ -43,7 +45,7 @@ object WebDavXmlParser {
     }
 
     fun parseMetadata(input: InputStream, requestPath: String, supportsRange: Boolean): RemoteFileInfo? {
-        val document = secureDocumentBuilder().parse(input)
+        val document = parsePropfindDocument(input)
         val responses = document.getElementsByTagNameNS("*", "response")
         val normalizedRequestPath = normalizeFilePath(requestPath)
 
@@ -67,6 +69,18 @@ object WebDavXmlParser {
         return null
     }
 
+    private fun parsePropfindDocument(input: InputStream): Document {
+        val document = try {
+            secureDocumentBuilder().parse(input)
+        } catch (error: SAXException) {
+            throw WebDavException.InvalidResponse(INVALID_PROPFIND_RESPONSE, error)
+        }
+        if (document.documentElement?.localName != "multistatus") {
+            throw WebDavException.InvalidResponse(INVALID_PROPFIND_RESPONSE)
+        }
+        return document
+    }
+
     private fun secureDocumentBuilder(): DocumentBuilder =
         documentBuilderFactory().newDocumentBuilder().apply {
             setEntityResolver { _, _ -> InputSource(StringReader("")) }
@@ -78,23 +92,39 @@ object WebDavXmlParser {
     internal fun configureSecurely(factory: DocumentBuilderFactory): DocumentBuilderFactory =
         factory.apply {
             isNamespaceAware = true
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-            setRequiredFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-            setRequiredFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setRequiredFeature("http://xml.org/sax/features/external-general-entities", false)
-            setRequiredFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setRequiredFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setXIncludeAwareIfSupported(false)
+            setExpandEntityReferencesIfSupported(false)
+            setFeatureIfSupported(XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            setFeatureIfSupported("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeatureIfSupported("http://xml.org/sax/features/external-general-entities", false)
+            setFeatureIfSupported("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeatureIfSupported("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
             setAttributeIfSupported(ACCESS_EXTERNAL_DTD, "")
             setAttributeIfSupported(ACCESS_EXTERNAL_SCHEMA, "")
         }
 
-    private fun DocumentBuilderFactory.setRequiredFeature(feature: String, value: Boolean) {
+    private fun DocumentBuilderFactory.setFeatureIfSupported(feature: String, value: Boolean) {
         try {
             setFeature(feature, value)
-        } catch (error: ParserConfigurationException) {
-            throw ParserConfigurationException("Required XML secure feature is not supported: $feature")
-                .also { it.initCause(error) }
+        } catch (_: ParserConfigurationException) {
+            // Android XML parsers differ in supported SAX/JAXP feature flags. The entity resolver
+            // below still prevents external resource loading when a hardening flag is unavailable.
+        }
+    }
+
+    private fun DocumentBuilderFactory.setXIncludeAwareIfSupported(value: Boolean) {
+        try {
+            isXIncludeAware = value
+        } catch (_: UnsupportedOperationException) {
+            // Optional hardening; unavailable on some Android parser implementations.
+        }
+    }
+
+    private fun DocumentBuilderFactory.setExpandEntityReferencesIfSupported(value: Boolean) {
+        try {
+            isExpandEntityReferences = value
+        } catch (_: UnsupportedOperationException) {
+            // Optional hardening; the entity resolver still blocks external entity resolution.
         }
     }
 
@@ -102,7 +132,9 @@ object WebDavXmlParser {
         try {
             setAttribute(name, value)
         } catch (_: IllegalArgumentException) {
-            // The required feature gates above block XXE. These JAXP attributes are extra hardening where present.
+            // These JAXP attributes are extra hardening where present.
+        } catch (_: UnsupportedOperationException) {
+            // These JAXP attributes are extra hardening where present.
         }
     }
 
@@ -260,6 +292,7 @@ object WebDavXmlParser {
             }
 
     private val STATUS_CODE = Regex("""\b(\d{3})\b""")
+    private const val INVALID_PROPFIND_RESPONSE = "Invalid WebDAV PROPFIND response"
     private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 }

@@ -198,20 +198,47 @@ class WebDavXmlParserTest {
             WebDavXmlParser.parse(xml.byteInputStream(), basePath = "/comics/")
         }
 
-        assertTrue(result.exceptionOrNull() is SAXException)
+        val error = result.exceptionOrNull()
+        assertTrue(error is WebDavException.InvalidResponse)
+        assertTrue(error?.cause is SAXException)
     }
 
     @Test
-    fun secureFeatureConfigurationFailsClosedWhenRequiredFeatureIsUnsupported() {
+    fun secureFeatureConfigurationToleratesUnsupportedParserFeatures() {
         val factory = RejectingFeatureFactory()
 
         val result = runCatching {
             WebDavXmlParser.configureSecurely(factory)
         }
 
-        assertTrue(result.exceptionOrNull() is ParserConfigurationException)
+        assertTrue(result.isSuccess)
         assertTrue(factory.isNamespaceAware)
         assertTrue(factory.rejectedFeatures.contains(XMLConstants.FEATURE_SECURE_PROCESSING))
+    }
+
+    @Test
+    fun secureFeatureConfigurationToleratesUnsupportedFactoryToggles() {
+        val factory = RejectingToggleFactory()
+
+        val result = runCatching {
+            WebDavXmlParser.configureSecurely(factory)
+        }
+
+        assertTrue(result.isSuccess)
+        assertTrue(factory.xIncludeAttempted)
+        assertTrue(factory.expandEntitiesAttempted)
+    }
+
+    @Test
+    fun secureFeatureConfigurationToleratesUnsupportedAttributes() {
+        val factory = RejectingAttributeFactory()
+
+        val result = runCatching {
+            WebDavXmlParser.configureSecurely(factory)
+        }
+
+        assertTrue(result.isSuccess)
+        assertTrue(factory.rejectedAttributes.contains("http://javax.xml.XMLConstants/property/accessExternalDTD"))
     }
 
     private class RejectingFeatureFactory : DocumentBuilderFactory() {
@@ -227,6 +254,50 @@ class WebDavXmlParserTest {
             rejectedFeatures += name
             throw ParserConfigurationException(name)
         }
+
+        override fun getFeature(name: String?): Boolean = false
+    }
+
+    private class RejectingToggleFactory : DocumentBuilderFactory() {
+        var xIncludeAttempted = false
+            private set
+        var expandEntitiesAttempted = false
+            private set
+
+        override fun newDocumentBuilder(): DocumentBuilder = error("unused")
+
+        override fun setAttribute(name: String?, value: Any?) = Unit
+
+        override fun getAttribute(name: String?): Any = error("unused")
+
+        override fun setFeature(name: String, value: Boolean) = Unit
+
+        override fun getFeature(name: String?): Boolean = false
+
+        override fun setXIncludeAware(state: Boolean) {
+            xIncludeAttempted = true
+            throw UnsupportedOperationException("This parser does not support specification \"Unknown\" version \"0.0\"")
+        }
+
+        override fun setExpandEntityReferences(expandEntityRef: Boolean) {
+            expandEntitiesAttempted = true
+            throw UnsupportedOperationException("expand entity references unsupported")
+        }
+    }
+
+    private class RejectingAttributeFactory : DocumentBuilderFactory() {
+        val rejectedAttributes = mutableListOf<String>()
+
+        override fun newDocumentBuilder(): DocumentBuilder = error("unused")
+
+        override fun setAttribute(name: String?, value: Any?) {
+            rejectedAttributes += name.orEmpty()
+            throw UnsupportedOperationException("attribute unsupported")
+        }
+
+        override fun getAttribute(name: String?): Any = error("unused")
+
+        override fun setFeature(name: String, value: Boolean) = Unit
 
         override fun getFeature(name: String?): Boolean = false
     }
