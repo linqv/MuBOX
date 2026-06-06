@@ -112,6 +112,7 @@ impl RangeReader for SessionReader {
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: Lazy<Mutex<HashMap<ComicHandle, CbzSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+const MAX_SESSIONS: usize = 256;
 thread_local! {
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::default());
 }
@@ -510,6 +511,12 @@ fn insert_session(kind: SessionKind, index_cache: Option<SessionIndexCache>) -> 
     let mut sessions = SESSIONS
         .lock()
         .map_err(|_| anyhow!("native session table lock poisoned"))?;
+    if sessions.len() >= MAX_SESSIONS {
+        return Err(anyhow!(
+            "native session table full (max {}); close existing sessions before opening new ones",
+            MAX_SESSIONS
+        ));
+    }
     sessions.insert(
         handle,
         CbzSession {
@@ -559,7 +566,9 @@ fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path)
             SessionKind::LocalArchive(archive) => (archive.extract_page(page_index)?, None),
         }
     };
-    fs::write(output_path, bytes)?;
+    let tmp_path = output_path.with_extension("tmp");
+    fs::write(&tmp_path, bytes)?;
+    fs::rename(&tmp_path, output_path)?;
     if let Some((cache, index)) = index_cache_update {
         let _ = store_index_cache_with_options(&cache.cache_dir, &cache.key, cache.options, &index);
     }

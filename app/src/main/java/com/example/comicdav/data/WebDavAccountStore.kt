@@ -43,18 +43,32 @@ class WebDavAccountStore(
         val username = preferences[stringPreferencesKey("${PREFIX}_${suffix}_username")] ?: return null
         val storedPassword = preferences[stringPreferencesKey("${PREFIX}_${suffix}_password")] ?: return null
         val password = cipher?.decrypt(storedPassword) ?: storedPassword
-        // Lazy migration: if stored value was plaintext (no v1: prefix) and cipher is available, re-encrypt
-        if (cipher != null && !storedPassword.startsWith("v1:")) {
-            dataStore.edit { prefs ->
-                prefs[stringPreferencesKey("${PREFIX}_${suffix}_password")] = cipher.encrypt(password)
-            }
-        }
         return SavedWebDavAccount(
             accountId = accountId,
             baseUrl = baseUrl,
             username = username,
             password = password,
         )
+    }
+
+    suspend fun migratePlaintextPasswords() {
+        if (cipher == null) return
+        val preferences = dataStore.data.first()
+        val keysToMigrate = preferences.asMap().keys
+            .filter { it.name.endsWith("_password") && it.name.startsWith(PREFIX) }
+            .mapNotNull { key -> (preferences[key] as? String)?.let { key to it } }
+            .filter { (_, value) -> !value.startsWith("v1:") }
+            .map { (key, _) -> key }
+        if (keysToMigrate.isEmpty()) return
+        dataStore.edit { prefs ->
+            for (key in keysToMigrate) {
+                @Suppress("UNCHECKED_CAST")
+                val stringKey = key as Preferences.Key<String>
+                val plaintext = prefs[stringKey] ?: continue
+                if (plaintext.startsWith("v1:")) continue
+                prefs[stringKey] = cipher.encrypt(plaintext)
+            }
+        }
     }
 
     companion object {

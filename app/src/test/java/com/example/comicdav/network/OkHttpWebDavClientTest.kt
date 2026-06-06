@@ -56,11 +56,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Type", "video/mp4")
                 .setBody("234"),
         )
-        val client = OkHttpWebDavClient(
-            baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
-        )
+        val client = testClient()
 
         val response = client.openRangeStream("/movie.mp4", start = 2L, endInclusive = 4L)
         val bytes = try {
@@ -85,11 +81,7 @@ class OkHttpWebDavClientTest {
                 .setResponseCode(200)
                 .setBody("full response"),
         )
-        val client = OkHttpWebDavClient(
-            baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
-        )
+        val client = testClient()
 
         val result = runCatching {
             client.openRangeStream("/movie.mp4", start = 0L, endInclusive = 3L)
@@ -108,7 +100,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Range", "bytes 0-2/3")
                 .setBody("abc"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -123,7 +115,7 @@ class OkHttpWebDavClientTest {
 
     @Test
     fun cancelledRangeRequestDoesNotRetry() = runTest {
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -152,7 +144,7 @@ class OkHttpWebDavClientTest {
                 .throttleBody(1, 1, TimeUnit.SECONDS),
         )
         val failureLogs = mutableListOf<String>()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -185,7 +177,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Length", "3")
                 .setBody("abc"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -213,7 +205,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Range", "bytes 0-2/3")
                 .setBody("abc"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -234,7 +226,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Length", "3")
                 .setHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -275,7 +267,7 @@ class OkHttpWebDavClientTest {
                     """.trimIndent(),
                 ),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -300,7 +292,7 @@ class OkHttpWebDavClientTest {
                 .setResponseCode(200)
                 .setHeader("Content-Length", "3"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = "用户",
             password = "秘密",
@@ -321,7 +313,7 @@ class OkHttpWebDavClientTest {
                 throw IOException("network down")
             }
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = "http://example.test/dav/",
             username = null,
             password = null,
@@ -333,6 +325,25 @@ class OkHttpWebDavClientTest {
 
         assertTrue(error is WebDavException.Network)
         assertTrue(error?.message.orEmpty().contains("network down"))
+    }
+
+    @Test
+    fun httpsBaseUrlRejectsPlaintextAbsoluteRequestUrl() = runTest {
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor {
+                error("Request should be rejected before the HTTP client executes it")
+            }
+            .build()
+        val client = OkHttpWebDavClient(
+            baseUrl = "https://example.test/dav/",
+            username = null,
+            password = null,
+            httpClient = httpClient,
+        )
+
+        val result = runCatching { client.head("http://example.test/dav/movie.mp4") }
+
+        assertTrue(result.exceptionOrNull() is WebDavException.Network)
     }
 
     @Test
@@ -362,7 +373,7 @@ class OkHttpWebDavClientTest {
                 }
             }
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = "http://example.test/dav/",
             username = null,
             password = null,
@@ -389,7 +400,7 @@ class OkHttpWebDavClientTest {
                 .setResponseCode(200)
                 .setBody(Buffer().write(bytes)),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -424,7 +435,7 @@ class OkHttpWebDavClientTest {
                     .build()
             }
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = "http://example.test/dav/",
             username = null,
             password = null,
@@ -455,7 +466,7 @@ class OkHttpWebDavClientTest {
             }
             .readTimeout(5, TimeUnit.SECONDS)
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -506,7 +517,7 @@ class OkHttpWebDavClientTest {
                 .setHeader("Content-Range", "bytes 2-4/4")
                 .setBody("234"),
         )
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -546,7 +557,7 @@ class OkHttpWebDavClientTest {
                     .build()
             }
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = "http://example.test/dav/",
             username = null,
             password = null,
@@ -577,7 +588,7 @@ class OkHttpWebDavClientTest {
                     .build()
             }
             .build()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = "http://example.test/dav/",
             username = null,
             password = null,
@@ -603,7 +614,7 @@ class OkHttpWebDavClientTest {
                 .setBody("abc"),
         )
         val logs = mutableListOf<String>()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = null,
             password = null,
@@ -627,7 +638,7 @@ class OkHttpWebDavClientTest {
     fun failureDiagnosticsLogSanitizedCurlCommand() = runTest {
         server.enqueue(MockResponse().setResponseCode(401))
         val logs = mutableListOf<String>()
-        val client = OkHttpWebDavClient(
+        val client = testClient(
             baseUrl = server.url("/dav/").toString(),
             username = "alice",
             password = "secret",
@@ -716,4 +727,19 @@ class OkHttpWebDavClientTest {
 
     private fun doesNotContainAuthorization(text: String): Boolean =
         !text.contains("Authorization", ignoreCase = true)
+
+    private fun testClient(
+        baseUrl: String = server.url("/dav/").toString(),
+        username: String? = null,
+        password: String? = null,
+        httpClient: OkHttpClient = HttpClients.webDav,
+        diagnostics: WebDavNetworkDiagnostics = recordingDiagnostics(),
+    ): OkHttpWebDavClient = OkHttpWebDavClient(
+        baseUrl = baseUrl,
+        username = username,
+        password = password,
+        httpClient = httpClient,
+        diagnostics = diagnostics,
+        allowPlaintextHttp = true,
+    )
 }

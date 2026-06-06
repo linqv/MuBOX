@@ -136,6 +136,9 @@ fun ComicDavApp() {
     val readerViewModel: ReaderViewModel = viewModel()
     val context = LocalContext.current
     val container = remember(context) { AppContainer(context) }
+    LaunchedEffect(Unit) {
+        container.webDavAccountStore.migratePlaintextPasswords()
+    }
     val libraryRepository = container.libraryRepository
     val videoLibraryRepository = container.videoLibraryRepository
     val localComicOpener = container.localComicOpener

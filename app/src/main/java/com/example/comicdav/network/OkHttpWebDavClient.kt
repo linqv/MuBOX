@@ -31,6 +31,7 @@ class OkHttpWebDavClient(
     private val password: String?,
     httpClient: OkHttpClient = HttpClients.webDav,
     private val diagnostics: WebDavNetworkDiagnostics = WebDavNetworkDiagnostics(),
+    private val allowPlaintextHttp: Boolean = baseUrl.trim().startsWith("http://", ignoreCase = true),
 ) : WebDavClient {
     private val urlResolver = WebDavUrlResolver(baseUrl)
     private val httpClient: OkHttpClient = run {
@@ -59,7 +60,7 @@ class OkHttpWebDavClient(
                         httpFailureMessage("PROPFIND", response.code, request),
                     )
                 }
-                WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath)
+                WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath, urlResolver.baseOrigin())
             }
         }
     }
@@ -291,6 +292,7 @@ class OkHttpWebDavClient(
         rangeHeader: String? = null,
     ): Request.Builder {
         val resolvedUrl = urlResolver.resolve(path)
+        requireAllowedTransport(resolvedUrl)
         return Request.Builder()
             .url(resolvedUrl)
             .tag(WebDavRequestTag::class.java, diagnostics.requestTag(operation, path, rangeHeader))
@@ -299,6 +301,15 @@ class OkHttpWebDavClient(
                     builder.header("Authorization", Credentials.basic(username, password, Charsets.UTF_8))
                 }
             }
+    }
+
+    private fun requireAllowedTransport(url: String) {
+        if (
+            url.startsWith("http://", ignoreCase = true) &&
+            (!allowPlaintextHttp || !urlResolver.isSameOrigin(url))
+        ) {
+            throw WebDavException.Network("Plaintext HTTP is not allowed: $url")
+        }
     }
 
     private fun buildRangeHeader(start: Long, endInclusive: Long?): String =
@@ -524,6 +535,12 @@ class OkHttpWebDavClient(
 
         fun isSameOrigin(url: String): Boolean =
             runCatching { Origin.from(URI(url)) == baseOrigin }.getOrDefault(false)
+
+        fun baseOrigin(): String? {
+            val scheme = baseOrigin.scheme ?: return null
+            val host = baseOrigin.host ?: return null
+            return "$scheme://$host:${baseOrigin.port}"
+        }
 
         private fun normalizeRequestPath(path: String): String {
             if (mountedPrefixes.any { path.startsWith(it) }) {

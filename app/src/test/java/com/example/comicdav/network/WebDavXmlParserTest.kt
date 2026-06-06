@@ -137,6 +137,51 @@ class WebDavXmlParserTest {
     }
 
     @Test
+    fun acceptsAbsoluteHrefMatchingBaseOrigin() {
+        val xml = """<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">
+            <d:response><d:href>https://example.test/webdav/Book.cbz</d:href><d:propstat><d:prop><d:getcontentlength>100</d:getcontentlength></d:prop></d:propstat></d:response>
+        </d:multistatus>"""
+
+        val items = WebDavXmlParser.parse(
+            xml.byteInputStream(),
+            basePath = "/webdav/",
+            baseOrigin = "https://example.test:443",
+        )
+
+        assertEquals("/webdav/Book.cbz", items.single().path)
+    }
+
+    @Test
+    fun rejectsAbsoluteHrefFromDifferentOrigin() {
+        val xml = """<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">
+            <d:response><d:href>https://evil.example/webdav/Book.cbz</d:href><d:propstat><d:prop><d:getcontentlength>100</d:getcontentlength></d:prop></d:propstat></d:response>
+        </d:multistatus>"""
+
+        val items = WebDavXmlParser.parse(
+            xml.byteInputStream(),
+            basePath = "/webdav/",
+            baseOrigin = "https://example.test:443",
+        )
+
+        assertTrue(items.isEmpty())
+    }
+
+    @Test
+    fun rejectsAbsoluteHrefWithDifferentPort() {
+        val xml = """<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">
+            <d:response><d:href>https://example.test:8443/webdav/Book.cbz</d:href><d:propstat><d:prop><d:getcontentlength>100</d:getcontentlength></d:prop></d:propstat></d:response>
+        </d:multistatus>"""
+
+        val items = WebDavXmlParser.parse(
+            xml.byteInputStream(),
+            basePath = "/webdav/",
+            baseOrigin = "https://example.test:443",
+        )
+
+        assertTrue(items.isEmpty())
+    }
+
+    @Test
     fun secureFeatureConfigurationIgnoresUnsupportedParserFeatures() {
         val factory = RejectingFeatureFactory()
 

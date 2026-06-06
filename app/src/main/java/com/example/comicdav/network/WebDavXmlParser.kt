@@ -15,13 +15,26 @@ import javax.xml.parsers.ParserConfigurationException
 object WebDavXmlParser {
     fun parse(input: InputStream, basePath: String): List<WebDavItem> {
         val document = documentBuilderFactory().newDocumentBuilder().parse(input)
-        val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/"))
+        val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = null) ?: "/")
         val responses = document.getElementsByTagNameNS("*", "response")
 
         return buildList {
             for (index in 0 until responses.length) {
                 val response = responses.item(index) as? Element ?: continue
-                response.toItem(base)?.let(::add)
+                response.toItem(base, baseOrigin = null)?.let(::add)
+            }
+        }
+    }
+
+    fun parse(input: InputStream, basePath: String, baseOrigin: String?): List<WebDavItem> {
+        val document = documentBuilderFactory().newDocumentBuilder().parse(input)
+        val base = normalizeDirectoryPath(normalizeHref(basePath, basePath = "/", baseOrigin = baseOrigin) ?: "/")
+        val responses = document.getElementsByTagNameNS("*", "response")
+
+        return buildList {
+            for (index in 0 until responses.length) {
+                val response = responses.item(index) as? Element ?: continue
+                response.toItem(base, baseOrigin = baseOrigin)?.let(::add)
             }
         }
     }
@@ -34,7 +47,8 @@ object WebDavXmlParser {
         for (index in 0 until responses.length) {
             val response = responses.item(index) as? Element ?: continue
             val href = response.childText("href") ?: continue
-            val path = normalizeFilePath(normalizeHref(href, basePath = parentDirectoryPath(requestPath)))
+            val normalizedHref = normalizeHref(href, basePath = parentDirectoryPath(requestPath), baseOrigin = null) ?: continue
+            val path = normalizeFilePath(normalizedHref)
             if (!isSameFilePath(path, normalizedRequestPath)) continue
 
             val props = response.successfulPropElements()
@@ -70,11 +84,12 @@ object WebDavXmlParser {
         }
     }
 
-    private fun Element.toItem(basePath: String): WebDavItem? {
+    private fun Element.toItem(basePath: String, baseOrigin: String?): WebDavItem? {
         val href = childText("href") ?: return null
         val props = successfulPropElements()
         val isDirectory = props.any { it.hasDescendant("collection") }
-        val path = normalizeItemPath(normalizeHref(href, basePath), isDirectory)
+        val normalizedHref = normalizeHref(href, basePath, baseOrigin) ?: return null
+        val path = normalizeItemPath(normalizedHref, isDirectory)
         val comparablePath = if (isDirectory) normalizeDirectoryPath(path) else path
         if (isSamePath(comparablePath, basePath)) return null
 
@@ -131,10 +146,14 @@ object WebDavXmlParser {
 
     private fun normalizeFilePath(path: String): String = path.trimEnd('/').ifBlank { "/" }
 
-    private fun normalizeHref(href: String, basePath: String): String {
+    private fun normalizeHref(href: String, basePath: String, baseOrigin: String?): String? {
         val path = href.trim()
-        val absolutePath = absoluteUriPath(path)
-        if (absolutePath != null) return absolutePath
+        val absoluteResult = absoluteUriPath(path, baseOrigin)
+        when (absoluteResult) {
+            is AbsoluteHrefResult.Accepted -> return absoluteResult.path
+            is AbsoluteHrefResult.Rejected -> return null
+            is AbsoluteHrefResult.NotAbsolute -> { }
+        }
         if (path.startsWith("/")) return path
         if (matchesBaseRoot(path, basePath)) return "/$path"
 
@@ -146,18 +165,41 @@ object WebDavXmlParser {
         return path.startsWith(baseRoot) || decodedPath(path).startsWith(decodedPath(baseRoot))
     }
 
-    private fun absoluteUriPath(href: String): String? {
+    private sealed class AbsoluteHrefResult {
+        data class Accepted(val path: String) : AbsoluteHrefResult()
+        object Rejected : AbsoluteHrefResult()
+        object NotAbsolute : AbsoluteHrefResult()
+    }
+
+    private fun absoluteUriPath(href: String, baseOrigin: String?): AbsoluteHrefResult {
         return try {
             val uri = URI(href)
             if (uri.scheme == null) {
-                null
+                AbsoluteHrefResult.NotAbsolute
             } else {
-                val path = uri.rawPath ?: uri.path ?: return null
-                if (uri.rawQuery == null) path else "$path?${uri.rawQuery}"
+                if (baseOrigin != null) {
+                    val hrefOrigin = originFromUri(uri) ?: return AbsoluteHrefResult.Rejected
+                    if (!hrefOrigin.equals(baseOrigin, ignoreCase = true)) return AbsoluteHrefResult.Rejected
+                }
+                val path = uri.rawPath ?: uri.path ?: return AbsoluteHrefResult.Rejected
+                val result = if (uri.rawQuery == null) path else "$path?${uri.rawQuery}"
+                AbsoluteHrefResult.Accepted(result)
             }
         } catch (_: IllegalArgumentException) {
-            null
+            AbsoluteHrefResult.NotAbsolute
         }
+    }
+
+    private fun originFromUri(uri: URI): String? {
+        val scheme = uri.scheme ?: return null
+        val host = uri.host ?: return null
+        val port = when {
+            uri.port > 0 -> uri.port
+            scheme.equals("http", ignoreCase = true) -> 80
+            scheme.equals("https", ignoreCase = true) -> 443
+            else -> return null
+        }
+        return "$scheme://$host:$port"
     }
 
     private fun isSamePath(left: String, right: String): Boolean =
