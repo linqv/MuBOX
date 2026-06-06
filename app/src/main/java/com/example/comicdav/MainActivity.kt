@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -714,9 +713,19 @@ fun ComicDavApp() {
                         supportsRange = true,
                     )
                 } ?: client.head(item.path)
+                val progressThrottler = DownloadProgressThrottler()
                 val record = downloadWebDavComicRecordToDataFolder(
-                    context, Uri.parse(folderUriText), client, accountId, item.path, item.name, info, System.currentTimeMillis(), ::reportDownloadProgress,
-                )
+                    context,
+                    Uri.parse(folderUriText),
+                    client,
+                    accountId,
+                    item.path,
+                    item.name,
+                    info,
+                    System.currentTimeMillis(),
+                ) { downloaded, total ->
+                    if (progressThrottler.shouldReport(downloaded, total)) reportDownloadProgress(downloaded, total)
+                }
                 downloadRecordStore.addRecord(record)
                 downloadProgress = null
                 webDavActionMessage = "已下载 ${item.name} 到数据文件夹"
@@ -775,6 +784,7 @@ fun ComicDavApp() {
                     context = context,
                     folderTreeUri = Uri.parse(folderUriText),
                     client = client,
+                    accountId = accountId,
                     remotePath = item.path,
                     fileName = item.name,
                     expectedSize = info.size,
@@ -924,9 +934,19 @@ fun ComicDavApp() {
                         supportsRange = true,
                     )
                 } ?: client.head(remotePath)
+                val progressThrottler = DownloadProgressThrottler()
                 val record = downloadWebDavComicRecordToDataFolder(
-                    context, Uri.parse(folderUriText), client, accountId, remotePath, fileName, info, System.currentTimeMillis(), ::reportDownloadProgress,
-                )
+                    context,
+                    Uri.parse(folderUriText),
+                    client,
+                    accountId,
+                    remotePath,
+                    fileName,
+                    info,
+                    System.currentTimeMillis(),
+                ) { downloaded, total ->
+                    if (progressThrottler.shouldReport(downloaded, total)) reportDownloadProgress(downloaded, total)
+                }
                 downloadRecordStore.addRecord(record)
                 downloadProgress = null
                 onSuccess("已下载 $fileName 到数据文件夹")
@@ -1287,25 +1307,23 @@ fun ComicDavApp() {
     }
 
     fun deleteComicDownloadFile(record: DownloadRecord) {
-        val uri = Uri.parse(record.localUri)
         scope.launch {
-            val shouldRemoveRecord = withContext(Dispatchers.IO) {
-                val documentDeleteSucceeded = runCatching {
-                    DocumentsContract.deleteDocument(context.contentResolver, uri)
-                }.fold(
-                    onSuccess = { deleted -> deleted },
-                    onFailure = { error ->
-                        ReaderDiagnosticLog.error("delete_comic_download_file_failed uri=$uri", error)
-                        false
-                    },
-                )
-                shouldRemoveVideoDownloadRecordAfterDelete(
-                    documentDeleteSucceeded = documentDeleteSucceeded,
-                    documentStillResolvable = true,
-                )
+            val uriText = downloadLocalUriTextOrNull(record.localUri)
+            if (uriText == null) {
+                downloadRecordStore.removeRecord(record)
+                localOpenError = null
+                webDavActionMessage = "已从列表移除 ${record.fileName}（缺少本地文件位置）"
+                return@launch
             }
+            val uri = Uri.parse(uriText)
+            val shouldRemoveRecord = deleteDownloadDocumentAndShouldRemoveRecord(
+                context = context,
+                uri = uri,
+                diagnosticName = "delete_comic_download_file",
+            )
             if (shouldRemoveRecord) {
                 downloadRecordStore.removeRecord(record)
+                localOpenError = null
                 webDavActionMessage = "已删除 ${record.fileName}"
             } else {
                 localOpenError = "无法删除 ${record.fileName}，下载记录已保留"
@@ -1346,31 +1364,11 @@ fun ComicDavApp() {
     fun deleteVideoDownloadRecord(record: VideoDownloadRecord) {
         scope.launch {
             val uri = Uri.parse(record.localUri)
-            val shouldRemoveRecord = withContext(Dispatchers.IO) {
-                var documentStillResolvable = true
-                val documentDeleteSucceeded = runCatching {
-                    DocumentsContract.deleteDocument(context.contentResolver, uri)
-                }.fold(
-                    onSuccess = { deleted ->
-                        if (!deleted) {
-                            documentStillResolvable = videoDownloadDocumentStillResolvable(context, uri)
-                            ReaderDiagnosticLog.event(
-                                "delete_video_download_file_returned_false uri=$uri resolvable=$documentStillResolvable",
-                            )
-                        }
-                        deleted
-                    },
-                    onFailure = { error ->
-                        ReaderDiagnosticLog.error("delete_video_download_file_failed uri=$uri", error)
-                        documentStillResolvable = !error.causedByFileNotFound()
-                        false
-                    },
-                )
-                shouldRemoveVideoDownloadRecordAfterDelete(
-                    documentDeleteSucceeded = documentDeleteSucceeded,
-                    documentStillResolvable = documentStillResolvable,
-                )
-            }
+            val shouldRemoveRecord = deleteDownloadDocumentAndShouldRemoveRecord(
+                context = context,
+                uri = uri,
+                diagnosticName = "delete_video_download_file",
+            )
             if (shouldRemoveRecord) {
                 videoDownloadStore.removeRecord(record)
                 localOpenError = null
@@ -2015,7 +2013,8 @@ fun ComicDavApp() {
                                     onDeleteComicFile = ::deleteComicDownloadFile,
                                     onDeleteVideoFile = ::deleteVideoDownloadRecord,
                                     onShowDetails = {
-                                        fileDirectoryViewModel.showMessage("暂无详情页面")
+                                        localOpenError = null
+                                        webDavActionMessage = "暂无详情页面"
                                     },
                                     onOpenSources = {
                                         localOpenError = null
