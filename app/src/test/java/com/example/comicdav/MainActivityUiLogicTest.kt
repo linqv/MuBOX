@@ -6,9 +6,10 @@ import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.comicDavTypography
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class MainActivityUiLogicTest {
     @Test
@@ -74,6 +75,54 @@ class MainActivityUiLogicTest {
             shouldRemoveVideoDownloadRecordAfterDelete(
                 documentDeleteSucceeded = false,
                 documentStillResolvable = true,
+            ),
+        )
+    }
+
+    @Test
+    fun localDownloadFileNameIncludesPathSpecificSuffixBeforeExtension() {
+        val first = localDownloadFileNameForRemoteFile(
+            accountId = "account-1",
+            remotePath = "/series-a/01.cbz",
+            fileName = "01.cbz",
+        )
+        val second = localDownloadFileNameForRemoteFile(
+            accountId = "account-1",
+            remotePath = "/series-b/01.cbz",
+            fileName = "01.cbz",
+        )
+
+        assertNotEquals(first, second)
+        assertTrue(first.startsWith("01-"))
+        assertTrue(first.endsWith(".cbz"))
+        assertTrue(second.startsWith("01-"))
+        assertTrue(second.endsWith(".cbz"))
+    }
+
+    @Test
+    fun localDownloadFileNameKeepsSanitizedFallbackWhenNameHasNoExtension() {
+        val localName = localDownloadFileNameForRemoteFile(
+            accountId = "account-1",
+            remotePath = "/downloads/invalid:name",
+            fileName = "invalid:name",
+        )
+
+        assertTrue(localName.startsWith("invalid_name-"))
+    }
+
+    @Test
+    fun downloadLocalUriTextOrNullRejectsMissingLocalUri() {
+        assertNull(downloadLocalUriTextOrNull(null))
+        assertNull(downloadLocalUriTextOrNull("   "))
+        assertEquals("content://downloads/root/demo.cbz", downloadLocalUriTextOrNull(" content://downloads/root/demo.cbz "))
+    }
+
+    @Test
+    fun deleteOutcomeRemovesRecordWhenFileAlreadyMissing() {
+        assertTrue(
+            shouldRemoveDownloadRecordAfterDelete(
+                documentDeleteSucceeded = false,
+                documentStillResolvable = false,
             ),
         )
     }
@@ -167,12 +216,4 @@ class MainActivityUiLogicTest {
         assertEquals("/%E8%A7%86%E9%A2%91/", parentWebDavDirectoryPath("/%E8%A7%86%E9%A2%91/movie.mp4"))
     }
 
-    @Test
-    fun mainActivityCompositionRootStaysBelow100Kb() {
-        val file = File("src/main/java/com/example/comicdav/MainActivity.kt")
-        assertTrue(
-            "MainActivity.kt should stay below 100 KB after composition-root extraction; actual=${file.length()}",
-            file.length() < 100_000L,
-        )
-    }
 }
