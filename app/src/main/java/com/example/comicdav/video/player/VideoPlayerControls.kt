@@ -216,6 +216,7 @@ internal fun PlayerMenuPanel(
     state: MpvPlayerState,
     mediaContext: VideoPlayerMediaContext,
     proxyStatistics: VideoProxyStatistics? = null,
+    proxyDebugInfoEnabled: Boolean = false,
     onDismiss: () -> Unit,
     onSpeedSelected: (Double) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
@@ -280,6 +281,7 @@ internal fun PlayerMenuPanel(
                     state = state,
                     proxy = proxyStatistics,
                 ),
+                includeProxyDebugInfo = proxyDebugInfoEnabled,
             )
         }
     }
@@ -288,10 +290,13 @@ internal fun PlayerMenuPanel(
 // ─── Statistics ───
 
 @Composable
-internal fun StatisticsControls(snapshot: VideoPlayerStatisticsSnapshot) {
+internal fun StatisticsControls(
+    snapshot: VideoPlayerStatisticsSnapshot,
+    includeProxyDebugInfo: Boolean = true,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("信息", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
-        snapshot.redacted().debugLines().forEach { line ->
+        snapshot.redacted().debugLines(includeProxyDebugInfo = includeProxyDebugInfo).forEach { line ->
             Text(line, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }

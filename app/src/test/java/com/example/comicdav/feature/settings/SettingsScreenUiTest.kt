@@ -98,6 +98,7 @@ class SettingsScreenUiTest {
                 "WebDAV 视频 seek 优化",
                 "向前预读",
                 "视频代理诊断日志",
+                "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",
                 "默认解码器",

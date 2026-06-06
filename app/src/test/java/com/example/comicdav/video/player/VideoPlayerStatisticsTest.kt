@@ -117,6 +117,41 @@ class VideoPlayerStatisticsTest {
     }
 
     @Test
+    fun proxyDebugLinesAreHiddenWhenProxyDebugInfoIsDisabled() {
+        val snapshot = VideoPlayerStatisticsSnapshot(
+            media = MediaInfoSnapshot(
+                displayName = "movie.mkv",
+                source = "webdav",
+                remotePath = "/secret/private/movie.mkv",
+                container = "mkv",
+            ),
+            runtime = MpvRuntimeStatistics(
+                decoder = "h264",
+                renderer = "gpu-next",
+                estimatedFps = 23.976,
+                droppedFrames = null,
+                avSyncSeconds = null,
+                cacheUsedBytes = null,
+            ),
+            proxy = VideoProxyStatistics(
+                currentRange = "bytes=0-8388607",
+                remoteHttpStatus = 206,
+                downloadBytesPerSecond = 65536,
+                memoryCacheHits = 3,
+                prefetchState = "active",
+                seekFirstFrameMillis = 420,
+                diagnosticMessage = "remote_fetch range=0-8388607",
+            ),
+        )
+
+        val lines = snapshot.redacted().debugLines(includeProxyDebugInfo = false)
+
+        assertTrue(lines.contains("file=movie.mkv"))
+        assertFalse(lines.any { it.startsWith("proxy-") })
+        assertFalse(lines.any { it.contains("range=0-8388607") })
+    }
+
+    @Test
     fun localStatisticsKeepNonSensitiveMediaDetails() {
         val snapshot = VideoPlayerStatisticsSnapshot(
             media = MediaInfoSnapshot(

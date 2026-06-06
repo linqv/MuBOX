@@ -70,6 +70,7 @@ data class AppSettings(
     val videoSeekOptimizationEnabled: Boolean = true,
     val videoForwardPrefetchMode: VideoForwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
     val videoProxyDiagnosticsMode: VideoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.OFF,
+    val videoPlayerProxyDebugInfoEnabled: Boolean = false,
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
@@ -108,6 +109,7 @@ class AppSettingsStore(
                 .toEnumOrDefault(VideoForwardPrefetchMode.STANDARD),
             videoProxyDiagnosticsMode = preferences[VIDEO_PROXY_DIAGNOSTICS_MODE]
                 .toEnumOrDefault(VideoProxyDiagnosticsMode.OFF),
+            videoPlayerProxyDebugInfoEnabled = preferences[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] ?: false,
             videoOutputMode = preferences[VIDEO_OUTPUT_MODE].toEnumOrDefault(VideoOutputMode.AUTO),
             gpuApiMode = preferences[GPU_API_MODE].toEnumOrDefault(GpuApiMode.AUTO),
             videoDecoderMode = preferences[VIDEO_DECODER_MODE].toEnumOrDefault(VideoDecoderMode.AUTO),
@@ -228,6 +230,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoPlayerProxyDebugInfoEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] = enabled
+        }
+    }
+
     suspend fun updateVideoOutputMode(mode: VideoOutputMode) {
         dataStore.edit { preferences ->
             preferences[VIDEO_OUTPUT_MODE] = mode.name
@@ -289,6 +297,7 @@ class AppSettingsStore(
         val VIDEO_SEEK_OPTIMIZATION_ENABLED = booleanPreferencesKey("video_seek_optimization_enabled")
         val VIDEO_FORWARD_PREFETCH_MODE = stringPreferencesKey("video_forward_prefetch_mode")
         val VIDEO_PROXY_DIAGNOSTICS_MODE = stringPreferencesKey("video_proxy_diagnostics_mode")
+        val VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED = booleanPreferencesKey("video_player_proxy_debug_info_enabled")
         val VIDEO_OUTPUT_MODE = stringPreferencesKey("video_output_mode")
         val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
         val VIDEO_DECODER_MODE = stringPreferencesKey("video_decoder_mode")

@@ -22,6 +22,7 @@ class VideoPlayerActivityIntentTest {
         assertEquals(VideoDecoderMode.AUTO, settings.videoDecoderMode)
         assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
         assertEquals(5000, settings.videoControlsAutoHideMillis)
+        assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
     }
 
     @Test
@@ -62,6 +63,7 @@ class VideoPlayerActivityIntentTest {
             videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
             mpvProfileMode = MpvProfileMode.LOW_LATENCY,
             controlsAutoHideMillis = 8000,
+            proxyDebugInfoEnabled = true,
         )
 
         assertEquals(
@@ -83,6 +85,10 @@ class VideoPlayerActivityIntentTest {
         assertEquals(
             8000,
             intent.getIntExtra(VideoPlayerActivity.EXTRA_CONTROLS_AUTO_HIDE_MILLIS, -1),
+        )
+        assertEquals(
+            true,
+            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
         )
     }
 
@@ -120,9 +126,14 @@ class VideoPlayerActivityIntentTest {
             uri = "http://127.0.0.1:1234/stream/current",
             subtitleUrls = emptyList(),
             streamIds = listOf("current"),
+            proxyDebugInfoEnabled = true,
         )
 
         assertFalse(intent.hasQueueExtras())
+        assertEquals(
+            true,
+            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
+        )
     }
 
     private fun android.content.Intent.hasQueueExtras(): Boolean =

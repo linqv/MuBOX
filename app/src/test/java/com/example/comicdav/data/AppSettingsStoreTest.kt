@@ -27,6 +27,7 @@ class AppSettingsStoreTest {
         assertTrue(settings.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.STANDARD, settings.videoForwardPrefetchMode)
         assertEquals(VideoProxyDiagnosticsMode.OFF, settings.videoProxyDiagnosticsMode)
+        assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
         assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
     }
 
@@ -37,12 +38,14 @@ class AppSettingsStoreTest {
         store.updateVideoSeekOptimizationEnabled(false)
         store.updateVideoForwardPrefetchMode(VideoForwardPrefetchMode.AGGRESSIVE)
         store.updateVideoProxyDiagnosticsMode(VideoProxyDiagnosticsMode.DETAIL)
+        store.updateVideoPlayerProxyDebugInfoEnabled(true)
 
         val settings = store.settings.first()
 
         assertFalse(settings.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.AGGRESSIVE, settings.videoForwardPrefetchMode)
         assertEquals(VideoProxyDiagnosticsMode.DETAIL, settings.videoProxyDiagnosticsMode)
+        assertTrue(settings.videoPlayerProxyDebugInfoEnabled)
     }
 
     @Test

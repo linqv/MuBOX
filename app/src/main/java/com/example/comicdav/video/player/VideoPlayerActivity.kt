@@ -189,6 +189,7 @@ class VideoPlayerActivity : ComponentActivity() {
         val initialMpvProfileMode = intent.getStringExtra(EXTRA_MPV_PROFILE_MODE)
             .toEnumOrDefault(MpvProfileMode.FAST)
         val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
+        val proxyDebugInfoEnabled = intent.getBooleanExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, false)
         playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
         progressSaver = VideoPlaybackProgressSaver(playbackPersistenceScope) { key, positionMillis, durationMillis ->
             playbackStateStore.savePosition(
@@ -230,8 +231,8 @@ class VideoPlayerActivity : ComponentActivity() {
             ComicDavTheme {
                 val state by controller.state.collectAsState()
                 val progress by controller.progress.collectAsState()
-                LaunchedEffect(webDavStreamIds) {
-                    if (webDavStreamIds.isEmpty()) {
+                LaunchedEffect(webDavStreamIds, proxyDebugInfoEnabled) {
+                    if (webDavStreamIds.isEmpty() || !proxyDebugInfoEnabled) {
                         proxyStatistics = null
                         return@LaunchedEffect
                     }
@@ -292,6 +293,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     mediaContext = mediaContext,
                     controlsAutoHideMillis = controlsAutoHideMillis,
                     proxyStatistics = proxyStatistics,
+                    proxyDebugInfoEnabled = proxyDebugInfoEnabled,
                 )
             }
         }
@@ -639,6 +641,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_MPV_PROFILE_MODE = "com.example.comicdav.video.extra.MPV_PROFILE_MODE"
         const val EXTRA_CONTROLS_AUTO_HIDE_MILLIS = "com.example.comicdav.video.extra.CONTROLS_AUTO_HIDE_MILLIS"
         const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
+        const val EXTRA_PROXY_DEBUG_INFO_ENABLED = "com.example.comicdav.video.extra.PROXY_DEBUG_INFO_ENABLED"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
@@ -651,6 +654,7 @@ class VideoPlayerActivity : ComponentActivity() {
             mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
+            proxyDebugInfoEnabled: Boolean = false,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -675,6 +679,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
                 .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                 .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
+                .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
                 .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
@@ -690,6 +695,7 @@ class VideoPlayerActivity : ComponentActivity() {
             mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
+            proxyDebugInfoEnabled: Boolean = false,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -723,6 +729,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
                     .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                     .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
+                    .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
                 }
@@ -765,6 +772,7 @@ private fun VideoPlayerScreen(
     mediaContext: VideoPlayerMediaContext,
     controlsAutoHideMillis: Int,
     proxyStatistics: VideoProxyStatistics?,
+    proxyDebugInfoEnabled: Boolean,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -881,6 +889,7 @@ private fun VideoPlayerScreen(
                     state = state,
                     mediaContext = mediaContext,
                     proxyStatistics = proxyStatistics,
+                    proxyDebugInfoEnabled = proxyDebugInfoEnabled,
                     onDismiss = { menuVisible = false },
                     onSpeedSelected = onSpeedSelected,
                     onScaleModeSelected = onScaleModeSelected,

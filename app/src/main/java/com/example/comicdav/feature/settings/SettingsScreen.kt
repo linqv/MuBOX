@@ -132,6 +132,7 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "WebDAV 视频 seek 优化",
                 "向前预读",
                 "视频代理诊断日志",
+                "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",
                 "默认解码器",
@@ -163,6 +164,7 @@ fun SettingsScreen(
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit = {},
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit = {},
     onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit = {},
+    onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit = {},
     onVideoOutputModeChange: (VideoOutputMode) -> Unit = {},
     onGpuApiModeChange: (GpuApiMode) -> Unit = {},
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
@@ -206,6 +208,7 @@ fun SettingsScreen(
                 onVideoSeekOptimizationEnabledChange = onVideoSeekOptimizationEnabledChange,
                 onVideoForwardPrefetchModeChange = onVideoForwardPrefetchModeChange,
                 onVideoProxyDiagnosticsModeChange = onVideoProxyDiagnosticsModeChange,
+                onVideoPlayerProxyDebugInfoEnabledChange = onVideoPlayerProxyDebugInfoEnabledChange,
                 onVideoOutputModeChange = onVideoOutputModeChange,
                 onGpuApiModeChange = onGpuApiModeChange,
                 onVideoDecoderModeChange = onVideoDecoderModeChange,
@@ -417,6 +420,7 @@ private fun VideoSettingsPage(
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit,
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit,
     onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit,
+    onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit,
     onVideoOutputModeChange: (VideoOutputMode) -> Unit,
     onGpuApiModeChange: (GpuApiMode) -> Unit,
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit,
@@ -470,6 +474,12 @@ private fun VideoSettingsPage(
                 options = VideoProxyDiagnosticsMode.entries,
                 label = VideoProxyDiagnosticsMode::label,
                 onSelected = onVideoProxyDiagnosticsModeChange,
+            )
+            MuBoxSwitchRow(
+                title = "播放信息显示代理/Range 调试信息",
+                checked = settings.videoPlayerProxyDebugInfoEnabled,
+                onCheckedChange = onVideoPlayerProxyDebugInfoEnabledChange,
+                subtitle = "在播放器信息面板显示 WebDAV 代理、Range 和预读状态",
             )
             DropdownRow(
                 title = "视频输出 (VO)",

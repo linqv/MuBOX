@@ -11,7 +11,7 @@ data class VideoPlayerStatisticsSnapshot(
             proxy = proxy?.redacted(),
         )
 
-    fun debugLines(): List<String> {
+    fun debugLines(includeProxyDebugInfo: Boolean = true): List<String> {
         val lines = mutableListOf<String>()
         lines += "file=${media.displayName}"
         lines += "source=${media.source}"
@@ -34,7 +34,9 @@ data class VideoPlayerStatisticsSnapshot(
         runtime.droppedFrames?.let { lines += "dropped=$it" }
         runtime.avSyncSeconds?.let { lines += "av-sync=${it}s" }
         runtime.cacheUsedBytes?.let { lines += "cache=$it" }
-        proxy?.debugLines()?.let(lines::addAll)
+        if (includeProxyDebugInfo) {
+            proxy?.debugLines()?.let(lines::addAll)
+        }
         return lines
     }
 }

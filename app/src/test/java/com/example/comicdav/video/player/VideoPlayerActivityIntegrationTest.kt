@@ -157,7 +157,7 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("StatisticsControls("))
         assertTrue(source.contains("Text(\"信息\""))
         assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(Icons.Filled.Info, \"播放信息\")"))
-        assertTrue(source.contains("snapshot.redacted().debugLines()"))
+        assertTrue(source.contains("debugLines(includeProxyDebugInfo = includeProxyDebugInfo)"))
     }
 
     @Test
@@ -167,7 +167,8 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("private var proxyStatistics by"))
         assertTrue(source.contains("VideoProxyManager.statistics"))
         assertTrue(source.contains("proxy = proxyStatistics"))
-        assertTrue(source.contains("LaunchedEffect(webDavStreamIds)"))
+        assertTrue(source.contains("LaunchedEffect(webDavStreamIds, proxyDebugInfoEnabled)"))
+        assertTrue(source.contains("webDavStreamIds.isEmpty() || !proxyDebugInfoEnabled"))
     }
 
     @Test

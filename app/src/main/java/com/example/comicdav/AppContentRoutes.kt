@@ -220,6 +220,9 @@ internal fun SettingsTabContent(
         onVideoProxyDiagnosticsModeChange = { value ->
             scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(value) }
         },
+        onVideoPlayerProxyDebugInfoEnabledChange = { value ->
+            scope.launch { appSettingsStore.updateVideoPlayerProxyDebugInfoEnabled(value) }
+        },
         onVideoOutputModeChange = { value ->
             scope.launch { appSettingsStore.updateVideoOutputMode(value) }
         },
