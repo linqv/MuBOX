@@ -1,5 +1,6 @@
 package com.example.comicdav.feature.reader
 
+import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.data.ReaderLoggingMode
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
@@ -210,15 +211,4 @@ class ReaderDiagnosticLogTest {
         assertTrue(sink.lines.isEmpty())
     }
 
-    private class CollectingReaderLogSink : ReaderLogSink {
-        val lines = mutableListOf<String>()
-
-        override fun log(line: String) {
-            lines += line
-        }
-
-        override fun logBlocking(line: String) {
-            lines += line
-        }
-    }
 }

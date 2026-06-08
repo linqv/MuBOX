@@ -94,16 +94,9 @@ class OkHttpWebDavClientTest {
     @Test
     fun readRangeRetriesTransientServerFailure() = runTest {
         server.enqueue(MockResponse().setResponseCode(502))
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/3")
-                .setBody("abc"),
-        )
+        enqueueRangeResponse(206, "bytes 0-2/3", "abc")
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val bytes = client.readRange("/movie.mp4", start = 0L, endInclusive = 2L)
@@ -117,8 +110,6 @@ class OkHttpWebDavClientTest {
     fun cancelledRangeRequestDoesNotRetry() = runTest {
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
         var cancellationRegistrations = 0
 
@@ -146,8 +137,6 @@ class OkHttpWebDavClientTest {
         val failureLogs = mutableListOf<String>()
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
             httpClient = OkHttpClient.Builder()
                 .readTimeout(1, TimeUnit.SECONDS)
                 .build(),
@@ -179,8 +168,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val response = client.openFullStream("/movie.mp4")
@@ -199,16 +186,9 @@ class OkHttpWebDavClientTest {
 
     @Test
     fun openFullStreamRejectsPartialContentResponse() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/3")
-                .setBody("abc"),
-        )
+        enqueueRangeResponse(206, "bytes 0-2/3", "abc")
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val result = runCatching {
@@ -228,8 +208,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val info = client.head("/movie.mp4")
@@ -269,8 +247,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val info = client.head("/movie.mp4")
@@ -295,8 +271,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val result = runCatching {
@@ -319,8 +293,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val result = runCatching {
@@ -362,8 +334,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = "http://example.test/dav/",
-            username = null,
-            password = null,
             httpClient = httpClient,
         )
 
@@ -472,8 +442,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = "http://example.test/dav/",
-            username = null,
-            password = null,
             httpClient = httpClient,
         )
 
@@ -499,8 +467,6 @@ class OkHttpWebDavClientTest {
         )
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
         val target = File.createTempFile("webdav-download", ".bin")
         target.deleteOnExit()
@@ -534,8 +500,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = "http://example.test/dav/",
-            username = null,
-            password = null,
             httpClient = httpClient,
         )
         val target = File.createTempFile("webdav-download-timeout", ".bin")
@@ -565,8 +529,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
             httpClient = httpClient,
         )
         val target = File.createTempFile("webdav-download-cancel", ".bin")
@@ -608,16 +570,9 @@ class OkHttpWebDavClientTest {
 
     @Test
     fun contentRangeEndMustBeInsideTotalSize() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 2-4/4")
-                .setBody("234"),
-        )
+        enqueueRangeResponse(206, "bytes 2-4/4", "234")
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
         )
 
         val result = runCatching {
@@ -656,8 +611,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = "http://example.test/dav/",
-            username = null,
-            password = null,
             httpClient = httpClient,
         )
 
@@ -687,8 +640,6 @@ class OkHttpWebDavClientTest {
             .build()
         val client = testClient(
             baseUrl = "http://example.test/dav/",
-            username = null,
-            password = null,
             httpClient = httpClient,
             diagnostics = recordingDiagnostics(),
         )
@@ -713,8 +664,6 @@ class OkHttpWebDavClientTest {
         val logs = mutableListOf<String>()
         val client = testClient(
             baseUrl = server.url("/dav/").toString(),
-            username = null,
-            password = null,
             diagnostics = recordingDiagnostics(detailLogs = logs),
         )
 
@@ -808,6 +757,15 @@ class OkHttpWebDavClientTest {
 
         override suspend fun download(path: String, target: java.io.File, onBytesRead: (Long) -> Unit): Long =
             error("download is not used by this test")
+    }
+
+    private fun enqueueRangeResponse(code: Int, contentRange: String, body: String) {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(code)
+                .setHeader("Content-Range", contentRange)
+                .setBody(body),
+        )
     }
 
     private fun recordingDiagnostics(

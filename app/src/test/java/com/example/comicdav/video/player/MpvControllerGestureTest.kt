@@ -7,7 +7,7 @@ import org.junit.Test
 class MpvControllerGestureTest {
     @Test
     fun gestureVolumeUpdatesMpvVolumeAndHudWithinBounds() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.adjustGestureVolume(15)
@@ -20,7 +20,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun gestureBrightnessUpdatesStateAndHudWithinBounds() {
-        val controller = MpvController(GestureFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.adjustGestureBrightness(-70)
 
@@ -30,7 +30,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun doubleTapSeekUsesVisibleHudAndClampsToDuration() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.onDurationChanged(120.0)
         controller.onPositionChanged(115.0)
@@ -44,7 +44,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun horizontalSwipeSeekUsesDurationFractionAndHud() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.onDurationChanged(120.0)
         controller.onPositionChanged(30.0)
@@ -69,7 +69,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun horizontalSwipeHudShowsCumulativeDeltaAcrossGestureUpdates() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.onDurationChanged(600.0)
         controller.onPositionChanged(60.0)
@@ -92,7 +92,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun pinchZoomMapsToVideoZoomPropertyAndHud() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.adjustGestureZoom(0.3f)
@@ -105,7 +105,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun lockedControlsIgnoreGestureMutations() {
-        val engine = GestureFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.setControlsLocked(true)
 
@@ -126,7 +126,7 @@ class MpvControllerGestureTest {
 
     @Test
     fun clearGestureHudKeepsLastGestureValues() {
-        val controller = MpvController(GestureFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
         controller.adjustGestureBrightness(10)
 
         controller.clearGestureHud()
@@ -134,25 +134,4 @@ class MpvControllerGestureTest {
         assertEquals(60, controller.state.value.gestureState.brightnessPercent)
         assertNull(controller.state.value.gestureState.hudMessage)
     }
-}
-
-private class GestureFakeMpvEngine : MpvEngine {
-    val commands = mutableListOf<List<String>>()
-    private val doublePropertyHistory = mutableMapOf<String, MutableList<Double>>()
-
-    override fun command(vararg args: String) {
-        commands += args.toList()
-    }
-
-    override fun setPropertyString(name: String, value: String) = Unit
-
-    override fun setPropertyBoolean(name: String, value: Boolean) = Unit
-
-    override fun setPropertyDouble(name: String, value: Double) {
-        doublePropertyHistory.getOrPut(name) { mutableListOf() } += value
-    }
-
-    override fun destroy() = Unit
-
-    fun doublePropertyHistory(name: String): List<Double> = doublePropertyHistory[name].orEmpty()
 }

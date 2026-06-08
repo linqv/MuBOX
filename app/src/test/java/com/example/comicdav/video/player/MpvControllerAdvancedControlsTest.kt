@@ -11,7 +11,7 @@ import kotlin.system.measureTimeMillis
 class MpvControllerAdvancedControlsTest {
     @Test
     fun setPlaybackSpeedUpdatesStateAndMpvProperty() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.setPlaybackSpeed(1.5)
@@ -22,7 +22,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun temporarySpeedRestoresPreviousSpeedWhenReleased() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.setPlaybackSpeed(1.25)
 
@@ -36,7 +36,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun temporarySpeedCanBeAdjustedWhileHeldAndStillRestoresPreviousSpeed() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
         controller.setPlaybackSpeed(1.25)
 
@@ -52,7 +52,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun audioAndSubtitleTrackSelectionUseAidAndSidProperties() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.selectAudioTrack(3)
@@ -68,7 +68,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun audioDelayControlsUseSmallStepsAndResetToZero() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.adjustAudioDelay(-100)
@@ -80,7 +80,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun decoderModesMapToExplicitHwdecStrategies() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.setDecoderMode(VideoDecoderMode.AUTO)
@@ -97,7 +97,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun videoOutputAndGpuApiModesAreIndependentMpvOptions() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.setVideoOutputMode(VideoOutputMode.AUTO)
@@ -113,7 +113,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun scaleModesMapToAspectAndPanscanProperties() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.setScaleMode(VideoScaleMode.FIT)
@@ -130,7 +130,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedTrackListSeparatesAudioSubtitleAndExternalTracks() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.onTrackListChanged(
             MPVNode.ArrayNode(
@@ -152,7 +152,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedPropertiesUpdateAdvancedState() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.onSpeedChanged(1.75)
         controller.onAudioTrackChanged(7)
@@ -178,7 +178,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedPositionUpdatesProgressWithoutReplacingFullPlayerState() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
         val stateBeforePosition = controller.state.value
 
         controller.onPositionChanged(42.0)
@@ -189,7 +189,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedVolumeSeedsGestureVolumeBaseline() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.onVolumeChanged(100.0)
 
@@ -198,7 +198,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedVideoParamsIncludeRotationMetadata() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.onVideoParamsChanged(
             MPVNode.MapNode(
@@ -218,7 +218,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun observedVideoAspectUpdatesStateWithoutDimensionMap() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         controller.onVideoAspectChanged(1080.0 / 1920.0)
 
@@ -230,7 +230,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun lockControlsGesturesWithoutPausingPlayback() {
-        val engine = AdvancedFakeMpvEngine()
+        val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
         controller.setControlsLocked(true)
@@ -241,7 +241,7 @@ class MpvControllerAdvancedControlsTest {
 
     @Test
     fun destroyDoesNotUseFixedCallerThreadSleep() {
-        val controller = MpvController(AdvancedFakeMpvEngine())
+        val controller = MpvController(FakeMpvEngine())
 
         val elapsedMillis = measureTimeMillis {
             controller.destroy()
@@ -268,57 +268,4 @@ class MpvControllerAdvancedControlsTest {
                 "external" to MPVNode.BooleanNode(external),
             ),
         )
-}
-
-private class AdvancedFakeMpvEngine : MpvEngine {
-    val commands = mutableListOf<List<String>>()
-    val stringProperties = mutableMapOf<String, String>()
-    val intProperties = mutableMapOf<String, Int>()
-    val doubleProperties = mutableMapOf<String, Double>()
-    val booleanProperties = mutableMapOf<String, Boolean>()
-    private val stringPropertyHistory = mutableMapOf<String, MutableList<String>>()
-    private val intPropertyHistory = mutableMapOf<String, MutableList<Int>>()
-    private val doublePropertyHistory = mutableMapOf<String, MutableList<Double>>()
-    private val optionHistory = mutableMapOf<String, MutableList<String>>()
-
-    override fun loadFile(uri: String) {
-        commands += listOf("loadfile", uri)
-    }
-
-    override fun command(vararg args: String) {
-        commands += args.toList()
-    }
-
-    override fun setPropertyString(name: String, value: String) {
-        stringProperties[name] = value
-        stringPropertyHistory.getOrPut(name) { mutableListOf() } += value
-    }
-
-    override fun setPropertyBoolean(name: String, value: Boolean) {
-        booleanProperties[name] = value
-    }
-
-    override fun setPropertyInt(name: String, value: Int) {
-        intProperties[name] = value
-        intPropertyHistory.getOrPut(name) { mutableListOf() } += value
-    }
-
-    override fun setPropertyDouble(name: String, value: Double) {
-        doubleProperties[name] = value
-        doublePropertyHistory.getOrPut(name) { mutableListOf() } += value
-    }
-
-    override fun setOptionString(name: String, value: String) {
-        optionHistory.getOrPut(name) { mutableListOf() } += value
-    }
-
-    override fun destroy() = Unit
-
-    fun stringPropertyHistory(name: String): List<String> = stringPropertyHistory[name].orEmpty()
-
-    fun intPropertyHistory(name: String): List<Int> = intPropertyHistory[name].orEmpty()
-
-    fun doublePropertyHistory(name: String): List<Double> = doublePropertyHistory[name].orEmpty()
-
-    fun optionHistory(name: String): List<String> = optionHistory[name].orEmpty()
 }

@@ -33,12 +33,7 @@ class VideoProxyManagerTest {
 
     @Test
     fun openUsesProvidedAccountSnapshotWithoutWaitingForPersistedStore() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/3")
-                .setBody("abc"),
-        )
+        server.enqueueRange("abc", total = 3)
 
         val session = VideoProxyManager.open(
             request = request(size = 3),
@@ -80,18 +75,8 @@ class VideoProxyManagerTest {
 
     @Test
     fun openPassesDisabledSeekOptimizationToRegisteredStream() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/10")
-                .setBody("012"),
-        )
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 1-3/10")
-                .setBody("123"),
-        )
+        server.enqueueRange("012", total = 10)
+        server.enqueueRange("123", total = 10, start = 1)
 
         val session = VideoProxyManager.open(
             request = request(size = 10),
@@ -109,18 +94,8 @@ class VideoProxyManagerTest {
 
     @Test
     fun closeThenOpenAgainStartsUsableProxy() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-0/1")
-                .setBody("a"),
-        )
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-0/1")
-                .setBody("b"),
-        )
+        server.enqueueRange("a", total = 1)
+        server.enqueueRange("b", total = 1)
 
         val first = VideoProxyManager.open(request = request(size = 1), account = account())
         assertArrayEquals("a".toByteArray(), httpRequest(first.url, range = "bytes=0-0").body)
@@ -133,12 +108,7 @@ class VideoProxyManagerTest {
 
     @Test
     fun closingUnknownStreamDoesNotShutdownActiveProxy() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-0/1")
-                .setBody("a"),
-        )
+        server.enqueueRange("a", total = 1)
 
         val session = VideoProxyManager.open(request = request(size = 1), account = account())
         VideoProxyManager.close("missing-stream")
@@ -156,18 +126,8 @@ class VideoProxyManagerTest {
         firstServer.start()
         secondServer.start()
         try {
-            firstServer.enqueue(
-                MockResponse()
-                    .setResponseCode(206)
-                    .setHeader("Content-Range", "bytes 0-0/1")
-                    .setBody("a"),
-            )
-            secondServer.enqueue(
-                MockResponse()
-                    .setResponseCode(206)
-                    .setHeader("Content-Range", "bytes 0-0/1")
-                    .setBody("b"),
-            )
+            firstServer.enqueueRange("a", total = 1)
+            secondServer.enqueueRange("b", total = 1)
 
             val first = VideoProxyManager.open(
                 request = request(size = 1, accountId = "account-1"),
@@ -201,18 +161,8 @@ class VideoProxyManagerTest {
 
     @Test
     fun openRegistersSidecarSubtitleStreamsWithSameAccountSnapshot() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/3")
-                .setBody("vid"),
-        )
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-3/4")
-                .setBody("sub!"),
-        )
+        server.enqueueRange("vid", total = 3)
+        server.enqueueRange("sub!", total = 4)
 
         val session = VideoProxyManager.open(
             request = request(
@@ -248,18 +198,8 @@ class VideoProxyManagerTest {
 
     @Test
     fun closeSessionClosesMainAndSubtitleStreams() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-2/3")
-                .setBody("vid"),
-        )
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(206)
-                .setHeader("Content-Range", "bytes 0-3/4")
-                .setBody("sub!"),
-        )
+        server.enqueueRange("vid", total = 3)
+        server.enqueueRange("sub!", total = 4)
         val session = VideoProxyManager.open(
             request = request(
                 size = 3,
@@ -281,6 +221,16 @@ class VideoProxyManagerTest {
 
         assertTrue(runCatching { httpRequest(session.url, range = "bytes=0-2") }.isFailure)
         assertTrue(runCatching { httpRequest(session.subtitleUrls.single(), range = "bytes=0-3") }.isFailure)
+    }
+
+    private fun MockWebServer.enqueueRange(body: String, total: Long, start: Long = 0) {
+        val end = start + body.length - 1
+        enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes $start-$end/$total")
+                .setBody(body),
+        )
     }
 
     private fun request(

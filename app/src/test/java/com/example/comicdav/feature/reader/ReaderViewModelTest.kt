@@ -1,27 +1,23 @@
 package com.example.comicdav.feature.reader
 
+import com.example.comicdav.CollectingReaderLogSink
+import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.ComicNativeException
 import com.example.comicdav.nativebridge.PlannedRemoteRange
 import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import org.junit.rules.TestWatcher
-import org.junit.runner.Description
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReaderViewModelTest {
@@ -31,22 +27,30 @@ class ReaderViewModelTest {
     @get:Rule
     val mainDispatcher = MainDispatcherRule()
 
-    @Test
-    fun selectPageCacheMissLoadsSelectedPageBeforeQueuedPrefetch() = runTest {
+    private fun kotlinx.coroutines.test.TestScope.createTestViewModel(): ReaderViewModel {
         val dispatcher = StandardTestDispatcher(testScheduler)
         mainDispatcher.set(dispatcher)
-        val session = RecordingComicSession(pageCount = 8, forwardPrefetchPageCount = 4)
-        val viewModel = ReaderViewModel(
+        return ReaderViewModel(
             ioDispatcher = dispatcher,
             elapsedRealtimeMs = { testScheduler.currentTime },
         )
+    }
 
+    private fun openDefaultSession(viewModel: ReaderViewModel, session: ComicReaderSession) {
         viewModel.openExistingSession(
             openedSession = session,
             cacheDir = temp.root,
             initialPage = 0,
             comicKey = "comic",
         )
+    }
+
+    @Test
+    fun selectPageCacheMissLoadsSelectedPageBeforeQueuedPrefetch() = runTest {
+        val session = RecordingComicSession(pageCount = 8, forwardPrefetchPageCount = 4)
+        val viewModel = createTestViewModel()
+
+        openDefaultSession(viewModel, session)
         runCurrent()
         assertEquals(listOf(0), session.loadedPages)
 
@@ -58,20 +62,10 @@ class ReaderViewModelTest {
 
     @Test
     fun openSessionExtractPrefetchUsesConfiguredForwardWindow() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val session = RecordingComicSession(pageCount = 20, forwardPrefetchPageCount = 12)
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
         advanceTimeBy(200)
         runCurrent()
@@ -81,8 +75,6 @@ class ReaderViewModelTest {
 
     @Test
     fun openSessionLimitsPlannedRangePrefetchBytes() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val ranges = listOf(
             plannedRange(start = 0, sizeBytes = 16 * 1024 * 1024, priority = 0),
             plannedRange(start = 16 * 1024 * 1024, sizeBytes = 16 * 1024 * 1024, priority = 1),
@@ -94,17 +86,9 @@ class ReaderViewModelTest {
             forwardPrefetchPageCount = 12,
             plannedRanges = ranges,
         )
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
 
         assertEquals(ranges.take(3).map { it.key() }, session.prefetchedRanges)
@@ -112,20 +96,10 @@ class ReaderViewModelTest {
 
     @Test
     fun closeReaderCancelsSessionPrefetchesBeforeAsyncClose() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
 
         viewModel.closeReader()
@@ -138,8 +112,6 @@ class ReaderViewModelTest {
 
     @Test
     fun pagePrefetchCancellationWrappedByNativeErrorDoesNotLogFailure() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val sink = CollectingReaderLogSink()
         ReaderDiagnosticLog.setSink(sink)
         ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
@@ -153,18 +125,10 @@ class ReaderViewModelTest {
                 ),
             ),
         )
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
         try {
-            viewModel.openExistingSession(
-                openedSession = session,
-                cacheDir = temp.root,
-                initialPage = 0,
-                comicKey = "comic",
-            )
+            openDefaultSession(viewModel, session)
             runCurrent()
             advanceTimeBy(200)
             runCurrent()
@@ -178,24 +142,14 @@ class ReaderViewModelTest {
 
     @Test
     fun readyDemandPageRefreshesPlannedRangesWhenSessionAdvancesOnDemand() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val session = RecordingComicSession(
             pageCount = 8,
             forwardPrefetchPageCount = 4,
             advancePrefetchOnPageDemand = true,
         )
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
         advanceTimeBy(200)
         runCurrent()
@@ -209,8 +163,6 @@ class ReaderViewModelTest {
 
     @Test
     fun readyCurrentPageDemandAddsTrailingPlannedRangeForConfiguredWebDavWindow() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val forwardWindow = 12
         val session = RecordingComicSession(
             pageCount = 20,
@@ -220,17 +172,9 @@ class ReaderViewModelTest {
                 plannedRangesForWindow(pageIndex = page, pageCount = 20, forwardPages = forwardWindow)
             },
         )
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
         advanceTimeBy(200)
         runCurrent()
@@ -251,23 +195,13 @@ class ReaderViewModelTest {
 
     @Test
     fun disabledPageImageCacheBypassesExistingCachedPageFile() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        mainDispatcher.set(dispatcher)
         val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
-        val viewModel = ReaderViewModel(
-            ioDispatcher = dispatcher,
-            elapsedRealtimeMs = { testScheduler.currentTime },
-        )
+        val viewModel = createTestViewModel()
         viewModel.updatePageImageCacheEnabled(false)
         val cachedFile = ReaderPageCache.pageFile(temp.root, "comic", 0)
         cachedFile.writeBytes(byteArrayOf(42))
 
-        viewModel.openExistingSession(
-            openedSession = session,
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "comic",
-        )
+        openDefaultSession(viewModel, session)
         runCurrent()
 
         assertEquals(listOf(0), session.loadedPages)
@@ -277,16 +211,6 @@ class ReaderViewModelTest {
     }
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
-class MainDispatcherRule : TestWatcher() {
-    fun set(dispatcher: TestDispatcher) {
-        Dispatchers.setMain(dispatcher)
-    }
-
-    override fun finished(description: Description) {
-        Dispatchers.resetMain()
-    }
-}
 
 private class RecordingComicSession(
     override val pageCount: Int,
@@ -363,14 +287,3 @@ private fun plannedRangesForWindow(
 private fun PlannedRemoteRange.key(): Pair<Long, Long> =
     start to endInclusive
 
-private class CollectingReaderLogSink : ReaderLogSink {
-    val lines = mutableListOf<String>()
-
-    override fun log(line: String) {
-        lines += line
-    }
-
-    override fun logBlocking(line: String) {
-        lines += line
-    }
-}
