@@ -1,6 +1,7 @@
 package com.example.comicdav.video.player
 
 import android.content.Context
+import android.graphics.PixelFormat
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.SurfaceHolder
@@ -80,7 +81,7 @@ class MuBoxMpvView(
         surfaceCreated(holder)
         val frame = holder.surfaceFrame
         if (frame.width() > 0 && frame.height() > 0) {
-            surfaceChanged(holder, 0, frame.width(), frame.height())
+            surfaceChanged(holder, PixelFormat.RGBA_8888, frame.width(), frame.height())
         }
     }
 

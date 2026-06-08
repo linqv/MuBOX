@@ -10,6 +10,19 @@ enum class VideoPlayerOrientationMode {
     SENSOR,
 }
 
+enum class VideoBackgroundMode {
+    NONE,
+    BACKGROUND_PLAY,
+    RESUME_ON_RETURN,
+}
+
+internal fun videoBackgroundModeLabel(mode: VideoBackgroundMode): String =
+    when (mode) {
+        VideoBackgroundMode.NONE -> "暂停播放（默认）"
+        VideoBackgroundMode.BACKGROUND_PLAY -> "后台继续播放音频"
+        VideoBackgroundMode.RESUME_ON_RETURN -> "回来时继续播放"
+    }
+
 internal fun videoPlayerOrientationModeLabel(mode: VideoPlayerOrientationMode): String =
     when (mode) {
         VideoPlayerOrientationMode.VIDEO -> "视频"

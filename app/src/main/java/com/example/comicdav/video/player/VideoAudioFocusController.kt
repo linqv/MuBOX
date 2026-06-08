@@ -58,22 +58,106 @@ class VideoAudioFocusController private constructor(
 }
 
 internal class VideoPlaybackLifecyclePolicy(
+    private val mode: VideoBackgroundMode = VideoBackgroundMode.NONE,
+    private val isCurrentlyPlaying: () -> Boolean = { true },
     private val onPausePlayback: () -> Unit,
+    private val onResumePlayback: () -> Unit = {},
     private val onCleanupPlayback: () -> Unit,
     private val onBackgroundTimeoutAfterCleanup: () -> Unit = {},
+    private val onStartForegroundPlayback: () -> Boolean = { true },
+    private val onStopForegroundPlayback: () -> Unit = {},
     private val backgroundCleanupDelayMillis: Long = DEFAULT_BACKGROUND_CLEANUP_DELAY_MILLIS,
     private val backgroundCleanupScheduler: BackgroundCleanupScheduler = MainThreadBackgroundCleanupScheduler(),
 ) {
-    private var pausedForBackground = false
+    private var shouldResumeOnReturn = false
     private var cleanedUp = false
+    private var isInBackground = false
     private var backgroundCleanupHandle: BackgroundCleanupHandle? = null
 
     fun moveToBackground() {
         if (cleanedUp) return
-        if (!pausedForBackground) {
-            pausedForBackground = true
-            onPausePlayback()
+        if (isInBackground) return
+        isInBackground = true
+        val wasPlaying = isCurrentlyPlaying()
+        when (mode) {
+            VideoBackgroundMode.NONE -> {
+                shouldResumeOnReturn = false
+                onPausePlayback()
+                scheduleBackgroundCleanup()
+            }
+            VideoBackgroundMode.BACKGROUND_PLAY -> {
+                if (wasPlaying) {
+                    if (!onStartForegroundPlayback()) {
+                        onPausePlayback()
+                        scheduleBackgroundCleanup()
+                    }
+                } else {
+                    onPausePlayback()
+                    scheduleBackgroundCleanup()
+                }
+            }
+            VideoBackgroundMode.RESUME_ON_RETURN -> {
+                shouldResumeOnReturn = wasPlaying
+                onPausePlayback()
+                scheduleBackgroundCleanup()
+            }
         }
+    }
+
+    fun returnToForeground() {
+        if (cleanedUp) return
+        if (!isInBackground) return
+        isInBackground = false
+        when (mode) {
+            VideoBackgroundMode.NONE -> {
+                shouldResumeOnReturn = false
+                cancelBackgroundCleanup()
+            }
+            VideoBackgroundMode.BACKGROUND_PLAY -> {
+                cancelBackgroundCleanup()
+                onStopForegroundPlayback()
+            }
+            VideoBackgroundMode.RESUME_ON_RETURN -> {
+                val resume = shouldResumeOnReturn
+                shouldResumeOnReturn = false
+                cancelBackgroundCleanup()
+                if (resume) onResumePlayback()
+            }
+        }
+    }
+
+    fun playbackEnded() {
+        if (cleanedUp) return
+        shouldResumeOnReturn = false
+        cancelBackgroundCleanup()
+        if (mode == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
+            cleanup()
+            onBackgroundTimeoutAfterCleanup()
+            return
+        }
+        onStopForegroundPlayback()
+    }
+
+    fun playbackInterrupted() {
+        if (cleanedUp) return
+        shouldResumeOnReturn = false
+        if (mode == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
+            cancelBackgroundCleanup()
+            cleanup()
+            onBackgroundTimeoutAfterCleanup()
+        }
+    }
+
+    fun cleanup() {
+        if (cleanedUp) return
+        cleanedUp = true
+        isInBackground = false
+        cancelBackgroundCleanup()
+        onStopForegroundPlayback()
+        onCleanupPlayback()
+    }
+
+    private fun scheduleBackgroundCleanup() {
         if (backgroundCleanupHandle == null) {
             backgroundCleanupHandle = backgroundCleanupScheduler.schedule(backgroundCleanupDelayMillis) {
                 if (!cleanedUp) {
@@ -82,20 +166,6 @@ internal class VideoPlaybackLifecyclePolicy(
                 }
             }
         }
-    }
-
-    fun returnToForeground() {
-        if (cleanedUp) return
-        // Returning to foreground keeps playback paused; the user resumes explicitly.
-        pausedForBackground = false
-        cancelBackgroundCleanup()
-    }
-
-    fun cleanup() {
-        if (cleanedUp) return
-        cleanedUp = true
-        cancelBackgroundCleanup()
-        onCleanupPlayback()
     }
 
     private fun cancelBackgroundCleanup() {

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
+import com.example.comicdav.video.player.VideoBackgroundMode
 import com.example.comicdav.video.player.VideoDecoderMode
 import com.example.comicdav.video.player.VideoOutputMode
 import com.example.comicdav.video.player.VideoPlayerOrientationMode
@@ -77,6 +78,7 @@ data class AppSettings(
     val mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
     val videoControlsAutoHideMillis: Int = 5_000,
     val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
+    val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
     val videoLibraryThumbnailsEnabled: Boolean = true,
 ) {
     val loggingEnabled: Boolean
@@ -119,6 +121,8 @@ class AppSettingsStore(
             ),
             videoPlayerOrientationMode = preferences[VIDEO_PLAYER_ORIENTATION_MODE]
                 .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO),
+            videoBackgroundMode = preferences[VIDEO_BACKGROUND_MODE]
+                .toEnumOrDefault(VideoBackgroundMode.NONE),
             videoLibraryThumbnailsEnabled = preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] ?: true,
         )
     }
@@ -278,6 +282,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateVideoBackgroundMode(mode: VideoBackgroundMode) {
+        dataStore.edit { preferences ->
+            preferences[VIDEO_BACKGROUND_MODE] = mode.name
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -304,6 +314,7 @@ class AppSettingsStore(
         val MPV_PROFILE_MODE = stringPreferencesKey("mpv_profile_mode")
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
         val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
+        val VIDEO_BACKGROUND_MODE = stringPreferencesKey("video_background_mode")
         val VIDEO_LIBRARY_THUMBNAILS_ENABLED = booleanPreferencesKey("video_library_thumbnails_enabled")
     }
 }

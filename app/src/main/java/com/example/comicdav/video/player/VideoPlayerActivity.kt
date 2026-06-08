@@ -1,7 +1,11 @@
 package com.example.comicdav.video.player
 
+import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -13,7 +17,6 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.datastore.preferences.preferencesDataStore
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.datastore.preferences.preferencesDataStore
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.VideoSubtitleOpenRequest
@@ -51,8 +56,26 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 private val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
+
+internal data class VideoBackgroundPermissionDecision(
+    val mode: VideoBackgroundMode,
+    val shouldRequestPostNotifications: Boolean,
+)
+
+internal fun videoBackgroundPermissionDecision(
+    requestedMode: VideoBackgroundMode,
+    sdkInt: Int,
+    postNotificationsGranted: Boolean,
+): VideoBackgroundPermissionDecision =
+    VideoBackgroundPermissionDecision(
+        mode = requestedMode,
+        shouldRequestPostNotifications = requestedMode == VideoBackgroundMode.BACKGROUND_PLAY &&
+            sdkInt >= Build.VERSION_CODES.TIRAMISU &&
+            !postNotificationsGranted,
+    )
 
 internal suspend fun loadVideoStartPosition(
     resumeEnabled: Boolean,
@@ -85,11 +108,14 @@ class VideoPlayerActivity : ComponentActivity() {
     private var webDavStreamIds by mutableStateOf<List<String>>(emptyList())
     private var playbackKey: String? = null
     private var resumeEnabled = true
+    private var videoBackgroundMode = VideoBackgroundMode.NONE
     private var loadJob: Job? = null
     private var progressSaveJob: Job? = null
     private var proxyStatistics by mutableStateOf<VideoProxyStatistics?>(null)
     private val systemBarsHandler = Handler(Looper.getMainLooper())
     private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
+    private val playbackSessionId: String = UUID.randomUUID().toString()
+    private lateinit var playbackStopReceiver: BroadcastReceiver
 
     private val mpvObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) = Unit
@@ -153,8 +179,10 @@ class VideoPlayerActivity : ComponentActivity() {
                 runOnUiThread {
                     if (errorMessage == null) {
                         controller.onPlaybackEnded()
+                        playbackLifecyclePolicy.playbackEnded()
                     } else {
                         controller.onError(errorMessage)
+                        playbackLifecyclePolicy.playbackInterrupted()
                     }
                 }
             }
@@ -190,6 +218,20 @@ class VideoPlayerActivity : ComponentActivity() {
             .toEnumOrDefault(MpvProfileMode.FAST)
         val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
         val proxyDebugInfoEnabled = intent.getBooleanExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, false)
+        val initialVideoBackgroundMode = intent.getStringExtra(EXTRA_VIDEO_BACKGROUND_MODE)
+            .toEnumOrDefault(VideoBackgroundMode.NONE)
+        val postNotificationsGranted =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val backgroundPermissionDecision = videoBackgroundPermissionDecision(
+            requestedMode = initialVideoBackgroundMode,
+            sdkInt = Build.VERSION.SDK_INT,
+            postNotificationsGranted = postNotificationsGranted,
+        )
+        if (backgroundPermissionDecision.shouldRequestPostNotifications) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+        }
+        videoBackgroundMode = backgroundPermissionDecision.mode
         playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
         progressSaver = VideoPlaybackProgressSaver(playbackPersistenceScope) { key, positionMillis, durationMillis ->
             playbackStateStore.savePosition(
@@ -214,11 +256,22 @@ class VideoPlayerActivity : ComponentActivity() {
         controller = MpvController(ViewBackedMpvEngine(mpvView))
         audioFocusController = VideoAudioFocusController(this) {
             controller.setPaused(true)
+            playbackLifecyclePolicy.playbackInterrupted()
         }
         playbackLifecyclePolicy = VideoPlaybackLifecyclePolicy(
+            mode = videoBackgroundMode,
+            isCurrentlyPlaying = { !controller.state.value.isPaused },
             onPausePlayback = {
                 controller.setPaused(true)
                 audioFocusController.abandon()
+            },
+            onResumePlayback = {
+                if (audioFocusController.request()) {
+                    controller.setPaused(false)
+                } else {
+                    controller.markPaused(true)
+                    controller.onError("无法获取音频焦点，已暂停播放")
+                }
             },
             onCleanupPlayback = ::cleanupPlayer,
             onBackgroundTimeoutAfterCleanup = {
@@ -226,6 +279,32 @@ class VideoPlayerActivity : ComponentActivity() {
                     finish()
                 }
             },
+            onStartForegroundPlayback = {
+                runCatching {
+                    VideoPlaybackService.start(this, mediaContext.displayName, playbackSessionId)
+                    true
+                }.getOrElse {
+                    controller.onError("后台播放启动失败，已暂停")
+                    false
+                }
+            },
+            onStopForegroundPlayback = {
+                VideoPlaybackService.stop(this)
+            },
+        )
+        playbackStopReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (VideoPlaybackService.isPlaybackStoppedForSession(intent, playbackSessionId)) {
+                    playbackLifecyclePolicy.cleanup()
+                    if (!isFinishing) finish()
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            playbackStopReceiver,
+            IntentFilter(VideoPlaybackService.ACTION_PLAYBACK_STOPPED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setContent {
             ComicDavTheme {
@@ -351,6 +430,11 @@ class VideoPlayerActivity : ComponentActivity() {
         if (::playbackLifecyclePolicy.isInitialized) {
             playbackLifecyclePolicy.cleanup()
         }
+        runCatching {
+            if (::playbackStopReceiver.isInitialized) {
+                unregisterReceiver(playbackStopReceiver)
+            }
+        }
         activityScope.cancel()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
@@ -446,6 +530,9 @@ class VideoPlayerActivity : ComponentActivity() {
                 if (::audioFocusController.isInitialized) {
                     audioFocusController.abandon()
                 }
+            }
+            runCatching {
+                VideoPlaybackService.stop(this)
             }
             if (mpvObserverRegistered) {
                 MPVLib.removeObserver(mpvObserver)
@@ -624,6 +711,7 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val REQUEST_POST_NOTIFICATIONS = 2001
         const val EXTRA_SOURCE = "com.example.comicdav.video.extra.SOURCE"
         const val EXTRA_URI = "com.example.comicdav.video.extra.URI"
         const val EXTRA_DISPLAY_NAME = "com.example.comicdav.video.extra.DISPLAY_NAME"
@@ -642,6 +730,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_CONTROLS_AUTO_HIDE_MILLIS = "com.example.comicdav.video.extra.CONTROLS_AUTO_HIDE_MILLIS"
         const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
         const val EXTRA_PROXY_DEBUG_INFO_ENABLED = "com.example.comicdav.video.extra.PROXY_DEBUG_INFO_ENABLED"
+        const val EXTRA_VIDEO_BACKGROUND_MODE = "com.example.comicdav.video.extra.VIDEO_BACKGROUND_MODE"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
@@ -655,6 +744,7 @@ class VideoPlayerActivity : ComponentActivity() {
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
             proxyDebugInfoEnabled: Boolean = false,
+            videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -680,6 +770,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                 .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                 .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
+                .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
                 .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
@@ -696,6 +787,7 @@ class VideoPlayerActivity : ComponentActivity() {
             controlsAutoHideMillis: Int = 5_000,
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
             proxyDebugInfoEnabled: Boolean = false,
+            videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -730,6 +822,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
                     .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                     .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
+                    .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
                 }

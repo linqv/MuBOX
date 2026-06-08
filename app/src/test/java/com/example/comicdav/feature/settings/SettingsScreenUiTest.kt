@@ -95,6 +95,7 @@ class SettingsScreenUiTest {
         assertEquals(
             listOf(
                 "恢复播放位置",
+                "后台行为",
                 "WebDAV 视频 seek 优化",
                 "向前预读",
                 "视频代理诊断日志",

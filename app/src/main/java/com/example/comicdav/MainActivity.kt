@@ -453,6 +453,7 @@ fun ComicDavApp() {
                 controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                 playerOrientationMode = appSettings.videoPlayerOrientationMode,
                 proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
+                videoBackgroundMode = appSettings.videoBackgroundMode,
             ),
         )
     }
@@ -898,6 +899,7 @@ fun ComicDavApp() {
                             controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                             playerOrientationMode = appSettings.videoPlayerOrientationMode,
                             proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
+                            videoBackgroundMode = appSettings.videoBackgroundMode,
                         ),
                     )
                 }
@@ -1094,6 +1096,7 @@ fun ComicDavApp() {
                             controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                             playerOrientationMode = appSettings.videoPlayerOrientationMode,
                             proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
+                            videoBackgroundMode = appSettings.videoBackgroundMode,
                         ),
                     )
                 }
@@ -1143,6 +1146,7 @@ fun ComicDavApp() {
                                     controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                                     playerOrientationMode = appSettings.videoPlayerOrientationMode,
                                     proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
+                                    videoBackgroundMode = appSettings.videoBackgroundMode,
                                 ),
                             )
                         }
@@ -1361,6 +1365,7 @@ fun ComicDavApp() {
                     controlsAutoHideMillis = appSettings.videoControlsAutoHideMillis,
                     playerOrientationMode = appSettings.videoPlayerOrientationMode,
                     proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
+                    videoBackgroundMode = appSettings.videoBackgroundMode,
                 ),
             )
         }.onFailure { error ->

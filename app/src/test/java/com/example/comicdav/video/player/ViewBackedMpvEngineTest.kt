@@ -55,7 +55,8 @@ class ViewBackedMpvEngineTest {
         assertTrue(source.contains("holder.surface"))
         assertTrue(source.contains("surface.isValid"))
         assertTrue(source.contains("surfaceCreated(holder)"))
-        assertTrue(source.contains("surfaceChanged(holder, 0, frame.width(), frame.height())"))
+        assertTrue(source.contains("PixelFormat.RGBA_8888"))
+        assertTrue(source.contains("surfaceChanged(holder, PixelFormat.RGBA_8888, frame.width(), frame.height())"))
 
         val initializeIndex = activitySource.indexOf("mpvView.initialize(filesDir.path, cacheDir.path)")
         val attachIndex = activitySource.indexOf("mpvView.attachExistingSurfaceIfReady()")

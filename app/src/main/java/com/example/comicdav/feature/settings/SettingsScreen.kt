@@ -51,12 +51,14 @@ import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoDecoderMode
+import com.example.comicdav.video.player.VideoBackgroundMode
 import com.example.comicdav.video.player.VideoOutputMode
 import com.example.comicdav.video.player.VideoPlayerOrientationMode
 import com.example.comicdav.video.player.gpuApiModeLabel
 import com.example.comicdav.video.player.mpvProfileModeLabel
 import com.example.comicdav.video.player.playerControlAutoHideLabel
 import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
+import com.example.comicdav.video.player.videoBackgroundModeLabel
 import com.example.comicdav.video.player.videoDecoderModeLabel
 import com.example.comicdav.video.player.videoOutputModeLabel
 import com.example.comicdav.video.player.videoPlayerOrientationModeLabel
@@ -129,6 +131,7 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
             title = "视频设置",
             rows = listOf(
                 "恢复播放位置",
+                "后台行为",
                 "WebDAV 视频 seek 优化",
                 "向前预读",
                 "视频代理诊断日志",
@@ -161,6 +164,7 @@ fun SettingsScreen(
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
     onVideoResumeEnabledChange: (Boolean) -> Unit,
+    onVideoBackgroundModeChange: (VideoBackgroundMode) -> Unit = {},
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit = {},
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit = {},
     onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit = {},
@@ -205,6 +209,7 @@ fun SettingsScreen(
             VideoSettingsPage(
                 settings = settings,
                 onVideoResumeEnabledChange = onVideoResumeEnabledChange,
+                onVideoBackgroundModeChange = onVideoBackgroundModeChange,
                 onVideoSeekOptimizationEnabledChange = onVideoSeekOptimizationEnabledChange,
                 onVideoForwardPrefetchModeChange = onVideoForwardPrefetchModeChange,
                 onVideoProxyDiagnosticsModeChange = onVideoProxyDiagnosticsModeChange,
@@ -417,6 +422,7 @@ private fun ComicSettingsPage(
 private fun VideoSettingsPage(
     settings: AppSettings,
     onVideoResumeEnabledChange: (Boolean) -> Unit,
+    onVideoBackgroundModeChange: (VideoBackgroundMode) -> Unit,
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit,
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit,
     onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit,
@@ -454,6 +460,13 @@ private fun VideoSettingsPage(
                 checked = settings.videoResumeEnabled,
                 onCheckedChange = onVideoResumeEnabledChange,
                 subtitle = "再次打开同一视频时从上次退出位置继续",
+            )
+            ChoiceRow(
+                title = "后台行为",
+                options = VideoBackgroundMode.entries,
+                selected = settings.videoBackgroundMode,
+                label = ::videoBackgroundModeLabel,
+                onSelected = onVideoBackgroundModeChange,
             )
             MuBoxSwitchRow(
                 title = "WebDAV 视频 seek 优化",

@@ -211,6 +211,9 @@ internal fun SettingsTabContent(
         onVideoResumeEnabledChange = { value ->
             scope.launch { appSettingsStore.updateVideoResumeEnabled(value) }
         },
+        onVideoBackgroundModeChange = { value ->
+            scope.launch { appSettingsStore.updateVideoBackgroundMode(value) }
+        },
         onVideoSeekOptimizationEnabledChange = { value ->
             scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(value) }
         },
