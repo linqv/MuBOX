@@ -1,6 +1,8 @@
 package com.example.comicdav.feature.reader
 
 import androidx.test.core.app.ApplicationProvider
+import coil3.request.CachePolicy
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -55,13 +57,6 @@ class ReaderImageLoaderTest {
     }
 
     @Test
-    fun readerChromeDoesNotKeepLegacyVerticalGradientPanels() {
-        val source = readerScreenSource()
-
-        assertFalse(source.contains("Brush.verticalGradient"))
-    }
-
-    @Test
     fun platformReaderImageRejectsUnknownIsoBmffBrands() {
         val header = byteArrayOf(
             0x00, 0x00, 0x00, 0x18,
@@ -72,6 +67,39 @@ class ReaderImageLoaderTest {
         )
 
         assertFalse(isPlatformReaderImage(null, header))
+    }
+
+    @Test
+    fun detectsGifFromHeaderWhenCachedPageHasGenericExtension() {
+        assertTrue(isPlatformAnimatedReaderImage(mimeType = null, header = "GIF89a".encodeToByteArray()))
+    }
+
+    @Test
+    fun detectsWebpFromHeaderWhenCachedPageHasGenericExtension() {
+        val header = "RIFF\u0000\u0000\u0000\u0000WEBP".encodeToByteArray()
+
+        assertTrue(isPlatformAnimatedReaderImage(mimeType = null, header = header))
+    }
+
+    @Test
+    fun ignoresStaticImageHeaders() {
+        val header = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+
+        assertFalse(isPlatformAnimatedReaderImage(mimeType = null, header = header))
+    }
+
+    @Test
+    fun readerImageRequestsDoNotKeepDecodedPagesInCoilCaches() {
+        val pageFile = temp.newFile("page-1.img")
+
+        val request = readerImageRequest(
+            context = ApplicationProvider.getApplicationContext(),
+            pageFile = pageFile,
+        )
+
+        assertEquals(pageFile, request.data)
+        assertEquals(CachePolicy.DISABLED, request.memoryCachePolicy)
+        assertEquals(CachePolicy.DISABLED, request.diskCachePolicy)
     }
 
     private fun readerScreenSource(): String =

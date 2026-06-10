@@ -900,30 +900,7 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
-    fun oversizedRequestHeaderReturnsRequestHeaderFieldsTooLarge() = runTest {
-        val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
-        val parsed = URL(url)
-
-        val response = Socket(parsed.host, parsed.port).use { socket ->
-            socket.soTimeout = 2_000
-            socket.getOutputStream().write(
-                buildString {
-                    append("GET ${parsed.path} HTTP/1.1\r\n")
-                    append("Host: ${parsed.host}:${parsed.port}\r\n")
-                    append("X-Fill: ")
-                    append("x".repeat(70 * 1024))
-                    append("\r\n\r\n")
-                }.toByteArray(),
-            )
-            socket.getOutputStream().flush()
-            socket.getInputStream().bufferedReader().readLine()
-        }
-
-        assertEquals("HTTP/1.1 431 Request Header Fields Too Large", response)
-    }
-
-    @Test
-    fun oversizedRequestHeaderClosesConnection() = runTest {
+    fun oversizedRequestHeaderReturns431AndClosesConnection() = runTest {
         val url = startProxy(client = RecordingClient("0123456789".toByteArray()), size = 10L)
         val parsed = URL(url)
 

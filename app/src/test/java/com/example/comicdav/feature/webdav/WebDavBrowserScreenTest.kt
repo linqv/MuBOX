@@ -9,6 +9,7 @@ import com.example.comicdav.video.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebDavBrowserScreenTest {
@@ -83,6 +84,63 @@ class WebDavBrowserScreenTest {
         assertEquals("服务器返回的不是有效的 WebDAV 目录列表，请检查 WebDAV 地址是否正确", message)
         assertFalse(message.contains("parser", ignoreCase = true))
         assertFalse(message.contains("Unknown"))
+    }
+
+    @Test
+    fun itemClickOpensDirectoriesAndReadsComics() {
+        assertEquals(
+            WebDavItemClickAction.OpenDirectory,
+            webDavItemClickAction(
+                WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null),
+            ),
+        )
+        assertEquals(
+            WebDavItemClickAction.OpenComic,
+            webDavItemClickAction(
+                WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = 12L, etag = "a", lastModified = null),
+            ),
+        )
+    }
+
+    @Test
+    fun longPressActionsAreHiddenForDirectories() {
+        assertTrue(
+            webDavItemLongPressActions(
+                WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun directoryRowsDoNotShowContinueBrowsingHint() {
+        assertEquals(
+            "",
+            webDavItemSupportingLabel(
+                WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null),
+            ),
+        )
+    }
+
+    @Test
+    fun comicRowsOnlyShowSizeWithoutValidators() {
+        assertEquals(
+            "12 B",
+            webDavItemSupportingLabel(
+                WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = 12L, etag = "abc", lastModified = 123L),
+            ),
+        )
+        assertEquals(
+            "大小未知",
+            webDavItemSupportingLabel(
+                WebDavItem("book.cbz", "/book.cbz", isDirectory = false, size = null, etag = "abc", lastModified = 123L),
+            ),
+        )
+    }
+
+    @Test
+    fun saveDirectoryActionOnlyShowsInAddPathFlow() {
+        assertTrue(shouldShowSaveDirectoryAction(isAddingPath = true))
+        assertFalse(shouldShowSaveDirectoryAction(isAddingPath = false))
     }
 
     private fun webDavFile(name: String): WebDavItem =

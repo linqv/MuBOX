@@ -87,6 +87,70 @@ class FileDirectoryScreenTest {
         assertEquals("/漫画/视频/", fileDirectorySourceSubtitle(source))
     }
 
+    @Test
+    fun entryClickOpensDirectoriesAndReadsComics() {
+        assertEquals(
+            FileDirectoryEntryClickAction.OpenDirectory,
+            fileDirectoryEntryClickAction(
+                FileDirectoryBrowserItem("Series", "content://tree/comics/series", isDirectory = true),
+            ),
+        )
+        assertEquals(
+            FileDirectoryEntryClickAction.OpenComic,
+            fileDirectoryEntryClickAction(
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false),
+            ),
+        )
+    }
+
+    @Test
+    fun directoryEntriesDoNotShowContinueBrowsingHint() {
+        assertEquals(
+            "",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("Series", "content://tree/comics/series", isDirectory = true),
+            ),
+        )
+    }
+
+    @Test
+    fun comicEntriesOnlyShowSizeMetadata() {
+        assertEquals(
+            "4 KiB",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false, size = 4096L),
+            ),
+        )
+        assertEquals(
+            "大小未知",
+            fileDirectoryEntrySupportingLabel(
+                FileDirectoryBrowserItem("book.cbz", "content://tree/comics/book", isDirectory = false),
+            ),
+        )
+    }
+
+    @Test
+    fun webDavSourcesCanBeEditedFromManagementActions() {
+        val webDavSource = FileDirectorySourceEntity(
+            id = 1L,
+            displayName = "漫画库",
+            sourceType = FileDirectorySourceType.WEBDAV,
+            webDavAccountId = "https://example.test/dav|lin",
+            webDavPath = "/manga",
+            addedAt = 1L,
+        )
+        val localSource = webDavSource.copy(sourceType = FileDirectorySourceType.LOCAL, localTreeUri = "content://tree/comics")
+
+        assertEquals(
+            listOf(SourceManagementAction.EditWebDav, SourceManagementAction.DeleteSource),
+            sourceManagementActions(webDavSource),
+        )
+        assertEquals(
+            listOf(SourceManagementAction.RemoveSource, SourceManagementAction.DeleteLocalSourceWithFiles),
+            sourceManagementActions(localSource),
+        )
+    }
+
     private fun contrastRatio(foreground: Color, background: Color): Float {
         val lighter = maxOf(foreground.luminance(), background.luminance())
         val darker = minOf(foreground.luminance(), background.luminance())
