@@ -95,30 +95,39 @@ internal fun staleAnime4KShaderFiles(
         .sortedBy { file -> file.name }
 }
 
+internal fun anime4kShaderAssetPath(assetName: String): String = "shaders/$assetName"
+
 class Anime4KManager(context: Context) {
     private val appContext = context.applicationContext
     private val shaderDir = File(appContext.filesDir, "shaders")
 
-    fun initialize() {
-        shaderDir.mkdirs()
-        staleAnime4KShaderFiles(shaderDir, expectedAnime4KShaderAssetNames).forEach { file ->
-            file.delete()
-        }
-        expectedAnime4KShaderAssetNames.forEach { assetName ->
-            copyAssetIfChanged(assetName, File(shaderDir, assetName))
-        }
-    }
+    fun initialize(): Boolean =
+        runCatching {
+            shaderDir.mkdirs()
+            staleAnime4KShaderFiles(shaderDir, expectedAnime4KShaderAssetNames).forEach { file ->
+                file.delete()
+            }
+            expectedAnime4KShaderAssetNames.forEach { assetName ->
+                copyAssetIfChanged(assetName, File(shaderDir, assetName))
+            }
+            true
+        }.getOrDefault(false)
 
-    fun shaderChain(settings: Anime4KSettings): String =
-        anime4kShaderChain(
+    fun shaderChain(settings: Anime4KSettings): String {
+        if (!settings.enabled || settings.mode == Anime4KMode.OFF) return ""
+        if (!initialize()) return ""
+        return anime4kShaderChain(
             enabled = settings.enabled,
             mode = settings.mode,
             quality = settings.quality,
             shaderDir = shaderDir,
         )
+    }
 
     private fun copyAssetIfChanged(assetName: String, destination: File) {
-        val assetBytes = appContext.assets.open(assetName).use { input -> input.readBytes() }
+        val assetBytes = appContext.assets.open(anime4kShaderAssetPath(assetName)).use { input ->
+            input.readBytes()
+        }
         if (destination.isFile && destination.readBytes().contentEquals(assetBytes)) return
         destination.parentFile?.mkdirs()
         destination.writeBytes(assetBytes)

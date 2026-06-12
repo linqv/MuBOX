@@ -1,12 +1,20 @@
 package com.example.comicdav.video.player
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class Anime4KManagerTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
@@ -62,5 +70,30 @@ class Anime4KManagerTest {
 
         assertEquals(listOf(stale), staleAnime4KShaderFiles(shaderDir, expectedAnime4KShaderAssetNames).toList())
         assertTrue(unrelated.exists())
+    }
+
+    @Test
+    fun shaderAssetsAreOpenedFromPackagedShaderDirectory() {
+        assertEquals(
+            "shaders/Anime4K_Clamp_Highlights.glsl",
+            anime4kShaderAssetPath("Anime4K_Clamp_Highlights.glsl"),
+        )
+    }
+
+    @Test
+    fun managerReturnsEmptyShaderChainWhenAssetsCannotInitialize() {
+        val manager = Anime4KManager(ApplicationProvider.getApplicationContext<Context>())
+
+        assertFalse(manager.initialize())
+        assertEquals(
+            "",
+            manager.shaderChain(
+                Anime4KSettings(
+                    enabled = true,
+                    mode = Anime4KMode.A,
+                    quality = Anime4KQuality.FAST,
+                ),
+            ),
+        )
     }
 }
