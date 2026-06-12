@@ -1,6 +1,8 @@
 package com.example.comicdav.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.example.comicdav.video.player.Anime4KMode
+import com.example.comicdav.video.player.Anime4KQuality
 import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
 import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
@@ -57,6 +59,31 @@ class AppSettingsStoreTest {
         val settings = store.settings.first()
 
         assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
+    }
+
+    @Test
+    fun anime4kDefaultsAreDisabledWithFastModeA() = runTest {
+        val store = createStore("anime4k_defaults.preferences_pb")
+
+        val settings = store.settings.first()
+
+        assertFalse(settings.anime4kEnabled)
+        assertEquals(Anime4KMode.A, settings.anime4kMode)
+        assertEquals(Anime4KQuality.FAST, settings.anime4kQuality)
+    }
+
+    @Test
+    fun anime4kSettingsCanBeUpdatedAndReadBack() = runTest {
+        val store = createStore("anime4k_updates.preferences_pb")
+
+        store.updateAnime4KEnabled(true)
+        store.updateAnime4KMode(Anime4KMode.C_PLUS)
+        store.updateAnime4KQuality(Anime4KQuality.HIGH)
+
+        val settings = store.settings.first()
+        assertTrue(settings.anime4kEnabled)
+        assertEquals(Anime4KMode.C_PLUS, settings.anime4kMode)
+        assertEquals(Anime4KQuality.HIGH, settings.anime4kQuality)
     }
 
     @Test

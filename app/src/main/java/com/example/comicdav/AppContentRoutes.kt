@@ -232,6 +232,15 @@ internal fun SettingsTabContent(
         onGpuApiModeChange = { value ->
             scope.launch { appSettingsStore.updateGpuApiMode(value) }
         },
+        onAnime4KEnabledChange = { value ->
+            scope.launch { appSettingsStore.updateAnime4KEnabled(value) }
+        },
+        onAnime4KModeChange = { value ->
+            scope.launch { appSettingsStore.updateAnime4KMode(value) }
+        },
+        onAnime4KQualityChange = { value ->
+            scope.launch { appSettingsStore.updateAnime4KQuality(value) }
+        },
         onVideoDecoderModeChange = { value ->
             scope.launch { appSettingsStore.updateVideoDecoderMode(value) }
         },

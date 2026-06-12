@@ -48,6 +48,8 @@ import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxPropertyRow
 import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.rememberMuBoxColors
+import com.example.comicdav.video.player.Anime4KMode
+import com.example.comicdav.video.player.Anime4KQuality
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoDecoderMode
@@ -138,6 +140,9 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",
+                "Anime4K",
+                "Anime4K 预设",
+                "Anime4K 质量",
                 "默认解码器",
                 "MPV Profile",
                 "控制自动隐藏",
@@ -171,6 +176,9 @@ fun SettingsScreen(
     onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit = {},
     onVideoOutputModeChange: (VideoOutputMode) -> Unit = {},
     onGpuApiModeChange: (GpuApiMode) -> Unit = {},
+    onAnime4KEnabledChange: (Boolean) -> Unit = {},
+    onAnime4KModeChange: (Anime4KMode) -> Unit = {},
+    onAnime4KQualityChange: (Anime4KQuality) -> Unit = {},
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
     onMpvProfileModeChange: (MpvProfileMode) -> Unit = {},
     onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
@@ -216,6 +224,9 @@ fun SettingsScreen(
                 onVideoPlayerProxyDebugInfoEnabledChange = onVideoPlayerProxyDebugInfoEnabledChange,
                 onVideoOutputModeChange = onVideoOutputModeChange,
                 onGpuApiModeChange = onGpuApiModeChange,
+                onAnime4KEnabledChange = onAnime4KEnabledChange,
+                onAnime4KModeChange = onAnime4KModeChange,
+                onAnime4KQualityChange = onAnime4KQualityChange,
                 onVideoDecoderModeChange = onVideoDecoderModeChange,
                 onMpvProfileModeChange = onMpvProfileModeChange,
                 onVideoControlsAutoHideMillisChange = onVideoControlsAutoHideMillisChange,
@@ -429,6 +440,9 @@ private fun VideoSettingsPage(
     onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit,
     onVideoOutputModeChange: (VideoOutputMode) -> Unit,
     onGpuApiModeChange: (GpuApiMode) -> Unit,
+    onAnime4KEnabledChange: (Boolean) -> Unit,
+    onAnime4KModeChange: (Anime4KMode) -> Unit,
+    onAnime4KQualityChange: (Anime4KQuality) -> Unit,
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit,
     onMpvProfileModeChange: (MpvProfileMode) -> Unit,
     onVideoControlsAutoHideMillisChange: (Int) -> Unit,
@@ -507,6 +521,26 @@ private fun VideoSettingsPage(
                 options = GpuApiMode.entries,
                 label = ::gpuApiModeLabel,
                 onSelected = onGpuApiModeChange,
+            )
+            MuBoxSwitchRow(
+                title = "Anime4K",
+                checked = settings.anime4kEnabled,
+                onCheckedChange = onAnime4KEnabledChange,
+                subtitle = "启用 Anime4K 动画画面实时放大；不兼容时播放器会自动关闭",
+            )
+            DropdownRow(
+                title = "Anime4K 预设",
+                selected = settings.anime4kMode,
+                options = Anime4KMode.entries.filterNot { it == Anime4KMode.OFF },
+                label = ::anime4kModeLabel,
+                onSelected = onAnime4KModeChange,
+            )
+            DropdownRow(
+                title = "Anime4K 质量",
+                selected = settings.anime4kQuality,
+                options = Anime4KQuality.entries,
+                label = ::anime4kQualityLabel,
+                onSelected = onAnime4KQualityChange,
             )
             DropdownRow(
                 title = "默认解码器",
@@ -606,6 +640,10 @@ private fun VideoProxyDiagnosticsMode.label(): String =
         VideoProxyDiagnosticsMode.SUMMARY -> "摘要"
         VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
+
+private fun anime4kModeLabel(mode: Anime4KMode): String = mode.label
+
+private fun anime4kQualityLabel(quality: Anime4KQuality): String = quality.label
 
 internal fun settingsControlRowMinHeightDp(): Int = 64
 

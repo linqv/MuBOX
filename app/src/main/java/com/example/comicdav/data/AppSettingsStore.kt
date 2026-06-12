@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.comicdav.video.player.Anime4KMode
+import com.example.comicdav.video.player.Anime4KQuality
 import com.example.comicdav.video.player.GpuApiMode
 import com.example.comicdav.video.player.MpvProfileMode
 import com.example.comicdav.video.player.VideoBackgroundMode
@@ -74,6 +76,9 @@ data class AppSettings(
     val videoPlayerProxyDebugInfoEnabled: Boolean = false,
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
+    val anime4kEnabled: Boolean = false,
+    val anime4kMode: Anime4KMode = Anime4KMode.A,
+    val anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
     val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
     val mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
     val videoControlsAutoHideMillis: Int = 5_000,
@@ -114,6 +119,9 @@ class AppSettingsStore(
             videoPlayerProxyDebugInfoEnabled = preferences[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] ?: false,
             videoOutputMode = preferences[VIDEO_OUTPUT_MODE].toEnumOrDefault(VideoOutputMode.AUTO),
             gpuApiMode = preferences[GPU_API_MODE].toEnumOrDefault(GpuApiMode.AUTO),
+            anime4kEnabled = preferences[ANIME4K_ENABLED] ?: false,
+            anime4kMode = preferences[ANIME4K_MODE].toEnumOrDefault(Anime4KMode.A),
+            anime4kQuality = preferences[ANIME4K_QUALITY].toEnumOrDefault(Anime4KQuality.FAST),
             videoDecoderMode = preferences[VIDEO_DECODER_MODE].toEnumOrDefault(VideoDecoderMode.AUTO),
             mpvProfileMode = preferences[MPV_PROFILE_MODE].toEnumOrDefault(MpvProfileMode.FAST),
             videoControlsAutoHideMillis = coerceVideoControlsAutoHideMillis(
@@ -252,6 +260,24 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateAnime4KEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[ANIME4K_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateAnime4KMode(mode: Anime4KMode) {
+        dataStore.edit { preferences ->
+            preferences[ANIME4K_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateAnime4KQuality(quality: Anime4KQuality) {
+        dataStore.edit { preferences ->
+            preferences[ANIME4K_QUALITY] = quality.name
+        }
+    }
+
     suspend fun updateVideoDecoderMode(mode: VideoDecoderMode) {
         dataStore.edit { preferences ->
             preferences[VIDEO_DECODER_MODE] = mode.name
@@ -310,6 +336,9 @@ class AppSettingsStore(
         val VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED = booleanPreferencesKey("video_player_proxy_debug_info_enabled")
         val VIDEO_OUTPUT_MODE = stringPreferencesKey("video_output_mode")
         val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
+        val ANIME4K_ENABLED = booleanPreferencesKey("anime4k_enabled")
+        val ANIME4K_MODE = stringPreferencesKey("anime4k_mode")
+        val ANIME4K_QUALITY = stringPreferencesKey("anime4k_quality")
         val VIDEO_DECODER_MODE = stringPreferencesKey("video_decoder_mode")
         val MPV_PROFILE_MODE = stringPreferencesKey("mpv_profile_mode")
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")

@@ -102,6 +102,9 @@ class SettingsScreenUiTest {
                 "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",
+                "Anime4K",
+                "Anime4K 预设",
+                "Anime4K 质量",
                 "默认解码器",
                 "MPV Profile",
                 "控制自动隐藏",
@@ -112,6 +115,26 @@ class SettingsScreenUiTest {
         )
     }
 
+    @Test
+    fun videoSettingsExposeAnime4KControlsNearRendererOptions() {
+        val source = settingsSourceFile().readText()
+
+        assertTrue(source.contains("title = \"Anime4K\""))
+        assertTrue(source.contains("checked = settings.anime4kEnabled"))
+        assertTrue(source.contains("selected = settings.anime4kMode"))
+        assertTrue(source.contains("options = Anime4KMode.entries"))
+        assertTrue(source.contains("selected = settings.anime4kQuality"))
+        assertTrue(source.contains("options = Anime4KQuality.entries"))
+        assertTrue(source.indexOf("title = \"GPU API\"") < source.indexOf("title = \"Anime4K\""))
+        assertTrue(source.indexOf("title = \"Anime4K\"") < source.indexOf("title = \"默认解码器\""))
+    }
+
     private fun List<SettingsGroupLayout>.rowsInGroup(title: String): List<String> =
         single { it.title == title }.rows
+
+    private fun settingsSourceFile(): java.io.File =
+        listOf(
+            java.io.File("src/main/java/com/example/comicdav/feature/settings/SettingsScreen.kt"),
+            java.io.File("app/src/main/java/com/example/comicdav/feature/settings/SettingsScreen.kt"),
+        ).first { it.isFile }
 }
