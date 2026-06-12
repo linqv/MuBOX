@@ -16,7 +16,9 @@ The implementation should follow the existing player architecture and use `/home
   - Enable or disable Anime4K during playback.
   - Select preset during playback.
   - Select quality during playback.
-- Runtime changes apply to the active mpv session without reopening the video.
+- Compatible runtime changes apply to the active mpv session without reopening the video.
+- Runtime shader changes are attempted only when the active renderer is compatible. The player must not switch `vo` during playback to make Anime4K work.
+- Changing Anime4K defaults in settings does not affect an already-open player session. New sessions use the new defaults.
 - If Anime4K cannot be applied, playback continues without shaders and the UI state remains coherent.
 
 ## Architecture
@@ -42,6 +44,13 @@ Add `Anime4KManager` in `com.example.comicdav.video.player`, alongside the exist
 - Validate expected shader files exist before returning a shader chain.
 - Build `glsl-shaders` strings for a selected preset and quality.
 - Return an empty shader chain for disabled or invalid configurations.
+
+Lifecycle:
+
+- `VideoPlayerActivity` creates one `Anime4KManager(applicationContext)` per player session.
+- The same manager instance is assigned to `MuBoxMpvView` for startup `initOptions()` use and passed to `MpvController` for runtime shader changes.
+- The manager stores only `applicationContext`-derived paths and must not retain the Activity instance.
+- On initialization, the manager copies expected shader assets when the destination file is missing or its content differs from the APK asset. It also removes stale `Anime4K_*.glsl` files in `filesDir/shaders` that are not in the expected asset set. This keeps bundled shaders fresh after app upgrades without needing a manual cache clear.
 
 The shader chains mirror `mpvEx`:
 
@@ -77,11 +86,21 @@ Pass Anime4K settings through existing video open paths:
 
 `AppSettingsStore -> MainActivity/AppContentRoutes -> VideoPlayerActivity intent -> player setup`.
 
+Add explicit intent extras:
+
+- `EXTRA_ANIME4K_ENABLED`
+- `EXTRA_ANIME4K_MODE`
+- `EXTRA_ANIME4K_QUALITY`
+
+Add matching parameters to `VideoPlayerActivity.localIntent()` and `VideoPlayerActivity.webDavIntent()`, and pass values from all existing `MainActivity` open-video call sites.
+
 `MuBoxMpvView.initOptions()` applies startup Anime4K before loading media, because shader options are most reliable when set during mpv initialization. It should:
 
-- Apply selected mpv profile and VO/GPU settings as today.
+- Apply selected mpv profile, GPU API, decoder defaults, and the effective startup VO before mpv loads media.
 - Initialize shaders only if global Anime4K is enabled and selected mode is not disabled.
 - Set `glsl-shaders` with `MPVLib.setOptionString` for startup application.
+
+The current code applies VO/GPU defaults after `prepareMpv()`. This feature should move startup VO/GPU application into `MuBoxMpvView` so compatibility decisions happen before `initialize()` calls `initOptions()`.
 
 ### Playback Runtime Controls
 
@@ -99,6 +118,13 @@ Add controller methods:
 - `setAnime4KQuality(quality: Anime4KQuality)`
 - an internal method that computes the shader chain and calls `engine.setPropertyString("glsl-shaders", chainOrEmpty)`.
 
+Runtime shader switching rules:
+
+- Use `setPropertyString("glsl-shaders", chainOrEmpty)` for runtime changes.
+- Use `setOptionString("glsl-shaders", chain)` only from `MuBoxMpvView.initOptions()`.
+- Runtime controls may enable/disable or switch shader chains only when the active renderer is compatible: `gpu`, or `gpu-next` with Vulkan.
+- If the active renderer is `gpu-next` without Vulkan, runtime enable/switch attempts do not modify `vo`; they clear `glsl-shaders`, keep `anime4kEnabled = false` for the session, and set `anime4kStatusMessage`.
+
 The playback menu adds an Anime4K group below visual controls:
 
 - One existing-style compact text button for on/off.
@@ -109,16 +135,20 @@ Runtime controls update the active session only. Global defaults remain controll
 
 ## Compatibility
 
-Anime4K shaders should prefer the legacy `gpu` renderer. If Anime4K is enabled and the stored video output mode is `gpu-next` without Vulkan, the player should temporarily use `gpu` for that session.
+Anime4K shaders prefer the legacy `gpu` renderer. The player must decide renderer compatibility before mpv initialization when opening a session, and must not hot-switch `vo` during playback.
 
-Rules:
+Startup rules:
 
 - Anime4K off: use the user's configured video output mode.
 - Anime4K on with `gpu`: keep `gpu`.
 - Anime4K on with `gpu-next` and Vulkan: allow the configured renderer.
-- Anime4K on with `gpu-next` and non-Vulkan GPU API: use `gpu` for this session.
+- Anime4K on with `gpu-next` and non-Vulkan GPU API: start this player session with effective VO `gpu`, set a short status explaining the compatibility fallback, and do not rewrite the user's global VO setting.
 
-The app should not rewrite the user's global VO setting when applying this compatibility fallback.
+Runtime rules:
+
+- Runtime Anime4K changes never call `setOptionString("vo", ...)`.
+- If the active session is already running `gpu-next` without Vulkan, Anime4K runtime enable/switch is rejected with a status message instead of forcing a renderer restart. The controller clears `glsl-shaders` and keeps the session Anime4K switch off.
+- Runtime hot-switching `glsl-shaders` is considered supported only for the compatible renderers above and must be covered by controller tests for command sequencing. Actual visual shader behavior remains an mpv/device integration concern.
 
 OpenGL-only tuning from `mpvEx` (`opengl-pbo`, `opengl-early-flush`) should only be applied when the session is not using Vulkan.
 
@@ -140,7 +170,9 @@ Required tests:
 - Missing shader assets return an empty chain instead of a partial chain.
 - `MpvController` enabling Anime4K writes `glsl-shaders` with the computed chain.
 - `MpvController` disabling Anime4K clears `glsl-shaders`.
-- `MpvController` applies the `gpu-next` non-Vulkan fallback without changing global settings.
+- Startup compatibility resolves Anime4K + `gpu-next` + non-Vulkan to effective session VO `gpu` before mpv initialization.
+- `MpvController` rejects runtime Anime4K enable/switch on active `gpu-next` + non-Vulkan sessions without writing `vo`.
+- Runtime Anime4K switching on compatible renderers writes only `glsl-shaders`.
 - `AppSettingsStore` defaults and update methods persist Anime4K values.
 - `PlayerOptionPanelUiTest` verifies the player menu includes Anime4K controls.
 
