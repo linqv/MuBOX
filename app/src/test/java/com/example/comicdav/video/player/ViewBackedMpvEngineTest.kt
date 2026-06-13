@@ -72,11 +72,17 @@ class ViewBackedMpvEngineTest {
 
         assertTrue(source.contains("var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST"))
         val profileOptionIndex = source.indexOf("MPVLib.setOptionString(\"profile\", mpvProfileMode.profile)")
-        val videoOutputIndex = source.indexOf("setVo(\"gpu\")")
+        val gpuApiIndex = source.indexOf("MPVLib.setOptionString(\"gpu-api\", gpuApiMode.gpuApi)")
+        val videoOutputIndex = source.indexOf("setVo(videoOutputMode.videoOutput)")
+        val videoDecoderIndex = source.indexOf("MPVLib.setOptionString(\"hwdec\", videoDecoderMode.hwdec)")
 
         assertTrue(profileOptionIndex >= 0)
+        assertTrue(gpuApiIndex >= 0)
         assertTrue(videoOutputIndex >= 0)
+        assertTrue(videoDecoderIndex >= 0)
+        assertTrue(profileOptionIndex < gpuApiIndex)
         assertTrue(profileOptionIndex < videoOutputIndex)
+        assertTrue(profileOptionIndex < videoDecoderIndex)
     }
 
     private fun activitySourceFile(): File =
