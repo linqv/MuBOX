@@ -119,7 +119,15 @@ internal fun staleAnime4KShaderFiles(
 
 internal fun anime4kShaderAssetPath(assetName: String): String = "shaders/$assetName"
 
-class Anime4KManager(context: Context) {
+interface Anime4KShaderProvider {
+    fun shaderChain(settings: Anime4KSettings): String
+}
+
+object EmptyAnime4KShaderProvider : Anime4KShaderProvider {
+    override fun shaderChain(settings: Anime4KSettings): String = ""
+}
+
+class Anime4KManager(context: Context) : Anime4KShaderProvider {
     private val appContext = context.applicationContext
     private val shaderDir = File(appContext.filesDir, "shaders")
 
@@ -135,7 +143,7 @@ class Anime4KManager(context: Context) {
             true
         }.getOrDefault(false)
 
-    fun shaderChain(settings: Anime4KSettings): String {
+    override fun shaderChain(settings: Anime4KSettings): String {
         if (!settings.enabled || settings.mode == Anime4KMode.OFF) return ""
         if (!initialize()) return ""
         return anime4kShaderChain(

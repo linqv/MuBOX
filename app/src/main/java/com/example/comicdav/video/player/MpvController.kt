@@ -21,6 +21,9 @@ data class MpvPlayerState(
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val statusMessage: String? = null,
+    val anime4kEnabled: Boolean = false,
+    val anime4kMode: Anime4KMode = Anime4KMode.A,
+    val anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val gestureState: VideoGestureState = VideoGestureState(),
     val audioTracks: List<MpvTrack> = emptyList(),
@@ -241,8 +244,18 @@ class ViewBackedMpvEngine(
 
 class MpvController(
     private val engine: MpvEngine,
+    private val anime4kShaderProvider: Anime4KShaderProvider = EmptyAnime4KShaderProvider,
+    initialAnime4KSettings: Anime4KSettings = Anime4KSettings(),
+    initialAnime4KStatusMessage: String? = null,
 ) {
-    private val _state = MutableStateFlow(MpvPlayerState())
+    private val _state = MutableStateFlow(
+        MpvPlayerState(
+            statusMessage = initialAnime4KStatusMessage,
+            anime4kEnabled = initialAnime4KSettings.enabled && initialAnime4KSettings.mode != Anime4KMode.OFF,
+            anime4kMode = initialAnime4KSettings.mode,
+            anime4kQuality = initialAnime4KSettings.quality,
+        ),
+    )
     val state: StateFlow<MpvPlayerState> = _state.asStateFlow()
     private val _progress = MutableStateFlow(VideoPlaybackProgressState())
     val progress: StateFlow<VideoPlaybackProgressState> = _progress.asStateFlow()
@@ -412,6 +425,42 @@ class MpvController(
         _state.value = _state.value.copy(
             gpuApiMode = mode,
             currentGpuApi = mode.gpuApi,
+        )
+    }
+
+    fun setAnime4KEnabled(enabled: Boolean) {
+        if (!canWriteEngine()) return
+        val state = _state.value
+        applyAnime4KSettings(
+            Anime4KSettings(
+                enabled = enabled,
+                mode = state.anime4kMode,
+                quality = state.anime4kQuality,
+            ),
+        )
+    }
+
+    fun setAnime4KMode(mode: Anime4KMode) {
+        if (!canWriteEngine()) return
+        val state = _state.value
+        applyAnime4KSettings(
+            Anime4KSettings(
+                enabled = mode != Anime4KMode.OFF,
+                mode = mode,
+                quality = state.anime4kQuality,
+            ),
+        )
+    }
+
+    fun setAnime4KQuality(quality: Anime4KQuality) {
+        if (!canWriteEngine()) return
+        val state = _state.value
+        applyAnime4KSettings(
+            Anime4KSettings(
+                enabled = state.anime4kMode != Anime4KMode.OFF,
+                mode = state.anime4kMode,
+                quality = quality,
+            ),
         )
     }
 
@@ -725,6 +774,50 @@ class MpvController(
         _state.value = _state.value.copy(playbackSpeed = clampedSpeed)
     }
 
+    private fun applyAnime4KSettings(settings: Anime4KSettings) {
+        if (!settings.enabled || settings.mode == Anime4KMode.OFF) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kEnabled = false,
+                anime4kMode = settings.mode,
+                anime4kQuality = settings.quality,
+                statusMessage = null,
+            )
+            return
+        }
+
+        if (_state.value.videoOutputMode == VideoOutputMode.GPU_NEXT && _state.value.gpuApiMode != GpuApiMode.VULKAN) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kEnabled = false,
+                anime4kMode = settings.mode,
+                anime4kQuality = settings.quality,
+                statusMessage = ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS,
+            )
+            return
+        }
+
+        val shaderChain = anime4kShaderProvider.shaderChain(settings)
+        if (shaderChain.isBlank()) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kEnabled = false,
+                anime4kMode = settings.mode,
+                anime4kQuality = settings.quality,
+                statusMessage = "Anime4K 着色器加载失败",
+            )
+            return
+        }
+
+        engine.setPropertyString("glsl-shaders", shaderChain)
+        _state.value = _state.value.copy(
+            anime4kEnabled = true,
+            anime4kMode = settings.mode,
+            anime4kQuality = settings.quality,
+            statusMessage = null,
+        )
+    }
+
     private fun speedHudText(speed: Double): String {
         val roundedSpeed = (speed * 100).roundToInt() / 100.0
         val text = if (roundedSpeed % 1.0 == 0.0) {
@@ -847,5 +940,6 @@ class MpvController(
         const val DOUBLE_TAP_SEEK_MILLIS = 10_000L
         const val MIN_VIDEO_ZOOM = -1.0f
         const val MAX_VIDEO_ZOOM = 2.0f
+        const val ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS = "Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容"
     }
 }

@@ -269,8 +269,12 @@ class VideoPlayerActivity : ComponentActivity() {
         mpvView.videoDecoderMode = initialVideoDecoderMode
         mpvView.anime4kSettings = initialAnime4KSettings
         mpvView.anime4kManager = anime4kManager
-        controller = MpvController(ViewBackedMpvEngine(mpvView))
-        controller.setStartupStatusMessage(startupCompatibility.statusMessage)
+        controller = MpvController(
+            engine = ViewBackedMpvEngine(mpvView),
+            anime4kShaderProvider = anime4kManager,
+            initialAnime4KSettings = initialAnime4KSettings,
+            initialAnime4KStatusMessage = startupCompatibility.statusMessage,
+        )
         audioFocusController = VideoAudioFocusController(this) {
             controller.setPaused(true)
             playbackLifecyclePolicy.playbackInterrupted()
