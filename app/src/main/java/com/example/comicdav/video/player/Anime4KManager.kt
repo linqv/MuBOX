@@ -25,6 +25,28 @@ data class Anime4KSettings(
     val quality: Anime4KQuality = Anime4KQuality.FAST,
 )
 
+data class Anime4KStartupCompatibility(
+    val effectiveVideoOutputMode: VideoOutputMode,
+    val statusMessage: String? = null,
+)
+
+internal fun anime4kStartupCompatibility(
+    settings: Anime4KSettings,
+    requestedVideoOutputMode: VideoOutputMode,
+    gpuApiMode: GpuApiMode,
+): Anime4KStartupCompatibility {
+    if (!settings.enabled || settings.mode == Anime4KMode.OFF) {
+        return Anime4KStartupCompatibility(effectiveVideoOutputMode = requestedVideoOutputMode)
+    }
+    if (requestedVideoOutputMode == VideoOutputMode.GPU_NEXT && gpuApiMode != GpuApiMode.VULKAN) {
+        return Anime4KStartupCompatibility(
+            effectiveVideoOutputMode = VideoOutputMode.AUTO,
+            statusMessage = "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu",
+        )
+    }
+    return Anime4KStartupCompatibility(effectiveVideoOutputMode = requestedVideoOutputMode)
+}
+
 internal val expectedAnime4KShaderAssetNames = listOf(
     "Anime4K_Clamp_Highlights.glsl",
     "Anime4K_Restore_CNN_S.glsl",

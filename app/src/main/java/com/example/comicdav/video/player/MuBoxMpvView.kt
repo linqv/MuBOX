@@ -20,18 +20,30 @@ class MuBoxMpvView(
     attrs: AttributeSet,
 ) : BaseMPVView(context, attrs), MpvFileLoader {
     var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST
+    var videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO
+    var gpuApiMode: GpuApiMode = GpuApiMode.AUTO
+    var videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO
+    var anime4kSettings: Anime4KSettings = Anime4KSettings()
+    var anime4kManager: Anime4KManager? = null
 
     private var surfaceAttached = false
     private val pendingAfterLoadfileActions = mutableListOf<() -> Unit>()
 
     override fun initOptions() {
         MPVLib.setOptionString("profile", mpvProfileMode.profile)
-        setVo("gpu")
-        MPVLib.setOptionString("hwdec", "mediacodec,mediacodec-copy,no")
+        MPVLib.setOptionString("gpu-api", gpuApiMode.gpuApi)
+        setVo(videoOutputMode.videoOutput)
+        MPVLib.setOptionString("hwdec", videoDecoderMode.hwdec)
         MPVLib.setOptionString("hwdec-codecs", "all")
         MPVLib.setOptionString("demuxer-max-bytes", "${64 * 1024 * 1024}")
         MPVLib.setOptionString("demuxer-max-back-bytes", "${64 * 1024 * 1024}")
         MPVLib.setOptionString("msg-level", "all=warn")
+        val shaderChain = if (anime4kSettings.enabled && anime4kSettings.mode != Anime4KMode.OFF) {
+            anime4kManager?.shaderChain(anime4kSettings).orEmpty()
+        } else {
+            ""
+        }
+        MPVLib.setOptionString("glsl-shaders", shaderChain)
         MPVLib.setPropertyBoolean("keep-open", true)
         MPVLib.setPropertyBoolean("input-default-bindings", true)
     }

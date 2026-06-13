@@ -132,9 +132,10 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("onDecoderModeSelected = controller::setDecoderMode"))
         assertTrue(!source.contains("onVideoOutputModeSelected = controller::setVideoOutputMode"))
         assertTrue(!source.contains("onGpuApiModeSelected = controller::setGpuApiMode"))
-        assertTrue(source.contains("controller.setVideoOutputMode(initialVideoOutputMode)"))
-        assertTrue(source.contains("controller.setGpuApiMode(initialGpuApiMode)"))
-        assertTrue(source.contains("controller.setDecoderMode(initialVideoDecoderMode)"))
+        assertTrue(source.contains("controller.setStartupRendererState("))
+        assertTrue(!source.contains("controller.setVideoOutputMode(initialVideoOutputMode)"))
+        assertTrue(!source.contains("controller.setGpuApiMode(initialGpuApiMode)"))
+        assertTrue(!source.contains("controller.setDecoderMode(initialVideoDecoderMode)"))
         assertTrue(source.contains("onControlsLockedChanged = controller::setControlsLocked"))
         assertTrue(source.contains("PlayerMenuPanel("))
         assertTrue(source.contains("PlayerOptionPanel.TRACKS"))
@@ -147,6 +148,42 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("controlsAutoHideMillis"))
         assertTrue(source.contains("lockButtonRevealSignal"))
         assertTrue(source.contains("delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)"))
+    }
+
+    @Test
+    fun activityAppliesAnime4KCompatibilityBeforePreparingMpv() {
+        val source = activitySourceFile().readText()
+
+        val settingsIndex = source.indexOf("val initialAnime4KSettings = Anime4KSettings(")
+        val managerIndex = source.indexOf("val anime4kManager = Anime4KManager(applicationContext)")
+        val compatibilityIndex = source.indexOf("val startupCompatibility = anime4kStartupCompatibility(")
+        val effectiveVoIndex = source.indexOf("videoOutputMode = startupCompatibility.effectiveVideoOutputMode")
+        val prepareIndex = source.indexOf("if (!prepareMpv()) return@launch")
+        val stateSyncIndex = source.indexOf("controller.setStartupRendererState(")
+
+        assertTrue("activity should parse Anime4K startup settings", settingsIndex >= 0)
+        assertTrue("activity should create one Anime4K manager for the player session", managerIndex >= 0)
+        assertTrue("activity should resolve Anime4K renderer compatibility", compatibilityIndex >= 0)
+        assertTrue("activity should assign effective VO to MuBoxMpvView", effectiveVoIndex >= 0)
+        assertTrue("activity should prepare mpv after startup properties are assigned", prepareIndex >= 0)
+        assertTrue("activity should sync renderer state after prepare", stateSyncIndex >= 0)
+        assertTrue(settingsIndex < compatibilityIndex)
+        assertTrue(managerIndex < prepareIndex)
+        assertTrue(compatibilityIndex < effectiveVoIndex)
+        assertTrue(effectiveVoIndex < prepareIndex)
+        assertTrue(prepareIndex < stateSyncIndex)
+    }
+
+    @Test
+    fun anime4KStartupCompatibilityFallsBackFromGpuNextWhenNotUsingVulkan() {
+        val compatibility = anime4kStartupCompatibility(
+            settings = Anime4KSettings(enabled = true, mode = Anime4KMode.A, quality = Anime4KQuality.FAST),
+            requestedVideoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.AUTO,
+        )
+
+        assertTrue(compatibility.effectiveVideoOutputMode == VideoOutputMode.AUTO)
+        assertTrue(compatibility.statusMessage == "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu")
     }
 
     @Test

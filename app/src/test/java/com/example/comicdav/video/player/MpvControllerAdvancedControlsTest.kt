@@ -112,6 +112,29 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun startupRendererStateUpdatesStateWithoutWritingMpvOptions() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+
+        controller.setStartupRendererState(
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.VULKAN,
+            decoderMode = VideoDecoderMode.HARDWARE_PLUS,
+        )
+
+        val state = controller.state.value
+        assertEquals(VideoOutputMode.GPU_NEXT, state.videoOutputMode)
+        assertEquals(GpuApiMode.VULKAN, state.gpuApiMode)
+        assertEquals(VideoDecoderMode.HARDWARE_PLUS, state.decoderMode)
+        assertEquals("gpu-next", state.currentVideoOutput)
+        assertEquals("vulkan", state.currentGpuApi)
+        assertEquals("mediacodec", state.currentHwdec)
+        assertEquals(emptyList<String>(), engine.optionHistory("vo"))
+        assertEquals(emptyList<String>(), engine.optionHistory("gpu-api"))
+        assertEquals(emptyList<String>(), engine.stringPropertyHistory("hwdec"))
+    }
+
+    @Test
     fun scaleModesMapToAspectAndPanscanProperties() {
         val engine = FakeMpvEngine()
         val controller = MpvController(engine)

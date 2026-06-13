@@ -216,6 +216,17 @@ class VideoPlayerActivity : ComponentActivity() {
             .toEnumOrDefault(VideoDecoderMode.AUTO)
         val initialMpvProfileMode = intent.getStringExtra(EXTRA_MPV_PROFILE_MODE)
             .toEnumOrDefault(MpvProfileMode.FAST)
+        val initialAnime4KSettings = Anime4KSettings(
+            enabled = intent.getBooleanExtra(EXTRA_ANIME4K_ENABLED, false),
+            mode = intent.getStringExtra(EXTRA_ANIME4K_MODE).toEnumOrDefault(Anime4KMode.A),
+            quality = intent.getStringExtra(EXTRA_ANIME4K_QUALITY).toEnumOrDefault(Anime4KQuality.FAST),
+        )
+        val anime4kManager = Anime4KManager(applicationContext)
+        val startupCompatibility = anime4kStartupCompatibility(
+            settings = initialAnime4KSettings,
+            requestedVideoOutputMode = initialVideoOutputMode,
+            gpuApiMode = initialGpuApiMode,
+        )
         val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
         val proxyDebugInfoEnabled = intent.getBooleanExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, false)
         val initialVideoBackgroundMode = intent.getStringExtra(EXTRA_VIDEO_BACKGROUND_MODE)
@@ -253,7 +264,13 @@ class VideoPlayerActivity : ComponentActivity() {
 
         mpvView = MuBoxMpvView.create(this)
         mpvView.mpvProfileMode = initialMpvProfileMode
+        mpvView.videoOutputMode = startupCompatibility.effectiveVideoOutputMode
+        mpvView.gpuApiMode = initialGpuApiMode
+        mpvView.videoDecoderMode = initialVideoDecoderMode
+        mpvView.anime4kSettings = initialAnime4KSettings
+        mpvView.anime4kManager = anime4kManager
         controller = MpvController(ViewBackedMpvEngine(mpvView))
+        controller.setStartupStatusMessage(startupCompatibility.statusMessage)
         audioFocusController = VideoAudioFocusController(this) {
             controller.setPaused(true)
             playbackLifecyclePolicy.playbackInterrupted()
@@ -379,9 +396,11 @@ class VideoPlayerActivity : ComponentActivity() {
 
         loadJob = activityScope.launch {
             if (!prepareMpv()) return@launch
-            controller.setVideoOutputMode(initialVideoOutputMode)
-            controller.setGpuApiMode(initialGpuApiMode)
-            controller.setDecoderMode(initialVideoDecoderMode)
+            controller.setStartupRendererState(
+                videoOutputMode = startupCompatibility.effectiveVideoOutputMode,
+                gpuApiMode = initialGpuApiMode,
+                decoderMode = initialVideoDecoderMode,
+            )
             val startPositionMillis = loadVideoStartPosition(
                 resumeEnabled = resumeEnabled,
                 playbackKey = playbackKey,

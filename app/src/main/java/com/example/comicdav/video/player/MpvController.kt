@@ -20,6 +20,7 @@ data class MpvPlayerState(
     val decoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
+    val statusMessage: String? = null,
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val gestureState: VideoGestureState = VideoGestureState(),
     val audioTracks: List<MpvTrack> = emptyList(),
@@ -412,6 +413,25 @@ class MpvController(
             gpuApiMode = mode,
             currentGpuApi = mode.gpuApi,
         )
+    }
+
+    fun setStartupRendererState(
+        videoOutputMode: VideoOutputMode,
+        gpuApiMode: GpuApiMode,
+        decoderMode: VideoDecoderMode,
+    ) {
+        _state.value = _state.value.copy(
+            videoOutputMode = videoOutputMode,
+            gpuApiMode = gpuApiMode,
+            decoderMode = decoderMode,
+            currentVideoOutput = videoOutputMode.videoOutput,
+            currentGpuApi = gpuApiMode.gpuApi,
+            currentHwdec = decoderMode.hwdec,
+        )
+    }
+
+    fun setStartupStatusMessage(message: String?) {
+        _state.value = _state.value.copy(statusMessage = message)
     }
 
     fun setScaleMode(mode: VideoScaleMode) {

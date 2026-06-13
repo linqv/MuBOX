@@ -18,6 +18,28 @@ class MuBoxMpvViewFactoryTest {
         assertTrue(layout.contains("com.example.comicdav.video.player.MuBoxMpvView"))
     }
 
+    @Test
+    fun mpvViewExposesStartupRendererAndAnime4KProperties() {
+        val source = sourceFile().readText()
+
+        assertTrue(source.contains("var videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO"))
+        assertTrue(source.contains("var gpuApiMode: GpuApiMode = GpuApiMode.AUTO"))
+        assertTrue(source.contains("var videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO"))
+        assertTrue(source.contains("var anime4kSettings: Anime4KSettings = Anime4KSettings()"))
+        assertTrue(source.contains("var anime4kManager: Anime4KManager? = null"))
+    }
+
+    @Test
+    fun initOptionsAppliesStartupOptionsBeforeMpvLoadsMedia() {
+        val source = sourceFile().readText()
+
+        assertTrue(source.contains("MPVLib.setOptionString(\"gpu-api\", gpuApiMode.gpuApi)"))
+        assertTrue(source.contains("setVo(videoOutputMode.videoOutput)"))
+        assertTrue(source.contains("MPVLib.setOptionString(\"hwdec\", videoDecoderMode.hwdec)"))
+        assertTrue(source.contains("MPVLib.setOptionString(\"glsl-shaders\", shaderChain)"))
+        assertFalse(source.contains("setPropertyString(\"glsl-shaders\""))
+    }
+
     private fun sourceFile(): File =
         listOf(
             File("src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
