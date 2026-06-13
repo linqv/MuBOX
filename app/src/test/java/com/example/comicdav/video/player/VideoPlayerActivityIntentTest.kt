@@ -43,6 +43,15 @@ class VideoPlayerActivityIntentTest {
         assertEquals(1024L, intent.getLongExtra(VideoPlayerActivity.EXTRA_SIZE, -1L))
         assertEquals(12345L, intent.getLongExtra(VideoPlayerActivity.EXTRA_LAST_MODIFIED, -1L))
         assertEquals(VideoPlayerActivity.SOURCE_LOCAL, intent.getStringExtra(VideoPlayerActivity.EXTRA_SOURCE))
+        assertFalse(intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, true))
+        assertEquals(
+            Anime4KMode.A.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
+        )
+        assertEquals(
+            Anime4KQuality.FAST.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
+        )
     }
 
     @Test
@@ -64,6 +73,9 @@ class VideoPlayerActivityIntentTest {
             mpvProfileMode = MpvProfileMode.LOW_LATENCY,
             controlsAutoHideMillis = 8000,
             proxyDebugInfoEnabled = true,
+            anime4kEnabled = true,
+            anime4kMode = Anime4KMode.C_PLUS,
+            anime4kQuality = Anime4KQuality.HIGH,
         )
 
         assertEquals(
@@ -89,6 +101,18 @@ class VideoPlayerActivityIntentTest {
         assertEquals(
             true,
             intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
+        )
+        assertEquals(
+            true,
+            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, false),
+        )
+        assertEquals(
+            Anime4KMode.C_PLUS.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
+        )
+        assertEquals(
+            Anime4KQuality.HIGH.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
         )
     }
 
@@ -127,12 +151,27 @@ class VideoPlayerActivityIntentTest {
             subtitleUrls = emptyList(),
             streamIds = listOf("current"),
             proxyDebugInfoEnabled = true,
+            anime4kEnabled = true,
+            anime4kMode = Anime4KMode.C_PLUS,
+            anime4kQuality = Anime4KQuality.HIGH,
         )
 
         assertFalse(intent.hasQueueExtras())
         assertEquals(
             true,
             intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
+        )
+        assertEquals(
+            true,
+            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, false),
+        )
+        assertEquals(
+            Anime4KMode.C_PLUS.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
+        )
+        assertEquals(
+            Anime4KQuality.HIGH.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
         )
     }
 

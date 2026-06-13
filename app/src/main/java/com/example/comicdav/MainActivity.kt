@@ -454,6 +454,9 @@ fun ComicDavApp() {
                 playerOrientationMode = appSettings.videoPlayerOrientationMode,
                 proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
                 videoBackgroundMode = appSettings.videoBackgroundMode,
+                anime4kEnabled = appSettings.anime4kEnabled,
+                anime4kMode = appSettings.anime4kMode,
+                anime4kQuality = appSettings.anime4kQuality,
             ),
         )
     }
@@ -900,6 +903,9 @@ fun ComicDavApp() {
                             playerOrientationMode = appSettings.videoPlayerOrientationMode,
                             proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
                             videoBackgroundMode = appSettings.videoBackgroundMode,
+                            anime4kEnabled = appSettings.anime4kEnabled,
+                            anime4kMode = appSettings.anime4kMode,
+                            anime4kQuality = appSettings.anime4kQuality,
                         ),
                     )
                 }
@@ -1097,6 +1103,9 @@ fun ComicDavApp() {
                             playerOrientationMode = appSettings.videoPlayerOrientationMode,
                             proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
                             videoBackgroundMode = appSettings.videoBackgroundMode,
+                            anime4kEnabled = appSettings.anime4kEnabled,
+                            anime4kMode = appSettings.anime4kMode,
+                            anime4kQuality = appSettings.anime4kQuality,
                         ),
                     )
                 }
@@ -1147,6 +1156,9 @@ fun ComicDavApp() {
                                     playerOrientationMode = appSettings.videoPlayerOrientationMode,
                                     proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
                                     videoBackgroundMode = appSettings.videoBackgroundMode,
+                                    anime4kEnabled = appSettings.anime4kEnabled,
+                                    anime4kMode = appSettings.anime4kMode,
+                                    anime4kQuality = appSettings.anime4kQuality,
                                 ),
                             )
                         }
@@ -1366,6 +1378,9 @@ fun ComicDavApp() {
                     playerOrientationMode = appSettings.videoPlayerOrientationMode,
                     proxyDebugInfoEnabled = appSettings.videoPlayerProxyDebugInfoEnabled,
                     videoBackgroundMode = appSettings.videoBackgroundMode,
+                    anime4kEnabled = appSettings.anime4kEnabled,
+                    anime4kMode = appSettings.anime4kMode,
+                    anime4kQuality = appSettings.anime4kQuality,
                 ),
             )
         }.onFailure { error ->

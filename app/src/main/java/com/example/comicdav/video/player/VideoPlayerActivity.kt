@@ -731,6 +731,9 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
         const val EXTRA_PROXY_DEBUG_INFO_ENABLED = "com.example.comicdav.video.extra.PROXY_DEBUG_INFO_ENABLED"
         const val EXTRA_VIDEO_BACKGROUND_MODE = "com.example.comicdav.video.extra.VIDEO_BACKGROUND_MODE"
+        const val EXTRA_ANIME4K_ENABLED = "com.example.comicdav.video.extra.ANIME4K_ENABLED"
+        const val EXTRA_ANIME4K_MODE = "com.example.comicdav.video.extra.ANIME4K_MODE"
+        const val EXTRA_ANIME4K_QUALITY = "com.example.comicdav.video.extra.ANIME4K_QUALITY"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
@@ -745,6 +748,9 @@ class VideoPlayerActivity : ComponentActivity() {
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
             proxyDebugInfoEnabled: Boolean = false,
             videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
+            anime4kEnabled: Boolean = false,
+            anime4kMode: Anime4KMode = Anime4KMode.A,
+            anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -771,6 +777,9 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                 .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
                 .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
+                .putExtra(EXTRA_ANIME4K_ENABLED, anime4kEnabled)
+                .putExtra(EXTRA_ANIME4K_MODE, anime4kMode.name)
+                .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
                 .putSubtitleExtras(request.subtitles)
 
         fun webDavIntent(
@@ -788,6 +797,9 @@ class VideoPlayerActivity : ComponentActivity() {
             playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
             proxyDebugInfoEnabled: Boolean = false,
             videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
+            anime4kEnabled: Boolean = false,
+            anime4kMode: Anime4KMode = Anime4KMode.A,
+            anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -823,6 +835,9 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
                     .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
                     .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
+                    .putExtra(EXTRA_ANIME4K_ENABLED, anime4kEnabled)
+                    .putExtra(EXTRA_ANIME4K_MODE, anime4kMode.name)
+                    .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
                 }
