@@ -205,6 +205,53 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun anime4KRuntimeSwitchUsesObservedGpuApiWhenConfiguredGpuApiIsAuto() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
+        )
+        controller.setStartupRendererState(
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.AUTO,
+            decoderMode = VideoDecoderMode.AUTO,
+        )
+        controller.onGpuApiChanged("vulkan")
+
+        controller.setAnime4KEnabled(true)
+
+        val state = controller.state.value
+        assertEquals(listOf("chain-a"), engine.stringPropertyHistory("glsl-shaders"))
+        assertTrue(state.anime4kEnabled)
+        assertEquals(null, state.statusMessage)
+    }
+
+    @Test
+    fun anime4KModeAndQualityChangesPreserveIncompatibleStatusWhileDisabled() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
+        )
+        controller.setStartupRendererState(
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.AUTO,
+            decoderMode = VideoDecoderMode.AUTO,
+        )
+
+        controller.setAnime4KEnabled(true)
+        controller.setAnime4KMode(Anime4KMode.B)
+        controller.setAnime4KQuality(Anime4KQuality.HIGH)
+
+        val state = controller.state.value
+        assertEquals(listOf("", "", ""), engine.stringPropertyHistory("glsl-shaders"))
+        assertFalse(state.anime4kEnabled)
+        assertEquals(Anime4KMode.B, state.anime4kMode)
+        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
+        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", state.statusMessage)
+    }
+
+    @Test
     fun emptyAnime4KShaderChainDisablesRuntimeStateAndSetsStatus() {
         val engine = FakeMpvEngine()
         val controller = MpvController(

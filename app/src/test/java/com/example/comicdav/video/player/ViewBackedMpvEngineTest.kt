@@ -99,6 +99,18 @@ class ViewBackedMpvEngineTest {
     }
 
     @Test
+    fun muboxMpvViewInitializesAnime4KAssetsBeforeBuildingStartupShaderChain() {
+        val source = mpvViewSourceFile().readText()
+
+        val initializeIndex = source.indexOf("anime4kManager?.initialize()")
+        val shaderChainIndex = source.indexOf("anime4kManager?.shaderChain(anime4kSettings)")
+
+        assertTrue(initializeIndex >= 0)
+        assertTrue(shaderChainIndex >= 0)
+        assertTrue(initializeIndex < shaderChainIndex)
+    }
+
+    @Test
     fun muboxMpvViewAppliesAnime4KOpenGlTuningOnlyOutsideVulkan() {
         val source = mpvViewSourceFile().readText()
 

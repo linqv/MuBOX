@@ -1,6 +1,7 @@
 package com.example.comicdav.video.player
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -95,5 +96,28 @@ class Anime4KManagerTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun shaderChainDoesNotInitializeShaderAssetsAtRuntime() {
+        val filesDir = temporaryFolder.newFolder("runtime-files")
+        val context = object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = filesDir
+        }
+        val shaderDir = File(filesDir, "shaders")
+        val manager = Anime4KManager(context)
+
+        assertEquals(
+            "",
+            manager.shaderChain(
+                Anime4KSettings(
+                    enabled = true,
+                    mode = Anime4KMode.A,
+                    quality = Anime4KQuality.FAST,
+                ),
+            ),
+        )
+        assertFalse("shaderChain should only inspect existing files", shaderDir.exists())
     }
 }

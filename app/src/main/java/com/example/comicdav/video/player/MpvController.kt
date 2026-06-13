@@ -781,12 +781,12 @@ class MpvController(
                 anime4kEnabled = false,
                 anime4kMode = settings.mode,
                 anime4kQuality = settings.quality,
-                statusMessage = null,
+                statusMessage = disabledAnime4KStatusMessage(),
             )
             return
         }
 
-        if (_state.value.videoOutputMode == VideoOutputMode.GPU_NEXT && _state.value.gpuApiMode != GpuApiMode.VULKAN) {
+        if (isGpuNextWithoutObservedVulkan()) {
             engine.setPropertyString("glsl-shaders", "")
             _state.value = _state.value.copy(
                 anime4kEnabled = false,
@@ -817,6 +817,22 @@ class MpvController(
             statusMessage = null,
         )
     }
+
+    private fun isGpuNextWithoutObservedVulkan(): Boolean {
+        val state = _state.value
+        return state.videoOutputMode == VideoOutputMode.GPU_NEXT &&
+            !state.currentGpuApi.equals(GpuApiMode.VULKAN.gpuApi, ignoreCase = true)
+    }
+
+    private fun disabledAnime4KStatusMessage(): String? =
+        if (
+            _state.value.statusMessage == ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS &&
+            isGpuNextWithoutObservedVulkan()
+        ) {
+            ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS
+        } else {
+            null
+        }
 
     private fun speedHudText(speed: Double): String {
         val roundedSpeed = (speed * 100).roundToInt() / 100.0

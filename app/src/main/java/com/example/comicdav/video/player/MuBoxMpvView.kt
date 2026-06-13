@@ -38,6 +38,7 @@ class MuBoxMpvView(
         MPVLib.setOptionString("demuxer-max-bytes", "${64 * 1024 * 1024}")
         MPVLib.setOptionString("demuxer-max-back-bytes", "${64 * 1024 * 1024}")
         MPVLib.setOptionString("msg-level", "all=warn")
+        anime4kManager?.initialize()
         val shaderChain = if (anime4kSettings.enabled && anime4kSettings.mode != Anime4KMode.OFF) {
             anime4kManager?.shaderChain(anime4kSettings).orEmpty()
         } else {

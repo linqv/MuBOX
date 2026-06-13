@@ -130,9 +130,11 @@ object EmptyAnime4KShaderProvider : Anime4KShaderProvider {
 class Anime4KManager(context: Context) : Anime4KShaderProvider {
     private val appContext = context.applicationContext
     private val shaderDir = File(appContext.filesDir, "shaders")
+    private var initialized = false
 
-    fun initialize(): Boolean =
-        runCatching {
+    fun initialize(): Boolean {
+        if (initialized) return true
+        return runCatching {
             shaderDir.mkdirs()
             staleAnime4KShaderFiles(shaderDir, expectedAnime4KShaderAssetNames).forEach { file ->
                 file.delete()
@@ -140,12 +142,13 @@ class Anime4KManager(context: Context) : Anime4KShaderProvider {
             expectedAnime4KShaderAssetNames.forEach { assetName ->
                 copyAssetIfChanged(assetName, File(shaderDir, assetName))
             }
+            initialized = true
             true
         }.getOrDefault(false)
+    }
 
     override fun shaderChain(settings: Anime4KSettings): String {
         if (!settings.enabled || settings.mode == Anime4KMode.OFF) return ""
-        if (!initialize()) return ""
         return anime4kShaderChain(
             enabled = settings.enabled,
             mode = settings.mode,
