@@ -130,6 +130,9 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(!source.contains("onAudioDelayChanged = controller::adjustAudioDelay"))
         assertTrue(source.contains("onScaleModeSelected = controller::setScaleMode"))
         assertTrue(source.contains("onDecoderModeSelected = controller::setDecoderMode"))
+        assertTrue(source.contains("onAnime4KEnabledSelected = controller::setAnime4KEnabled"))
+        assertTrue(source.contains("onAnime4KModeSelected = controller::setAnime4KMode"))
+        assertTrue(source.contains("onAnime4KQualitySelected = controller::setAnime4KQuality"))
         assertTrue(!source.contains("onVideoOutputModeSelected = controller::setVideoOutputMode"))
         assertTrue(!source.contains("onGpuApiModeSelected = controller::setGpuApiMode"))
         assertTrue(source.contains("controller.setStartupRendererState("))
@@ -148,6 +151,18 @@ class VideoPlayerActivityIntegrationTest {
         assertTrue(source.contains("controlsAutoHideMillis"))
         assertTrue(source.contains("lockButtonRevealSignal"))
         assertTrue(source.contains("delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)"))
+    }
+
+    @Test
+    fun screenPassesAnime4KCallbacksToPlayerMenuPanel() {
+        val source = videoPlayerPackageSource()
+
+        assertTrue(source.contains("onAnime4KEnabledSelected: (Boolean) -> Unit"))
+        assertTrue(source.contains("onAnime4KModeSelected: (Anime4KMode) -> Unit"))
+        assertTrue(source.contains("onAnime4KQualitySelected: (Anime4KQuality) -> Unit"))
+        assertTrue(source.contains("onAnime4KEnabledSelected = onAnime4KEnabledSelected"))
+        assertTrue(source.contains("onAnime4KModeSelected = onAnime4KModeSelected"))
+        assertTrue(source.contains("onAnime4KQualitySelected = onAnime4KQualitySelected"))
     }
 
     @Test

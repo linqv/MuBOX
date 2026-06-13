@@ -149,10 +149,22 @@ internal fun PlayerBottomControls(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (state.errorMessage != null) {
+        val bottomStatusText = playerBottomStatusText(state)
+        if (bottomStatusText != null) {
             val colors = rememberMuBoxColors()
-            Surface(color = colors.errorSurface, contentColor = colors.errorText, shape = RoundedCornerShape(8.dp)) {
-                Text(state.errorMessage, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+            val isError = !state.errorMessage.isNullOrBlank()
+            Surface(
+                color = if (isError) colors.errorSurface else Color(0xCC242424),
+                contentColor = if (isError) colors.errorText else Color.White,
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(
+                    bottomStatusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                )
             }
         }
         Text(
@@ -221,6 +233,9 @@ internal fun PlayerMenuPanel(
     onSpeedSelected: (Double) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
+    onAnime4KEnabledSelected: (Boolean) -> Unit,
+    onAnime4KModeSelected: (Anime4KMode) -> Unit,
+    onAnime4KQualitySelected: (Anime4KQuality) -> Unit,
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
@@ -253,6 +268,27 @@ internal fun PlayerMenuPanel(
             ControlGroup("画面") {
                 VideoScaleMode.entries.forEach { mode ->
                     CompactTextButton(mode.label, state.scaleMode == mode) { onScaleModeSelected(mode) }
+                }
+            }
+            ControlGroup("Anime4K") {
+                anime4kEnabledControlOptions().forEach { (label, enabled) ->
+                    CompactTextButton(label, state.anime4kEnabled == enabled) { onAnime4KEnabledSelected(enabled) }
+                }
+            }
+            ControlGroup("预设") {
+                Anime4KMode.entries
+                    .filterNot { it == Anime4KMode.OFF }
+                    .forEach { mode ->
+                        CompactTextButton(anime4kModeControlLabel(mode), state.anime4kMode == mode) {
+                            onAnime4KModeSelected(mode)
+                        }
+                    }
+            }
+            ControlGroup("质量") {
+                Anime4KQuality.entries.forEach { quality ->
+                    CompactTextButton(anime4kQualityControlLabel(quality), state.anime4kQuality == quality) {
+                        onAnime4KQualitySelected(quality)
+                    }
                 }
             }
             ControlGroup("解码") {
@@ -407,7 +443,17 @@ internal fun rightSideControlDescriptions(): List<String> =
 
 internal fun bottomQuickControlLabels(): List<String> = listOf("倍速", "画面", "解码")
 
-internal fun scaleModeControlGroupLabels(): List<String> = listOf("画面")
+internal fun scaleModeControlGroupLabels(): List<String> = listOf("画面", "Anime4K", "预设", "质量")
+
+internal fun anime4kEnabledControlOptions(): List<Pair<String, Boolean>> = listOf("关" to false, "开" to true)
+
+internal fun anime4kModeControlLabel(mode: Anime4KMode): String = mode.label
+
+internal fun anime4kQualityControlLabel(quality: Anime4KQuality): String = quality.label
+
+internal fun playerBottomStatusText(state: MpvPlayerState): String? =
+    state.errorMessage?.takeIf { it.isNotBlank() }
+        ?: state.statusMessage?.takeIf { it.isNotBlank() }
 
 // ─── Extensions ───
 

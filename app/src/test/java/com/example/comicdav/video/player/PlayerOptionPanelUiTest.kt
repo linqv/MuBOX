@@ -49,9 +49,40 @@ class PlayerOptionPanelUiTest {
     @Test
     fun scalePanelOnlyContainsPerPlaybackVisualControls() {
         assertEquals(
-            listOf("画面"),
+            listOf("画面", "Anime4K", "预设", "质量"),
             scaleModeControlGroupLabels(),
         )
+    }
+
+    @Test
+    fun anime4KControlsExposeEnablePresetAndQualityOptions() {
+        assertEquals(
+            listOf("关" to false, "开" to true),
+            anime4kEnabledControlOptions(),
+        )
+        assertEquals(
+            listOf("A", "B", "C", "A+", "B+", "C+"),
+            Anime4KMode.entries
+                .filterNot { it == Anime4KMode.OFF }
+                .map(::anime4kModeControlLabel),
+        )
+        assertEquals(
+            listOf("Fast", "Balanced", "High"),
+            Anime4KQuality.entries.map(::anime4kQualityControlLabel),
+        )
+    }
+
+    @Test
+    fun bottomStatusPrefersPlaybackErrorsThenAnime4KStatus() {
+        assertEquals(
+            "播放失败",
+            playerBottomStatusText(MpvPlayerState(errorMessage = "播放失败", statusMessage = "Anime4K 不兼容")),
+        )
+        assertEquals(
+            "Anime4K 不兼容",
+            playerBottomStatusText(MpvPlayerState(statusMessage = "Anime4K 不兼容")),
+        )
+        assertEquals(null, playerBottomStatusText(MpvPlayerState()))
     }
 
     @Test
