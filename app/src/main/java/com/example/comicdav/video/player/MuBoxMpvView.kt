@@ -43,7 +43,14 @@ class MuBoxMpvView(
         } else {
             ""
         }
-        MPVLib.setOptionString("glsl-shaders", shaderChain)
+        if (shaderChain.isNotBlank()) {
+            if (gpuApiMode != GpuApiMode.VULKAN) {
+                MPVLib.setOptionString("opengl-pbo", "yes")
+                MPVLib.setOptionString("opengl-early-flush", "no")
+            }
+            MPVLib.setOptionString("vd-lavc-dr", "yes")
+            MPVLib.setOptionString("glsl-shaders", shaderChain)
+        }
         MPVLib.setPropertyBoolean("keep-open", true)
         MPVLib.setPropertyBoolean("input-default-bindings", true)
     }

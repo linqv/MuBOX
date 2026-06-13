@@ -90,6 +90,33 @@ class ViewBackedMpvEngineTest {
         assertTrue(profileOptionIndex < videoDecoderIndex)
     }
 
+    @Test
+    fun muboxMpvViewOnlySetsStartupShadersWhenAnime4KChainIsNonBlank() {
+        val source = mpvViewSourceFile().readText()
+
+        assertTrue(source.contains("if (shaderChain.isNotBlank())"))
+        assertTrue(source.indexOf("if (shaderChain.isNotBlank())") < source.indexOf("MPVLib.setOptionString(\"glsl-shaders\", shaderChain)"))
+    }
+
+    @Test
+    fun muboxMpvViewAppliesAnime4KOpenGlTuningOnlyOutsideVulkan() {
+        val source = mpvViewSourceFile().readText()
+
+        val shaderChainIndex = source.indexOf("if (shaderChain.isNotBlank())")
+        val nonVulkanIndex = source.indexOf("if (gpuApiMode != GpuApiMode.VULKAN)", shaderChainIndex)
+        val pboIndex = source.indexOf("MPVLib.setOptionString(\"opengl-pbo\", \"yes\")", nonVulkanIndex)
+        val earlyFlushIndex = source.indexOf("MPVLib.setOptionString(\"opengl-early-flush\", \"no\")", nonVulkanIndex)
+        val directRenderingIndex = source.indexOf("MPVLib.setOptionString(\"vd-lavc-dr\", \"yes\")", shaderChainIndex)
+        val shaderOptionIndex = source.indexOf("MPVLib.setOptionString(\"glsl-shaders\", shaderChain)", shaderChainIndex)
+
+        assertTrue(shaderChainIndex >= 0)
+        assertTrue(nonVulkanIndex > shaderChainIndex)
+        assertTrue(pboIndex > nonVulkanIndex)
+        assertTrue(earlyFlushIndex > nonVulkanIndex)
+        assertTrue(directRenderingIndex > shaderChainIndex)
+        assertTrue(shaderOptionIndex > directRenderingIndex)
+    }
+
     private fun activitySourceFile(): File =
         listOf(
             File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
