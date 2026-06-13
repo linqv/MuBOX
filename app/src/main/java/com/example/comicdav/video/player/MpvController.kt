@@ -457,7 +457,7 @@ class MpvController(
         val state = _state.value
         applyAnime4KSettings(
             Anime4KSettings(
-                enabled = state.anime4kMode != Anime4KMode.OFF,
+                enabled = state.anime4kEnabled,
                 mode = state.anime4kMode,
                 quality = quality,
             ),

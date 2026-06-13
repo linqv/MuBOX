@@ -72,6 +72,26 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
+    fun changingAnime4KQualityWhileDisabledKeepsShadersCleared() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
+        )
+
+        controller.setAnime4KEnabled(true)
+        controller.setAnime4KEnabled(false)
+        controller.setAnime4KQuality(Anime4KQuality.HIGH)
+
+        val state = controller.state.value
+        assertEquals(listOf("chain-a", "", ""), engine.stringPropertyHistory("glsl-shaders"))
+        assertFalse(state.anime4kEnabled)
+        assertEquals(Anime4KMode.A, state.anime4kMode)
+        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
+        assertEquals(null, state.statusMessage)
+    }
+
+    @Test
     fun switchingAnime4KModeAndQualityWritesOnlyShaderPropertyOnCompatibleRenderer() {
         val engine = FakeMpvEngine()
         val provider = RecordingAnime4KShaderProvider()
@@ -124,6 +144,14 @@ class MpvControllerAdvancedControlsTest {
 
         controller.setAnime4KEnabled(true)
         controller.setAnime4KMode(Anime4KMode.B)
+
+        val incompatibleState = controller.state.value
+        assertEquals(listOf("", ""), engine.stringPropertyHistory("glsl-shaders"))
+        assertEquals(emptyList<String>(), engine.optionHistory("vo"))
+        assertFalse(incompatibleState.anime4kEnabled)
+        assertEquals(Anime4KMode.B, incompatibleState.anime4kMode)
+        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", incompatibleState.statusMessage)
+
         controller.setAnime4KQuality(Anime4KQuality.HIGH)
 
         val state = controller.state.value
@@ -132,7 +160,7 @@ class MpvControllerAdvancedControlsTest {
         assertFalse(state.anime4kEnabled)
         assertEquals(Anime4KMode.B, state.anime4kMode)
         assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
-        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", state.statusMessage)
+        assertEquals(null, state.statusMessage)
     }
 
     @Test

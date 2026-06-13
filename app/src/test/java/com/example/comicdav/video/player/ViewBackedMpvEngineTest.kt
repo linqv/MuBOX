@@ -26,7 +26,12 @@ class ViewBackedMpvEngineTest {
         val activitySource = activitySourceFile().readText()
         val engineSource = engineSourceFile().readText()
 
-        assertTrue(activitySource.contains("MpvController(ViewBackedMpvEngine(mpvView))"))
+        assertTrue(
+            Regex(
+                """controller\s*=\s*MpvController\s*\(.*ViewBackedMpvEngine\s*\(\s*mpvView\s*\)""",
+                RegexOption.DOT_MATCHES_ALL,
+            ).containsMatchIn(activitySource),
+        )
         assertTrue(engineSource.contains("override fun loadFile(uri: String)"))
         assertTrue(engineSource.contains("view.playFileWhenReady(uri, afterLoadfile)"))
         assertFalse(engineSource.contains("MPVLib.command(\"loadfile\", uri, \"replace\""))
