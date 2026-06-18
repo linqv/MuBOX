@@ -98,7 +98,7 @@ cargo test
 
 ## 致谢
 
-MuBOX 的视频播放器部分在架构和实现上大量参考了 **[mpvEx](https://github.com/mpvExProject/mpvEx)** 项目。mpvEx 是一个基于 libmpv 的开源 Android 视频播放器，其对 mpv 的 Android JNI 封装、播放控制逻辑以及字幕处理方案为本项目提供了重要参考，在此向 mpvEx 的全体贡献者表示诚挚感谢。
+MuBOX 的视频播放器部分在架构和实现上大量参考了 **[mpvEx](https://github.com/marlboro-advance/mpvEx)** 项目。mpvEx 是一个基于 libmpv 的开源 Android 视频播放器，其对 mpv 的 Android JNI 封装、播放控制逻辑以及字幕处理方案为本项目提供了重要参考，在此向 mpvEx 的全体贡献者表示诚挚感谢。
 
 ## 许可证
 
