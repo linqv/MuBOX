@@ -89,12 +89,16 @@ private fun requestedOrientationForVideoParams(videoParams: VideoParams): Int {
         return if (aspectRatio < 1.0) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
     val (width, height) = videoParams.displayDimensions()
-    return if (width != null && height != null && height > width) {
-        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    return if (width != null && height != null) {
+        if (height > width) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
     } else {
         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }

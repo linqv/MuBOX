@@ -1,6 +1,7 @@
 package com.example.comicdav
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,8 +11,10 @@ class Android16TargetSdkBehaviorTest {
     fun buildTargetsAndroid16Api36() {
         val buildScript = appBuildGradleFile().readText()
 
-        assertTrue(buildScript.contains("compileSdk = 36"))
-        assertTrue(buildScript.contains("targetSdk = 36"))
+        assertEquals(36, buildScript.gradleIntValue("compileAndroidSdk"))
+        assertEquals(36, buildScript.gradleIntValue("targetAndroidSdk"))
+        assertTrue(buildScript.contains("compileSdk = compileAndroidSdk"))
+        assertTrue(buildScript.contains("targetSdk = targetAndroidSdk"))
     }
 
     @Test
@@ -65,4 +68,11 @@ class Android16TargetSdkBehaviorTest {
             .walkTopDown()
             .filter { it.isFile && it.extension == "xml" }
             .toList()
+
+    private fun String.gradleIntValue(name: String): Int {
+        val match = Regex("""val\s+$name\s*=\s*(\d+)""").find(this)
+        return checkNotNull(match) { "Missing Gradle integer value for $name" }
+            .groupValues[1]
+            .toInt()
+    }
 }

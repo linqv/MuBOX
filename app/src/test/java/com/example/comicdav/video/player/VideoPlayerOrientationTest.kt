@@ -38,16 +38,16 @@ class VideoPlayerOrientationTest {
     }
 
     @Test
-    fun videoModeUsesLandscapeForWideOrSquareVideo() {
+    fun videoModeUsesSensorLandscapeForWideOrSquareVideo() {
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             requestedOrientationForVideoPlayerMode(
                 VideoPlayerOrientationMode.VIDEO,
                 VideoParams(width = 1920, height = 1080),
             ),
         )
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             requestedOrientationForVideoPlayerMode(
                 VideoPlayerOrientationMode.VIDEO,
                 VideoParams(width = 1000, height = 1000),
@@ -65,7 +65,7 @@ class VideoPlayerOrientationTest {
             ),
         )
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             requestedOrientationForVideoPlayerMode(
                 VideoPlayerOrientationMode.VIDEO,
                 VideoParams(aspectRatio = 1920.0 / 1080.0, width = 1080, height = 1920),
@@ -83,7 +83,7 @@ class VideoPlayerOrientationTest {
             ),
         )
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             requestedOrientationForVideoPlayerMode(
                 VideoPlayerOrientationMode.VIDEO,
                 VideoParams(width = 1080, height = 1920, rotationDegrees = 90),

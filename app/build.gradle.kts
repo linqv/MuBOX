@@ -5,8 +5,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.android.legacy-kapt")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -19,6 +18,9 @@ data class RustAndroidTarget(
 
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
 val generatedRustReleaseJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/release")
+val compileAndroidSdk = 36
+val minAndroidSdk = 26
+val targetAndroidSdk = 36
 val supportedTargetAbis = setOf("arm64-v8a", "x86_64")
 val targetAbiAliases = mapOf(
     "arm64_v8a" to "arm64-v8a",
@@ -79,13 +81,12 @@ val hasReleaseSigning = releaseSigningMissing.isEmpty()
 
 android {
     namespace = "org.mubox.reader"
-    compileSdk = 36
-    buildToolsVersion = "35.0.1"
+    compileSdk = compileAndroidSdk
 
     defaultConfig {
         applicationId = "org.mubox.reader"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = minAndroidSdk
+        targetSdk = targetAndroidSdk
         versionCode = 3
         versionName = "1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -101,10 +102,10 @@ android {
 
     sourceSets {
         getByName("debug") {
-            jniLibs.srcDir(generatedRustJniLibs)
+            jniLibs.directories.add(generatedRustJniLibs.get().asFile.absolutePath)
         }
         getByName("release") {
-            jniLibs.srcDir(generatedRustReleaseJniLibs)
+            jniLibs.directories.add(generatedRustReleaseJniLibs.get().asFile.absolutePath)
         }
     }
 
@@ -203,13 +204,13 @@ fun org.gradle.api.Task.buildRustAndroidVariant(
             RustAndroidTarget(
                 abi = "arm64-v8a",
                 triple = "aarch64-linux-android",
-                linkerName = "aarch64-linux-android35-clang",
+                linkerName = "aarch64-linux-android${minAndroidSdk}-clang",
                 linkerEnv = "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER",
             ),
             RustAndroidTarget(
                 abi = "x86_64",
                 triple = "x86_64-linux-android",
-                linkerName = "x86_64-linux-android35-clang",
+                linkerName = "x86_64-linux-android${minAndroidSdk}-clang",
                 linkerEnv = "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER",
             ),
         ).filter { targetAbi == null || it.abi == targetAbi }
