@@ -59,7 +59,12 @@ pub fn plan_prefetch_with_forward_window(
     }
     for offset in 2..=backward_window {
         if current_page >= offset {
-            push_unique(&mut tasks, &mut seen, current_page - offset, 16 + offset as u8);
+            push_unique(
+                &mut tasks,
+                &mut seen,
+                current_page - offset,
+                16 + offset as u8,
+            );
         }
     }
     tasks.sort_by_key(|task| task.priority);
@@ -74,7 +79,12 @@ fn default_forward_window(network_class: NetworkClass) -> usize {
     }
 }
 
-fn push_unique(tasks: &mut Vec<PrefetchTask>, seen: &mut HashSet<usize>, page_index: usize, priority: u8) {
+fn push_unique(
+    tasks: &mut Vec<PrefetchTask>,
+    seen: &mut HashSet<usize>,
+    page_index: usize,
+    priority: u8,
+) {
     if !seen.insert(page_index) {
         return;
     }

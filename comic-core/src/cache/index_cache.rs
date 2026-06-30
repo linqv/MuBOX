@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::cbz::{open_cbz_with_options, CbzIndex};
+use crate::cbz::{CbzIndex, open_cbz_with_options};
 use crate::image::ImageFormatOptions;
 use crate::zip::RangeReader;
 
@@ -117,7 +117,7 @@ fn stable_hash(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{index_cache_file, load_index_cache, store_index_cache, IndexCacheKey};
+    use super::{IndexCacheKey, index_cache_file, load_index_cache, store_index_cache};
     use crate::cbz::{CbzIndex, CbzPageEntry};
     use std::fs;
     use tempfile::TempDir;

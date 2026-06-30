@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use sevenz_rust2::{ArchiveReader, Password};
 use std::fs::File;
 use std::path::Path;
@@ -6,9 +6,9 @@ use std::path::Path;
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
 
-use crate::cbz::{open_cbz_with_options, CbzIndex};
+use crate::cbz::{CbzIndex, open_cbz_with_options};
 use crate::error::ComicCoreError;
-pub use crate::image::{is_supported_image, ImageFormatOptions};
+pub use crate::image::{ImageFormatOptions, is_supported_image};
 use crate::sort::natural;
 use crate::zip::{FileRangeReader, RangeReader};
 
@@ -25,7 +25,7 @@ pub enum LocalArchiveSession {
         index: CbzIndex,
     },
     SevenZ {
-        reader: ArchiveReader<File>,
+        reader: Box<ArchiveReader<File>>,
         pages: Vec<SevenZPageEntry>,
     },
     Tar {
@@ -76,9 +76,9 @@ impl LocalArchiveSession {
 
     pub fn extract_page(&mut self, page_index: usize) -> Result<Vec<u8>> {
         match self {
-            LocalArchiveSession::Zip { reader, index } => {
-                index.extract_page(reader, page_index).map(|page| page.bytes)
-            }
+            LocalArchiveSession::Zip { reader, index } => index
+                .extract_page(reader, page_index)
+                .map(|page| page.bytes),
             LocalArchiveSession::SevenZ { reader, pages } => {
                 let name = pages
                     .get(page_index)
@@ -171,7 +171,10 @@ pub fn open_local_archive_file(
             if pages.is_empty() {
                 return Err(ComicCoreError::NoImages.into());
             }
-            Ok(LocalArchiveSession::SevenZ { reader, pages })
+            Ok(LocalArchiveSession::SevenZ {
+                reader: Box::new(reader),
+                pages,
+            })
         }
         ArchiveFormat::Tar => {
             let reader = FileRangeReader::from_file(file, size_hint)?;
@@ -268,9 +271,35 @@ fn parse_tar_octal(bytes: &[u8]) -> Result<u64> {
     Ok(u64::from_str_radix(text, 8)?)
 }
 
+fn tar_entry_name(header: &[u8]) -> String {
+    let name = tar_string_field(&header[0..100]);
+    let prefix = tar_string_field(&header[345..500]);
+    if prefix.is_empty() {
+        name
+    } else {
+        format!("{prefix}/{name}")
+    }
+}
+
+fn read_tar_string(reader: &impl RangeReader, offset: u64, size: u64) -> Result<String> {
+    if size == 0 {
+        return Ok(String::new());
+    }
+    let bytes = reader.read_range(offset, offset + size - 1)?;
+    Ok(tar_string_field(&bytes))
+}
+
+fn tar_string_field(bytes: &[u8]) -> String {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_supported_image, ImageFormatOptions};
+    use super::{ImageFormatOptions, is_supported_image};
 
     #[test]
     fn supported_image_extensions_include_modern_reader_formats() {
@@ -305,30 +334,4 @@ mod tests {
             ImageFormatOptions { avif: true },
         ));
     }
-}
-
-fn tar_entry_name(header: &[u8]) -> String {
-    let name = tar_string_field(&header[0..100]);
-    let prefix = tar_string_field(&header[345..500]);
-    if prefix.is_empty() {
-        name
-    } else {
-        format!("{prefix}/{name}")
-    }
-}
-
-fn read_tar_string(reader: &impl RangeReader, offset: u64, size: u64) -> Result<String> {
-    if size == 0 {
-        return Ok(String::new());
-    }
-    let bytes = reader.read_range(offset, offset + size - 1)?;
-    Ok(tar_string_field(&bytes))
-}
-
-fn tar_string_field(bytes: &[u8]) -> String {
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(bytes.len());
-    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
 }

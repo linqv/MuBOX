@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use jni::JavaVM;
 use jni::objects::{JByteArray, JValue};
 use jni::sys::jlong;
-use jni::JavaVM;
 
 use crate::zip::RangeReader;
 
@@ -78,8 +78,9 @@ fn call_static_byte_array_method(
                     let cls = env.get_object_class(&throwable)?;
                     let cls_obj = env.call_method(&cls, "getName", "()Ljava/lang/String;", &[])?;
                     let cls_name: String = env.get_string(&cls_obj.l()?.into())?.into();
-                    let msg_jobj =
-                        env.call_method(&throwable, "getMessage", "()Ljava/lang/String;", &[])?.l()?;
+                    let msg_jobj = env
+                        .call_method(&throwable, "getMessage", "()Ljava/lang/String;", &[])?
+                        .l()?;
                     let msg: String = if msg_jobj.is_null() {
                         "<null>".to_string()
                     } else {

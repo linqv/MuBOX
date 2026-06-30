@@ -9,7 +9,7 @@ pub mod scheduler;
 pub mod sort;
 pub mod zip;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_core_smoke_value() -> i32 {
     42
 }

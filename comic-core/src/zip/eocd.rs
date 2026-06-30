@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::error::ComicCoreError;
 use crate::zip::zip64::{find_zip64_eocd, needs_zip64, unsupported_zip64_error};
-use crate::zip::{read_u16_le, read_u32_le, RangeReader};
+use crate::zip::{RangeReader, read_u16_le, read_u32_le};
 
 const EOCD_SIGNATURE: u32 = 0x0605_4b50;
 const EOCD_MIN_SIZE: usize = 22;

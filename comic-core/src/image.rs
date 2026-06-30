@@ -1,18 +1,11 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ImageFormatOptions {
     pub avif: bool,
 }
 
-impl Default for ImageFormatOptions {
-    fn default() -> Self {
-        Self { avif: false }
-    }
-}
-
 fn ends_with_ignore_ascii_case(name: &str, suffix: &str) -> bool {
     name.len() >= suffix.len()
-        && name.as_bytes()[name.len() - suffix.len()..]
-            .eq_ignore_ascii_case(suffix.as_bytes())
+        && name.as_bytes()[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
 }
 
 pub fn is_supported_image(name: &str, options: ImageFormatOptions) -> bool {

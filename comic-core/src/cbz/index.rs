@@ -1,11 +1,11 @@
 use anyhow::Result;
 
 use crate::error::ComicCoreError;
-use crate::image::{is_supported_image, ImageFormatOptions};
+use crate::image::{ImageFormatOptions, is_supported_image};
 use crate::sort::natural;
-use crate::zip::central_directory::parse_central_directory;
-use crate::zip::eocd::{find_eocd_search, EocdSearch};
 use crate::zip::RangeReader;
+use crate::zip::central_directory::parse_central_directory;
+use crate::zip::eocd::{EocdSearch, find_eocd_search};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

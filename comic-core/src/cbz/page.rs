@@ -4,10 +4,10 @@ use std::io::Read;
 
 use crate::cbz::index::CbzIndex;
 use crate::error::ComicCoreError;
-use crate::zip::local_header::{
-    relative_data_offset, LOCAL_HEADER_MIN_SIZE, MAX_LOCAL_HEADER_EXTRA_LEN,
-};
 use crate::zip::RangeReader;
+use crate::zip::local_header::{
+    LOCAL_HEADER_MIN_SIZE, MAX_LOCAL_HEADER_EXTRA_LEN, relative_data_offset,
+};
 
 const LOCAL_HEADER_OPTIMISTIC_EXTRA_LEN: u64 = 4 * 1024;
 
@@ -200,7 +200,9 @@ mod tests {
                 .cached_ranges
                 .borrow()
                 .iter()
-                .any(|(cached_start, cached_end)| start >= *cached_start && end_inclusive <= *cached_end);
+                .any(|(cached_start, cached_end)| {
+                    start >= *cached_start && end_inclusive <= *cached_end
+                });
             Ok(is_cached.then(|| self.slice(start, end_inclusive)))
         }
     }

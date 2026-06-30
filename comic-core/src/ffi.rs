@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use jni::objects::{JClass, JString};
 use jni::strings::JNIString;
-use jni::sys::{jboolean, jint, jlong, jstring, JNI_ERR, JNI_VERSION_1_6};
+use jni::sys::{JNI_ERR, JNI_VERSION_1_6, jboolean, jint, jlong, jstring};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -11,20 +11,20 @@ use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::archive::{open_local_archive_fd_with_options, ArchiveFormat, LocalArchiveSession};
+use crate::archive::{ArchiveFormat, LocalArchiveSession, open_local_archive_fd_with_options};
 use crate::cache::index_cache::{
-    open_cbz_with_index_cache_options, store_index_cache_with_options, IndexCacheKey,
+    IndexCacheKey, open_cbz_with_index_cache_options, store_index_cache_with_options,
 };
-use crate::cbz::{open_cbz_with_options, CbzIndex, CbzPageEntry};
+use crate::cbz::{CbzIndex, CbzPageEntry, open_cbz_with_options};
 use crate::error::ComicCoreError;
 use crate::image::ImageFormatOptions;
 use crate::remote::jni_range_reader::JniRangeReader;
-use crate::scheduler::prefetch::{plan_prefetch_with_forward_window, NetworkClass};
+use crate::scheduler::prefetch::{NetworkClass, plan_prefetch_with_forward_window};
 use crate::scheduler::range_planner::{
-    plan_page_ranges, ByteRange, PageByteRange, PlannedPageRange,
+    ByteRange, PageByteRange, PlannedPageRange, plan_page_ranges,
 };
 use crate::zip::local_header::LOCAL_HEADER_MIN_SIZE;
 use crate::zip::{FileRangeReader, RangeReader};
@@ -77,7 +77,7 @@ enum SessionKind {
         reader: SessionReader,
         index: CbzIndex,
     },
-    LocalArchive(LocalArchiveSession),
+    LocalArchive(Box<LocalArchiveSession>),
 }
 
 impl RangeReader for SessionReader {
@@ -117,7 +117,7 @@ thread_local! {
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::default());
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_open_local(path: *const c_char) -> ComicHandle {
     match read_c_string(path)
         .and_then(|path| open_local_path(Path::new(&path), ImageFormatOptions::default()))
@@ -130,7 +130,7 @@ pub extern "C" fn comic_open_local(path: *const c_char) -> ComicHandle {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_page_count(handle: ComicHandle) -> i32 {
     match page_count(handle) {
         Ok(count) => count,
@@ -141,7 +141,7 @@ pub extern "C" fn comic_page_count(handle: ComicHandle) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_load_page_to_file(
     handle: ComicHandle,
     page_index: u32,
@@ -158,7 +158,7 @@ pub extern "C" fn comic_load_page_to_file(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_close(handle: ComicHandle) {
     if let Ok(mut sessions) = SESSIONS.lock() {
         sessions.remove(&handle);
@@ -167,13 +167,18 @@ pub extern "C" fn comic_close(handle: ComicHandle) {
 
 /// Returns a pointer to the current thread's last error CString.
 /// The pointer is only valid on the same thread and only until the next native error is set.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn comic_last_error_message() -> *const c_char {
     LAST_ERROR.with(|cell| cell.borrow().as_ptr())
 }
 
-#[no_mangle]
-pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut c_void) -> jint {
+/// Called by the JVM when the dynamic library is loaded.
+///
+/// # Safety
+///
+/// `vm` must be the valid `JavaVM` pointer provided by the JVM for this library load.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut c_void) -> jint {
     let vm = match unsafe { JavaVM::from_raw(vm) } {
         Ok(vm) => vm,
         Err(error) => {
@@ -331,7 +336,7 @@ extern "system" fn native_open_local_fd(
     match jstring_to_string(&mut env, &format).and_then(|format| {
         let format = archive_format_from_name(&format)?;
         let archive = open_local_archive_fd_with_options(fd, size_hint, format, options)?;
-        insert_session(SessionKind::LocalArchive(archive), None)
+        insert_session(SessionKind::LocalArchive(Box::new(archive)), None)
     }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
@@ -503,7 +508,10 @@ fn open_remote_reader(
     )
 }
 
-fn insert_session(kind: SessionKind, index_cache: Option<SessionIndexCache>) -> Result<ComicHandle> {
+fn insert_session(
+    kind: SessionKind,
+    index_cache: Option<SessionIndexCache>,
+) -> Result<ComicHandle> {
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     if handle == 0 {
         return Err(anyhow!("native handle counter overflowed"));
@@ -794,9 +802,7 @@ fn set_last_error(error: impl std::fmt::Display) {
 }
 
 fn last_error_message_string() -> String {
-    LAST_ERROR.with(|cell| {
-        cell.borrow().to_str().unwrap_or_default().to_owned()
-    })
+    LAST_ERROR.with(|cell| cell.borrow().to_str().unwrap_or_default().to_owned())
 }
 
 #[cfg(test)]

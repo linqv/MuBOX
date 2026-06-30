@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::error::ComicCoreError;
-use crate::zip::{read_u32_le, read_u64_le, RangeReader};
+use crate::zip::{RangeReader, read_u32_le, read_u64_le};
 
 const ZIP64_EOCD_SIGNATURE: u32 = 0x0606_4b50;
 const ZIP64_LOCATOR_SIGNATURE: u32 = 0x0706_4b50;
