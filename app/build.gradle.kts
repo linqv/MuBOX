@@ -88,7 +88,7 @@ android {
         minSdk = minAndroidSdk
         targetSdk = targetAndroidSdk
         versionCode = 3
-        versionName = "1.1"
+        versionName = "1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
