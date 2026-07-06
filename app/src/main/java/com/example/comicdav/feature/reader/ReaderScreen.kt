@@ -70,6 +70,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -180,6 +181,7 @@ fun ReaderScreen(
                     )
                 }
                 val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
+                var readerViewportSize by remember { mutableStateOf(IntSize.Zero) }
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
                         runCatching { focusRequester.requestFocus() }
@@ -286,6 +288,7 @@ fun ReaderScreen(
                         .fillMaxSize()
                         .focusRequester(focusRequester)
                         .focusable(enabled = volumeKeysTurnPages)
+                        .onSizeChanged { readerViewportSize = it }
                         .onPreviewKeyEvent { event ->
                             if (!volumeKeysTurnPages || event.type != KeyEventType.KeyDown) {
                                 return@onPreviewKeyEvent false
@@ -335,6 +338,7 @@ fun ReaderScreen(
                                     onImageLoadFailed = onImageLoadFailed,
                                     fillWidth = true,
                                     pinchZoomEnabled = pinchZoomEnabled,
+                                    readerViewportSize = readerViewportSize,
                                 )
                             }
                         }
@@ -455,6 +459,44 @@ internal fun reportableContinuousPageChange(
 internal const val ReaderMinZoom = 1f
 internal const val ReaderMaxZoom = 4f
 
+internal enum class ReaderPageScalePolicy {
+    FillWidth,
+    FitViewport,
+}
+
+internal fun readerPageScalePolicy(
+    fillWidth: Boolean,
+    viewportSize: IntSize,
+    imageSize: IntSize?,
+): ReaderPageScalePolicy {
+    if (!fillWidth) return ReaderPageScalePolicy.FitViewport
+    val image = imageSize ?: return ReaderPageScalePolicy.FillWidth
+    if (
+        viewportSize.width <= 0 ||
+        viewportSize.height <= 0 ||
+        image.width <= 0 ||
+        image.height <= 0
+    ) {
+        return ReaderPageScalePolicy.FillWidth
+    }
+    val fillWidthHeight = viewportSize.width.toFloat() * image.height.toFloat() / image.width.toFloat()
+    val shouldFitLandscapePage = viewportSize.width > viewportSize.height &&
+        image.width > image.height &&
+        fillWidthHeight > viewportSize.height
+    return if (shouldFitLandscapePage) {
+        ReaderPageScalePolicy.FitViewport
+    } else {
+        ReaderPageScalePolicy.FillWidth
+    }
+}
+
+private fun readerImageSizeOrNull(width: Int, height: Int): IntSize? {
+    if (width <= 0 || height <= 0) {
+        return null
+    }
+    return IntSize(width, height)
+}
+
 internal data class ReaderZoomState(
     val scale: Float = ReaderMinZoom,
     val offsetX: Float = 0f,
@@ -546,15 +588,34 @@ private fun ReaderImagePage(
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
     pinchZoomEnabled: Boolean = false,
+    readerViewportSize: IntSize = IntSize.Zero,
 ) {
     var continuousImageReady by remember(pageFile?.absolutePath, fillWidth) {
         mutableStateOf(!fillWidth || pageFile == null)
+    }
+    var imageSize by remember(page, pageFile?.absolutePath) {
+        mutableStateOf<IntSize?>(null)
     }
     var zoomState by remember(page, pageFile?.absolutePath, fillWidth) {
         mutableStateOf(ReaderZoomState())
     }
     var viewportSize by remember(page, pageFile?.absolutePath, fillWidth) {
         mutableStateOf(IntSize.Zero)
+    }
+    val scalePolicy = readerPageScalePolicy(
+        fillWidth = fillWidth,
+        viewportSize = readerViewportSize,
+        imageSize = imageSize,
+    )
+    val density = LocalDensity.current
+    val fitViewportHeightModifier = if (
+        fillWidth &&
+        scalePolicy == ReaderPageScalePolicy.FitViewport &&
+        readerViewportSize.height > 0
+    ) {
+        Modifier.height(with(density) { readerViewportSize.height.toDp() })
+    } else {
+        Modifier
     }
     val latestZoomState by rememberUpdatedState(zoomState)
     val latestZoomStateUpdater by rememberUpdatedState<(ReaderZoomState) -> Unit> { nextState ->
@@ -564,6 +625,7 @@ private fun ReaderImagePage(
         modifier = if (fillWidth) {
             modifier
                 .fillMaxWidth()
+                .then(fitViewportHeightModifier)
                 .background(Color.Black)
                 .clipToBounds()
                 .onSizeChanged { viewportSize = it }
@@ -597,9 +659,13 @@ private fun ReaderImagePage(
                 model = imageRequest,
                 contentDescription = "第 ${page + 1} 页",
                 modifier = (if (fillWidth) {
-                    Modifier
-                        .fillMaxWidth()
-                        .then(if (continuousImageReady) Modifier else Modifier.height(ContinuousPageLoadingHeight))
+                    if (scalePolicy == ReaderPageScalePolicy.FitViewport) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .then(if (continuousImageReady) Modifier else Modifier.height(ContinuousPageLoadingHeight))
+                    }
                 } else {
                     Modifier.fillMaxSize()
                 }).readerZoomTransform(
@@ -609,17 +675,27 @@ private fun ReaderImagePage(
                     currentZoomState = { latestZoomState },
                     onZoomStateChanged = latestZoomStateUpdater,
                 ),
-                contentScale = if (fillWidth) ContentScale.FillWidth else ContentScale.Fit,
+                contentScale = if (fillWidth && scalePolicy == ReaderPageScalePolicy.FillWidth) {
+                    ContentScale.FillWidth
+                } else {
+                    ContentScale.Fit
+                },
                 onLoading = {
                     continuousImageReady = false
+                    imageSize = null
                     onImageLoadStarted(page)
                 },
-                onSuccess = {
+                onSuccess = { success ->
                     continuousImageReady = true
+                    imageSize = readerImageSizeOrNull(
+                        width = success.result.image.width,
+                        height = success.result.image.height,
+                    )
                     onImageLoadSucceeded(page)
                 },
                 onError = {
                     continuousImageReady = false
+                    imageSize = null
                     onImageLoadFailed(page)
                 },
             )

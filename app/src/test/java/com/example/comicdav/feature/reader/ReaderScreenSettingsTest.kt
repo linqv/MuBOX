@@ -43,4 +43,26 @@ class ReaderScreenSettingsTest {
         assertEquals(500f, state.offsetX, 0.001f)
         assertEquals(-750f, state.offsetY, 0.001f)
     }
+
+    @Test
+    fun continuousLandscapePageFitsWholeViewportWhenFillWidthWouldOverflowHeight() {
+        val scale = readerPageScalePolicy(
+            fillWidth = true,
+            viewportSize = IntSize(width = 2400, height = 1080),
+            imageSize = IntSize(width = 1600, height = 1200),
+        )
+
+        assertEquals(ReaderPageScalePolicy.FitViewport, scale)
+    }
+
+    @Test
+    fun continuousPortraitPageKeepsFillWidthForStripReading() {
+        val scale = readerPageScalePolicy(
+            fillWidth = true,
+            viewportSize = IntSize(width = 2400, height = 1080),
+            imageSize = IntSize(width = 900, height = 1600),
+        )
+
+        assertEquals(ReaderPageScalePolicy.FillWidth, scale)
+    }
 }
