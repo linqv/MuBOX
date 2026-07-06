@@ -175,6 +175,7 @@ fun ComicDavApp() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
+    var readerLandscapeModeEnabled by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
     var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
     var editingWebDavSourceId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -293,16 +294,24 @@ fun ComicDavApp() {
         )
     }
 
-    LaunchedEffect(appSettings.screenRotationLockEnabled) {
+    LaunchedEffect(appSettings.screenRotationLockEnabled, isReaderOpen, readerLandscapeModeEnabled) {
         (context as? Activity)?.requestedOrientation =
-            mainAppRequestedOrientation(appSettings.screenRotationLockEnabled)
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
+                isReaderOpen = isReaderOpen,
+                readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+            )
     }
 
-    DisposableEffect(context, lifecycleOwner, appSettings.screenRotationLockEnabled) {
+    DisposableEffect(context, lifecycleOwner, appSettings.screenRotationLockEnabled, isReaderOpen, readerLandscapeModeEnabled) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 (context as? Activity)?.requestedOrientation =
-                    mainAppRequestedOrientation(appSettings.screenRotationLockEnabled)
+                    comicDavRequestedOrientation(
+                        screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
+                        isReaderOpen = isReaderOpen,
+                        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                    )
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -1419,6 +1428,7 @@ fun ComicDavApp() {
         readerViewModel.closeReader()
         downloadProgress = null
         webDavActionMessage = null
+        readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
         isReaderOpen = false
     }
 
@@ -1709,6 +1719,10 @@ fun ComicDavApp() {
                         localOpenError = localOpenError,
                         downloadProgress = downloadProgress,
                         appSettings = appSettings,
+                        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        onReaderLandscapeModeChange = { value ->
+                            readerLandscapeModeEnabled = value
+                        },
                         onPageChanged = readerViewModel::selectPage,
                         onPageDemanded = readerViewModel::reportPageDemand,
                         onImageLoadStarted = readerViewModel::reportImageLoadStarted,
@@ -1723,12 +1737,14 @@ fun ComicDavApp() {
                             ReaderDiagnosticLog.event("reader_open_cancel")
                             readerViewModel.closeReader()
                             downloadProgress = null
+                            readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
                             isReaderOpen = false
                         },
                         onClose = {
                             ReaderDiagnosticLog.event("reader_close")
                             readerViewModel.closeReader()
                             downloadProgress = null
+                            readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
                             isReaderOpen = false
                         },
                         onAutoPageEnabledChange = { value ->

@@ -28,6 +28,8 @@ internal fun ReaderRoute(
     localOpenError: String?,
     downloadProgress: com.example.comicdav.feature.webdav.DownloadProgressUi?,
     appSettings: AppSettings,
+    readerLandscapeModeEnabled: Boolean = false,
+    onReaderLandscapeModeChange: (Boolean) -> Unit = {},
     onPageChanged: (Int) -> Unit,
     onPageDemanded: (Int, String) -> Unit,
     onImageLoadStarted: (Int) -> Unit,
@@ -56,6 +58,8 @@ internal fun ReaderRoute(
         autoPageIntervalMillis = appSettings.autoPageSpeedMillis.toLong(),
         volumeKeysTurnPages = appSettings.volumeKeysTurnPagesEnabled,
         pinchZoomEnabled = appSettings.readerPinchZoomEnabled,
+        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+        onReaderLandscapeModeChange = onReaderLandscapeModeChange,
         modifier = modifier,
     )
 }

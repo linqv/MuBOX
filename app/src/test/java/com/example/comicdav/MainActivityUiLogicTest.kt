@@ -191,6 +191,47 @@ class MainActivityUiLogicTest {
     }
 
     @Test
+    fun readerLandscapeModeOverridesGlobalOrientationOnlyWhileReaderIsOpen() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = true,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = false,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = true,
+                isReaderOpen = false,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun closingReaderClearsTemporaryLandscapeMode() {
+        assertEquals(false, readerLandscapeModeAfterReaderClosed())
+    }
+
+    @Test
     fun avifReaderSupportRequiresSettingAndAndroid14OrNewer() {
         assertEquals(false, effectiveAvifImagesEnabled(settingEnabled = false, sdkInt = 34))
         assertEquals(false, effectiveAvifImagesEnabled(settingEnabled = true, sdkInt = 33))

@@ -108,6 +108,8 @@ fun ReaderScreen(
     autoPageIntervalMillis: Long = 0L,
     volumeKeysTurnPages: Boolean = false,
     pinchZoomEnabled: Boolean = false,
+    readerLandscapeModeEnabled: Boolean = false,
+    onReaderLandscapeModeChange: (Boolean) -> Unit = {},
 ) {
     Box(
         modifier = modifier
@@ -383,6 +385,9 @@ fun ReaderScreen(
                     ReaderTopBar(
                         title = "正在阅读",
                         subtitle = "共 ${uiState.pageCount} 页",
+                        showLandscapeModeButton = true,
+                        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        onReaderLandscapeModeChange = onReaderLandscapeModeChange,
                         onChooseLogFile = onChooseLogFile,
                         onClose = onClose,
                         modifier = Modifier.align(Alignment.TopCenter),
@@ -628,10 +633,26 @@ private val ReaderMutedOnDark = Color.White.copy(alpha = 0.74f)
 private val ReaderDividerOnDark = Color.White.copy(alpha = 0.18f)
 private val ReaderPanelOnDark = Color.Black.copy(alpha = 0.62f)
 
+internal fun readerLandscapeModeButtonLabel(readerLandscapeModeEnabled: Boolean): String =
+    if (readerLandscapeModeEnabled) "退出横屏" else "横屏"
+
+internal fun readerLandscapeModeButtonTarget(readerLandscapeModeEnabled: Boolean): Boolean =
+    !readerLandscapeModeEnabled
+
+internal fun readerTopBarActionLabels(readerLandscapeModeEnabled: Boolean): List<String> =
+    listOf(
+        readerLandscapeModeButtonLabel(readerLandscapeModeEnabled),
+        ComicDavCopy.readerLog,
+        ComicDavCopy.readerClose,
+    )
+
 @Composable
 private fun ReaderTopBar(
     title: String,
     subtitle: String? = null,
+    showLandscapeModeButton: Boolean = false,
+    readerLandscapeModeEnabled: Boolean = false,
+    onReaderLandscapeModeChange: (Boolean) -> Unit = {},
     onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -667,6 +688,16 @@ private fun ReaderTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        if (showLandscapeModeButton) {
+            ReaderChromeButton(
+                text = readerLandscapeModeButtonLabel(readerLandscapeModeEnabled),
+                onClick = {
+                    onReaderLandscapeModeChange(
+                        readerLandscapeModeButtonTarget(readerLandscapeModeEnabled),
+                    )
+                },
+            )
         }
         ReaderChromeButton(text = ComicDavCopy.readerLog, onClick = onChooseLogFile)
         ReaderChromeButton(text = ComicDavCopy.readerClose, onClick = onClose)

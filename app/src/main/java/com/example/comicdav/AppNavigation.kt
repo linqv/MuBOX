@@ -52,6 +52,19 @@ internal fun mainAppRequestedOrientation(screenRotationLockEnabled: Boolean): In
         ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
+internal fun comicDavRequestedOrientation(
+    screenRotationLockEnabled: Boolean,
+    isReaderOpen: Boolean,
+    readerLandscapeModeEnabled: Boolean,
+): Int =
+    if (isReaderOpen && readerLandscapeModeEnabled) {
+        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    } else {
+        mainAppRequestedOrientation(screenRotationLockEnabled)
+    }
+
+internal fun readerLandscapeModeAfterReaderClosed(): Boolean = false
+
 internal fun appTabLabels(): List<String> =
     AppTab.values().map { it.label }
 
