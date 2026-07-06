@@ -49,7 +49,7 @@ class Android16TargetSdkBehaviorTest {
     @Test
     fun readerLandscapeAppliesOnlyWhileReaderIsOpen() {
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             comicDavRequestedOrientation(
                 screenRotationLockEnabled = false,
                 isReaderOpen = true,
@@ -70,6 +70,19 @@ class Android16TargetSdkBehaviorTest {
                 screenRotationLockEnabled = false,
                 isReaderOpen = true,
                 readerLandscapeModeEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun readerLandscapeCanLockSensorSwitching() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = true,
+                readerLandscapeOrientationLocked = true,
             ),
         )
     }

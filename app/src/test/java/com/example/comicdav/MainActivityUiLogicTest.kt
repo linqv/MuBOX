@@ -193,7 +193,7 @@ class MainActivityUiLogicTest {
     @Test
     fun readerLandscapeModeOverridesGlobalOrientationOnlyWhileReaderIsOpen() {
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             comicDavRequestedOrientation(
                 screenRotationLockEnabled = false,
                 isReaderOpen = true,
@@ -201,7 +201,7 @@ class MainActivityUiLogicTest {
             ),
         )
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             comicDavRequestedOrientation(
                 screenRotationLockEnabled = true,
                 isReaderOpen = true,
@@ -222,6 +222,37 @@ class MainActivityUiLogicTest {
                 screenRotationLockEnabled = true,
                 isReaderOpen = false,
                 readerLandscapeModeEnabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun readerLandscapeModeCanLockSensorRotation() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = true,
+                readerLandscapeOrientationLocked = true,
+            ),
+        )
+    }
+
+    @Test
+    fun leavingReaderLandscapeRequestsPortraitRestore() {
+        assertEquals(
+            true,
+            shouldForcePortraitAfterReaderLandscapeModeChange(
+                currentReaderLandscapeModeEnabled = true,
+                nextReaderLandscapeModeEnabled = false,
+            ),
+        )
+        assertEquals(
+            false,
+            shouldForcePortraitAfterReaderLandscapeModeChange(
+                currentReaderLandscapeModeEnabled = false,
+                nextReaderLandscapeModeEnabled = true,
             ),
         )
     }

@@ -56,15 +56,29 @@ internal fun comicDavRequestedOrientation(
     screenRotationLockEnabled: Boolean,
     isReaderOpen: Boolean,
     readerLandscapeModeEnabled: Boolean,
+    readerLandscapeOrientationLocked: Boolean = false,
     forceMainPortrait: Boolean = false,
 ): Int =
     if (isReaderOpen && readerLandscapeModeEnabled) {
-        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        readerLandscapeRequestedOrientation(readerLandscapeOrientationLocked)
     } else if (forceMainPortrait) {
         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     } else {
         mainAppRequestedOrientation(screenRotationLockEnabled)
     }
+
+internal fun readerLandscapeRequestedOrientation(readerLandscapeOrientationLocked: Boolean): Int =
+    if (readerLandscapeOrientationLocked) {
+        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    } else {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
+internal fun shouldForcePortraitAfterReaderLandscapeModeChange(
+    currentReaderLandscapeModeEnabled: Boolean,
+    nextReaderLandscapeModeEnabled: Boolean,
+): Boolean =
+    currentReaderLandscapeModeEnabled && !nextReaderLandscapeModeEnabled
 
 internal fun readerLandscapeModeAfterReaderClosed(): Boolean = false
 

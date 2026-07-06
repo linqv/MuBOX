@@ -29,11 +29,14 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -80,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -110,7 +114,9 @@ fun ReaderScreen(
     volumeKeysTurnPages: Boolean = false,
     pinchZoomEnabled: Boolean = false,
     readerLandscapeModeEnabled: Boolean = false,
+    readerLandscapeOrientationLocked: Boolean = false,
     onReaderLandscapeModeChange: (Boolean) -> Unit = {},
+    onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
 ) {
     Box(
         modifier = modifier
@@ -391,7 +397,9 @@ fun ReaderScreen(
                         subtitle = "共 ${uiState.pageCount} 页",
                         showLandscapeModeButton = true,
                         readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
                         onReaderLandscapeModeChange = onReaderLandscapeModeChange,
+                        onReaderLandscapeOrientationLockedChange = onReaderLandscapeOrientationLockedChange,
                         onChooseLogFile = onChooseLogFile,
                         onClose = onClose,
                         modifier = Modifier.align(Alignment.TopCenter),
@@ -715,12 +723,23 @@ internal fun readerLandscapeModeButtonLabel(readerLandscapeModeEnabled: Boolean)
 internal fun readerLandscapeModeButtonTarget(readerLandscapeModeEnabled: Boolean): Boolean =
     !readerLandscapeModeEnabled
 
-internal fun readerTopBarActionLabels(readerLandscapeModeEnabled: Boolean): List<String> =
-    listOf(
-        readerLandscapeModeButtonLabel(readerLandscapeModeEnabled),
-        ComicDavCopy.readerLog,
-        ComicDavCopy.readerClose,
-    )
+internal fun readerLandscapeOrientationLockButtonLabel(readerLandscapeOrientationLocked: Boolean): String =
+    if (readerLandscapeOrientationLocked) "解锁方向" else "锁定方向"
+
+internal fun readerLandscapeOrientationLockButtonTarget(readerLandscapeOrientationLocked: Boolean): Boolean =
+    !readerLandscapeOrientationLocked
+
+internal fun readerTopBarActionLabels(
+    readerLandscapeModeEnabled: Boolean,
+    readerLandscapeOrientationLocked: Boolean = false,
+): List<String> = buildList {
+    add(readerLandscapeModeButtonLabel(readerLandscapeModeEnabled))
+    if (readerLandscapeModeEnabled) {
+        add(readerLandscapeOrientationLockButtonLabel(readerLandscapeOrientationLocked))
+    }
+    add(ComicDavCopy.readerLog)
+    add(ComicDavCopy.readerClose)
+}
 
 @Composable
 private fun ReaderTopBar(
@@ -728,7 +747,9 @@ private fun ReaderTopBar(
     subtitle: String? = null,
     showLandscapeModeButton: Boolean = false,
     readerLandscapeModeEnabled: Boolean = false,
+    readerLandscapeOrientationLocked: Boolean = false,
     onReaderLandscapeModeChange: (Boolean) -> Unit = {},
+    onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
     onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -774,9 +795,49 @@ private fun ReaderTopBar(
                     )
                 },
             )
+            if (readerLandscapeModeEnabled) {
+                ReaderChromeIconButton(
+                    imageVector = if (readerLandscapeOrientationLocked) {
+                        Icons.Filled.Lock
+                    } else {
+                        Icons.Filled.LockOpen
+                    },
+                    contentDescription = readerLandscapeOrientationLockButtonLabel(readerLandscapeOrientationLocked),
+                    onClick = {
+                        onReaderLandscapeOrientationLockedChange(
+                            readerLandscapeOrientationLockButtonTarget(readerLandscapeOrientationLocked),
+                        )
+                    },
+                )
+            }
         }
         ReaderChromeButton(text = ComicDavCopy.readerLog, onClick = onChooseLogFile)
         ReaderChromeButton(text = ComicDavCopy.readerClose, onClick = onClose)
+    }
+}
+
+@Composable
+private fun ReaderChromeIconButton(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(40.dp)
+            .background(
+                color = Color.White.copy(alpha = 0.14f),
+                shape = MaterialTheme.shapes.small,
+            ),
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = ReaderOnDark,
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 

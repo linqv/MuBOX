@@ -179,6 +179,7 @@ fun ComicDavApp() {
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var readerLandscapeModeEnabled by rememberSaveable { mutableStateOf(false) }
+    var readerLandscapeOrientationLocked by rememberSaveable { mutableStateOf(false) }
     var forceMainPortraitAfterTransientLandscape by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
     var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
@@ -309,6 +310,7 @@ fun ComicDavApp() {
         appSettings.screenRotationLockEnabled,
         isReaderOpen,
         readerLandscapeModeEnabled,
+        readerLandscapeOrientationLocked,
         forceMainPortraitAfterTransientLandscape,
     ) {
         (context as? Activity)?.requestedOrientation =
@@ -316,6 +318,7 @@ fun ComicDavApp() {
                 screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
                 isReaderOpen = isReaderOpen,
                 readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
                 forceMainPortrait = forceMainPortraitAfterTransientLandscape,
             )
     }
@@ -326,6 +329,7 @@ fun ComicDavApp() {
         appSettings.screenRotationLockEnabled,
         isReaderOpen,
         readerLandscapeModeEnabled,
+        readerLandscapeOrientationLocked,
         forceMainPortraitAfterTransientLandscape,
     ) {
         val observer = LifecycleEventObserver { _, event ->
@@ -335,6 +339,7 @@ fun ComicDavApp() {
                         screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
                         isReaderOpen = isReaderOpen,
                         readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
                         forceMainPortrait = forceMainPortraitAfterTransientLandscape,
                     )
             }
@@ -1465,6 +1470,7 @@ fun ComicDavApp() {
         downloadProgress = null
         webDavActionMessage = null
         readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
+        readerLandscapeOrientationLocked = false
         isReaderOpen = false
         if (shouldRestoreMainPortrait) {
             forceMainPortraitAfterTransientLandscape = true
@@ -1759,8 +1765,25 @@ fun ComicDavApp() {
                         downloadProgress = downloadProgress,
                         appSettings = appSettings,
                         readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
                         onReaderLandscapeModeChange = { value ->
+                            if (
+                                shouldForcePortraitAfterReaderLandscapeModeChange(
+                                    currentReaderLandscapeModeEnabled = readerLandscapeModeEnabled,
+                                    nextReaderLandscapeModeEnabled = value,
+                                )
+                            ) {
+                                forceMainPortraitAfterTransientLandscape = true
+                            } else if (value) {
+                                forceMainPortraitAfterTransientLandscape = false
+                            }
                             readerLandscapeModeEnabled = value
+                            if (!value) {
+                                readerLandscapeOrientationLocked = false
+                            }
+                        },
+                        onReaderLandscapeOrientationLockedChange = { value ->
+                            readerLandscapeOrientationLocked = value
                         },
                         onPageChanged = readerViewModel::selectPage,
                         onPageDemanded = readerViewModel::reportPageDemand,
@@ -1778,6 +1801,7 @@ fun ComicDavApp() {
                             readerViewModel.closeReader()
                             downloadProgress = null
                             readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
+                            readerLandscapeOrientationLocked = false
                             isReaderOpen = false
                             if (shouldRestoreMainPortrait) {
                                 forceMainPortraitAfterTransientLandscape = true
@@ -1789,6 +1813,7 @@ fun ComicDavApp() {
                             readerViewModel.closeReader()
                             downloadProgress = null
                             readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
+                            readerLandscapeOrientationLocked = false
                             isReaderOpen = false
                             if (shouldRestoreMainPortrait) {
                                 forceMainPortraitAfterTransientLandscape = true
