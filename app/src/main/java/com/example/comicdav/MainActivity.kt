@@ -3,6 +3,7 @@ package com.example.comicdav
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.lifecycle.Lifecycle
@@ -135,6 +137,7 @@ fun ComicDavApp() {
     val webDavViewModel: WebDavViewModel = viewModel()
     val readerViewModel: ReaderViewModel = viewModel()
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val container = remember(context) { AppContainer(context) }
     LaunchedEffect(Unit) {
         container.webDavAccountStore.migratePlaintextPasswords()
@@ -176,6 +179,7 @@ fun ComicDavApp() {
     val scope = rememberCoroutineScope()
     var isReaderOpen by rememberSaveable { mutableStateOf(false) }
     var readerLandscapeModeEnabled by rememberSaveable { mutableStateOf(false) }
+    var forceMainPortraitAfterTransientLandscape by rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
     var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
     var editingWebDavSourceId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -293,17 +297,37 @@ fun ComicDavApp() {
             treeUri = uri.toString(),
         )
     }
+    val videoPlayerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        forceMainPortraitAfterTransientLandscape = true
+    }
 
-    LaunchedEffect(appSettings.screenRotationLockEnabled, isReaderOpen, readerLandscapeModeEnabled) {
+    fun openVideoPlayer(intent: Intent) {
+        videoPlayerLauncher.launch(intent)
+    }
+
+    LaunchedEffect(
+        appSettings.screenRotationLockEnabled,
+        isReaderOpen,
+        readerLandscapeModeEnabled,
+        forceMainPortraitAfterTransientLandscape,
+    ) {
         (context as? Activity)?.requestedOrientation =
             comicDavRequestedOrientation(
                 screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
                 isReaderOpen = isReaderOpen,
                 readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                forceMainPortrait = forceMainPortraitAfterTransientLandscape,
             )
     }
 
-    DisposableEffect(context, lifecycleOwner, appSettings.screenRotationLockEnabled, isReaderOpen, readerLandscapeModeEnabled) {
+    DisposableEffect(
+        context,
+        lifecycleOwner,
+        appSettings.screenRotationLockEnabled,
+        isReaderOpen,
+        readerLandscapeModeEnabled,
+        forceMainPortraitAfterTransientLandscape,
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 (context as? Activity)?.requestedOrientation =
@@ -311,12 +335,23 @@ fun ComicDavApp() {
                         screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
                         isReaderOpen = isReaderOpen,
                         readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                        forceMainPortrait = forceMainPortraitAfterTransientLandscape,
                     )
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(forceMainPortraitAfterTransientLandscape, isReaderOpen, configuration.orientation) {
+        if (
+            forceMainPortraitAfterTransientLandscape &&
+            !isReaderOpen &&
+            configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        ) {
+            forceMainPortraitAfterTransientLandscape = false
         }
     }
 
@@ -450,7 +485,7 @@ fun ComicDavApp() {
         )
         pendingLocalVideoOpen = request
         localOpenError = null
-        context.startActivity(
+        openVideoPlayer(
             VideoPlayerActivity.localIntent(
                 context = context,
                 request = request,
@@ -896,7 +931,7 @@ fun ComicDavApp() {
                     account = account,
                     proxySettings = currentVideoProxySettings(),
                 ) { session ->
-                    context.startActivity(
+                    openVideoPlayer(
                         VideoPlayerActivity.webDavIntent(
                             context = context,
                             request = request,
@@ -1099,7 +1134,7 @@ fun ComicDavApp() {
                         ),
                     )
                     videoLibraryViewModel.markOpened(item.item.id)
-                    context.startActivity(
+                    openVideoPlayer(
                         VideoPlayerActivity.localIntent(
                             context = context,
                             request = request,
@@ -1149,7 +1184,7 @@ fun ComicDavApp() {
                             proxySettings = currentVideoProxySettings(),
                         ) { session ->
                             videoLibraryViewModel.markOpened(item.item.id)
-                            context.startActivity(
+                            openVideoPlayer(
                                 VideoPlayerActivity.webDavIntent(
                                     context = context,
                                     request = playbackRequest,
@@ -1374,7 +1409,7 @@ fun ComicDavApp() {
         pendingLocalVideoOpen = request
         localOpenError = null
         runCatching {
-            context.startActivity(
+            openVideoPlayer(
                 VideoPlayerActivity.localIntent(
                     context = context,
                     request = request,
@@ -1425,11 +1460,15 @@ fun ComicDavApp() {
 
     fun closeReaderFromNavigation() {
         ReaderDiagnosticLog.event("reader_navigation_close")
+        val shouldRestoreMainPortrait = readerLandscapeModeEnabled
         readerViewModel.closeReader()
         downloadProgress = null
         webDavActionMessage = null
         readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
         isReaderOpen = false
+        if (shouldRestoreMainPortrait) {
+            forceMainPortraitAfterTransientLandscape = true
+        }
     }
 
     fun deleteLocalSourceWithFiles(source: FileDirectorySourceEntity) {
@@ -1735,17 +1774,25 @@ fun ComicDavApp() {
                         },
                         onCancelLoading = {
                             ReaderDiagnosticLog.event("reader_open_cancel")
+                            val shouldRestoreMainPortrait = readerLandscapeModeEnabled
                             readerViewModel.closeReader()
                             downloadProgress = null
                             readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
                             isReaderOpen = false
+                            if (shouldRestoreMainPortrait) {
+                                forceMainPortraitAfterTransientLandscape = true
+                            }
                         },
                         onClose = {
                             ReaderDiagnosticLog.event("reader_close")
+                            val shouldRestoreMainPortrait = readerLandscapeModeEnabled
                             readerViewModel.closeReader()
                             downloadProgress = null
                             readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
                             isReaderOpen = false
+                            if (shouldRestoreMainPortrait) {
+                                forceMainPortraitAfterTransientLandscape = true
+                            }
                         },
                         onAutoPageEnabledChange = { value ->
                             scope.launch { appSettingsStore.updateAutoPageEnabled(value) }

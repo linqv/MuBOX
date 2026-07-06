@@ -2,6 +2,7 @@ package com.example.comicdav.video.player
 
 import java.io.File
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainActivityVideoQueueRemovalTest {
@@ -23,6 +24,17 @@ class MainActivityVideoQueueRemovalTest {
         assertFalse(source.contains("EXTRA_QUEUE_"))
         assertFalse(source.contains("putQueueExtras"))
         assertFalse(source.contains("playbackQueue()"))
+    }
+
+    @Test
+    fun mainActivityRestoresMainPortraitAfterVideoPlayerResult() {
+        val source = mainActivitySourceFile().readText()
+
+        assertTrue(source.contains("ActivityResultContracts.StartActivityForResult()"))
+        assertTrue(source.contains("fun openVideoPlayer(intent: Intent)"))
+        assertTrue(source.contains("videoPlayerLauncher.launch(intent)"))
+        assertTrue(source.contains("forceMainPortraitAfterTransientLandscape = true"))
+        assertFalse(source.contains("context.startActivity(\n            VideoPlayerActivity."))
     }
 
     private fun mainActivitySourceFile(): File =

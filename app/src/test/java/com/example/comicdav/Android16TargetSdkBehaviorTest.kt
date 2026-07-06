@@ -1,5 +1,6 @@
 package com.example.comicdav
 
+import android.content.pm.ActivityInfo
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +32,73 @@ class Android16TargetSdkBehaviorTest {
         val manifest = androidManifestFile().readText()
 
         assertFalse(manifest.contains("android:screenOrientation"))
+    }
+
+    @Test
+    fun mainAppUsesConfiguredRotationPolicy() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            mainAppRequestedOrientation(screenRotationLockEnabled = false),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED,
+            mainAppRequestedOrientation(screenRotationLockEnabled = true),
+        )
+    }
+
+    @Test
+    fun readerLandscapeAppliesOnlyWhileReaderIsOpen() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = false,
+                readerLandscapeModeEnabled = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = true,
+                readerLandscapeModeEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun mainAppCanForcePortraitAfterTransientReaderOrPlayerLandscape() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = false,
+                isReaderOpen = false,
+                readerLandscapeModeEnabled = false,
+                forceMainPortrait = true,
+            ),
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            comicDavRequestedOrientation(
+                screenRotationLockEnabled = true,
+                isReaderOpen = false,
+                readerLandscapeModeEnabled = false,
+                forceMainPortrait = true,
+            ),
+        )
+    }
+
+    @Test
+    fun readerCloseClearsLandscapeMode() {
+        assertFalse(readerLandscapeModeAfterReaderClosed())
     }
 
     @Test
