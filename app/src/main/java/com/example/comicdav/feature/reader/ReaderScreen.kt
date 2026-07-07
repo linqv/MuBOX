@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -188,6 +189,11 @@ fun ReaderScreen(
                 }
                 val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
                 var readerViewportSize by remember { mutableStateOf(IntSize.Zero) }
+                var readerLandscapeScaleMode by rememberSaveable {
+                    mutableStateOf(ReaderLandscapeScaleMode.FIT_VIEWPORT)
+                }
+                val showLandscapeScaleButton =
+                    readerViewportSize.width > readerViewportSize.height
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
                         runCatching { focusRequester.requestFocus() }
@@ -345,6 +351,7 @@ fun ReaderScreen(
                                     fillWidth = true,
                                     pinchZoomEnabled = pinchZoomEnabled,
                                     readerViewportSize = readerViewportSize,
+                                    landscapeScaleMode = readerLandscapeScaleMode,
                                 )
                             }
                         }
@@ -398,8 +405,11 @@ fun ReaderScreen(
                         showLandscapeModeButton = true,
                         readerLandscapeModeEnabled = readerLandscapeModeEnabled,
                         readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
+                        showLandscapeScaleButton = showLandscapeScaleButton,
+                        readerLandscapeScaleMode = readerLandscapeScaleMode,
                         onReaderLandscapeModeChange = onReaderLandscapeModeChange,
                         onReaderLandscapeOrientationLockedChange = onReaderLandscapeOrientationLockedChange,
+                        onReaderLandscapeScaleModeChange = { readerLandscapeScaleMode = it },
                         onChooseLogFile = onChooseLogFile,
                         onClose = onClose,
                         modifier = Modifier.align(Alignment.TopCenter),
@@ -472,10 +482,16 @@ internal enum class ReaderPageScalePolicy {
     FitViewport,
 }
 
+internal enum class ReaderLandscapeScaleMode {
+    FIT_VIEWPORT,
+    FILL_WIDTH,
+}
+
 internal fun readerPageScalePolicy(
     fillWidth: Boolean,
     viewportSize: IntSize,
     imageSize: IntSize?,
+    landscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
 ): ReaderPageScalePolicy {
     if (!fillWidth) return ReaderPageScalePolicy.FitViewport
     val image = imageSize ?: return ReaderPageScalePolicy.FillWidth
@@ -492,7 +508,10 @@ internal fun readerPageScalePolicy(
         image.width > image.height &&
         fillWidthHeight > viewportSize.height
     return if (shouldFitLandscapePage) {
-        ReaderPageScalePolicy.FitViewport
+        when (landscapeScaleMode) {
+            ReaderLandscapeScaleMode.FIT_VIEWPORT -> ReaderPageScalePolicy.FitViewport
+            ReaderLandscapeScaleMode.FILL_WIDTH -> ReaderPageScalePolicy.FillWidth
+        }
     } else {
         ReaderPageScalePolicy.FillWidth
     }
@@ -597,6 +616,7 @@ private fun ReaderImagePage(
     fillWidth: Boolean = false,
     pinchZoomEnabled: Boolean = false,
     readerViewportSize: IntSize = IntSize.Zero,
+    landscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
 ) {
     var continuousImageReady by remember(pageFile?.absolutePath, fillWidth) {
         mutableStateOf(!fillWidth || pageFile == null)
@@ -614,6 +634,7 @@ private fun ReaderImagePage(
         fillWidth = fillWidth,
         viewportSize = readerViewportSize,
         imageSize = imageSize,
+        landscapeScaleMode = landscapeScaleMode,
     )
     val density = LocalDensity.current
     val fitViewportHeightModifier = if (
@@ -729,13 +750,32 @@ internal fun readerLandscapeOrientationLockButtonLabel(readerLandscapeOrientatio
 internal fun readerLandscapeOrientationLockButtonTarget(readerLandscapeOrientationLocked: Boolean): Boolean =
     !readerLandscapeOrientationLocked
 
+internal fun readerLandscapeScaleButtonLabel(readerLandscapeScaleMode: ReaderLandscapeScaleMode): String =
+    when (readerLandscapeScaleMode) {
+        ReaderLandscapeScaleMode.FIT_VIEWPORT -> "填充"
+        ReaderLandscapeScaleMode.FILL_WIDTH -> "适应"
+    }
+
+internal fun readerLandscapeScaleButtonTarget(
+    readerLandscapeScaleMode: ReaderLandscapeScaleMode,
+): ReaderLandscapeScaleMode =
+    when (readerLandscapeScaleMode) {
+        ReaderLandscapeScaleMode.FIT_VIEWPORT -> ReaderLandscapeScaleMode.FILL_WIDTH
+        ReaderLandscapeScaleMode.FILL_WIDTH -> ReaderLandscapeScaleMode.FIT_VIEWPORT
+    }
+
 internal fun readerTopBarActionLabels(
     readerLandscapeModeEnabled: Boolean,
     readerLandscapeOrientationLocked: Boolean = false,
+    showLandscapeScaleButton: Boolean = false,
+    readerLandscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
 ): List<String> = buildList {
     add(readerLandscapeModeButtonLabel(readerLandscapeModeEnabled))
     if (readerLandscapeModeEnabled) {
         add(readerLandscapeOrientationLockButtonLabel(readerLandscapeOrientationLocked))
+    }
+    if (showLandscapeScaleButton) {
+        add(readerLandscapeScaleButtonLabel(readerLandscapeScaleMode))
     }
     add(ComicDavCopy.readerLog)
     add(ComicDavCopy.readerClose)
@@ -748,8 +788,11 @@ private fun ReaderTopBar(
     showLandscapeModeButton: Boolean = false,
     readerLandscapeModeEnabled: Boolean = false,
     readerLandscapeOrientationLocked: Boolean = false,
+    showLandscapeScaleButton: Boolean = false,
+    readerLandscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
     onReaderLandscapeModeChange: (Boolean) -> Unit = {},
     onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
+    onReaderLandscapeScaleModeChange: (ReaderLandscapeScaleMode) -> Unit = {},
     onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -810,6 +853,16 @@ private fun ReaderTopBar(
                     },
                 )
             }
+        }
+        if (showLandscapeScaleButton) {
+            ReaderChromeButton(
+                text = readerLandscapeScaleButtonLabel(readerLandscapeScaleMode),
+                onClick = {
+                    onReaderLandscapeScaleModeChange(
+                        readerLandscapeScaleButtonTarget(readerLandscapeScaleMode),
+                    )
+                },
+            )
         }
         ReaderChromeButton(text = ComicDavCopy.readerLog, onClick = onChooseLogFile)
         ReaderChromeButton(text = ComicDavCopy.readerClose, onClick = onClose)
