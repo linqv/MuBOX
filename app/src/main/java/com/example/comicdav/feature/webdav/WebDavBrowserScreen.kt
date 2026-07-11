@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -31,13 +30,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
-import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.MediaKind
-import com.example.comicdav.webdav.webDavDisplayPathLabel
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+
+internal fun webDavBreadcrumbLabels(path: String): List<String> =
+    path.split('/')
+        .filter { it.isNotBlank() }
+        .map(::decodeWebDavPathForDisplay)
+        .ifEmpty { listOf("根目录") }
 
 internal enum class WebDavItemClickAction {
     OpenDirectory,
@@ -82,12 +88,14 @@ fun WebDavBrowserScreen(
     onDownloadToLocal: (WebDavItem) -> Unit,
     onSelectFile: (WebDavItem) -> Unit,
     onSaveDirectory: () -> Unit,
-    onBackToDirectories: () -> Unit,
     showSaveDirectoryAction: Boolean,
     downloadProgress: DownloadProgressUi?,
     downloadError: String?,
     actionMessage: String?,
     onCancelDownload: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortFieldChange: (DirectorySortField) -> Unit,
+    onToggleSortDirection: () -> Unit,
     modifier: Modifier = Modifier,
     selectedFile: WebDavItem? = null,
 ) {
@@ -97,16 +105,14 @@ fun WebDavBrowserScreen(
             .fillMaxSize()
             .background(colors.background),
     ) {
-        MuBoxHeaderBar(
-            title = "WebDAV " + ComicDavCopy.sourcesTitle,
-            actions = {
-                TextButton(
-                    onClick = onBackToDirectories,
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.mediaAccent),
-                ) {
-                    Text(ComicDavCopy.sourcesTitle)
-                }
-            },
+        DirectoryListingTopBar(
+            breadcrumbLabels = webDavBreadcrumbLabels(uiState.currentPath),
+            searchQuery = uiState.searchQuery,
+            sortField = uiState.sortField,
+            sortDirection = uiState.sortDirection,
+            onSearchQueryChange = onSearchQueryChange,
+            onSortFieldChange = onSortFieldChange,
+            onToggleSortDirection = onToggleSortDirection,
         )
 
         Column(
@@ -115,34 +121,11 @@ fun WebDavBrowserScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .defaultMinSize(minHeight = 48.dp),
-                    shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
-                    color = colors.panelHigh,
-                    contentColor = colors.text,
-                    border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.32f)),
+            if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            text = webDavDisplayPathLabel(uiState.currentPath),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.muted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
                     OutlinedButton(
                         onClick = onSaveDirectory,
                         enabled = !uiState.isLoading,

@@ -73,6 +73,14 @@ class WebDavBrowserScreenTest {
     }
 
     @Test
+    fun breadcrumbSplitsAndDecodesCurrentWebDavPath() {
+        assertEquals(
+            listOf("webdav", "漫画", "myy"),
+            webDavBreadcrumbLabels("/webdav/%E6%BC%AB%E7%94%BB/myy/"),
+        )
+    }
+
+    @Test
     fun invalidWebDavResponseMessageDoesNotExposeParserDetails() {
         val message = webDavConnectionFailureMessage(
             WebDavException.InvalidResponse(

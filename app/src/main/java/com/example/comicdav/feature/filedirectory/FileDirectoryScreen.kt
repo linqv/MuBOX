@@ -21,8 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.Folder
@@ -52,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxColors
 import com.example.comicdav.ui.MuBoxHeaderBar
@@ -148,8 +148,10 @@ fun FileDirectoryScreen(
     onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     onGoUp: () -> Unit,
-    onCloseBrowser: () -> Unit,
     onDismissMessage: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortFieldChange: (DirectorySortField) -> Unit,
+    onToggleSortDirection: () -> Unit,
     modifier: Modifier = Modifier,
     selectedComic: FileDirectoryBrowserItem? = null,
     selectedVideo: FileDirectoryBrowserItem? = null,
@@ -175,8 +177,13 @@ fun FileDirectoryScreen(
         } else {
             FileDirectoryBrowseHeader(
                 title = uiState.currentTitle,
+                searchQuery = uiState.searchQuery,
+                sortField = uiState.sortField,
+                sortDirection = uiState.sortDirection,
                 onGoUp = onGoUp,
-                onCloseBrowser = onCloseBrowser,
+                onSearchQueryChange = onSearchQueryChange,
+                onSortFieldChange = onSortFieldChange,
+                onToggleSortDirection = onToggleSortDirection,
             )
         }
 
@@ -317,83 +324,24 @@ private fun FileDirectoryHomeHeader(
 @Composable
 private fun FileDirectoryBrowseHeader(
     title: String,
+    searchQuery: String,
+    sortField: DirectorySortField,
+    sortDirection: com.example.comicdav.feature.directorylisting.DirectorySortDirection,
     onGoUp: () -> Unit,
-    onCloseBrowser: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortFieldChange: (DirectorySortField) -> Unit,
+    onToggleSortDirection: () -> Unit,
 ) {
-    val colors = rememberMuBoxColors()
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        MuBoxHeaderBar(
-            title = ComicDavCopy.sourcesTitle,
-            actions = {
-                IconButton(
-                    onClick = onGoUp,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowUpward,
-                        contentDescription = "上一级",
-                        tint = colors.text,
-                    )
-                }
-                IconButton(
-                    onClick = onCloseBrowser,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "关闭",
-                        tint = colors.text,
-                    )
-                }
-            },
-        )
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = colors.panelHigh,
-            contentColor = colors.text,
-            border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.32f)),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            color = colors.accentSoft,
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Folder,
-                        contentDescription = null,
-                        tint = colors.mediaAccent,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "当前位置",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.mediaAccent,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.muted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
+    DirectoryListingTopBar(
+        breadcrumbLabels = listOf(title),
+        searchQuery = searchQuery,
+        sortField = sortField,
+        sortDirection = sortDirection,
+        onSearchQueryChange = onSearchQueryChange,
+        onSortFieldChange = onSortFieldChange,
+        onToggleSortDirection = onToggleSortDirection,
+        onNavigateBack = onGoUp,
+    )
 }
 
 @Composable

@@ -12,6 +12,7 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
 import com.example.comicdav.feature.filedirectory.FileDirectoryUiState
+import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryUiState
 import com.example.comicdav.feature.reader.ReaderScreen
@@ -85,8 +86,10 @@ internal fun FileDirectoryTabContent(
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     onSelectVideo: (FileDirectoryBrowserItem) -> Unit,
     onGoUp: () -> Unit,
-    onCloseBrowser: () -> Unit,
     onDismissMessage: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortFieldChange: (DirectorySortField) -> Unit,
+    onToggleSortDirection: () -> Unit,
     onDeleteSource: (FileDirectorySourceEntity) -> Unit,
     onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit,
     onEditWebDavSource: (FileDirectorySourceEntity) -> Unit,
@@ -106,8 +109,10 @@ internal fun FileDirectoryTabContent(
         onSelectComic = onSelectComic,
         onSelectVideo = onSelectVideo,
         onGoUp = onGoUp,
-        onCloseBrowser = onCloseBrowser,
         onDismissMessage = onDismissMessage,
+        onSearchQueryChange = onSearchQueryChange,
+        onSortFieldChange = onSortFieldChange,
+        onToggleSortDirection = onToggleSortDirection,
         onDeleteSource = onDeleteSource,
         onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
         onEditWebDavSource = onEditWebDavSource,

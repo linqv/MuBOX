@@ -7,6 +7,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.feature.directorylisting.DirectorySortDirection
+import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
+import com.example.comicdav.feature.directorylisting.opposite
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.video.isBrowsableInSources
 import com.example.comicdav.video.mediaKindFor
@@ -32,6 +36,9 @@ internal fun filterBrowsableLocalDirectoryItems(items: List<FileDirectoryBrowser
 data class FileDirectoryUiState(
     val sources: List<FileDirectorySourceEntity> = emptyList(),
     val entries: List<FileDirectoryBrowserItem> = emptyList(),
+    val searchQuery: String = "",
+    val sortField: DirectorySortField = DirectorySortField.NAME,
+    val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
     val currentTitle: String? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -46,6 +53,7 @@ class FileDirectoryViewModel(
         private set
 
     private var navigationStack: List<DirectoryFrame> = emptyList()
+    private var currentDirectoryEntries: List<FileDirectoryBrowserItem> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -133,7 +141,30 @@ class FileDirectoryViewModel(
 
     fun closeLocalBrowser() {
         navigationStack = emptyList()
-        uiState = uiState.copy(entries = emptyList(), currentTitle = null, error = null)
+        currentDirectoryEntries = emptyList()
+        uiState = uiState.copy(entries = emptyList(), searchQuery = "", currentTitle = null, error = null)
+    }
+
+    fun updateSearchQuery(query: String) {
+        uiState = uiState.copy(
+            searchQuery = query,
+            entries = visibleEntries(query = query),
+        )
+    }
+
+    fun updateSortField(sortField: DirectorySortField) {
+        uiState = uiState.copy(
+            sortField = sortField,
+            entries = visibleEntries(sortField = sortField),
+        )
+    }
+
+    fun toggleSortDirection() {
+        val direction = uiState.sortDirection.opposite()
+        uiState = uiState.copy(
+            sortDirection = direction,
+            entries = visibleEntries(sortDirection = direction),
+        )
     }
 
     fun deleteSource(id: Long) {
@@ -196,15 +227,21 @@ class FileDirectoryViewModel(
 
     private fun loadCurrentFrame() {
         val frame = navigationStack.lastOrNull() ?: return
-        uiState = uiState.copy(isLoading = true, currentTitle = frame.title, error = null)
+        uiState = uiState.copy(
+            entries = visibleEntries(query = ""),
+            isLoading = true,
+            searchQuery = "",
+            currentTitle = frame.title,
+            error = null,
+        )
         viewModelScope.launch {
             runCatching {
                 localDirectoryReader.listChildren(frame.documentUri)
             }.fold(
                 onSuccess = { entries ->
+                    currentDirectoryEntries = filterBrowsableLocalDirectoryItems(entries)
                     uiState = uiState.copy(
-                        entries = filterBrowsableLocalDirectoryItems(entries)
-                            .sortedWith(compareBy<FileDirectoryBrowserItem> { !it.isDirectory }.thenBy { it.name.lowercase() }),
+                        entries = visibleEntries(query = ""),
                         currentTitle = frame.title,
                         isLoading = false,
                     )
@@ -218,6 +255,20 @@ class FileDirectoryViewModel(
             )
         }
     }
+
+    private fun visibleEntries(
+        query: String = uiState.searchQuery,
+        sortField: DirectorySortField = uiState.sortField,
+        sortDirection: DirectorySortDirection = uiState.sortDirection,
+    ): List<FileDirectoryBrowserItem> = filterAndSortDirectoryEntries(
+        entries = currentDirectoryEntries,
+        query = query,
+        sortField = sortField,
+        sortDirection = sortDirection,
+        nameOf = FileDirectoryBrowserItem::name,
+        isDirectory = FileDirectoryBrowserItem::isDirectory,
+        sizeOf = FileDirectoryBrowserItem::size,
+    )
 
     private data class DirectoryFrame(
         val title: String,

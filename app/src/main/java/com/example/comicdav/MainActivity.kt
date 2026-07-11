@@ -1933,18 +1933,14 @@ fun ComicDavApp() {
                                                 )
                                                 isAddingWebDavPath = false
                                             },
-                                            onBackToDirectories = {
-                                                isWebDavOpen = false
-                                                isAddingWebDavPath = false
-                                                editingWebDavSourceId = null
-                                                localOpenError = null
-                                                webDavActionMessage = null
-                                            },
                                             showSaveDirectoryAction = isAddingWebDavPath,
                                             downloadProgress = downloadProgress,
                                             downloadError = localOpenError,
                                             actionMessage = webDavActionMessage,
                                             onCancelDownload = ::cancelActiveDownload,
+                                            onSearchQueryChange = webDavViewModel::updateSearchQuery,
+                                            onSortFieldChange = webDavViewModel::updateSortField,
+                                            onToggleSortDirection = webDavViewModel::toggleSortDirection,
                                             selectedFile = selectedWebDavFile,
                                             modifier = contentModifier,
                                         )
@@ -2026,8 +2022,10 @@ fun ComicDavApp() {
                                             onSelectComic = ::selectDirectoryComicItem,
                                             onSelectVideo = ::selectDirectoryVideoItem,
                                             onGoUp = fileDirectoryViewModel::goUp,
-                                            onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
                                             onDismissMessage = ::dismissFileDirectoryMessage,
+                                            onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
+                                            onSortFieldChange = fileDirectoryViewModel::updateSortField,
+                                            onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
                                             onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                             onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
                                             onEditWebDavSource = ::editWebDavSource,
@@ -2051,8 +2049,10 @@ fun ComicDavApp() {
                                         onSelectComic = ::selectDirectoryComicItem,
                                         onSelectVideo = ::selectDirectoryVideoItem,
                                         onGoUp = fileDirectoryViewModel::goUp,
-                                        onCloseBrowser = fileDirectoryViewModel::closeLocalBrowser,
                                         onDismissMessage = ::dismissFileDirectoryMessage,
+                                        onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
+                                        onSortFieldChange = fileDirectoryViewModel::updateSortField,
+                                        onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
                                         onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                         onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
                                         onEditWebDavSource = ::editWebDavSource,

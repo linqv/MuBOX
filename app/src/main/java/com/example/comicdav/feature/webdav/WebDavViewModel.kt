@@ -5,6 +5,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.comicdav.feature.directorylisting.DirectorySortDirection
+import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
+import com.example.comicdav.feature.directorylisting.opposite
 import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.network.WebDavException
@@ -28,6 +32,9 @@ data class WebDavUiState(
     val password: String = "",
     val currentPath: String = "/",
     val items: List<WebDavItem> = emptyList(),
+    val searchQuery: String = "",
+    val sortField: DirectorySortField = DirectorySortField.NAME,
+    val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
     val status: String = WEB_DAV_STATUS_NOT_CONNECTED,
     val message: String = "",
     val isLoading: Boolean = false,
@@ -68,6 +75,7 @@ class WebDavViewModel(
     private var client: WebDavClient? = null
     private var connectedAccountId: String? = null
     private var connectedCredentials: WebDavConnectionCredentials? = null
+    private var currentDirectoryItems: List<WebDavItem> = emptyList()
 
     fun activeClient(): WebDavClient? = client
 
@@ -135,6 +143,7 @@ class WebDavViewModel(
         client = null
         connectedAccountId = null
         connectedCredentials = null
+        currentDirectoryItems = emptyList()
         uiState = WebDavUiState()
     }
 
@@ -148,6 +157,7 @@ class WebDavViewModel(
         client = null
         connectedAccountId = null
         connectedCredentials = null
+        currentDirectoryItems = emptyList()
         uiState = WebDavUiState(
             displayName = displayName,
             username = username.orEmpty(),
@@ -187,6 +197,28 @@ class WebDavViewModel(
         loadPath(path, keepConnectedStatus = true)
     }
 
+    fun updateSearchQuery(query: String) {
+        uiState = uiState.copy(
+            searchQuery = query,
+            items = visibleItems(query = query),
+        )
+    }
+
+    fun updateSortField(sortField: DirectorySortField) {
+        uiState = uiState.copy(
+            sortField = sortField,
+            items = visibleItems(sortField = sortField),
+        )
+    }
+
+    fun toggleSortDirection() {
+        val direction = uiState.sortDirection.opposite()
+        uiState = uiState.copy(
+            sortDirection = direction,
+            items = visibleItems(sortDirection = direction),
+        )
+    }
+
     fun handleBack(): Boolean {
         if (isAtMountedRoot(uiState.currentPath)) return false
         val parentPath = parentDirectoryPath(uiState.currentPath) ?: return false
@@ -208,17 +240,23 @@ class WebDavViewModel(
         } else {
             WEB_DAV_STATUS_CONNECTING
         }
-        uiState = uiState.copy(isLoading = true, status = loadingStatus, message = "")
+        uiState = uiState.copy(
+            items = visibleItems(query = ""),
+            isLoading = true,
+            searchQuery = "",
+            status = loadingStatus,
+            message = "",
+        )
         viewModelScope.launch {
             runCatching {
                 activeClient.list(path)
                     .let(::filterBrowsableWebDavItems)
-                    .sortedWith(compareBy<WebDavItem> { !it.isDirectory }.thenBy { it.name.lowercase() })
             }.fold(
                 onSuccess = { items ->
+                    currentDirectoryItems = items
                     uiState = uiState.copy(
                         currentPath = path,
-                        items = items,
+                        items = visibleItems(query = ""),
                         status = WEB_DAV_STATUS_CONNECTED,
                         isLoading = false,
                     )
@@ -238,6 +276,20 @@ class WebDavViewModel(
             )
         }
     }
+
+    private fun visibleItems(
+        query: String = uiState.searchQuery,
+        sortField: DirectorySortField = uiState.sortField,
+        sortDirection: DirectorySortDirection = uiState.sortDirection,
+    ): List<WebDavItem> = filterAndSortDirectoryEntries(
+        entries = currentDirectoryItems,
+        query = query,
+        sortField = sortField,
+        sortDirection = sortDirection,
+        nameOf = WebDavItem::name,
+        isDirectory = WebDavItem::isDirectory,
+        sizeOf = WebDavItem::size,
+    )
 
     private fun parentDirectoryPath(path: String): String? {
         val normalized = path.takeIf { it.isNotBlank() } ?: "/"
