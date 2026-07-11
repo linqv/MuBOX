@@ -173,6 +173,7 @@ internal fun SettingsTabContent(
     cacheAnalysis: ComicCacheAnalysis,
     cacheActionMessage: String?,
     onClearCacheCategory: (ComicCacheCategory) -> Unit,
+    onClearAllCache: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     SettingsScreen(
@@ -267,6 +268,7 @@ internal fun SettingsTabContent(
         cacheAnalysis = cacheAnalysis,
         cacheActionMessage = cacheActionMessage,
         onClearCacheCategory = onClearCacheCategory,
+        onClearAllCache = onClearAllCache,
         modifier = modifier,
     )
 }

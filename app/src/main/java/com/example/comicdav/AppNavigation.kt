@@ -414,7 +414,13 @@ internal fun com.example.comicdav.data.ComicCacheCategory.cacheLabel(): String =
         com.example.comicdav.data.ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"
         com.example.comicdav.data.ComicCacheCategory.REMOTE_INDEX -> "WebDAV 索引缓存"
         com.example.comicdav.data.ComicCacheCategory.READER_PAGES -> "页面图片缓存"
+        com.example.comicdav.data.ComicCacheCategory.TRANSIENT_READER_PAGES -> "临时页面缓存"
         com.example.comicdav.data.ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
+        com.example.comicdav.data.ComicCacheCategory.VIDEO_THUMBNAILS -> "影视库缩略图缓存"
+        com.example.comicdav.data.ComicCacheCategory.VIDEO_SUBTITLES -> "视频字幕缓存"
+        com.example.comicdav.data.ComicCacheCategory.CODE_CACHE -> "运行时代码缓存"
+        com.example.comicdav.data.ComicCacheCategory.EXTERNAL_CACHE -> "外部缓存"
+        com.example.comicdav.data.ComicCacheCategory.OTHER -> "其他缓存"
     }
 
 internal fun effectiveAvifImagesEnabled(

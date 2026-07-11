@@ -45,7 +45,6 @@ import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.MuBoxActionRow
 import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
-import com.example.comicdav.ui.MuBoxPropertyRow
 import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.video.player.Anime4KMode
@@ -187,6 +186,7 @@ fun SettingsScreen(
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
     onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
+    onClearAllCache: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var currentPage by remember { mutableStateOf(SettingsPage.ROOT) }
@@ -283,9 +283,11 @@ fun SettingsScreen(
         }
 
         MuBoxBoxedList(title = "缓存") {
-            MuBoxPropertyRow(
-                title = "缓存占用",
-                value = formatCacheSize(cacheAnalysis.totalBytes),
+            CacheActionRow(
+                title = "缓存总占用",
+                subtitle = formatCacheSize(cacheAnalysis.totalBytes),
+                enabled = cacheAnalysis.totalBytes > 0L,
+                onClear = onClearAllCache,
             )
             CacheActionRow(
                 title = "远程整本缓存",
@@ -318,10 +320,46 @@ fun SettingsScreen(
                 onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
             )
             CacheActionRow(
+                title = "临时页面缓存",
+                subtitle = formatCacheSize(cacheAnalysis.transientReaderPagesBytes),
+                enabled = cacheAnalysis.transientReaderPagesBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.TRANSIENT_READER_PAGES) },
+            )
+            CacheActionRow(
                 title = "书架封面缓存",
                 subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
                 enabled = cacheAnalysis.libraryCoversBytes > 0L,
                 onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
+            )
+            CacheActionRow(
+                title = "影视库缩略图缓存",
+                subtitle = formatCacheSize(cacheAnalysis.videoThumbnailsBytes),
+                enabled = cacheAnalysis.videoThumbnailsBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.VIDEO_THUMBNAILS) },
+            )
+            CacheActionRow(
+                title = "视频字幕缓存",
+                subtitle = formatCacheSize(cacheAnalysis.videoSubtitlesBytes),
+                enabled = cacheAnalysis.videoSubtitlesBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.VIDEO_SUBTITLES) },
+            )
+            CacheActionRow(
+                title = "运行时代码缓存",
+                subtitle = formatCacheSize(cacheAnalysis.codeCacheBytes),
+                enabled = cacheAnalysis.codeCacheBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.CODE_CACHE) },
+            )
+            CacheActionRow(
+                title = "外部缓存",
+                subtitle = formatCacheSize(cacheAnalysis.externalCacheBytes),
+                enabled = cacheAnalysis.externalCacheBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.EXTERNAL_CACHE) },
+            )
+            CacheActionRow(
+                title = "其他缓存",
+                subtitle = formatCacheSize(cacheAnalysis.otherBytes),
+                enabled = cacheAnalysis.otherBytes > 0L,
+                onClear = { onClearCacheCategory(ComicCacheCategory.OTHER) },
             )
         }
         Text(

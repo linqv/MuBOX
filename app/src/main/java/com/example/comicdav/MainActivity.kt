@@ -44,6 +44,7 @@ import com.example.comicdav.data.SavedWebDavAccount
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.analyzeComicCache
+import com.example.comicdav.data.clearComicCache
 import com.example.comicdav.data.clearComicCacheCategory
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
@@ -226,7 +227,11 @@ fun ComicDavApp() {
     fun refreshCacheAnalysis() {
         scope.launch {
             cacheAnalysis = withContext(Dispatchers.IO) {
-                analyzeComicCache(context.cacheDir)
+                analyzeComicCache(
+                    cacheDir = context.cacheDir,
+                    codeCacheDir = context.codeCacheDir,
+                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                )
             }
         }
     }
@@ -242,7 +247,11 @@ fun ComicDavApp() {
     }
     LaunchedEffect(context.cacheDir) {
         cacheAnalysis = withContext(Dispatchers.IO) {
-            analyzeComicCache(context.cacheDir)
+            analyzeComicCache(
+                cacheDir = context.cacheDir,
+                codeCacheDir = context.codeCacheDir,
+                externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+            )
         }
     }
     LaunchedEffect(dataFolderStore) {
@@ -1737,7 +1746,11 @@ fun ComicDavApp() {
     LaunchedEffect(selectedTab) {
         if (selectedTab == AppTab.SETTINGS) {
             cacheAnalysis = withContext(Dispatchers.IO) {
-                analyzeComicCache(context.cacheDir)
+                analyzeComicCache(
+                    cacheDir = context.cacheDir,
+                    codeCacheDir = context.codeCacheDir,
+                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                )
             }
         }
     }
@@ -2150,13 +2163,42 @@ fun ComicDavApp() {
                                     onClearCacheCategory = { category ->
                                         scope.launch {
                                             val result = withContext(Dispatchers.IO) {
-                                                clearComicCacheCategory(context.cacheDir, category)
+                                                clearComicCacheCategory(
+                                                    cacheDir = context.cacheDir,
+                                                    category = category,
+                                                    codeCacheDir = context.codeCacheDir,
+                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                )
                                             }
                                             cacheAnalysis = withContext(Dispatchers.IO) {
-                                                analyzeComicCache(context.cacheDir)
+                                                analyzeComicCache(
+                                                    cacheDir = context.cacheDir,
+                                                    codeCacheDir = context.codeCacheDir,
+                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                )
                                             }
                                             cacheActionMessage =
                                                 "已清理 ${category.cacheLabel()}：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
+                                        }
+                                    },
+                                    onClearAllCache = {
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                clearComicCache(
+                                                    cacheDir = context.cacheDir,
+                                                    codeCacheDir = context.codeCacheDir,
+                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                )
+                                            }
+                                            cacheAnalysis = withContext(Dispatchers.IO) {
+                                                analyzeComicCache(
+                                                    cacheDir = context.cacheDir,
+                                                    codeCacheDir = context.codeCacheDir,
+                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                )
+                                            }
+                                            cacheActionMessage =
+                                                "已清理全部缓存：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
                                         }
                                     },
                                     modifier = contentModifier,
