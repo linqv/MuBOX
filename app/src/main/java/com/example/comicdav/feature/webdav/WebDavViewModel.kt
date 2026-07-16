@@ -16,7 +16,12 @@ import com.example.comicdav.network.WebDavItem
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 typealias WebDavClientFactory = (baseUrl: String, username: String?, password: String?) -> WebDavClient
 
@@ -68,6 +73,7 @@ class WebDavViewModel(
             password = password?.takeIf { it.isNotBlank() },
         )
     },
+    private val directoryComputationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     var uiState by mutableStateOf(WebDavUiState())
         private set
@@ -76,6 +82,12 @@ class WebDavViewModel(
     private var connectedAccountId: String? = null
     private var connectedCredentials: WebDavConnectionCredentials? = null
     private var currentDirectoryItems: List<WebDavItem> = emptyList()
+    private var directoryLoadJob: Job? = null
+    private var directoryLoadGeneration: Long = 0L
+    private var requestedDirectoryPath: String = "/"
+    private val directoryCache = WebDavDirectoryMemoryCache()
+    private var directoryPresentationJob: Job? = null
+    private var directoryPresentationGeneration: Long = 0L
 
     fun activeClient(): WebDavClient? = client
 
@@ -133,6 +145,7 @@ class WebDavViewModel(
             password = if (uiState.anonymousAccess) "" else uiState.password,
         )
         val newClient = clientFactory(credentials.baseUrl, credentials.username, credentials.password)
+        directoryCache.clear()
         client = newClient
         connectedAccountId = accountId()
         connectedCredentials = credentials
@@ -140,10 +153,16 @@ class WebDavViewModel(
     }
 
     fun startNewConnection() {
+        directoryLoadGeneration += 1
+        directoryLoadJob?.cancel()
+        directoryLoadJob = null
+        cancelDirectoryPresentation()
         client = null
         connectedAccountId = null
         connectedCredentials = null
         currentDirectoryItems = emptyList()
+        requestedDirectoryPath = "/"
+        directoryCache.clear()
         uiState = WebDavUiState()
     }
 
@@ -154,10 +173,16 @@ class WebDavViewModel(
         password: String?,
         path: String,
     ) {
+        directoryLoadGeneration += 1
+        directoryLoadJob?.cancel()
+        directoryLoadJob = null
+        cancelDirectoryPresentation()
         client = null
         connectedAccountId = null
         connectedCredentials = null
         currentDirectoryItems = emptyList()
+        requestedDirectoryPath = path.ifBlank { "/" }
+        directoryCache.clear()
         uiState = WebDavUiState(
             displayName = displayName,
             username = username.orEmpty(),
@@ -181,6 +206,7 @@ class WebDavViewModel(
             anonymousAccess = username.isNullOrBlank() && password.isNullOrBlank(),
         )
         if (!shouldReuseClient) {
+            directoryCache.clear()
             client = clientFactory(credentials.baseUrl, username, password)
             connectedCredentials = credentials
         }
@@ -198,36 +224,36 @@ class WebDavViewModel(
     }
 
     fun updateSearchQuery(query: String) {
-        uiState = uiState.copy(
-            searchQuery = query,
-            items = visibleItems(query = query),
-        )
+        uiState = uiState.copy(searchQuery = query)
+        scheduleVisibleItems()
     }
 
     fun updateSortField(sortField: DirectorySortField) {
-        uiState = uiState.copy(
-            sortField = sortField,
-            items = visibleItems(sortField = sortField),
-        )
+        uiState = uiState.copy(sortField = sortField)
+        scheduleVisibleItems()
     }
 
     fun toggleSortDirection() {
         val direction = uiState.sortDirection.opposite()
-        uiState = uiState.copy(
-            sortDirection = direction,
-            items = visibleItems(sortDirection = direction),
-        )
+        uiState = uiState.copy(sortDirection = direction)
+        scheduleVisibleItems()
     }
 
     fun handleBack(): Boolean {
-        if (isAtMountedRoot(uiState.currentPath)) return false
-        val parentPath = parentDirectoryPath(uiState.currentPath) ?: return false
-        if (isMountedPath(uiState.currentPath) && !isMountedPath(parentPath)) return false
+        val navigationPath = requestedDirectoryPath
+        if (isAtMountedRoot(navigationPath)) return false
+        val parentPath = parentDirectoryPath(navigationPath) ?: return false
+        if (isMountedPath(navigationPath) && !isMountedPath(parentPath)) return false
         loadPath(parentPath, keepConnectedStatus = true)
         return true
     }
 
     private fun loadPath(path: String, keepConnectedStatus: Boolean = false) {
+        directoryLoadJob?.cancel()
+        cancelDirectoryPresentation()
+        val loadGeneration = ++directoryLoadGeneration
+        requestedDirectoryPath = path
+        val cachedItems = directoryCache.get(path)
         val hadConnectedSession = client != null && connectedAccountId != null
         val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
         client = activeClient
@@ -241,48 +267,118 @@ class WebDavViewModel(
             WEB_DAV_STATUS_CONNECTING
         }
         uiState = uiState.copy(
-            items = visibleItems(query = ""),
             isLoading = true,
             searchQuery = "",
             status = loadingStatus,
             message = "",
         )
-        viewModelScope.launch {
-            runCatching {
-                activeClient.list(path)
-                    .let(::filterBrowsableWebDavItems)
-            }.fold(
-                onSuccess = { items ->
-                    currentDirectoryItems = items
-                    uiState = uiState.copy(
-                        currentPath = path,
-                        items = visibleItems(query = ""),
+        directoryLoadJob = viewModelScope.launch {
+            try {
+                val listedItems = cachedItems ?: activeClient.list(path)
+                var appliedPresentationGeneration = directoryPresentationGeneration
+                val query = uiState.searchQuery
+                val sortField = uiState.sortField
+                val sortDirection = uiState.sortDirection
+                val (items, initialVisibleItems) = withContext(directoryComputationDispatcher) {
+                    val browsableItems = if (cachedItems == null) {
+                        filterBrowsableWebDavItems(listedItems)
+                    } else {
+                        listedItems
+                    }
+                    browsableItems to visibleItems(
+                        entries = browsableItems,
+                        query = query,
+                        sortField = sortField,
+                        sortDirection = sortDirection,
+                    )
+                }
+                if (loadGeneration != directoryLoadGeneration) return@launch
+                if (cachedItems == null) {
+                    directoryCache.put(path, items)
+                }
+                currentDirectoryItems = items
+                var visibleItems = initialVisibleItems
+                while (appliedPresentationGeneration != directoryPresentationGeneration) {
+                    appliedPresentationGeneration = directoryPresentationGeneration
+                    val latestQuery = uiState.searchQuery
+                    val latestSortField = uiState.sortField
+                    val latestSortDirection = uiState.sortDirection
+                    visibleItems = withContext(directoryComputationDispatcher) {
+                        visibleItems(
+                            entries = items,
+                            query = latestQuery,
+                            sortField = latestSortField,
+                            sortDirection = latestSortDirection,
+                        )
+                    }
+                    if (loadGeneration != directoryLoadGeneration) return@launch
+                }
+                uiState = uiState.copy(
+                    currentPath = path,
+                    items = visibleItems,
+                    status = WEB_DAV_STATUS_CONNECTED,
+                    isLoading = false,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (loadGeneration != directoryLoadGeneration) return@launch
+                requestedDirectoryPath = uiState.currentPath
+                val message = webDavConnectionFailureMessage(error)
+                uiState = if (keepBrowserState) {
+                    uiState.copy(
                         status = WEB_DAV_STATUS_CONNECTED,
+                        message = message,
                         isLoading = false,
                     )
-                },
-                onFailure = { error ->
-                    val message = webDavConnectionFailureMessage(error)
-                    uiState = if (keepBrowserState) {
-                        uiState.copy(
-                            status = WEB_DAV_STATUS_CONNECTED,
-                            message = message,
-                            isLoading = false,
-                        )
-                    } else {
-                        uiState.copy(status = message, isLoading = false)
-                    }
-                },
-            )
+                } else {
+                    uiState.copy(status = message, isLoading = false)
+                }
+            }
         }
     }
 
+    private fun scheduleVisibleItems() {
+        directoryPresentationJob?.cancel()
+        val presentationGeneration = ++directoryPresentationGeneration
+        if (uiState.isLoading) {
+            directoryPresentationJob = null
+            return
+        }
+        val loadGeneration = directoryLoadGeneration
+        val entries = currentDirectoryItems
+        val query = uiState.searchQuery
+        val sortField = uiState.sortField
+        val sortDirection = uiState.sortDirection
+        directoryPresentationJob = viewModelScope.launch {
+            val visibleItems = withContext(directoryComputationDispatcher) {
+                visibleItems(
+                    entries = entries,
+                    query = query,
+                    sortField = sortField,
+                    sortDirection = sortDirection,
+                )
+            }
+            if (presentationGeneration != directoryPresentationGeneration) return@launch
+            if (loadGeneration != directoryLoadGeneration) return@launch
+            if (entries !== currentDirectoryItems) return@launch
+            uiState = uiState.copy(items = visibleItems)
+        }
+    }
+
+    private fun cancelDirectoryPresentation() {
+        directoryPresentationGeneration += 1
+        directoryPresentationJob?.cancel()
+        directoryPresentationJob = null
+    }
+
     private fun visibleItems(
-        query: String = uiState.searchQuery,
-        sortField: DirectorySortField = uiState.sortField,
-        sortDirection: DirectorySortDirection = uiState.sortDirection,
+        entries: List<WebDavItem>,
+        query: String,
+        sortField: DirectorySortField,
+        sortDirection: DirectorySortDirection,
     ): List<WebDavItem> = filterAndSortDirectoryEntries(
-        entries = currentDirectoryItems,
+        entries = entries,
         query = query,
         sortField = sortField,
         sortDirection = sortDirection,

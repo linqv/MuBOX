@@ -26,6 +26,9 @@ app/src/test/**
 !app/src/test/java/com/example/comicdav/feature/
 !app/src/test/java/com/example/comicdav/feature/directorylisting/
 !app/src/test/java/com/example/comicdav/feature/directorylisting/DirectoryListingControlsTest.kt
+!app/src/test/java/com/example/comicdav/feature/webdav/
+!app/src/test/java/com/example/comicdav/feature/webdav/WebDavDirectoryMemoryCacheTest.kt
+!app/src/test/java/com/example/comicdav/feature/webdav/WebDavViewModelTest.kt
 !app/src/test/java/com/example/comicdav/feature/reader/
 !app/src/test/java/com/example/comicdav/feature/reader/ReaderDiagnosticLogTest.kt
 !app/src/test/java/com/example/comicdav/feature/reader/ReaderDiagnosticsTrackerTest.kt
