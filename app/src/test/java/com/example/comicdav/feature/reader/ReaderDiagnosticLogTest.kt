@@ -2,6 +2,7 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.data.ReaderLoggingMode
+import java.io.File
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
@@ -78,6 +79,19 @@ class ReaderDiagnosticLogTest {
         assertEquals("comicdav-reader-20260514-090807-123.log", file.fileName)
         assertEquals("content://logs/tree/file", file.uri)
         assertEquals(sink, file.sink)
+    }
+
+    @Test
+    fun readerLogDocumentCreationRunsOffMainThread() {
+        val source = File("src/main/java/com/example/comicdav/AppReaderLogging.kt").readText()
+        val ioCreation = Regex(
+            pattern = "withContext\\(Dispatchers\\.IO\\)\\s*\\{\\s*createReaderLogFile",
+        )
+
+        assertTrue(
+            "Creating a reader log document must not block route recomposition",
+            ioCreation.containsMatchIn(source),
+        )
     }
 
     @Test
