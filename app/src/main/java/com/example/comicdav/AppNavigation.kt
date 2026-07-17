@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
@@ -81,6 +82,35 @@ internal fun shouldForcePortraitAfterReaderLandscapeModeChange(
     currentReaderLandscapeModeEnabled && !nextReaderLandscapeModeEnabled
 
 internal fun readerLandscapeModeAfterReaderClosed(): Boolean = false
+
+@Composable
+internal fun ReaderOverlayHost(
+    readerOpen: Boolean,
+    readerContent: @Composable () -> Unit,
+    appContent: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = Modifier.fillMaxSize(),
+        content = {
+            Box(modifier = Modifier.fillMaxSize()) {
+                appContent()
+            }
+            if (readerOpen) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    readerContent()
+                }
+            }
+        },
+    ) { measurables, constraints ->
+        val visibleLayer = measurables[readerOverlayVisibleLayer(readerOpen)]
+        val placeable = visibleLayer.measure(constraints)
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeable.placeRelative(0, 0)
+        }
+    }
+}
+
+internal fun readerOverlayVisibleLayer(readerOpen: Boolean): Int = if (readerOpen) 1 else 0
 
 internal fun appTabLabels(): List<String> =
     AppTab.values().map { it.label }

@@ -1771,245 +1771,274 @@ fun ComicDavApp() {
                     )
                 }
 
-                isReaderOpen -> {
-                    ReaderRoute(
-                        readerUiState = readerUiState,
-                        localOpenError = localOpenError,
-                        downloadProgress = downloadProgress,
-                        appSettings = appSettings,
-                        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
-                        readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
-                        onReaderLandscapeModeChange = { value ->
-                            if (
-                                shouldForcePortraitAfterReaderLandscapeModeChange(
-                                    currentReaderLandscapeModeEnabled = readerLandscapeModeEnabled,
-                                    nextReaderLandscapeModeEnabled = value,
-                                )
-                            ) {
-                                forceMainPortraitAfterTransientLandscape = true
-                            } else if (value) {
-                                forceMainPortraitAfterTransientLandscape = false
-                            }
-                            readerLandscapeModeEnabled = value
-                            if (!value) {
-                                readerLandscapeOrientationLocked = false
-                            }
-                        },
-                        onReaderLandscapeOrientationLockedChange = { value ->
-                            readerLandscapeOrientationLocked = value
-                        },
-                        onPageChanged = readerViewModel::selectPage,
-                        onPageDemanded = readerViewModel::reportPageDemand,
-                        onImageLoadStarted = readerViewModel::reportImageLoadStarted,
-                        onImageLoadSucceeded = readerViewModel::reportImageLoadSucceeded,
-                        onImageLoadFailed = readerViewModel::reportImageLoadFailed,
-                        onChooseLogFile = {
-                            if (appSettings.loggingEnabled) {
-                                logFolderPicker.launch(null)
-                            }
-                        },
-                        onCancelLoading = {
-                            ReaderDiagnosticLog.event("reader_open_cancel")
-                            val shouldRestoreMainPortrait = readerLandscapeModeEnabled
-                            readerViewModel.closeReader()
-                            downloadProgress = null
-                            readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
-                            readerLandscapeOrientationLocked = false
-                            isReaderOpen = false
-                            if (shouldRestoreMainPortrait) {
-                                forceMainPortraitAfterTransientLandscape = true
-                            }
-                        },
-                        onClose = {
-                            ReaderDiagnosticLog.event("reader_close")
-                            val shouldRestoreMainPortrait = readerLandscapeModeEnabled
-                            readerViewModel.closeReader()
-                            downloadProgress = null
-                            readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
-                            readerLandscapeOrientationLocked = false
-                            isReaderOpen = false
-                            if (shouldRestoreMainPortrait) {
-                                forceMainPortraitAfterTransientLandscape = true
-                            }
-                        },
-                        onAutoPageEnabledChange = { value ->
-                            scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
-                        },
-                    )
-                }
-
                 else -> {
-                    ComicDavAppShell(
-                        selectedTab = selectedTab,
-                        onTabSelected = { tab ->
-                            selectedTabName = tab.name
-                            localOpenError = null
-                            webDavActionMessage = null
-                            clearSelection()
-                        },
-                        bottomBar = selectionBottomBar(
-                            selectedWebDavFile = selectedWebDavFile,
-                            selectedDirectoryComic = selectedDirectoryComic,
-                            selectedDirectoryVideo = selectedDirectoryVideo,
-                            selectedLibraryItem = selectedLibraryItem,
-                            selectedVideoLibraryItem = selectedVideoLibraryItem,
-                            onDownloadWebDavFile = { item ->
-                                clearSelection()
-                                downloadWebDavComicToLocal(item)
-                            },
-                            onDownloadWebDavVideo = { item ->
-                                clearSelection()
-                                downloadWebDavVideoToLocal(item)
-                            },
-                            onAddWebDavFileToLibrary = { item ->
-                                clearSelection()
-                                favoriteWebDavComic(item)
-                            },
-                            onAddWebDavVideoToVideoLibrary = { item ->
-                                clearSelection()
-                                favoriteWebDavVideo(item)
-                            },
-                            onAddDirectoryComicToLibrary = { item ->
-                                clearSelection()
-                                favoriteLocalDirectoryComic(item)
-                            },
-                            onAddDirectoryVideoToVideoLibrary = { item ->
-                                clearSelection()
-                                favoriteLocalDirectoryVideo(item)
-                            },
-                            onRemoveLibraryItem = ::removeLibraryItem,
-                            onRefreshLibraryCover = ::refreshLibraryCover,
-                            onDownloadLibraryItem = { item ->
-                                selectedLibraryItem = null
-                                downloadLibraryWebDavComic(item)
-                            },
-                            onRemoveVideoLibraryItem = ::removeVideoLibraryItem,
-                            onRefreshVideoLibraryThumbnail = ::refreshVideoLibraryThumbnail,
-                            onDeleteVideoLibraryThumbnail = ::deleteVideoLibraryThumbnail,
-                            onCancel = ::clearSelection,
-                        ),
-                    ) { contentModifier ->
-                        when (selectedTab) {
-                            AppTab.SOURCES -> {
-                                if (isWebDavOpen) {
-                                    if (uiState.status == WEB_DAV_STATUS_CONNECTED) {
-                                        WebDavBrowserScreen(
-                                            uiState = uiState,
-                                            onItemClick = { item ->
-                                                when (mediaKindFor(name = item.name, isDirectory = item.isDirectory)) {
-                                                    MediaKind.Directory -> webDavViewModel.openDirectory(item)
-                                                    MediaKind.Comic -> openRemoteComic(
-                                                        accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId(),
-                                                        remotePath = item.path,
-                                                        size = item.size,
-                                                        etag = item.etag,
-                                                        lastModified = item.lastModified,
-                                                    )
-                                                    MediaKind.Video -> openWebDavVideo(item)
-                                                    MediaKind.Audio,
-                                                    MediaKind.Subtitle,
-                                                    MediaKind.Unknown,
-                                                    -> Unit
-                                                }
-                                            },
-                                            onAddToLibrary = ::favoriteWebDavComic,
-                                            onDownloadToLocal = ::downloadWebDavComicToLocal,
-                                            onSelectFile = { item ->
-                                                selectedWebDavFile = item
-                                                selectedDirectoryComic = null
-                                                selectedDirectoryVideo = null
-                                                selectedLibraryItem = null
-                                                selectedVideoLibraryItem = null
-                                            },
-                                            onSaveDirectory = {
-                                                val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-                                                fileDirectoryViewModel.addWebDavDirectory(
-                                                    displayName = decodeWebDavPathForDisplay(uiState.currentPath),
-                                                    accountId = accountId,
-                                                    path = uiState.currentPath,
-                                                    baseUrl = uiState.baseUrl,
-                                                    username = uiState.username,
-                                                    password = uiState.password,
-                                                )
-                                                isAddingWebDavPath = false
-                                            },
-                                            showSaveDirectoryAction = isAddingWebDavPath,
-                                            downloadProgress = downloadProgress,
-                                            downloadError = localOpenError,
-                                            actionMessage = webDavActionMessage,
-                                            onCancelDownload = ::cancelActiveDownload,
-                                            onSearchQueryChange = webDavViewModel::updateSearchQuery,
-                                            onSortFieldChange = webDavViewModel::updateSortField,
-                                            onToggleSortDirection = webDavViewModel::toggleSortDirection,
-                                            selectedFile = selectedWebDavFile,
-                                            modifier = contentModifier,
-                                        )
-                                    } else if (
-                                        shouldShowWebDavAccountForm(
-                                            isAddingWebDavPath = isAddingWebDavPath,
-                                            editingWebDavSourceId = editingWebDavSourceId,
-                                            webDavStatus = uiState.status,
+                    ReaderOverlayHost(
+                        readerOpen = isReaderOpen,
+                        readerContent = {
+                            ReaderRoute(
+                                readerUiState = readerUiState,
+                                localOpenError = localOpenError,
+                                downloadProgress = downloadProgress,
+                                appSettings = appSettings,
+                                readerLandscapeModeEnabled = readerLandscapeModeEnabled,
+                                readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
+                                onReaderLandscapeModeChange = { value ->
+                                    if (
+                                        shouldForcePortraitAfterReaderLandscapeModeChange(
+                                            currentReaderLandscapeModeEnabled = readerLandscapeModeEnabled,
+                                            nextReaderLandscapeModeEnabled = value,
                                         )
                                     ) {
-                                        WebDavAccountScreen(
-                                            uiState = uiState,
-                                            onDisplayNameChange = webDavViewModel::updateDisplayName,
-                                            onHostChange = webDavViewModel::updateHost,
-                                            onPortChange = webDavViewModel::updatePort,
-                                            onRootPathChange = webDavViewModel::updateRootPath,
-                                            onUseHttpsChange = webDavViewModel::updateUseHttps,
-                                            onAnonymousAccessChange = webDavViewModel::updateAnonymousAccess,
-                                            onUsernameChange = webDavViewModel::updateUsername,
-                                            onPasswordChange = webDavViewModel::updatePassword,
-                                            onTestConnection = {
-                                                val latestWebDavState = webDavViewModel.uiState
-                                                val username = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.username
-                                                val password = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.password
-                                                val displayName = latestWebDavState.displayName
-                                                    .takeIf { it.isNotBlank() }
-                                                    ?: latestWebDavState.host.takeIf { it.isNotBlank() }
-                                                    ?: latestWebDavState.baseUrl
-                                                val accountId = "${latestWebDavState.baseUrl.trim()}|$username"
-                                                val sourceId = editingWebDavSourceId
-                                                if (sourceId != null) {
-                                                    fileDirectoryViewModel.updateWebDavDirectory(
-                                                        id = sourceId,
-                                                        displayName = displayName,
-                                                        accountId = accountId,
-                                                        path = latestWebDavState.currentPath,
-                                                        baseUrl = latestWebDavState.baseUrl,
-                                                        username = username,
-                                                        password = password,
-                                                    )
-                                                } else {
+                                        forceMainPortraitAfterTransientLandscape = true
+                                    } else if (value) {
+                                        forceMainPortraitAfterTransientLandscape = false
+                                    }
+                                    readerLandscapeModeEnabled = value
+                                    if (!value) {
+                                        readerLandscapeOrientationLocked = false
+                                    }
+                                },
+                                onReaderLandscapeOrientationLockedChange = { value ->
+                                    readerLandscapeOrientationLocked = value
+                                },
+                                onPageChanged = readerViewModel::selectPage,
+                                onPageDemanded = readerViewModel::reportPageDemand,
+                                onImageLoadStarted = readerViewModel::reportImageLoadStarted,
+                                onImageLoadSucceeded = readerViewModel::reportImageLoadSucceeded,
+                                onImageLoadFailed = readerViewModel::reportImageLoadFailed,
+                                onChooseLogFile = {
+                                    if (appSettings.loggingEnabled) {
+                                        logFolderPicker.launch(null)
+                                    }
+                                },
+                                onCancelLoading = {
+                                    ReaderDiagnosticLog.event("reader_open_cancel")
+                                    val shouldRestoreMainPortrait = readerLandscapeModeEnabled
+                                    readerViewModel.closeReader()
+                                    downloadProgress = null
+                                    readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
+                                    readerLandscapeOrientationLocked = false
+                                    isReaderOpen = false
+                                    if (shouldRestoreMainPortrait) {
+                                        forceMainPortraitAfterTransientLandscape = true
+                                    }
+                                },
+                                onClose = {
+                                    ReaderDiagnosticLog.event("reader_close")
+                                    val shouldRestoreMainPortrait = readerLandscapeModeEnabled
+                                    readerViewModel.closeReader()
+                                    downloadProgress = null
+                                    readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
+                                    readerLandscapeOrientationLocked = false
+                                    isReaderOpen = false
+                                    if (shouldRestoreMainPortrait) {
+                                        forceMainPortraitAfterTransientLandscape = true
+                                    }
+                                },
+                                onAutoPageEnabledChange = { value ->
+                                    scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
+                                },
+                            )
+                        },
+                    ) {
+                        ComicDavAppShell(
+                            selectedTab = selectedTab,
+                            onTabSelected = { tab ->
+                                selectedTabName = tab.name
+                                localOpenError = null
+                                webDavActionMessage = null
+                                clearSelection()
+                            },
+                            bottomBar = selectionBottomBar(
+                                selectedWebDavFile = selectedWebDavFile,
+                                selectedDirectoryComic = selectedDirectoryComic,
+                                selectedDirectoryVideo = selectedDirectoryVideo,
+                                selectedLibraryItem = selectedLibraryItem,
+                                selectedVideoLibraryItem = selectedVideoLibraryItem,
+                                onDownloadWebDavFile = { item ->
+                                    clearSelection()
+                                    downloadWebDavComicToLocal(item)
+                                },
+                                onDownloadWebDavVideo = { item ->
+                                    clearSelection()
+                                    downloadWebDavVideoToLocal(item)
+                                },
+                                onAddWebDavFileToLibrary = { item ->
+                                    clearSelection()
+                                    favoriteWebDavComic(item)
+                                },
+                                onAddWebDavVideoToVideoLibrary = { item ->
+                                    clearSelection()
+                                    favoriteWebDavVideo(item)
+                                },
+                                onAddDirectoryComicToLibrary = { item ->
+                                    clearSelection()
+                                    favoriteLocalDirectoryComic(item)
+                                },
+                                onAddDirectoryVideoToVideoLibrary = { item ->
+                                    clearSelection()
+                                    favoriteLocalDirectoryVideo(item)
+                                },
+                                onRemoveLibraryItem = ::removeLibraryItem,
+                                onRefreshLibraryCover = ::refreshLibraryCover,
+                                onDownloadLibraryItem = { item ->
+                                    selectedLibraryItem = null
+                                    downloadLibraryWebDavComic(item)
+                                },
+                                onRemoveVideoLibraryItem = ::removeVideoLibraryItem,
+                                onRefreshVideoLibraryThumbnail = ::refreshVideoLibraryThumbnail,
+                                onDeleteVideoLibraryThumbnail = ::deleteVideoLibraryThumbnail,
+                                onCancel = ::clearSelection,
+                            ),
+                        ) { contentModifier ->
+                            when (selectedTab) {
+                                AppTab.SOURCES -> {
+                                    if (isWebDavOpen) {
+                                        if (uiState.status == WEB_DAV_STATUS_CONNECTED) {
+                                            WebDavBrowserScreen(
+                                                uiState = uiState,
+                                                onItemClick = { item ->
+                                                    when (mediaKindFor(name = item.name, isDirectory = item.isDirectory)) {
+                                                        MediaKind.Directory -> webDavViewModel.openDirectory(item)
+                                                        MediaKind.Comic -> openRemoteComic(
+                                                            accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId(),
+                                                            remotePath = item.path,
+                                                            size = item.size,
+                                                            etag = item.etag,
+                                                            lastModified = item.lastModified,
+                                                        )
+                                                        MediaKind.Video -> openWebDavVideo(item)
+                                                        MediaKind.Audio,
+                                                        MediaKind.Subtitle,
+                                                        MediaKind.Unknown,
+                                                        -> Unit
+                                                    }
+                                                },
+                                                onAddToLibrary = ::favoriteWebDavComic,
+                                                onDownloadToLocal = ::downloadWebDavComicToLocal,
+                                                onSelectFile = { item ->
+                                                    selectedWebDavFile = item
+                                                    selectedDirectoryComic = null
+                                                    selectedDirectoryVideo = null
+                                                    selectedLibraryItem = null
+                                                    selectedVideoLibraryItem = null
+                                                },
+                                                onSaveDirectory = {
+                                                    val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
                                                     fileDirectoryViewModel.addWebDavDirectory(
-                                                        displayName = displayName,
+                                                        displayName = decodeWebDavPathForDisplay(uiState.currentPath),
                                                         accountId = accountId,
-                                                        path = "/",
-                                                        baseUrl = latestWebDavState.baseUrl,
-                                                        username = username,
-                                                        password = password,
+                                                        path = uiState.currentPath,
+                                                        baseUrl = uiState.baseUrl,
+                                                        username = uiState.username,
+                                                        password = uiState.password,
                                                     )
-                                                }
-                                                isWebDavOpen = false
-                                                isAddingWebDavPath = false
-                                                editingWebDavSourceId = null
-                                            },
-                                            onBackToLibrary = {
-                                                isWebDavOpen = false
-                                                isAddingWebDavPath = false
-                                                editingWebDavSourceId = null
-                                                localOpenError = null
-                                                webDavActionMessage = null
-                                            },
-                                            message = localOpenError,
-                                            modifier = contentModifier,
-                                        )
+                                                    isAddingWebDavPath = false
+                                                },
+                                                showSaveDirectoryAction = isAddingWebDavPath,
+                                                downloadProgress = downloadProgress,
+                                                downloadError = localOpenError,
+                                                actionMessage = webDavActionMessage,
+                                                onCancelDownload = ::cancelActiveDownload,
+                                                onSearchQueryChange = webDavViewModel::updateSearchQuery,
+                                                onSortFieldChange = webDavViewModel::updateSortField,
+                                                onToggleSortDirection = webDavViewModel::toggleSortDirection,
+                                                selectedFile = selectedWebDavFile,
+                                                modifier = contentModifier,
+                                            )
+                                        } else if (
+                                            shouldShowWebDavAccountForm(
+                                                isAddingWebDavPath = isAddingWebDavPath,
+                                                editingWebDavSourceId = editingWebDavSourceId,
+                                                webDavStatus = uiState.status,
+                                            )
+                                        ) {
+                                            WebDavAccountScreen(
+                                                uiState = uiState,
+                                                onDisplayNameChange = webDavViewModel::updateDisplayName,
+                                                onHostChange = webDavViewModel::updateHost,
+                                                onPortChange = webDavViewModel::updatePort,
+                                                onRootPathChange = webDavViewModel::updateRootPath,
+                                                onUseHttpsChange = webDavViewModel::updateUseHttps,
+                                                onAnonymousAccessChange = webDavViewModel::updateAnonymousAccess,
+                                                onUsernameChange = webDavViewModel::updateUsername,
+                                                onPasswordChange = webDavViewModel::updatePassword,
+                                                onTestConnection = {
+                                                    val latestWebDavState = webDavViewModel.uiState
+                                                    val username = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.username
+                                                    val password = if (latestWebDavState.anonymousAccess) "" else latestWebDavState.password
+                                                    val displayName = latestWebDavState.displayName
+                                                        .takeIf { it.isNotBlank() }
+                                                        ?: latestWebDavState.host.takeIf { it.isNotBlank() }
+                                                        ?: latestWebDavState.baseUrl
+                                                    val accountId = "${latestWebDavState.baseUrl.trim()}|$username"
+                                                    val sourceId = editingWebDavSourceId
+                                                    if (sourceId != null) {
+                                                        fileDirectoryViewModel.updateWebDavDirectory(
+                                                            id = sourceId,
+                                                            displayName = displayName,
+                                                            accountId = accountId,
+                                                            path = latestWebDavState.currentPath,
+                                                            baseUrl = latestWebDavState.baseUrl,
+                                                            username = username,
+                                                            password = password,
+                                                        )
+                                                    } else {
+                                                        fileDirectoryViewModel.addWebDavDirectory(
+                                                            displayName = displayName,
+                                                            accountId = accountId,
+                                                            path = "/",
+                                                            baseUrl = latestWebDavState.baseUrl,
+                                                            username = username,
+                                                            password = password,
+                                                        )
+                                                    }
+                                                    isWebDavOpen = false
+                                                    isAddingWebDavPath = false
+                                                    editingWebDavSourceId = null
+                                                },
+                                                onBackToLibrary = {
+                                                    isWebDavOpen = false
+                                                    isAddingWebDavPath = false
+                                                    editingWebDavSourceId = null
+                                                    localOpenError = null
+                                                    webDavActionMessage = null
+                                                },
+                                                message = localOpenError,
+                                                modifier = contentModifier,
+                                            )
+                                        } else {
+                                            FileDirectoryTabContent(
+                                                fileDirectoryUiState = fileDirectoryUiState,
+                                                localOpenError = localOpenError,
+                                                webDavMessage = uiState.message.takeIf { it.isNotBlank() },
+                                                selectedDirectoryComic = selectedDirectoryComic,
+                                                selectedDirectoryVideo = selectedDirectoryVideo,
+                                                onAddLocalDirectory = { localDirectoryPicker.launch(null) },
+                                                onOpenWebDav = ::startAddingWebDavSource,
+                                                onOpenLibrary = ::openLibraryTabFromSources,
+                                                onOpenSource = ::openFileDirectorySource,
+                                                onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
+                                                onOpenComic = ::openLocalDirectoryComic,
+                                                onOpenVideo = ::openLocalDirectoryVideo,
+                                                onSelectComic = ::selectDirectoryComicItem,
+                                                onSelectVideo = ::selectDirectoryVideoItem,
+                                                onGoUp = fileDirectoryViewModel::goUp,
+                                                onDismissMessage = ::dismissFileDirectoryMessage,
+                                                onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
+                                                onSortFieldChange = fileDirectoryViewModel::updateSortField,
+                                                onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
+                                                onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
+                                                onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
+                                                onEditWebDavSource = ::editWebDavSource,
+                                                modifier = contentModifier,
+                                            )
+                                        }
                                     } else {
                                         FileDirectoryTabContent(
                                             fileDirectoryUiState = fileDirectoryUiState,
                                             localOpenError = localOpenError,
-                                            webDavMessage = uiState.message.takeIf { it.isNotBlank() },
+                                            webDavMessage = null,
                                             selectedDirectoryComic = selectedDirectoryComic,
                                             selectedDirectoryVideo = selectedDirectoryVideo,
                                             onAddLocalDirectory = { localDirectoryPicker.launch(null) },
@@ -2032,177 +2061,151 @@ fun ComicDavApp() {
                                             modifier = contentModifier,
                                         )
                                     }
-                                } else {
-                                    FileDirectoryTabContent(
-                                        fileDirectoryUiState = fileDirectoryUiState,
+                                }
+                                AppTab.LIBRARY -> {
+                                    LibraryTabContent(
+                                        libraryUiState = libraryUiState,
                                         localOpenError = localOpenError,
-                                        webDavMessage = null,
-                                        selectedDirectoryComic = selectedDirectoryComic,
-                                        selectedDirectoryVideo = selectedDirectoryVideo,
-                                        onAddLocalDirectory = { localDirectoryPicker.launch(null) },
-                                        onOpenWebDav = ::startAddingWebDavSource,
-                                        onOpenLibrary = ::openLibraryTabFromSources,
-                                        onOpenSource = ::openFileDirectorySource,
-                                        onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
-                                        onOpenComic = ::openLocalDirectoryComic,
-                                        onOpenVideo = ::openLocalDirectoryVideo,
-                                        onSelectComic = ::selectDirectoryComicItem,
-                                        onSelectVideo = ::selectDirectoryVideoItem,
-                                        onGoUp = fileDirectoryViewModel::goUp,
-                                        onDismissMessage = ::dismissFileDirectoryMessage,
-                                        onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
-                                        onSortFieldChange = fileDirectoryViewModel::updateSortField,
-                                        onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
-                                        onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
-                                        onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
-                                        onEditWebDavSource = ::editWebDavSource,
+                                        onOpenItem = { item ->
+                                            when (item.item.sourceType) {
+                                                SourceType.LOCAL -> openLocalLibraryComic(item)
+                                                SourceType.WEBDAV -> {
+                                                    val source = item.webDavSource
+                                                    if (source == null) {
+                                                        localOpenError = "缺少 WebDAV 来源"
+                                                    } else {
+                                                        openRemoteComic(
+                                                            accountId = source.accountId,
+                                                            remotePath = source.remotePath,
+                                                            size = source.size,
+                                                            etag = source.etag,
+                                                            lastModified = source.lastModified,
+                                                            onOpenSucceeded = {
+                                                                libraryViewModel.markOpened(item.item.id)
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onSelectItem = { item ->
+                                            selectedLibraryItem = item
+                                            selectedWebDavFile = null
+                                            selectedDirectoryComic = null
+                                        },
+                                        onOpenDirectories = {
+                                            localOpenError = null
+                                            selectedTabName = AppTab.SOURCES.name
+                                        },
+                                        onDismissMessage = {
+                                            localOpenError = null
+                                            libraryViewModel.clearMessage()
+                                        },
+                                        coversEnabled = appSettings.libraryCoversEnabled,
+                                        selectedItemId = selectedLibraryItem?.item?.id,
                                         modifier = contentModifier,
                                     )
                                 }
-                            }
-                            AppTab.LIBRARY -> {
-                                LibraryTabContent(
-                                    libraryUiState = libraryUiState,
-                                    localOpenError = localOpenError,
-                                    onOpenItem = { item ->
-                                        when (item.item.sourceType) {
-                                            SourceType.LOCAL -> openLocalLibraryComic(item)
-                                            SourceType.WEBDAV -> {
-                                                val source = item.webDavSource
-                                                if (source == null) {
-                                                    localOpenError = "缺少 WebDAV 来源"
-                                                } else {
-                                                    openRemoteComic(
-                                                        accountId = source.accountId,
-                                                        remotePath = source.remotePath,
-                                                        size = source.size,
-                                                        etag = source.etag,
-                                                        lastModified = source.lastModified,
-                                                        onOpenSucceeded = {
-                                                            libraryViewModel.markOpened(item.item.id)
-                                                        },
+                                AppTab.VIDEO_LIBRARY -> {
+                                    VideoLibraryTabContent(
+                                        videoLibraryUiState = videoLibraryUiState,
+                                        localOpenError = localOpenError,
+                                        onOpenItem = ::openVideoLibraryItem,
+                                        onSelectItem = { item ->
+                                            selectedVideoLibraryItem = item
+                                            selectedWebDavFile = null
+                                            selectedDirectoryComic = null
+                                            selectedDirectoryVideo = null
+                                            selectedLibraryItem = null
+                                        },
+                                        onOpenDirectories = {
+                                            localOpenError = null
+                                            selectedTabName = AppTab.SOURCES.name
+                                        },
+                                        onDismissMessage = {
+                                            localOpenError = null
+                                            videoLibraryViewModel.clearMessage()
+                                        },
+                                        thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
+                                        selectedItemId = selectedVideoLibraryItem?.item?.id,
+                                        modifier = contentModifier,
+                                    )
+                                }
+                                AppTab.DOWNLOADS -> {
+                                    DownloadsScreen(
+                                        comicDownloads = downloadRecords,
+                                        videoDownloads = videoDownloadRecords,
+                                        activeDownload = downloadProgress,
+                                        onOpenComicDownload = ::openDownloadRecordComic,
+                                        onPlayVideoDownload = ::playVideoDownloadRecord,
+                                        onCancelActiveDownload = ::cancelActiveDownload,
+                                        onRemoveComicRecord = ::removeComicDownloadRecord,
+                                        onRemoveVideoRecord = ::removeVideoDownloadRecord,
+                                        onDeleteComicFile = ::deleteComicDownloadFile,
+                                        onDeleteVideoFile = ::deleteVideoDownloadRecord,
+                                        onShowDetails = {
+                                            localOpenError = null
+                                            webDavActionMessage = "暂无详情页面"
+                                        },
+                                        onOpenSources = {
+                                            localOpenError = null
+                                            selectedTabName = AppTab.SOURCES.name
+                                        },
+                                        actionMessage = localOpenError ?: webDavActionMessage,
+                                        modifier = contentModifier,
+                                    )
+                                }
+                                AppTab.SETTINGS -> {
+                                    SettingsTabContent(
+                                        settings = appSettings,
+                                        appSettingsStore = appSettingsStore,
+                                        scope = scope,
+                                        cacheAnalysis = cacheAnalysis,
+                                        cacheActionMessage = cacheActionMessage,
+                                        onClearCacheCategory = { category ->
+                                            scope.launch {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    clearComicCacheCategory(
+                                                        cacheDir = context.cacheDir,
+                                                        category = category,
+                                                        codeCacheDir = context.codeCacheDir,
+                                                        externalCacheDirs = context.externalCacheDirs.filterNotNull(),
                                                     )
                                                 }
+                                                cacheAnalysis = withContext(Dispatchers.IO) {
+                                                    analyzeComicCache(
+                                                        cacheDir = context.cacheDir,
+                                                        codeCacheDir = context.codeCacheDir,
+                                                        externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                    )
+                                                }
+                                                cacheActionMessage =
+                                                    "已清理 ${category.cacheLabel()}：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
                                             }
-                                        }
-                                    },
-                                    onSelectItem = { item ->
-                                        selectedLibraryItem = item
-                                        selectedWebDavFile = null
-                                        selectedDirectoryComic = null
-                                    },
-                                    onOpenDirectories = {
-                                        localOpenError = null
-                                        selectedTabName = AppTab.SOURCES.name
-                                    },
-                                    onDismissMessage = {
-                                        localOpenError = null
-                                        libraryViewModel.clearMessage()
-                                    },
-                                    coversEnabled = appSettings.libraryCoversEnabled,
-                                    selectedItemId = selectedLibraryItem?.item?.id,
-                                    modifier = contentModifier,
-                                )
-                            }
-                            AppTab.VIDEO_LIBRARY -> {
-                                VideoLibraryTabContent(
-                                    videoLibraryUiState = videoLibraryUiState,
-                                    localOpenError = localOpenError,
-                                    onOpenItem = ::openVideoLibraryItem,
-                                    onSelectItem = { item ->
-                                        selectedVideoLibraryItem = item
-                                        selectedWebDavFile = null
-                                        selectedDirectoryComic = null
-                                        selectedDirectoryVideo = null
-                                        selectedLibraryItem = null
-                                    },
-                                    onOpenDirectories = {
-                                        localOpenError = null
-                                        selectedTabName = AppTab.SOURCES.name
-                                    },
-                                    onDismissMessage = {
-                                        localOpenError = null
-                                        videoLibraryViewModel.clearMessage()
-                                    },
-                                    thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
-                                    selectedItemId = selectedVideoLibraryItem?.item?.id,
-                                    modifier = contentModifier,
-                                )
-                            }
-                            AppTab.DOWNLOADS -> {
-                                DownloadsScreen(
-                                    comicDownloads = downloadRecords,
-                                    videoDownloads = videoDownloadRecords,
-                                    activeDownload = downloadProgress,
-                                    onOpenComicDownload = ::openDownloadRecordComic,
-                                    onPlayVideoDownload = ::playVideoDownloadRecord,
-                                    onCancelActiveDownload = ::cancelActiveDownload,
-                                    onRemoveComicRecord = ::removeComicDownloadRecord,
-                                    onRemoveVideoRecord = ::removeVideoDownloadRecord,
-                                    onDeleteComicFile = ::deleteComicDownloadFile,
-                                    onDeleteVideoFile = ::deleteVideoDownloadRecord,
-                                    onShowDetails = {
-                                        localOpenError = null
-                                        webDavActionMessage = "暂无详情页面"
-                                    },
-                                    onOpenSources = {
-                                        localOpenError = null
-                                        selectedTabName = AppTab.SOURCES.name
-                                    },
-                                    actionMessage = localOpenError ?: webDavActionMessage,
-                                    modifier = contentModifier,
-                                )
-                            }
-                            AppTab.SETTINGS -> {
-                                SettingsTabContent(
-                                    settings = appSettings,
-                                    appSettingsStore = appSettingsStore,
-                                    scope = scope,
-                                    cacheAnalysis = cacheAnalysis,
-                                    cacheActionMessage = cacheActionMessage,
-                                    onClearCacheCategory = { category ->
-                                        scope.launch {
-                                            val result = withContext(Dispatchers.IO) {
-                                                clearComicCacheCategory(
-                                                    cacheDir = context.cacheDir,
-                                                    category = category,
-                                                    codeCacheDir = context.codeCacheDir,
-                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
-                                                )
+                                        },
+                                        onClearAllCache = {
+                                            scope.launch {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    clearComicCache(
+                                                        cacheDir = context.cacheDir,
+                                                        codeCacheDir = context.codeCacheDir,
+                                                        externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                    )
+                                                }
+                                                cacheAnalysis = withContext(Dispatchers.IO) {
+                                                    analyzeComicCache(
+                                                        cacheDir = context.cacheDir,
+                                                        codeCacheDir = context.codeCacheDir,
+                                                        externalCacheDirs = context.externalCacheDirs.filterNotNull(),
+                                                    )
+                                                }
+                                                cacheActionMessage =
+                                                    "已清理全部缓存：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
                                             }
-                                            cacheAnalysis = withContext(Dispatchers.IO) {
-                                                analyzeComicCache(
-                                                    cacheDir = context.cacheDir,
-                                                    codeCacheDir = context.codeCacheDir,
-                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
-                                                )
-                                            }
-                                            cacheActionMessage =
-                                                "已清理 ${category.cacheLabel()}：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
-                                        }
-                                    },
-                                    onClearAllCache = {
-                                        scope.launch {
-                                            val result = withContext(Dispatchers.IO) {
-                                                clearComicCache(
-                                                    cacheDir = context.cacheDir,
-                                                    codeCacheDir = context.codeCacheDir,
-                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
-                                                )
-                                            }
-                                            cacheAnalysis = withContext(Dispatchers.IO) {
-                                                analyzeComicCache(
-                                                    cacheDir = context.cacheDir,
-                                                    codeCacheDir = context.codeCacheDir,
-                                                    externalCacheDirs = context.externalCacheDirs.filterNotNull(),
-                                                )
-                                            }
-                                            cacheActionMessage =
-                                                "已清理全部缓存：${result.filesDeleted} 个文件，释放 ${formatCacheSize(result.bytesDeleted)}"
-                                        }
-                                    },
-                                    modifier = contentModifier,
-                                )
+                                        },
+                                        modifier = contentModifier,
+                                    )
+                                }
                             }
                         }
                     }
