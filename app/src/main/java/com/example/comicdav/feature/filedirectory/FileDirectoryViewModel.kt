@@ -266,7 +266,6 @@ class FileDirectoryViewModel(
         sortField = sortField,
         sortDirection = sortDirection,
         nameOf = FileDirectoryBrowserItem::name,
-        isDirectory = FileDirectoryBrowserItem::isDirectory,
         sizeOf = FileDirectoryBrowserItem::size,
     )
 

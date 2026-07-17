@@ -53,7 +53,7 @@ class WebDavViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("已连接", viewModel.uiState.status)
-        assertEquals(listOf("Series", "book.cbz", "book.zip"), viewModel.uiState.items.map { it.name })
+        assertEquals(listOf("book.cbz", "book.zip", "Series"), viewModel.uiState.items.map { it.name })
     }
 
     @Test
@@ -83,7 +83,7 @@ class WebDavViewModelTest {
         runCurrent()
 
         assertFalse(viewModel.uiState.isLoading)
-        assertEquals(listOf("Series", "book.cbz"), viewModel.uiState.items.map { it.name })
+        assertEquals(listOf("book.cbz", "Series"), viewModel.uiState.items.map { it.name })
     }
 
     @Test
@@ -253,7 +253,7 @@ class WebDavViewModelTest {
         assertEquals("lin", viewModel.uiState.username)
         assertEquals("secret", viewModel.uiState.password)
         assertEquals("/Comics/", viewModel.uiState.currentPath)
-        assertEquals(listOf("Volume 1", "book.cbz"), viewModel.uiState.items.map { it.name })
+        assertEquals(listOf("book.cbz", "Volume 1"), viewModel.uiState.items.map { it.name })
         assertEquals("已连接", viewModel.uiState.status)
     }
 

@@ -383,7 +383,6 @@ class WebDavViewModel(
         sortField = sortField,
         sortDirection = sortDirection,
         nameOf = WebDavItem::name,
-        isDirectory = WebDavItem::isDirectory,
         sizeOf = WebDavItem::size,
     )
 

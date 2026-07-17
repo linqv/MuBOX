@@ -55,7 +55,6 @@ class DirectoryListingControlsTest {
             sortField = DirectorySortField.NAME,
             sortDirection = DirectorySortDirection.ASCENDING,
             nameOf = SortableEntry::name,
-            isDirectory = SortableEntry::isDirectory,
             sizeOf = SortableEntry::size,
         )
 
@@ -76,7 +75,20 @@ class DirectoryListingControlsTest {
     }
 
     @Test
-    fun sizeSortingKeepsFoldersFirstAndUnknownSizesLast() {
+    fun nameSortingUsesNumericValueAndDoesNotPrioritizeDirectories() {
+        val entries = listOf(
+            SortableEntry("100", isDirectory = true),
+            SortableEntry("2"),
+            SortableEntry("1"),
+        )
+
+        val visible = sorted(entries)
+
+        assertEquals(listOf("1", "2", "100"), visible.map { it.name })
+    }
+
+    @Test
+    fun sizeSortingTreatsFoldersLikeOtherEntriesWithUnknownSizes() {
         val entries = listOf(
             SortableEntry("large.cbz", size = 500L),
             SortableEntry("unknown.pdf"),
@@ -87,7 +99,7 @@ class DirectoryListingControlsTest {
         val visible = sorted(entries, sortField = DirectorySortField.SIZE)
 
         assertEquals(
-            listOf("Folder", "small.mkv", "large.cbz", "unknown.pdf"),
+            listOf("small.mkv", "large.cbz", "Folder", "unknown.pdf"),
             visible.map { it.name },
         )
     }
@@ -116,7 +128,6 @@ class DirectoryListingControlsTest {
         sortField = sortField,
         sortDirection = sortDirection,
         nameOf = SortableEntry::name,
-        isDirectory = SortableEntry::isDirectory,
         sizeOf = SortableEntry::size,
     )
 

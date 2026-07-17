@@ -24,7 +24,6 @@ internal fun <T> filterAndSortDirectoryEntries(
     sortField: DirectorySortField,
     sortDirection: DirectorySortDirection,
     nameOf: (T) -> String,
-    isDirectory: (T) -> Boolean,
     sizeOf: (T) -> Long?,
 ): List<T> {
     val normalizedQuery = query.trim()
@@ -35,7 +34,6 @@ internal fun <T> filterAndSortDirectoryEntries(
                 sortField = sortField,
                 sortDirection = sortDirection,
                 nameOf = nameOf,
-                isDirectory = isDirectory,
                 sizeOf = sizeOf,
             ),
         )
@@ -45,19 +43,8 @@ private fun <T> directoryEntryComparator(
     sortField: DirectorySortField,
     sortDirection: DirectorySortDirection,
     nameOf: (T) -> String,
-    isDirectory: (T) -> Boolean,
     sizeOf: (T) -> Long?,
 ): Comparator<T> = Comparator { left, right ->
-    val leftIsDirectory = isDirectory(left)
-    val rightIsDirectory = isDirectory(right)
-    if (leftIsDirectory != rightIsDirectory) {
-        return@Comparator if (leftIsDirectory) -1 else 1
-    }
-
-    if (leftIsDirectory) {
-        return@Comparator directionalNameCompare(nameOf(left), nameOf(right), sortDirection)
-    }
-
     when (sortField) {
         DirectorySortField.NAME -> directionalNameCompare(nameOf(left), nameOf(right), sortDirection)
         DirectorySortField.SIZE -> {
@@ -86,9 +73,64 @@ private fun fileTypeOf(name: String): String =
     name.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)
 
 private fun compareNames(left: String, right: String): Int =
-    left.lowercase(Locale.ROOT).compareTo(right.lowercase(Locale.ROOT))
+    naturalCompare(left.lowercase(Locale.ROOT), right.lowercase(Locale.ROOT))
         .takeIf { it != 0 }
         ?: left.compareTo(right)
+
+private fun naturalCompare(left: String, right: String): Int {
+    var leftIndex = 0
+    var rightIndex = 0
+
+    while (leftIndex < left.length && rightIndex < right.length) {
+        val leftChar = left[leftIndex]
+        val rightChar = right[rightIndex]
+        if (!leftChar.isDigit() || !rightChar.isDigit()) {
+            val comparison = leftChar.compareTo(rightChar)
+            if (comparison != 0) return comparison
+            leftIndex += 1
+            rightIndex += 1
+            continue
+        }
+
+        val leftEnd = left.indexAfterDigitRun(leftIndex)
+        val rightEnd = right.indexAfterDigitRun(rightIndex)
+        val leftSignificantStart = left.indexAfterLeadingZeroes(leftIndex, leftEnd)
+        val rightSignificantStart = right.indexAfterLeadingZeroes(rightIndex, rightEnd)
+        val leftSignificantLength = leftEnd - leftSignificantStart
+        val rightSignificantLength = rightEnd - rightSignificantStart
+
+        if (leftSignificantLength != rightSignificantLength) {
+            return leftSignificantLength.compareTo(rightSignificantLength)
+        }
+        for (offset in 0 until leftSignificantLength) {
+            val comparison = left[leftSignificantStart + offset]
+                .compareTo(right[rightSignificantStart + offset])
+            if (comparison != 0) return comparison
+        }
+
+        val leftRunLength = leftEnd - leftIndex
+        val rightRunLength = rightEnd - rightIndex
+        if (leftRunLength != rightRunLength) {
+            return leftRunLength.compareTo(rightRunLength)
+        }
+        leftIndex = leftEnd
+        rightIndex = rightEnd
+    }
+
+    return (left.length - leftIndex).compareTo(right.length - rightIndex)
+}
+
+private fun String.indexAfterDigitRun(startIndex: Int): Int {
+    var index = startIndex
+    while (index < length && this[index].isDigit()) index += 1
+    return index
+}
+
+private fun String.indexAfterLeadingZeroes(startIndex: Int, endIndex: Int): Int {
+    var index = startIndex
+    while (index < endIndex && this[index] == '0') index += 1
+    return index
+}
 
 private fun directionalNameCompare(
     left: String,
