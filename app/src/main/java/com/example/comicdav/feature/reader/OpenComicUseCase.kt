@@ -68,7 +68,7 @@ class OpenComicUseCase(
         client: WebDavClient,
         remotePath: String,
         knownInfo: RemoteFileInfo? = null,
-    ): OpenComicResult {
+    ): OpenComicResult = withContext(ioDispatcher) {
         val info = knownInfo ?: client.head(remotePath)
         val key = ComicCacheKey.fromRemote(
             accountId = accountId,
@@ -78,7 +78,7 @@ class OpenComicUseCase(
             lastModified = info.lastModified,
         )
         try {
-            return openRemote(client, remotePath, info, key)
+            openRemote(client, remotePath, info, key)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -100,18 +100,16 @@ class OpenComicUseCase(
         cache.cacheDir.mkdirs()
         val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, info.size))
         return try {
-            // Dispatch to IO: openRemoteSession calls @WorkerThread native methods.
-            val session = withContext(ioDispatcher) {
-                openRemoteSession(
-                    fileId,
-                    info.size,
-                    cache.cacheDir,
-                    key.value,
-                    info.validator(),
-                    avifImagesEnabled,
-                    webDavPrefetchPageCount,
-                )
-            }
+            // open() dispatches the full preparation path to IO before reaching this worker-thread call.
+            val session = openRemoteSession(
+                fileId,
+                info.size,
+                cache.cacheDir,
+                key.value,
+                info.validator(),
+                avifImagesEnabled,
+                webDavPrefetchPageCount,
+            )
             val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
             OpenComicResult(
                 comicKey = key.value,

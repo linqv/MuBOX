@@ -2,12 +2,19 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.MainDispatcherRule
+import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.ComicNativeException
 import com.example.comicdav.nativebridge.PlannedRemoteRange
+import com.example.comicdav.nativebridge.RangeProviderRegistry
+import com.example.comicdav.network.RemoteFileInfo
+import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.network.WebDavItem
 import java.io.File
+import java.util.concurrent.Executors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -209,6 +216,74 @@ class ReaderViewModelTest {
         assertEquals(listOf(0.toByte()), viewModel.uiState.pageFiles[0]?.readBytes()?.toList())
         assertEquals(listOf(42.toByte()), cachedFile.readBytes().toList())
     }
+
+    @Test
+    fun remoteComicPreparationRunsEntirelyOnInjectedIoDispatcher() = runTest {
+        val executor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "comic-open-io")
+        }
+        val ioDispatcher = executor.asCoroutineDispatcher()
+        val stages = mutableListOf<Pair<String, String>>()
+        var registeredFileId: Long? = null
+        val cacheDir = temp.root.resolve("remote-comic")
+        val client = object : WebDavClient {
+            override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+            override suspend fun head(path: String): RemoteFileInfo {
+                stages += "head" to Thread.currentThread().name
+                return RemoteFileInfo(
+                    path = path,
+                    size = 9L,
+                    etag = "\"v1\"",
+                    lastModified = null,
+                    supportsRange = true,
+                )
+            }
+
+            override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+                ByteArray((endInclusive - start + 1L).toInt())
+
+            override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long = 0L
+        }
+        val progressStore = object : ReadingProgressGateway {
+            override suspend fun savePage(comicKey: String, pageIndex: Int) = Unit
+
+            override suspend fun loadPage(comicKey: String): Int {
+                stages += "progress" to Thread.currentThread().name
+                return 0
+            }
+        }
+
+        try {
+            val useCase = OpenComicUseCase(
+                accountId = "account",
+                cache = ComicDownloadCache(cacheDir),
+                progressStore = progressStore,
+                ioDispatcher = ioDispatcher,
+                openRemoteSession = { fileId, _, _, _, _, _, _ ->
+                    registeredFileId = fileId
+                    stages += "native-open" to Thread.currentThread().name
+                    RecordingComicSession(pageCount = 1, forwardPrefetchPageCount = 0)
+                },
+            )
+
+            useCase.open(client = client, remotePath = "/books/book.cbz")
+
+            assertEquals(true, cacheDir.isDirectory)
+            assertEquals(
+                listOf(
+                    "head" to "comic-open-io",
+                    "native-open" to "comic-open-io",
+                    "progress" to "comic-open-io",
+                ),
+                stages,
+            )
+        } finally {
+            registeredFileId?.let(RangeProviderRegistry::unregister)
+            ioDispatcher.close()
+            executor.shutdownNow()
+        }
+    }
 }
 
 
@@ -286,4 +361,3 @@ private fun plannedRangesForWindow(
 
 private fun PlannedRemoteRange.key(): Pair<Long, Long> =
     start to endInclusive
-
