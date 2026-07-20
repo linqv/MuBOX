@@ -33,7 +33,7 @@ class MainActivityVideoQueueRemovalTest {
         assertTrue(source.contains("ActivityResultContracts.StartActivityForResult()"))
         assertTrue(source.contains("fun openVideoPlayer(intent: Intent)"))
         assertTrue(source.contains("videoPlayerLauncher.launch(intent)"))
-        assertTrue(source.contains("forceMainPortraitAfterTransientLandscape = true"))
+        assertTrue(source.contains("forceMainPortraitState.value = true"))
         assertFalse(source.contains("context.startActivity(\n            VideoPlayerActivity."))
     }
 

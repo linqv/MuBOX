@@ -19,6 +19,10 @@ class MainActivityUiLogicTest {
         val source = File("src/main/java/com/example/comicdav/MainActivity.kt").readText()
 
         assertTrue(source.contains("ReaderOverlayHost("))
+        assertTrue(source.contains("val readerOpenState = rememberSaveable { mutableStateOf(false) }"))
+        assertTrue(source.contains("readerOpenState = readerOpenState"))
+        assertFalse(source.contains("var isReaderOpen by rememberSaveable"))
+        assertFalse(source.contains("val readerUiState = readerViewModel.uiState"))
         assertFalse(source.contains("isReaderOpen -> {"))
     }
 
@@ -251,6 +255,98 @@ class MainActivityUiLogicTest {
                 isReaderOpen = true,
                 readerLandscapeModeEnabled = true,
                 readerLandscapeOrientationLocked = true,
+            ),
+        )
+    }
+
+    @Test
+    fun requestedOrientationUpdatesOnlyWhenTargetChanges() {
+        assertFalse(
+            shouldUpdateRequestedOrientation(
+                current = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                target = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            ),
+        )
+        assertTrue(
+            shouldUpdateRequestedOrientation(
+                current = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+                target = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            ),
+        )
+    }
+
+    @Test
+    fun openingPortraitReaderDoesNotChangeRequestedOrientation() {
+        val closedOrientation = comicDavRequestedOrientation(
+            screenRotationLockEnabled = false,
+            isReaderOpen = false,
+            readerLandscapeModeEnabled = false,
+        )
+        val openOrientation = comicDavRequestedOrientation(
+            screenRotationLockEnabled = false,
+            isReaderOpen = true,
+            readerLandscapeModeEnabled = false,
+        )
+
+        assertEquals(closedOrientation, openOrientation)
+        assertFalse(shouldUpdateRequestedOrientation(closedOrientation, openOrientation))
+    }
+
+    @Test
+    fun forcedPortraitClearsOnlyAfterMainScreenIsBackInPortrait() {
+        assertTrue(
+            shouldClearForcedMainPortrait(
+                forceMainPortrait = true,
+                isReaderOpen = false,
+                configurationOrientation = android.content.res.Configuration.ORIENTATION_PORTRAIT,
+            ),
+        )
+        assertFalse(
+            shouldClearForcedMainPortrait(
+                forceMainPortrait = true,
+                isReaderOpen = true,
+                configurationOrientation = android.content.res.Configuration.ORIENTATION_PORTRAIT,
+            ),
+        )
+        assertFalse(
+            shouldClearForcedMainPortrait(
+                forceMainPortrait = true,
+                isReaderOpen = false,
+                configurationOrientation = android.content.res.Configuration.ORIENTATION_LANDSCAPE,
+            ),
+        )
+    }
+
+    @Test
+    fun readerBackTargetPreservesNavigationPriority() {
+        assertEquals(
+            AppBackTarget.CLOSE_READER,
+            appBackTarget(
+                hasActiveSelection = false,
+                isReaderOpen = true,
+                isWebDavOpen = true,
+                hasOpenFileDirectory = true,
+                selectedTab = AppTab.LIBRARY,
+            ),
+        )
+        assertEquals(
+            AppBackTarget.CLEAR_SELECTION,
+            appBackTarget(
+                hasActiveSelection = true,
+                isReaderOpen = true,
+                isWebDavOpen = true,
+                hasOpenFileDirectory = true,
+                selectedTab = AppTab.LIBRARY,
+            ),
+        )
+        assertEquals(
+            AppBackTarget.NONE,
+            appBackTarget(
+                hasActiveSelection = false,
+                isReaderOpen = false,
+                isWebDavOpen = false,
+                hasOpenFileDirectory = false,
+                selectedTab = AppTab.SOURCES,
             ),
         )
     }

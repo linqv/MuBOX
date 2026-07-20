@@ -1,6 +1,9 @@
 package com.example.comicdav
 
+import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,11 +32,20 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
@@ -83,12 +95,149 @@ internal fun shouldForcePortraitAfterReaderLandscapeModeChange(
 
 internal fun readerLandscapeModeAfterReaderClosed(): Boolean = false
 
+internal fun shouldUpdateRequestedOrientation(current: Int, target: Int): Boolean = current != target
+
+internal fun shouldClearForcedMainPortrait(
+    forceMainPortrait: Boolean,
+    isReaderOpen: Boolean,
+    configurationOrientation: Int,
+): Boolean =
+    forceMainPortrait &&
+        !isReaderOpen &&
+        configurationOrientation == Configuration.ORIENTATION_PORTRAIT
+
+@Composable
+internal fun ReaderOrientationEffects(
+    activity: Activity?,
+    lifecycleOwner: LifecycleOwner,
+    screenRotationLockEnabled: Boolean,
+    readerOpenState: State<Boolean>,
+    readerLandscapeModeState: State<Boolean>,
+    readerLandscapeOrientationLockedState: State<Boolean>,
+    forceMainPortraitState: MutableState<Boolean>,
+    configurationOrientation: Int,
+) {
+    val isReaderOpen = readerOpenState.value
+    val requestedOrientation = comicDavRequestedOrientation(
+        screenRotationLockEnabled = screenRotationLockEnabled,
+        isReaderOpen = isReaderOpen,
+        readerLandscapeModeEnabled = readerLandscapeModeState.value,
+        readerLandscapeOrientationLocked = readerLandscapeOrientationLockedState.value,
+        forceMainPortrait = forceMainPortraitState.value,
+    )
+
+    LaunchedEffect(activity, requestedOrientation) {
+        if (
+            activity != null &&
+            shouldUpdateRequestedOrientation(activity.requestedOrientation, requestedOrientation)
+        ) {
+            activity.requestedOrientation = requestedOrientation
+        }
+    }
+
+    val latestRequestedOrientation by rememberUpdatedState(requestedOrientation)
+    DisposableEffect(activity, lifecycleOwner) {
+        if (activity == null) {
+            return@DisposableEffect onDispose { }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (
+                event == Lifecycle.Event.ON_RESUME &&
+                shouldUpdateRequestedOrientation(
+                    current = activity.requestedOrientation,
+                    target = latestRequestedOrientation,
+                )
+            ) {
+                activity.requestedOrientation = latestRequestedOrientation
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    if (
+        shouldClearForcedMainPortrait(
+            forceMainPortrait = forceMainPortraitState.value,
+            isReaderOpen = isReaderOpen,
+            configurationOrientation = configurationOrientation,
+        )
+    ) {
+        LaunchedEffect(forceMainPortraitState) {
+            forceMainPortraitState.value = false
+        }
+    }
+}
+
+internal enum class AppBackTarget {
+    CLEAR_SELECTION,
+    CLOSE_READER,
+    NAVIGATE_WEB_DAV,
+    NAVIGATE_FILE_DIRECTORY,
+    RETURN_TO_SOURCES,
+    NONE,
+}
+
+internal fun appBackTarget(
+    hasActiveSelection: Boolean,
+    isReaderOpen: Boolean,
+    isWebDavOpen: Boolean,
+    hasOpenFileDirectory: Boolean,
+    selectedTab: AppTab,
+): AppBackTarget = when {
+    hasActiveSelection -> AppBackTarget.CLEAR_SELECTION
+    isReaderOpen -> AppBackTarget.CLOSE_READER
+    isWebDavOpen -> AppBackTarget.NAVIGATE_WEB_DAV
+    selectedTab == AppTab.SOURCES && hasOpenFileDirectory -> AppBackTarget.NAVIGATE_FILE_DIRECTORY
+    selectedTab != AppTab.SOURCES -> AppBackTarget.RETURN_TO_SOURCES
+    else -> AppBackTarget.NONE
+}
+
+@Composable
+internal fun ComicDavBackHandler(
+    hasActiveSelection: Boolean,
+    readerOpenState: State<Boolean>,
+    isWebDavOpen: Boolean,
+    hasOpenFileDirectory: Boolean,
+    selectedTab: AppTab,
+    onClearSelection: () -> Unit,
+    onCloseReader: () -> Unit,
+    onNavigateWebDavBack: () -> Boolean,
+    onCloseWebDav: () -> Unit,
+    onNavigateFileDirectoryBack: () -> Unit,
+    onReturnToSources: () -> Unit,
+) {
+    val target = appBackTarget(
+        hasActiveSelection = hasActiveSelection,
+        isReaderOpen = readerOpenState.value,
+        isWebDavOpen = isWebDavOpen,
+        hasOpenFileDirectory = hasOpenFileDirectory,
+        selectedTab = selectedTab,
+    )
+    BackHandler(enabled = target != AppBackTarget.NONE) {
+        when (target) {
+            AppBackTarget.CLEAR_SELECTION -> onClearSelection()
+            AppBackTarget.CLOSE_READER -> onCloseReader()
+            AppBackTarget.NAVIGATE_WEB_DAV -> {
+                if (!onNavigateWebDavBack()) {
+                    onCloseWebDav()
+                }
+            }
+            AppBackTarget.NAVIGATE_FILE_DIRECTORY -> onNavigateFileDirectoryBack()
+            AppBackTarget.RETURN_TO_SOURCES -> onReturnToSources()
+            AppBackTarget.NONE -> Unit
+        }
+    }
+}
+
 @Composable
 internal fun ReaderOverlayHost(
-    readerOpen: Boolean,
+    readerOpenState: State<Boolean>,
     readerContent: @Composable () -> Unit,
     appContent: @Composable () -> Unit,
 ) {
+    val readerOpen = readerOpenState.value
     Layout(
         modifier = Modifier.fillMaxSize(),
         content = {

@@ -3,10 +3,8 @@ package com.example.comicdav
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,8 +26,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -172,16 +167,15 @@ fun ComicDavApp() {
         },
     )
     val uiState = webDavViewModel.uiState
-    val readerUiState = readerViewModel.uiState
     val libraryUiState = libraryViewModel.uiState
     val videoLibraryUiState = videoLibraryViewModel.uiState
     val fileDirectoryUiState = fileDirectoryViewModel.uiState
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var isReaderOpen by rememberSaveable { mutableStateOf(false) }
-    var readerLandscapeModeEnabled by rememberSaveable { mutableStateOf(false) }
-    var readerLandscapeOrientationLocked by rememberSaveable { mutableStateOf(false) }
-    var forceMainPortraitAfterTransientLandscape by rememberSaveable { mutableStateOf(false) }
+    val readerOpenState = rememberSaveable { mutableStateOf(false) }
+    val readerLandscapeModeState = rememberSaveable { mutableStateOf(false) }
+    val readerLandscapeOrientationLockedState = rememberSaveable { mutableStateOf(false) }
+    val forceMainPortraitState = rememberSaveable { mutableStateOf(false) }
     var isWebDavOpen by rememberSaveable { mutableStateOf(false) }
     var isAddingWebDavPath by rememberSaveable { mutableStateOf(false) }
     var editingWebDavSourceId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -308,66 +302,23 @@ fun ComicDavApp() {
         )
     }
     val videoPlayerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        forceMainPortraitAfterTransientLandscape = true
+        forceMainPortraitState.value = true
     }
 
     fun openVideoPlayer(intent: Intent) {
         videoPlayerLauncher.launch(intent)
     }
 
-    LaunchedEffect(
-        appSettings.screenRotationLockEnabled,
-        isReaderOpen,
-        readerLandscapeModeEnabled,
-        readerLandscapeOrientationLocked,
-        forceMainPortraitAfterTransientLandscape,
-    ) {
-        (context as? Activity)?.requestedOrientation =
-            comicDavRequestedOrientation(
-                screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
-                isReaderOpen = isReaderOpen,
-                readerLandscapeModeEnabled = readerLandscapeModeEnabled,
-                readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
-                forceMainPortrait = forceMainPortraitAfterTransientLandscape,
-            )
-    }
-
-    DisposableEffect(
-        context,
-        lifecycleOwner,
-        appSettings.screenRotationLockEnabled,
-        isReaderOpen,
-        readerLandscapeModeEnabled,
-        readerLandscapeOrientationLocked,
-        forceMainPortraitAfterTransientLandscape,
-    ) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                (context as? Activity)?.requestedOrientation =
-                    comicDavRequestedOrientation(
-                        screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
-                        isReaderOpen = isReaderOpen,
-                        readerLandscapeModeEnabled = readerLandscapeModeEnabled,
-                        readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
-                        forceMainPortrait = forceMainPortraitAfterTransientLandscape,
-                    )
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    LaunchedEffect(forceMainPortraitAfterTransientLandscape, isReaderOpen, configuration.orientation) {
-        if (
-            forceMainPortraitAfterTransientLandscape &&
-            !isReaderOpen &&
-            configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        ) {
-            forceMainPortraitAfterTransientLandscape = false
-        }
-    }
+    ReaderOrientationEffects(
+        activity = context as? Activity,
+        lifecycleOwner = lifecycleOwner,
+        screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
+        readerOpenState = readerOpenState,
+        readerLandscapeModeState = readerLandscapeModeState,
+        readerLandscapeOrientationLockedState = readerLandscapeOrientationLockedState,
+        forceMainPortraitState = forceMainPortraitState,
+        configurationOrientation = configuration.orientation,
+    )
 
     LaunchedEffect(appSettings.readerLoggingMode) {
         ReaderDiagnosticLog.setMode(appSettings.readerLoggingMode)
@@ -431,7 +382,7 @@ fun ComicDavApp() {
                         comicKey = comicKey,
                         pageCacheKey = readerImageFormatCacheKey(comicKey, avifImagesEnabled),
                     )
-                    isReaderOpen = true
+                    readerOpenState.value = true
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error(failureEvent, error)
@@ -1474,15 +1425,15 @@ fun ComicDavApp() {
 
     fun closeReaderFromNavigation() {
         ReaderDiagnosticLog.event("reader_navigation_close")
-        val shouldRestoreMainPortrait = readerLandscapeModeEnabled
+        val shouldRestoreMainPortrait = readerLandscapeModeState.value
         readerViewModel.closeReader()
         downloadProgress = null
         webDavActionMessage = null
-        readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
-        readerLandscapeOrientationLocked = false
-        isReaderOpen = false
+        readerLandscapeModeState.value = readerLandscapeModeAfterReaderClosed()
+        readerLandscapeOrientationLockedState.value = false
+        readerOpenState.value = false
         if (shouldRestoreMainPortrait) {
-            forceMainPortraitAfterTransientLandscape = true
+            forceMainPortraitState.value = true
         }
     }
 
@@ -1549,7 +1500,7 @@ fun ComicDavApp() {
         downloadProgress = null
         localOpenError = null
         webDavActionMessage = null
-        isReaderOpen = true
+        readerOpenState.value = true
         startReaderLogFile(context, logFolderUriText, scope, appSettings.readerLoggingMode != ReaderLoggingMode.OFF)
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
         val avifImagesEnabled = effectiveAvifImagesEnabled(appSettings.avifImagesEnabled)
@@ -1715,33 +1666,29 @@ fun ComicDavApp() {
         videoLibraryItemSelected = selectedVideoLibraryItem != null,
     )
 
-    BackHandler(
-        enabled = hasActiveSelection ||
-            isReaderOpen ||
-            isWebDavOpen ||
-            fileDirectoryUiState.currentTitle != null ||
-            selectedTab != AppTab.SOURCES,
-    ) {
-        when {
-            hasActiveSelection -> clearSelection()
-            isReaderOpen -> closeReaderFromNavigation()
-            isWebDavOpen -> {
-                if (!webDavViewModel.handleBack()) {
-                    isWebDavOpen = false
-                    isAddingWebDavPath = false
-                    editingWebDavSourceId = null
-                    localOpenError = null
-                    webDavActionMessage = null
-                }
-            }
-            selectedTab == AppTab.SOURCES && fileDirectoryViewModel.handleBack() -> Unit
-            selectedTab != AppTab.SOURCES -> {
-                selectedTabName = AppTab.SOURCES.name
-                localOpenError = null
-                webDavActionMessage = null
-            }
-        }
-    }
+    ComicDavBackHandler(
+        hasActiveSelection = hasActiveSelection,
+        readerOpenState = readerOpenState,
+        isWebDavOpen = isWebDavOpen,
+        hasOpenFileDirectory = fileDirectoryUiState.currentTitle != null,
+        selectedTab = selectedTab,
+        onClearSelection = ::clearSelection,
+        onCloseReader = ::closeReaderFromNavigation,
+        onNavigateWebDavBack = webDavViewModel::handleBack,
+        onCloseWebDav = {
+            isWebDavOpen = false
+            isAddingWebDavPath = false
+            editingWebDavSourceId = null
+            localOpenError = null
+            webDavActionMessage = null
+        },
+        onNavigateFileDirectoryBack = { fileDirectoryViewModel.handleBack() },
+        onReturnToSources = {
+            selectedTabName = AppTab.SOURCES.name
+            localOpenError = null
+            webDavActionMessage = null
+        },
+    )
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == AppTab.SETTINGS) {
@@ -1773,33 +1720,33 @@ fun ComicDavApp() {
 
                 else -> {
                     ReaderOverlayHost(
-                        readerOpen = isReaderOpen,
+                        readerOpenState = readerOpenState,
                         readerContent = {
                             ReaderRoute(
-                                readerUiState = readerUiState,
+                                readerUiState = readerViewModel.uiState,
                                 localOpenError = localOpenError,
                                 downloadProgress = downloadProgress,
                                 appSettings = appSettings,
-                                readerLandscapeModeEnabled = readerLandscapeModeEnabled,
-                                readerLandscapeOrientationLocked = readerLandscapeOrientationLocked,
+                                readerLandscapeModeEnabled = readerLandscapeModeState.value,
+                                readerLandscapeOrientationLocked = readerLandscapeOrientationLockedState.value,
                                 onReaderLandscapeModeChange = { value ->
                                     if (
                                         shouldForcePortraitAfterReaderLandscapeModeChange(
-                                            currentReaderLandscapeModeEnabled = readerLandscapeModeEnabled,
+                                            currentReaderLandscapeModeEnabled = readerLandscapeModeState.value,
                                             nextReaderLandscapeModeEnabled = value,
                                         )
                                     ) {
-                                        forceMainPortraitAfterTransientLandscape = true
+                                        forceMainPortraitState.value = true
                                     } else if (value) {
-                                        forceMainPortraitAfterTransientLandscape = false
+                                        forceMainPortraitState.value = false
                                     }
-                                    readerLandscapeModeEnabled = value
+                                    readerLandscapeModeState.value = value
                                     if (!value) {
-                                        readerLandscapeOrientationLocked = false
+                                        readerLandscapeOrientationLockedState.value = false
                                     }
                                 },
                                 onReaderLandscapeOrientationLockedChange = { value ->
-                                    readerLandscapeOrientationLocked = value
+                                    readerLandscapeOrientationLockedState.value = value
                                 },
                                 onPageChanged = readerViewModel::selectPage,
                                 onPageDemanded = readerViewModel::reportPageDemand,
@@ -1813,26 +1760,26 @@ fun ComicDavApp() {
                                 },
                                 onCancelLoading = {
                                     ReaderDiagnosticLog.event("reader_open_cancel")
-                                    val shouldRestoreMainPortrait = readerLandscapeModeEnabled
+                                    val shouldRestoreMainPortrait = readerLandscapeModeState.value
                                     readerViewModel.closeReader()
                                     downloadProgress = null
-                                    readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
-                                    readerLandscapeOrientationLocked = false
-                                    isReaderOpen = false
+                                    readerLandscapeModeState.value = readerLandscapeModeAfterReaderClosed()
+                                    readerLandscapeOrientationLockedState.value = false
+                                    readerOpenState.value = false
                                     if (shouldRestoreMainPortrait) {
-                                        forceMainPortraitAfterTransientLandscape = true
+                                        forceMainPortraitState.value = true
                                     }
                                 },
                                 onClose = {
                                     ReaderDiagnosticLog.event("reader_close")
-                                    val shouldRestoreMainPortrait = readerLandscapeModeEnabled
+                                    val shouldRestoreMainPortrait = readerLandscapeModeState.value
                                     readerViewModel.closeReader()
                                     downloadProgress = null
-                                    readerLandscapeModeEnabled = readerLandscapeModeAfterReaderClosed()
-                                    readerLandscapeOrientationLocked = false
-                                    isReaderOpen = false
+                                    readerLandscapeModeState.value = readerLandscapeModeAfterReaderClosed()
+                                    readerLandscapeOrientationLockedState.value = false
+                                    readerOpenState.value = false
                                     if (shouldRestoreMainPortrait) {
-                                        forceMainPortraitAfterTransientLandscape = true
+                                        forceMainPortraitState.value = true
                                     }
                                 },
                                 onAutoPageEnabledChange = { value ->
