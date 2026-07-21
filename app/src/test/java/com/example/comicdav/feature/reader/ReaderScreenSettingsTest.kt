@@ -3,7 +3,10 @@ package com.example.comicdav.feature.reader
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ReaderScreenSettingsTest {
     @Test
@@ -42,6 +45,23 @@ class ReaderScreenSettingsTest {
 
         assertEquals(500f, state.offsetX, 0.001f)
         assertEquals(-750f, state.offsetY, 0.001f)
+    }
+
+    @Test
+    fun zoomedReaderViewportSuspendsUnderlyingPageScrolling() {
+        assertTrue(readerViewportScrollEnabled(ReaderZoomState()))
+        assertFalse(readerViewportScrollEnabled(ReaderZoomState(scale = 2f)))
+    }
+
+    @Test
+    fun pinchZoomTransformIsOwnedByReaderViewportInsteadOfIndividualImages() {
+        val source = File("src/main/java/com/example/comicdav/feature/reader/ReaderScreen.kt").readText()
+        val viewportTransformCall = source.indexOf(".readerZoomTransform(")
+        val imagePageDeclaration = source.indexOf("private fun ReaderImagePage(")
+
+        assertTrue(viewportTransformCall >= 0)
+        assertTrue(viewportTransformCall < imagePageDeclaration)
+        assertFalse(source.substring(imagePageDeclaration).contains(".readerZoomTransform("))
     }
 
     @Test

@@ -425,7 +425,7 @@ private fun ComicSettingsPage(
                 title = "双指缩放",
                 checked = settings.readerPinchZoomEnabled,
                 onCheckedChange = onReaderPinchZoomEnabledChange,
-                subtitle = "在阅读时用双指放大并拖动查看细节",
+                subtitle = "用双指放大全屏阅读画面，并拖动查看细节",
             )
             DropdownRow(
                 title = "WebDAV 预取页数",

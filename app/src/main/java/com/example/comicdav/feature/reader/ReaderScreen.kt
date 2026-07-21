@@ -69,6 +69,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
@@ -189,11 +190,34 @@ fun ReaderScreen(
                 }
                 val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
                 var readerViewportSize by remember { mutableStateOf(IntSize.Zero) }
+                var readerZoomState by remember(readerStateKey, readingDirection) {
+                    mutableStateOf(ReaderZoomState())
+                }
+                val latestReaderZoomState by rememberUpdatedState(readerZoomState)
+                val latestReaderZoomStateUpdater by rememberUpdatedState<(ReaderZoomState) -> Unit> { nextState ->
+                    readerZoomState = nextState
+                }
                 var readerLandscapeScaleMode by rememberSaveable {
                     mutableStateOf(ReaderLandscapeScaleMode.FIT_VIEWPORT)
                 }
                 val showLandscapeScaleButton =
                     readerViewportSize.width > readerViewportSize.height
+                val readerContentScrollEnabled = readerViewportScrollEnabled(readerZoomState)
+                LaunchedEffect(pinchZoomEnabled) {
+                    if (!pinchZoomEnabled) {
+                        readerZoomState = ReaderZoomState()
+                    }
+                }
+                LaunchedEffect(readerViewportSize) {
+                    if (readerViewportSize.width > 0 && readerViewportSize.height > 0) {
+                        readerZoomState = readerZoomStateAfterTransform(
+                            current = readerZoomState,
+                            zoomChange = 1f,
+                            pan = Offset.Zero,
+                            viewportSize = readerViewportSize,
+                        )
+                    }
+                }
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
                         runCatching { focusRequester.requestFocus() }
@@ -335,56 +359,74 @@ fun ReaderScreen(
                             )
                         },
                 ) {
-                    if (isContinuousVertical) {
-                        LazyColumn(
-                            state = continuousListState,
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(0.dp),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds(),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .readerZoomTransform(
+                                    enabled = pinchZoomEnabled,
+                                    zoomState = readerZoomState,
+                                    viewportSize = readerViewportSize,
+                                    currentZoomState = { latestReaderZoomState },
+                                    onZoomStateChanged = latestReaderZoomStateUpdater,
+                                ),
                         ) {
-                            items(uiState.pageCount) { page ->
-                                ReaderImagePage(
-                                    page = page,
-                                    pageFile = uiState.pageFiles[page],
-                                    onImageLoadStarted = onImageLoadStarted,
-                                    onImageLoadSucceeded = onImageLoadSucceeded,
-                                    onImageLoadFailed = onImageLoadFailed,
-                                    fillWidth = true,
-                                    pinchZoomEnabled = pinchZoomEnabled,
-                                    readerViewportSize = readerViewportSize,
-                                    landscapeScaleMode = readerLandscapeScaleMode,
-                                )
+                            if (isContinuousVertical) {
+                                LazyColumn(
+                                    state = continuousListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                                    userScrollEnabled = readerContentScrollEnabled,
+                                ) {
+                                    items(uiState.pageCount) { page ->
+                                        ReaderImagePage(
+                                            page = page,
+                                            pageFile = uiState.pageFiles[page],
+                                            onImageLoadStarted = onImageLoadStarted,
+                                            onImageLoadSucceeded = onImageLoadSucceeded,
+                                            onImageLoadFailed = onImageLoadFailed,
+                                            fillWidth = true,
+                                            readerViewportSize = readerViewportSize,
+                                            landscapeScaleMode = readerLandscapeScaleMode,
+                                        )
+                                    }
+                                }
+                            } else if (readingDirection == ReadingDirection.VERTICAL) {
+                                VerticalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    beyondViewportPageCount = 1,
+                                    userScrollEnabled = readerContentScrollEnabled,
+                                ) { page ->
+                                    ReaderImagePage(
+                                        page = page,
+                                        pageFile = uiState.pageFiles[page],
+                                        onImageLoadStarted = onImageLoadStarted,
+                                        onImageLoadSucceeded = onImageLoadSucceeded,
+                                        onImageLoadFailed = onImageLoadFailed,
+                                    )
+                                }
+                            } else {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    beyondViewportPageCount = 1,
+                                    reverseLayout = readingDirection == ReadingDirection.RIGHT_TO_LEFT,
+                                    userScrollEnabled = readerContentScrollEnabled,
+                                ) { page ->
+                                    ReaderImagePage(
+                                        page = page,
+                                        pageFile = uiState.pageFiles[page],
+                                        onImageLoadStarted = onImageLoadStarted,
+                                        onImageLoadSucceeded = onImageLoadSucceeded,
+                                        onImageLoadFailed = onImageLoadFailed,
+                                    )
+                                }
                             }
-                        }
-                    } else if (readingDirection == ReadingDirection.VERTICAL) {
-                        VerticalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            beyondViewportPageCount = 1,
-                        ) { page ->
-                            ReaderImagePage(
-                                page = page,
-                                pageFile = uiState.pageFiles[page],
-                                onImageLoadStarted = onImageLoadStarted,
-                                onImageLoadSucceeded = onImageLoadSucceeded,
-                                onImageLoadFailed = onImageLoadFailed,
-                                pinchZoomEnabled = pinchZoomEnabled,
-                            )
-                        }
-                    } else {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            beyondViewportPageCount = 1,
-                            reverseLayout = readingDirection == ReadingDirection.RIGHT_TO_LEFT,
-                        ) { page ->
-                            ReaderImagePage(
-                                page = page,
-                                pageFile = uiState.pageFiles[page],
-                                onImageLoadStarted = onImageLoadStarted,
-                                onImageLoadSucceeded = onImageLoadSucceeded,
-                                onImageLoadFailed = onImageLoadFailed,
-                                pinchZoomEnabled = pinchZoomEnabled,
-                            )
                         }
                     }
                 }
@@ -530,6 +572,9 @@ internal data class ReaderZoomState(
     val offsetY: Float = 0f,
 )
 
+internal fun readerViewportScrollEnabled(zoomState: ReaderZoomState): Boolean =
+    zoomState.scale <= ReaderMinZoom
+
 internal fun readerZoomStateAfterTransform(
     current: ReaderZoomState,
     zoomChange: Float,
@@ -570,7 +615,7 @@ private fun Modifier.readerZoomTransform(
     return transformed.pointerInput(viewportSize) {
         awaitEachGesture {
             do {
-                val event = awaitPointerEvent()
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                 val pressedChanges = event.changes.filter { it.pressed }
                 val current = currentZoomState()
                 when {
@@ -614,7 +659,6 @@ private fun ReaderImagePage(
     onImageLoadFailed: (Int) -> Unit,
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
-    pinchZoomEnabled: Boolean = false,
     readerViewportSize: IntSize = IntSize.Zero,
     landscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
 ) {
@@ -623,12 +667,6 @@ private fun ReaderImagePage(
     }
     var imageSize by remember(page, pageFile?.absolutePath) {
         mutableStateOf<IntSize?>(null)
-    }
-    var zoomState by remember(page, pageFile?.absolutePath, fillWidth) {
-        mutableStateOf(ReaderZoomState())
-    }
-    var viewportSize by remember(page, pageFile?.absolutePath, fillWidth) {
-        mutableStateOf(IntSize.Zero)
     }
     val scalePolicy = readerPageScalePolicy(
         fillWidth = fillWidth,
@@ -646,10 +684,6 @@ private fun ReaderImagePage(
     } else {
         Modifier
     }
-    val latestZoomState by rememberUpdatedState(zoomState)
-    val latestZoomStateUpdater by rememberUpdatedState<(ReaderZoomState) -> Unit> { nextState ->
-        zoomState = nextState
-    }
     Box(
         modifier = if (fillWidth) {
             modifier
@@ -657,12 +691,10 @@ private fun ReaderImagePage(
                 .then(fitViewportHeightModifier)
                 .background(Color.Black)
                 .clipToBounds()
-                .onSizeChanged { viewportSize = it }
         } else {
             modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .onSizeChanged { viewportSize = it }
         },
         contentAlignment = Alignment.Center,
     ) {
@@ -697,13 +729,7 @@ private fun ReaderImagePage(
                     }
                 } else {
                     Modifier.fillMaxSize()
-                }).readerZoomTransform(
-                    enabled = pinchZoomEnabled && continuousImageReady,
-                    zoomState = zoomState,
-                    viewportSize = viewportSize,
-                    currentZoomState = { latestZoomState },
-                    onZoomStateChanged = latestZoomStateUpdater,
-                ),
+                }),
                 contentScale = if (fillWidth && scalePolicy == ReaderPageScalePolicy.FillWidth) {
                     ContentScale.FillWidth
                 } else {
