@@ -12,7 +12,9 @@ class RustAndroidBuildInputsTest {
         assertTrue(buildScript.contains("src/**/*.rs"))
         assertTrue(buildScript.contains("Cargo.toml"))
         assertTrue(buildScript.contains("Cargo.lock"))
-        assertTrue(buildScript.contains("withPathSensitivity(PathSensitivity.RELATIVE)"))
+        assertTrue(buildScript.contains("@get:PathSensitive(PathSensitivity.RELATIVE)"))
+        assertTrue(buildScript.contains("@CacheableTask"))
+        assertTrue(buildScript.contains("CompileRustAndroidLibrary"))
     }
 
     @Test
@@ -29,5 +31,5 @@ class RustAndroidBuildInputsTest {
         listOf(
             File("build.gradle.kts"),
             File("app/build.gradle.kts"),
-        ).first { it.isFile && it.readText().contains("buildRustAndroidVariant") }
+        ).first { it.isFile && it.readText().contains("registerRustAndroidVariant") }
 }

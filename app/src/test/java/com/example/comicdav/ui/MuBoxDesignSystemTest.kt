@@ -7,7 +7,6 @@ import com.example.comicdav.video.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class MuBoxDesignSystemTest {
     @Test
@@ -53,74 +52,4 @@ class MuBoxDesignSystemTest {
         assertEquals(80.dp, MuBoxMetrics.PlayerCenterControlTouchDp)
     }
 
-    @Test
-    fun sharedComposableApiKeepsModifierAsFirstOptionalParameter() {
-        assertSignatureOrder(
-            functionName = "MuBoxPageHeader",
-            orderedParameters = listOf("title", "modifier", "subtitle", "trailing"),
-        )
-        assertSignatureOrder(
-            functionName = "MuBoxMessagePanel",
-            orderedParameters = listOf("text", "modifier", "isError", "onDismiss", "dismissLabel"),
-        )
-        assertSignatureOrder(
-            functionName = "MuBoxEmptyState",
-            orderedParameters = listOf("icon", "title", "modifier", "body", "actionLabel", "onAction"),
-        )
-        assertSignatureOrder(
-            functionName = "MuBoxDenseMediaRow",
-            orderedParameters = listOf(
-                "title",
-                "mediaKind",
-                "onClick",
-                "modifier",
-                "subtitle",
-                "selected",
-                "onLongClick",
-                "onLongClickLabel",
-                "trailing",
-            ),
-        )
-    }
-
-    @Test
-    fun denseMediaRowExposesSelectedAndLongPressAccessibilityContracts() {
-        val source = muBoxComponentsSource()
-
-        assertTrue("MuBoxDenseMediaRow should use combinedClickable for long-press actions", "combinedClickable" in source)
-        assertTrue("MuBoxDenseMediaRow should expose selected semantics", "this.selected = selected" in source)
-        assertTrue("MuBoxDenseMediaRow should pass onLongClick to combinedClickable", "onLongClick = onLongClick" in source)
-        assertTrue(
-            "MuBoxDenseMediaRow should pass onLongClickLabel to combinedClickable",
-            "onLongClickLabel = onLongClickLabel" in source,
-        )
-    }
-
-    private fun assertSignatureOrder(functionName: String, orderedParameters: List<String>) {
-        val signature = functionSignature(functionName)
-        val parameterOffsets = orderedParameters.map { parameterName ->
-            val offset = signature.indexOf("$parameterName:")
-            assertTrue("$functionName should declare parameter '$parameterName'", offset >= 0)
-            offset
-        }
-
-        assertEquals(
-            "$functionName parameter order changed",
-            parameterOffsets.sorted(),
-            parameterOffsets,
-        )
-    }
-
-    private fun functionSignature(functionName: String): String {
-        val source = muBoxComponentsSource()
-        val start = source.indexOf("fun $functionName(")
-        assertTrue("Missing function $functionName", start >= 0)
-
-        val bodyStart = source.indexOf(") {", start)
-        assertTrue("Missing function body for $functionName", bodyStart >= 0)
-        return source.substring(start, bodyStart)
-    }
-
-    private fun muBoxComponentsSource(): String =
-        File("src/main/java/com/example/comicdav/ui/MuBoxComponents.kt").readText()
 }

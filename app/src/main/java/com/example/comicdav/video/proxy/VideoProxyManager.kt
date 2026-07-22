@@ -8,9 +8,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 object VideoProxyManager {
     private val lifecycleLock = Any()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeStreams = 0
     @Volatile
     private var scope = newScope()
@@ -114,11 +116,17 @@ object VideoProxyManager {
     }
 
     private fun shutdownLocked() {
-        proxy?.close()
+        val closingProxy = proxy
+        closingProxy?.close()
         proxy = null
         activeStreams = 0
         scope.cancel()
         scope = newScope()
+        if (closingProxy != null) {
+            cleanupScope.launch {
+                closingProxy.awaitClosed()
+            }
+        }
     }
 
     private fun SavedWebDavAccount.client(): OkHttpWebDavClient =

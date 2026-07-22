@@ -79,6 +79,40 @@ private enum class SettingsPage {
     VIDEO,
 }
 
+sealed interface SettingsAction {
+    data class SetReadingDirection(val value: ReadingDirection) : SettingsAction
+    data class SetReaderLoggingMode(val value: ReaderLoggingMode) : SettingsAction
+    data class SetColorPalette(val value: AppColorPalette) : SettingsAction
+    data class SetAvifImagesEnabled(val value: Boolean) : SettingsAction
+    data class SetAutoPageEnabled(val value: Boolean) : SettingsAction
+    data class SetAutoPageSpeedMillis(val value: Int) : SettingsAction
+    data class SetScreenRotationLockEnabled(val value: Boolean) : SettingsAction
+    data class SetVolumeKeysTurnPagesEnabled(val value: Boolean) : SettingsAction
+    data class SetReaderPinchZoomEnabled(val value: Boolean) : SettingsAction
+    data class SetPageImageCacheEnabled(val value: Boolean) : SettingsAction
+    data class SetDiskCacheLimitMb(val value: Int) : SettingsAction
+    data class SetWebDavPrefetchPageCount(val value: Int) : SettingsAction
+    data class SetLibraryCoversEnabled(val value: Boolean) : SettingsAction
+    data class SetVideoResumeEnabled(val value: Boolean) : SettingsAction
+    data class SetVideoBackgroundMode(val value: VideoBackgroundMode) : SettingsAction
+    data class SetVideoSeekOptimizationEnabled(val value: Boolean) : SettingsAction
+    data class SetVideoForwardPrefetchMode(val value: VideoForwardPrefetchMode) : SettingsAction
+    data class SetVideoProxyDiagnosticsMode(val value: VideoProxyDiagnosticsMode) : SettingsAction
+    data class SetVideoPlayerProxyDebugInfoEnabled(val value: Boolean) : SettingsAction
+    data class SetVideoOutputMode(val value: VideoOutputMode) : SettingsAction
+    data class SetGpuApiMode(val value: GpuApiMode) : SettingsAction
+    data class SetAnime4KEnabled(val value: Boolean) : SettingsAction
+    data class SetAnime4KMode(val value: Anime4KMode) : SettingsAction
+    data class SetAnime4KQuality(val value: Anime4KQuality) : SettingsAction
+    data class SetVideoDecoderMode(val value: VideoDecoderMode) : SettingsAction
+    data class SetMpvProfileMode(val value: MpvProfileMode) : SettingsAction
+    data class SetVideoControlsAutoHideMillis(val value: Int) : SettingsAction
+    data class SetVideoPlayerOrientationMode(val value: VideoPlayerOrientationMode) : SettingsAction
+    data class SetVideoLibraryThumbnailsEnabled(val value: Boolean) : SettingsAction
+    data class ClearCacheCategory(val category: ComicCacheCategory) : SettingsAction
+    data object ClearAllCache : SettingsAction
+}
+
 internal data class SettingsGroupLayout(
     val title: String,
     val rows: List<String>,
@@ -154,39 +188,9 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
-    onReadingDirectionChange: (ReadingDirection) -> Unit,
-    onReaderLoggingModeChange: (ReaderLoggingMode) -> Unit,
-    onColorPaletteChange: (AppColorPalette) -> Unit,
-    onAvifImagesEnabledChange: (Boolean) -> Unit = {},
-    onAutoPageEnabledChange: (Boolean) -> Unit,
-    onAutoPageSpeedChange: (Int) -> Unit,
-    onScreenRotationLockChange: (Boolean) -> Unit,
-    onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
-    onReaderPinchZoomEnabledChange: (Boolean) -> Unit = {},
-    onPageImageCacheEnabledChange: (Boolean) -> Unit = {},
-    onDiskCacheLimitChange: (Int) -> Unit,
-    onWebDavPrefetchPageCountChange: (Int) -> Unit,
-    onLibraryCoversEnabledChange: (Boolean) -> Unit,
-    onVideoResumeEnabledChange: (Boolean) -> Unit,
-    onVideoBackgroundModeChange: (VideoBackgroundMode) -> Unit = {},
-    onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit = {},
-    onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit = {},
-    onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit = {},
-    onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit = {},
-    onVideoOutputModeChange: (VideoOutputMode) -> Unit = {},
-    onGpuApiModeChange: (GpuApiMode) -> Unit = {},
-    onAnime4KEnabledChange: (Boolean) -> Unit = {},
-    onAnime4KModeChange: (Anime4KMode) -> Unit = {},
-    onAnime4KQualityChange: (Anime4KQuality) -> Unit = {},
-    onVideoDecoderModeChange: (VideoDecoderMode) -> Unit = {},
-    onMpvProfileModeChange: (MpvProfileMode) -> Unit = {},
-    onVideoControlsAutoHideMillisChange: (Int) -> Unit = {},
-    onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit = {},
-    onVideoLibraryThumbnailsEnabledChange: (Boolean) -> Unit = {},
+    onAction: (SettingsAction) -> Unit,
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
-    onClearCacheCategory: (ComicCacheCategory) -> Unit = {},
-    onClearAllCache: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var currentPage by remember { mutableStateOf(SettingsPage.ROOT) }
@@ -199,15 +203,15 @@ fun SettingsScreen(
         SettingsPage.COMIC -> {
             ComicSettingsPage(
                 settings = settings,
-                onReadingDirectionChange = onReadingDirectionChange,
-                onReaderLoggingModeChange = onReaderLoggingModeChange,
-                onAutoPageEnabledChange = onAutoPageEnabledChange,
-                onAutoPageSpeedChange = onAutoPageSpeedChange,
-                onVolumeKeysTurnPagesChange = onVolumeKeysTurnPagesChange,
-                onReaderPinchZoomEnabledChange = onReaderPinchZoomEnabledChange,
-                onWebDavPrefetchPageCountChange = onWebDavPrefetchPageCountChange,
-                onAvifImagesEnabledChange = onAvifImagesEnabledChange,
-                onLibraryCoversEnabledChange = onLibraryCoversEnabledChange,
+                onReadingDirectionChange = { onAction(SettingsAction.SetReadingDirection(it)) },
+                onReaderLoggingModeChange = { onAction(SettingsAction.SetReaderLoggingMode(it)) },
+                onAutoPageEnabledChange = { onAction(SettingsAction.SetAutoPageEnabled(it)) },
+                onAutoPageSpeedChange = { onAction(SettingsAction.SetAutoPageSpeedMillis(it)) },
+                onVolumeKeysTurnPagesChange = { onAction(SettingsAction.SetVolumeKeysTurnPagesEnabled(it)) },
+                onReaderPinchZoomEnabledChange = { onAction(SettingsAction.SetReaderPinchZoomEnabled(it)) },
+                onWebDavPrefetchPageCountChange = { onAction(SettingsAction.SetWebDavPrefetchPageCount(it)) },
+                onAvifImagesEnabledChange = { onAction(SettingsAction.SetAvifImagesEnabled(it)) },
+                onLibraryCoversEnabledChange = { onAction(SettingsAction.SetLibraryCoversEnabled(it)) },
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
             )
@@ -216,22 +220,32 @@ fun SettingsScreen(
         SettingsPage.VIDEO -> {
             VideoSettingsPage(
                 settings = settings,
-                onVideoResumeEnabledChange = onVideoResumeEnabledChange,
-                onVideoBackgroundModeChange = onVideoBackgroundModeChange,
-                onVideoSeekOptimizationEnabledChange = onVideoSeekOptimizationEnabledChange,
-                onVideoForwardPrefetchModeChange = onVideoForwardPrefetchModeChange,
-                onVideoProxyDiagnosticsModeChange = onVideoProxyDiagnosticsModeChange,
-                onVideoPlayerProxyDebugInfoEnabledChange = onVideoPlayerProxyDebugInfoEnabledChange,
-                onVideoOutputModeChange = onVideoOutputModeChange,
-                onGpuApiModeChange = onGpuApiModeChange,
-                onAnime4KEnabledChange = onAnime4KEnabledChange,
-                onAnime4KModeChange = onAnime4KModeChange,
-                onAnime4KQualityChange = onAnime4KQualityChange,
-                onVideoDecoderModeChange = onVideoDecoderModeChange,
-                onMpvProfileModeChange = onMpvProfileModeChange,
-                onVideoControlsAutoHideMillisChange = onVideoControlsAutoHideMillisChange,
-                onVideoPlayerOrientationModeChange = onVideoPlayerOrientationModeChange,
-                onVideoLibraryThumbnailsEnabledChange = onVideoLibraryThumbnailsEnabledChange,
+                onVideoResumeEnabledChange = { onAction(SettingsAction.SetVideoResumeEnabled(it)) },
+                onVideoBackgroundModeChange = { onAction(SettingsAction.SetVideoBackgroundMode(it)) },
+                onVideoSeekOptimizationEnabledChange = {
+                    onAction(SettingsAction.SetVideoSeekOptimizationEnabled(it))
+                },
+                onVideoForwardPrefetchModeChange = { onAction(SettingsAction.SetVideoForwardPrefetchMode(it)) },
+                onVideoProxyDiagnosticsModeChange = { onAction(SettingsAction.SetVideoProxyDiagnosticsMode(it)) },
+                onVideoPlayerProxyDebugInfoEnabledChange = {
+                    onAction(SettingsAction.SetVideoPlayerProxyDebugInfoEnabled(it))
+                },
+                onVideoOutputModeChange = { onAction(SettingsAction.SetVideoOutputMode(it)) },
+                onGpuApiModeChange = { onAction(SettingsAction.SetGpuApiMode(it)) },
+                onAnime4KEnabledChange = { onAction(SettingsAction.SetAnime4KEnabled(it)) },
+                onAnime4KModeChange = { onAction(SettingsAction.SetAnime4KMode(it)) },
+                onAnime4KQualityChange = { onAction(SettingsAction.SetAnime4KQuality(it)) },
+                onVideoDecoderModeChange = { onAction(SettingsAction.SetVideoDecoderMode(it)) },
+                onMpvProfileModeChange = { onAction(SettingsAction.SetMpvProfileMode(it)) },
+                onVideoControlsAutoHideMillisChange = {
+                    onAction(SettingsAction.SetVideoControlsAutoHideMillis(it))
+                },
+                onVideoPlayerOrientationModeChange = {
+                    onAction(SettingsAction.SetVideoPlayerOrientationMode(it))
+                },
+                onVideoLibraryThumbnailsEnabledChange = {
+                    onAction(SettingsAction.SetVideoLibraryThumbnailsEnabled(it))
+                },
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
             )
@@ -257,12 +271,12 @@ fun SettingsScreen(
                 selected = settings.colorPalette,
                 options = AppColorPalette.entries,
                 label = AppColorPalette::settingsLabel,
-                onSelected = onColorPaletteChange,
+                onSelected = { onAction(SettingsAction.SetColorPalette(it)) },
             )
             MuBoxSwitchRow(
                 title = "屏幕旋转锁定",
                 checked = settings.screenRotationLockEnabled,
-                onCheckedChange = onScreenRotationLockChange,
+                onCheckedChange = { onAction(SettingsAction.SetScreenRotationLockEnabled(it)) },
                 subtitle = "锁定当前屏幕方向",
             )
         }
@@ -287,79 +301,81 @@ fun SettingsScreen(
                 title = "缓存总占用",
                 subtitle = formatCacheSize(cacheAnalysis.totalBytes),
                 enabled = cacheAnalysis.totalBytes > 0L,
-                onClear = onClearAllCache,
+                onClear = { onAction(SettingsAction.ClearAllCache) },
             )
             CacheActionRow(
                 title = "远程整本缓存",
                 subtitle = formatCacheSize(cacheAnalysis.remoteDownloadsBytes),
                 enabled = cacheAnalysis.remoteDownloadsBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_DOWNLOADS) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.REMOTE_DOWNLOADS)) },
             )
             CacheActionRow(
                 title = "WebDAV 索引缓存",
                 subtitle = formatCacheSize(cacheAnalysis.remoteIndexBytes),
                 enabled = cacheAnalysis.remoteIndexBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.REMOTE_INDEX) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.REMOTE_INDEX)) },
             )
             MuBoxSwitchRow(
                 title = "页面图片缓存",
                 checked = settings.pageImageCacheEnabled,
-                onCheckedChange = onPageImageCacheEnabledChange,
+                onCheckedChange = { onAction(SettingsAction.SetPageImageCacheEnabled(it)) },
                 subtitle = "关闭后不复用页面文件",
             )
             if (settings.pageImageCacheEnabled) {
                 DiskCacheLimitRow(
                     limitMb = settings.diskCacheLimitMb,
-                    onLimitChange = onDiskCacheLimitChange,
+                    onLimitChange = { onAction(SettingsAction.SetDiskCacheLimitMb(it)) },
                 )
             }
             CacheActionRow(
                 title = "页面图片缓存占用",
                 subtitle = formatCacheSize(cacheAnalysis.readerPagesBytes),
                 enabled = cacheAnalysis.readerPagesBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.READER_PAGES) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.READER_PAGES)) },
             )
             CacheActionRow(
                 title = "临时页面缓存",
                 subtitle = formatCacheSize(cacheAnalysis.transientReaderPagesBytes),
                 enabled = cacheAnalysis.transientReaderPagesBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.TRANSIENT_READER_PAGES) },
+                onClear = {
+                    onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.TRANSIENT_READER_PAGES))
+                },
             )
             CacheActionRow(
                 title = "书架封面缓存",
                 subtitle = formatCacheSize(cacheAnalysis.libraryCoversBytes),
                 enabled = cacheAnalysis.libraryCoversBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS)) },
             )
             CacheActionRow(
                 title = "影视库缩略图缓存",
                 subtitle = formatCacheSize(cacheAnalysis.videoThumbnailsBytes),
                 enabled = cacheAnalysis.videoThumbnailsBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.VIDEO_THUMBNAILS) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.VIDEO_THUMBNAILS)) },
             )
             CacheActionRow(
                 title = "视频字幕缓存",
                 subtitle = formatCacheSize(cacheAnalysis.videoSubtitlesBytes),
                 enabled = cacheAnalysis.videoSubtitlesBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.VIDEO_SUBTITLES) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.VIDEO_SUBTITLES)) },
             )
             CacheActionRow(
                 title = "运行时代码缓存",
                 subtitle = formatCacheSize(cacheAnalysis.codeCacheBytes),
                 enabled = cacheAnalysis.codeCacheBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.CODE_CACHE) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.CODE_CACHE)) },
             )
             CacheActionRow(
                 title = "外部缓存",
                 subtitle = formatCacheSize(cacheAnalysis.externalCacheBytes),
                 enabled = cacheAnalysis.externalCacheBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.EXTERNAL_CACHE) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.EXTERNAL_CACHE)) },
             )
             CacheActionRow(
                 title = "其他缓存",
                 subtitle = formatCacheSize(cacheAnalysis.otherBytes),
                 enabled = cacheAnalysis.otherBytes > 0L,
-                onClear = { onClearCacheCategory(ComicCacheCategory.OTHER) },
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.OTHER)) },
             )
         }
         Text(

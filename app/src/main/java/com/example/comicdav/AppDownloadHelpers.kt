@@ -11,15 +11,16 @@ import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import java.io.Closeable
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 
 internal class DownloadProgressThrottler(
@@ -207,7 +208,9 @@ internal suspend fun downloadWebDavVideoToDataFolder(
     remotePath: String,
     fileName: String,
     expectedSize: Long,
+    registerCancellation: (Closeable) -> Unit = {},
     onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+    onCommitted: suspend (DataFolderDownloadResult) -> Unit = {},
 ): String =
     downloadWebDavFileToDataFolder(
         context = context,
@@ -217,7 +220,9 @@ internal suspend fun downloadWebDavVideoToDataFolder(
         fileName = fileName,
         localFileName = localDownloadFileNameForRemoteFile(accountId, remotePath, fileName),
         expectedSize = expectedSize,
+        registerCancellation = registerCancellation,
         onProgress = onProgress,
+        onCommitted = onCommitted,
     ).localUri
 
 internal suspend fun downloadWebDavFileToDataFolder(
@@ -228,7 +233,9 @@ internal suspend fun downloadWebDavFileToDataFolder(
     fileName: String,
     localFileName: String = fileName,
     expectedSize: Long,
+    registerCancellation: (Closeable) -> Unit = {},
     onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+    onCommitted: suspend (DataFolderDownloadResult) -> Unit = {},
 ): DataFolderDownloadResult = withContext(Dispatchers.IO) {
     val resolver = context.applicationContext.contentResolver
     val parentDocumentUri = downloadedFileParentDocumentUri(folderTreeUri)
@@ -245,15 +252,10 @@ internal suspend fun downloadWebDavFileToDataFolder(
         ),
     ) { "无法在数据文件夹创建下载临时文件" }
 
+    var finalUri: Uri? = null
+    var metadataCommitted = false
     try {
-        val downloadJob = currentCoroutineContext().job
-        val response = client.openFullStream(remotePath) { closeable ->
-            downloadJob.invokeOnCompletion { cause ->
-                if (cause is kotlinx.coroutines.CancellationException) {
-                    runCatching { closeable.close() }
-                }
-            }
-        }
+        val response = client.openFullStream(remotePath, registerCancellation)
         var downloaded = 0L
         try {
             response.stream.use { input ->
@@ -276,15 +278,28 @@ internal suspend fun downloadWebDavFileToDataFolder(
         if (expectedSize > 0L && downloaded != expectedSize) {
             error("Downloaded $downloaded bytes, expected $expectedSize")
         }
-        findChildDocumentUri(context, parentDocumentUri, safeName)?.let { existing ->
-            check(DocumentsContract.deleteDocument(resolver, existing)) { "无法替换已有视频文件" }
+        // Once all bytes have been validated, file publication and its metadata record form one
+        // non-cancellable commit phase. This prevents a cancellation between rename and DataStore
+        // update from leaving an unindexed final file.
+        withContext(NonCancellable) {
+            findChildDocumentUri(context, parentDocumentUri, safeName)?.let { existing ->
+                check(DocumentsContract.deleteDocument(resolver, existing)) { "无法替换已有视频文件" }
+            }
+            finalUri = requireNotNull(
+                DocumentsContract.renameDocument(resolver, tmpUri, safeName),
+            ) { "无法保存视频文件" }
+            val result = DataFolderDownloadResult(
+                localUri = checkNotNull(finalUri).toString(),
+                sizeBytes = downloaded,
+            )
+            onCommitted(result)
+            metadataCommitted = true
+            result
         }
-        val finalUri = requireNotNull(
-            DocumentsContract.renameDocument(resolver, tmpUri, safeName),
-        ) { "无法保存视频文件" }
-        DataFolderDownloadResult(localUri = finalUri.toString(), sizeBytes = downloaded)
     } catch (error: Throwable) {
-        runCatching { DocumentsContract.deleteDocument(resolver, tmpUri) }
+        if (!metadataCommitted) {
+            runCatching { DocumentsContract.deleteDocument(resolver, finalUri ?: tmpUri) }
+        }
         throw error
     }
 }
@@ -298,8 +313,11 @@ internal suspend fun downloadWebDavComicRecordToDataFolder(
     fileName: String,
     info: RemoteFileInfo,
     downloadedAtMillis: Long,
+    registerCancellation: (Closeable) -> Unit = {},
     onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+    onCommitted: suspend (DownloadRecord) -> Unit = {},
 ): DownloadRecord {
+    var committedRecord: DownloadRecord? = null
     val result = downloadWebDavFileToDataFolder(
         context = context,
         folderTreeUri = folderTreeUri,
@@ -308,9 +326,22 @@ internal suspend fun downloadWebDavComicRecordToDataFolder(
         fileName = fileName,
         localFileName = localDownloadFileNameForRemoteFile(accountId, remotePath, fileName),
         expectedSize = info.size,
+        registerCancellation = registerCancellation,
         onProgress = onProgress,
+        onCommitted = { downloadResult ->
+            val record = DownloadRecord(
+                fileName = fileName,
+                remotePath = remotePath,
+                sizeBytes = downloadResult.sizeBytes,
+                downloadedAtMillis = downloadedAtMillis,
+                accountId = accountId,
+                localUri = downloadResult.localUri,
+            )
+            onCommitted(record)
+            committedRecord = record
+        },
     )
-    return DownloadRecord(
+    return committedRecord ?: DownloadRecord(
         fileName = fileName,
         remotePath = remotePath,
         sizeBytes = result.sizeBytes,

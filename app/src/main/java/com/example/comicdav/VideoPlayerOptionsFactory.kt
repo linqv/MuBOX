@@ -1,0 +1,20 @@
+package com.example.comicdav
+
+import com.example.comicdav.data.AppSettings
+import com.example.comicdav.video.player.VideoPlayerOptions
+
+internal fun AppSettings.toVideoPlayerOptions(): VideoPlayerOptions =
+    VideoPlayerOptions(
+        resumeEnabled = videoResumeEnabled,
+        videoOutputMode = videoOutputMode,
+        gpuApiMode = gpuApiMode,
+        videoDecoderMode = videoDecoderMode,
+        mpvProfileMode = mpvProfileMode,
+        controlsAutoHideMillis = videoControlsAutoHideMillis,
+        playerOrientationMode = videoPlayerOrientationMode,
+        proxyDebugInfoEnabled = videoPlayerProxyDebugInfoEnabled,
+        videoBackgroundMode = videoBackgroundMode,
+        anime4kEnabled = anime4kEnabled,
+        anime4kMode = anime4kMode,
+        anime4kQuality = anime4kQuality,
+    )

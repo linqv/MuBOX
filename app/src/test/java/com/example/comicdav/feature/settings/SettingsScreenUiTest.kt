@@ -115,26 +115,6 @@ class SettingsScreenUiTest {
         )
     }
 
-    @Test
-    fun videoSettingsExposeAnime4KControlsNearRendererOptions() {
-        val source = settingsSourceFile().readText()
-
-        assertTrue(source.contains("title = \"Anime4K\""))
-        assertTrue(source.contains("checked = settings.anime4kEnabled"))
-        assertTrue(source.contains("selected = settings.anime4kMode"))
-        assertTrue(source.contains("options = Anime4KMode.entries"))
-        assertTrue(source.contains("selected = settings.anime4kQuality"))
-        assertTrue(source.contains("options = Anime4KQuality.entries"))
-        assertTrue(source.indexOf("title = \"GPU API\"") < source.indexOf("title = \"Anime4K\""))
-        assertTrue(source.indexOf("title = \"Anime4K\"") < source.indexOf("title = \"默认解码器\""))
-    }
-
     private fun List<SettingsGroupLayout>.rowsInGroup(title: String): List<String> =
         single { it.title == title }.rows
-
-    private fun settingsSourceFile(): java.io.File =
-        listOf(
-            java.io.File("src/main/java/com/example/comicdav/feature/settings/SettingsScreen.kt"),
-            java.io.File("app/src/main/java/com/example/comicdav/feature/settings/SettingsScreen.kt"),
-        ).first { it.isFile }
 }

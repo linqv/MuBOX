@@ -4,6 +4,7 @@ import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLogCategory
 import com.example.comicdav.nativebridge.RangeProvider
 import java.io.Closeable
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -318,8 +319,8 @@ class WebDavRangeProvider(
         return inFlight.slice(bytes, start, endInclusive)
     }
 
-    private fun readNetworkRange(fetch: RegisteredFetch): ByteArray =
-        runBlocking {
+    private fun readNetworkRange(fetch: RegisteredFetch): ByteArray {
+        val bytes = runBlocking {
             try {
                 val response = client.openRangeStream(
                     path = path,
@@ -338,6 +339,16 @@ class WebDavRangeProvider(
                 client.readRange(path, fetch.start, fetch.endInclusive)
             }
         }
+        val expectedBytes = fetch.endInclusive - fetch.start + 1
+        if (bytes.size.toLong() != expectedBytes) {
+            throw IOException(
+                "Invalid range response length for $path: " +
+                    "start=${fetch.start} end=${fetch.endInclusive} " +
+                    "expected=$expectedBytes actual=${bytes.size}",
+            )
+        }
+        return bytes
+    }
 
     private fun registerCancellation(fetch: RegisteredFetch, closeable: Closeable) {
         val closeImmediately = synchronized(lock) {
@@ -511,22 +522,42 @@ class WebDavRangeProvider(
         }
     }
 
-    internal class RangeWindowCache(private val maxBytes: Long) {
-        private val windows = mutableListOf<Window>()
+    internal class RangeWindowCache(
+        private val maxBytes: Long,
+        private val segmentBytes: Int = DEFAULT_CACHE_SEGMENT_BYTES,
+    ) {
+        private val segments = mutableListOf<Segment>()
+        private var cachedBytes = 0L
         private var sequence = 0L
 
+        init {
+            require(segmentBytes > 0) { "segmentBytes must be positive" }
+        }
+
         fun find(start: Long, endInclusive: Long): LookupResult? {
-            val window = windows.firstOrNull { it.covers(start, endInclusive) } ?: return null
-            window.lastAccess = ++sequence
+            val coveredBy = coveringSegments(start, endInclusive) ?: return null
+            val lastAccess = ++sequence
+            coveredBy.forEach { segment -> segment.lastAccess = lastAccess }
+            val result = ByteArray(rangeLength(start, endInclusive).toInt())
+            coveredBy.forEach { segment ->
+                val copyStart = maxOf(start, segment.start)
+                val copyEndInclusive = minOf(endInclusive, segment.endInclusive)
+                segment.bytes.copyInto(
+                    destination = result,
+                    destinationOffset = (copyStart - start).toInt(),
+                    startIndex = (copyStart - segment.start).toInt(),
+                    endIndex = (copyEndInclusive - segment.start + 1).toInt(),
+                )
+            }
             return LookupResult(
-                bytes = window.slice(start, endInclusive),
-                windowStart = window.start,
-                windowEndInclusive = window.endInclusive,
+                bytes = result,
+                windowStart = coveredBy.first().start,
+                windowEndInclusive = coveredBy.last().endInclusive,
             )
         }
 
         fun isCovered(start: Long, endInclusive: Long): Boolean =
-            windows.any { it.covers(start, endInclusive) }
+            coveringSegments(start, endInclusive) != null
 
         fun store(
             start: Long,
@@ -534,101 +565,126 @@ class WebDavRangeProvider(
             bytes: ByteArray,
             protectedRanges: List<LongRange> = emptyList(),
         ): StoreResult {
+            require(rangeLength(start, endInclusive) == bytes.size.toLong()) {
+                "Range metadata does not match byte count"
+            }
             if (bytes.size.toLong() > maxBytes) {
                 return StoreResult(stored = false, skippedReason = "oversized", evictionMode = "none")
             }
-            val mergedCandidate = mergedWindow(start, endInclusive, bytes)
-            val merged = if (mergedCandidate.window.bytes.size.toLong() <= maxBytes) {
-                mergedCandidate
-            } else {
-                MergedWindow(
-                    window = Window(start, endInclusive, bytes, ++sequence),
-                    sources = emptyList(),
-                )
-            }
+            val retained = segmentsOutside(start, endInclusive)
+            val incoming = splitIntoSegments(start, bytes, ++sequence)
             if (protectedRanges.isNotEmpty()) {
-                return storeWithoutEvictingProtected(merged, protectedRanges)
+                return storeWithoutEvictingProtected(retained, incoming, protectedRanges)
             }
-            windows.removeAll(merged.sources.toSet())
-            windows.add(merged.window)
-            return StoreResult(stored = true, evicted = evict(), evictionMode = "lru")
+            return commitWithEviction(retained, incoming, protectedRanges = emptyList(), evictionMode = "lru")
         }
 
-        fun windowCount(): Int = windows.size
+        fun windowCount(): Int = segments.size
 
-        fun totalBytes(): Long = windows.sumOf { it.bytes.size.toLong() }
+        fun totalBytes(): Long = cachedBytes
 
-        private fun evict(): List<WindowSnapshot> {
-            val evicted = mutableListOf<WindowSnapshot>()
-            while (totalBytes() > maxBytes) {
-                val window = windows.minByOrNull { it.lastAccess } ?: break
-                windows.remove(window)
-                evicted += window.snapshot()
+        private fun coveringSegments(start: Long, endInclusive: Long): List<Segment>? {
+            if (endInclusive < start) return null
+            var cursor = start
+            val coveredBy = mutableListOf<Segment>()
+            for (segment in segments) {
+                if (segment.endInclusive < cursor) continue
+                if (segment.start > cursor) return null
+                coveredBy += segment
+                if (segment.endInclusive >= endInclusive) return coveredBy
+                cursor = segment.endInclusive + 1
             }
-            return evicted
+            return null
         }
 
         private fun storeWithoutEvictingProtected(
-            merged: MergedWindow,
+            retained: List<Segment>,
+            incoming: List<Segment>,
             protectedRanges: List<LongRange>,
+        ): StoreResult =
+            commitWithEviction(retained, incoming, protectedRanges, evictionMode = "protected")
+
+        private fun commitWithEviction(
+            retained: List<Segment>,
+            incoming: List<Segment>,
+            protectedRanges: List<LongRange>,
+            evictionMode: String,
         ): StoreResult {
-            val mergedSourceSet = merged.sources.toSet()
-            var projectedBytes = totalBytes() -
-                merged.sources.sumOf { it.bytes.size.toLong() } +
-                merged.window.bytes.size.toLong()
-            val windowsToEvict = mutableListOf<Window>()
-            val candidates = windows
-                .filterNot { it in mergedSourceSet }
+            var projectedBytes = retained.sumOf { it.bytes.size.toLong() } +
+                incoming.sumOf { it.bytes.size.toLong() }
+            val evictedSegments = mutableListOf<Segment>()
+            val candidates = retained
                 .filterNot { it.intersectsAny(protectedRanges) }
                 .sortedBy { it.lastAccess }
-            for (window in candidates) {
-                if (projectedBytes <= maxBytes) {
-                    break
-                }
-                projectedBytes -= window.bytes.size.toLong()
-                windowsToEvict += window
+            for (candidate in candidates) {
+                if (projectedBytes <= maxBytes) break
+                projectedBytes -= candidate.bytes.size.toLong()
+                evictedSegments += candidate
             }
             if (projectedBytes > maxBytes) {
                 return StoreResult(
                     stored = false,
                     skippedReason = "protected_capacity",
-                    evictionMode = "protected",
+                    evictionMode = evictionMode,
                 )
             }
-            val evicted = windowsToEvict.map { it.snapshot() }
-            windows.removeAll(mergedSourceSet + windowsToEvict.toSet())
-            windows.add(merged.window)
-            return StoreResult(stored = true, evicted = evicted, evictionMode = "protected")
+            val evictedSet = evictedSegments.toSet()
+            segments.clear()
+            segments += retained.filterNot { it in evictedSet }
+            segments += incoming
+            segments.sortBy { it.start }
+            cachedBytes = projectedBytes
+            return StoreResult(
+                stored = true,
+                evicted = evictedSegments.map { it.snapshot() },
+                evictionMode = evictionMode,
+            )
         }
 
-        private fun mergedWindow(start: Long, endInclusive: Long, bytes: ByteArray): MergedWindow {
-            val sources = windows
-                .filter { it.touches(start, endInclusive) }
-                .sortedBy { it.start }
-            if (sources.isEmpty()) {
-                return MergedWindow(
-                    window = Window(start, endInclusive, bytes, ++sequence),
-                    sources = emptyList(),
-                )
+        // Replacing an overlapping range copies at most the two edge fragments. Adjacent
+        // segments remain independent, so growing the cache never recopies prior contents.
+        private fun segmentsOutside(start: Long, endInclusive: Long): List<Segment> =
+            buildList {
+                segments.forEach { segment ->
+                    if (!segment.intersects(start, endInclusive)) {
+                        add(segment)
+                        return@forEach
+                    }
+                    if (segment.start < start) {
+                        add(segment.slice(segment.start, start - 1))
+                    }
+                    if (segment.endInclusive > endInclusive) {
+                        add(segment.slice(endInclusive + 1, segment.endInclusive))
+                    }
+                }
             }
 
-            val mergedStart = minOf(start, sources.minOf { it.start })
-            val mergedEnd = maxOf(endInclusive, sources.maxOf { it.endInclusive })
-            val mergedBytes = ByteArray((mergedEnd - mergedStart + 1).toInt())
-            sources.forEach { source ->
-                source.bytes.copyInto(
-                    destination = mergedBytes,
-                    destinationOffset = (source.start - mergedStart).toInt(),
-                )
+        private fun splitIntoSegments(start: Long, bytes: ByteArray, lastAccess: Long): List<Segment> =
+            buildList {
+                var offset = 0
+                while (offset < bytes.size) {
+                    val length = minOf(segmentBytes, bytes.size - offset)
+                    val segmentData = if (offset == 0 && length == bytes.size) {
+                        bytes
+                    } else {
+                        bytes.copyOfRange(offset, offset + length)
+                    }
+                    val segmentStart = start + offset
+                    add(
+                        Segment(
+                            start = segmentStart,
+                            endInclusive = segmentStart + length - 1,
+                            bytes = segmentData,
+                            lastAccess = lastAccess,
+                        ),
+                    )
+                    offset += length
+                }
             }
-            bytes.copyInto(
-                destination = mergedBytes,
-                destinationOffset = (start - mergedStart).toInt(),
-            )
-            return MergedWindow(
-                window = Window(mergedStart, mergedEnd, mergedBytes, ++sequence),
-                sources = sources,
-            )
+
+        private fun rangeLength(start: Long, endInclusive: Long): Long {
+            require(endInclusive >= start) { "Range end must not precede start" }
+            return endInclusive - start + 1
         }
 
         internal data class LookupResult(
@@ -650,40 +706,34 @@ class WebDavRangeProvider(
             val bytes: Int,
         )
 
-        internal class Window(
+        internal class Segment(
             val start: Long,
             val endInclusive: Long,
             val bytes: ByteArray,
             var lastAccess: Long,
         ) {
-            fun covers(reqStart: Long, reqEnd: Long): Boolean =
-                reqStart >= start && reqEnd <= endInclusive
-
             fun intersectsAny(ranges: List<LongRange>): Boolean =
                 ranges.any { range ->
                     !range.isEmpty() && start <= range.last && endInclusive >= range.first
                 }
 
-            fun touches(reqStart: Long, reqEnd: Long): Boolean {
-                val reqEndPlusOne = if (reqEnd == Long.MAX_VALUE) Long.MAX_VALUE else reqEnd + 1
-                val endPlusOne = if (endInclusive == Long.MAX_VALUE) Long.MAX_VALUE else endInclusive + 1
-                return start <= reqEndPlusOne && reqStart <= endPlusOne
-            }
+            fun intersects(reqStart: Long, reqEnd: Long): Boolean =
+                start <= reqEnd && endInclusive >= reqStart
 
-            fun slice(reqStart: Long, reqEnd: Long): ByteArray {
+            fun slice(reqStart: Long, reqEnd: Long): Segment {
                 val from = (reqStart - start).toInt()
-                val toInclusive = (reqEnd - start).toInt()
-                return bytes.sliceArray(from..toInclusive)
+                val toExclusive = (reqEnd - start + 1).toInt()
+                return Segment(
+                    start = reqStart,
+                    endInclusive = reqEnd,
+                    bytes = bytes.copyOfRange(from, toExclusive),
+                    lastAccess = lastAccess,
+                )
             }
 
             fun snapshot(): WindowSnapshot =
                 WindowSnapshot(start = start, endInclusive = endInclusive, bytes = bytes.size)
         }
-
-        private data class MergedWindow(
-            val window: Window,
-            val sources: List<Window>,
-        )
     }
 
     private data class InFlightRange(
@@ -754,6 +804,7 @@ class WebDavRangeProvider(
     private companion object {
         const val DEFAULT_READ_AHEAD_BYTES = 4L * 1024L * 1024L
         const val DEFAULT_MAX_CACHE_BYTES = 64L * 1024L * 1024L
+        const val DEFAULT_CACHE_SEGMENT_BYTES = 4 * 1024 * 1024
         const val LOW_PRIORITY_PREFETCH_PRIORITY = 2
         const val READ_AHEAD_STORE_NONE = "none"
         const val READ_AHEAD_STORE_EXPANDED = "expanded"

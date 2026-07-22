@@ -3,6 +3,7 @@ package com.example.comicdav.video.proxy
 import com.example.comicdav.network.ContentRange
 import com.example.comicdav.network.RemoteFileInfo
 import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.video.VideoPlaybackMemoryBudget
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -14,14 +15,18 @@ import java.net.Socket
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 class MuBoxVideoProxy(
@@ -31,6 +36,8 @@ class MuBoxVideoProxy(
     private val requestHeaderTimeoutMillis: Int = DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS,
     private val maxRequestHeaderBytes: Int = DEFAULT_MAX_REQUEST_HEADER_BYTES,
     private val maxRequestsPerConnection: Int = DEFAULT_MAX_REQUESTS_PER_CONNECTION,
+    private val maxConcurrentConnections: Int = DEFAULT_MAX_CONCURRENT_CONNECTIONS,
+    private val memoryCacheMaxBytes: Long = VideoPlaybackMemoryBudget.current().proxyBytes,
     private val serverSocketFactory: (host: String, port: Int) -> ServerSocket = { host, port ->
         ServerSocket().apply {
             bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
@@ -41,13 +48,24 @@ class MuBoxVideoProxy(
         require(requestHeaderTimeoutMillis > 0) { "requestHeaderTimeoutMillis must be positive" }
         require(maxRequestHeaderBytes > 0) { "maxRequestHeaderBytes must be positive" }
         require(maxRequestsPerConnection > 0) { "maxRequestsPerConnection must be positive" }
+        require(maxConcurrentConnections > 0) { "maxConcurrentConnections must be positive" }
+        require(memoryCacheMaxBytes >= 0L) { "memoryCacheMaxBytes must not be negative" }
     }
 
+    private val ownerJob = SupervisorJob(coroutineScope.coroutineContext[Job])
+    private val proxyScope = CoroutineScope(coroutineScope.coroutineContext + ownerJob)
     private val registry = StreamRegistry()
     private val statsStore = VideoProxyStatsStore()
-    private val seekOptimizer = VideoSeekOptimizer(coroutineScope = coroutineScope, statsSink = statsStore)
+    private val seekOptimizer = VideoSeekOptimizer(
+        coroutineScope = proxyScope,
+        cache = VideoRangeMemoryCache(maxBytes = memoryCacheMaxBytes),
+        statsSink = statsStore,
+    )
     private val closed = AtomicBoolean(false)
     private val startMutex = Mutex()
+    private val connectionPermits = Semaphore(maxConcurrentConnections)
+    private val clientSockets = ConcurrentHashMap.newKeySet<Socket>()
+    @Volatile
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
 
@@ -55,12 +73,25 @@ class MuBoxVideoProxy(
         get() = "http://127.0.0.1:${serverSocket?.localPort ?: error("proxy not started")}"
     suspend fun start() {
         startMutex.withLock {
+            check(!closed.get()) { "proxy is closed" }
             if (serverSocket != null) return
             val socket = withContext(Dispatchers.IO) {
                 bindPort()
             }
             serverSocket = socket
-            acceptJob = coroutineScope.launch(Dispatchers.IO) { acceptLoop(socket) }
+            if (closed.get()) {
+                serverSocket = null
+                runCatching { socket.close() }
+                error("proxy was closed while starting")
+            }
+            val job = proxyScope.launch(Dispatchers.IO) { acceptLoop(socket) }
+            acceptJob = job
+            if (closed.get()) {
+                serverSocket = null
+                runCatching { socket.close() }
+                job.cancel()
+                error("proxy was closed while starting")
+            }
         }
     }
 
@@ -132,7 +163,16 @@ class MuBoxVideoProxy(
                 logAcceptFailure(error)
                 continue
             }
-            coroutineScope.launch(Dispatchers.IO) {
+            if (closed.get()) {
+                client.closeQuietly()
+                break
+            }
+            if (!connectionPermits.tryAcquire()) {
+                client.closeQuietly()
+                continue
+            }
+            clientSockets += client
+            val connectionJob = proxyScope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
                 try {
                     handleConnection(client)
                 } catch (error: CancellationException) {
@@ -142,9 +182,20 @@ class MuBoxVideoProxy(
                 } catch (error: Exception) {
                     logConnectionFailure(error)
                 } finally {
-                    client.close()
+                    releaseClient(client)
                 }
             }
+            // A close can cancel ownerJob after accept() but before this coroutine starts. A
+            // completion hook guarantees that socket/permit cleanup still runs in that window.
+            connectionJob.invokeOnCompletion { releaseClient(client) }
+            connectionJob.start()
+        }
+    }
+
+    private fun releaseClient(client: Socket) {
+        client.closeQuietly()
+        if (clientSockets.remove(client)) {
+            connectionPermits.release()
         }
     }
 
@@ -511,12 +562,37 @@ class MuBoxVideoProxy(
     }
 
     override fun close() {
+        beginClose()
+    }
+
+    suspend fun awaitClosed(timeoutMillis: Long = CLOSE_JOIN_TIMEOUT_MILLIS): Boolean {
+        require(timeoutMillis > 0L) { "timeoutMillis must be positive" }
+        beginClose()
+        return withTimeoutOrNull(timeoutMillis) {
+            ownerJob.join()
+            clientSockets.forEach { it.closeQuietly() }
+            clientSockets.clear()
+            true
+        } ?: false
+    }
+
+    private fun beginClose() {
         if (!closed.compareAndSet(false, true)) return
-        acceptJob?.cancel()
         serverSocket?.close()
-        seekOptimizer.close()
+        clientSockets.forEach { it.closeQuietly() }
         registry.close()
+        seekOptimizer.close()
+        ownerJob.cancel()
+        // Close a second time after cancellation to cover accept() passing its closed check just
+        // before beginClose acquired the CPU. invokeOnCompletion handles any still-later add.
+        clientSockets.forEach { it.closeQuietly() }
+        serverSocket = null
+        acceptJob = null
         statsStore.clear()
+    }
+
+    private fun Socket.closeQuietly() {
+        runCatching { close() }
     }
 
     private sealed class ParsedRange {
@@ -571,6 +647,8 @@ class MuBoxVideoProxy(
         private const val DEFAULT_REQUEST_HEADER_TIMEOUT_MILLIS = 10_000
         private const val DEFAULT_MAX_REQUEST_HEADER_BYTES = 16 * 1024
         private const val DEFAULT_MAX_REQUESTS_PER_CONNECTION = 64
+        private const val DEFAULT_MAX_CONCURRENT_CONNECTIONS = 8
+        private const val CLOSE_JOIN_TIMEOUT_MILLIS = 5_000L
         private val HEADER_TERMINATOR = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
         private val RANGE_REGEX = Regex("bytes=(\\d*)-(\\d*)", RegexOption.IGNORE_CASE)
 

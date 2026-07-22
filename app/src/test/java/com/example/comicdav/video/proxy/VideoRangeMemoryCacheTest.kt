@@ -90,6 +90,20 @@ class VideoRangeMemoryCacheTest {
     }
 
     @Test
+    fun internalSliceReferenceReusesImmutableCachedBytes() {
+        val cache = VideoRangeMemoryCache()
+        val bytes = "abcdef".toByteArray()
+        cache.putOwnedSegment("stream-1", 0L, 0L, bytes)
+
+        val slice = cache.getSegmentSliceReference("stream-1", 0L, 2L, 4L)!!
+
+        assertSame(bytes, slice.bytes)
+        assertEquals(2, slice.fromIndex)
+        assertEquals(5, slice.toIndexExclusive)
+        assertEquals(3, slice.size)
+    }
+
+    @Test
     fun streamScopedKeysKeepSameSegmentIndexIsolated() {
         val cache = VideoRangeMemoryCache(maxBytes = 16)
         cache.putSegment("stream-1", 0L, 0L, "aaaa".toByteArray())

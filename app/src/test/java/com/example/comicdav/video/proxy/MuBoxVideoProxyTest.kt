@@ -35,6 +35,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -741,6 +742,65 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
+    fun closeInterruptsActiveClientAndWaitsForConnectionToFinish() = runTest {
+        val input = BlockingInputStream()
+        val streamUrl = startProxy(client = BlockingStreamClient(input), size = 10L)
+        val requestThread = thread(start = true) {
+            runCatching {
+                httpRequest(streamUrl, method = "GET", range = "bytes=0-")
+            }
+        }
+        assertTrue(input.readStarted.await(2, TimeUnit.SECONDS))
+
+        val proxyJobsFinished = withContext(Dispatchers.IO) { proxy!!.awaitClosed() }
+        assertTrue("proxy jobs should finish after sockets are closed", proxyJobsFinished)
+        requestThread.join(1_000)
+
+        assertTrue("close should close the active upstream response", input.closed.await(100, TimeUnit.MILLISECONDS))
+        assertFalse("close should wait for the client connection job", requestThread.isAlive)
+    }
+
+    @Test
+    fun connectionLimitRejectsAdditionalClientsWhileAStreamIsBlocked() = runTest {
+        val input = BlockingInputStream()
+        val localProxy = MuBoxVideoProxy(
+            clientProvider = { BlockingStreamClient(input) },
+            coroutineScope = scope,
+            portRange = 0..0,
+            maxConcurrentConnections = 1,
+        )
+        proxy = localProxy
+        localProxy.start()
+        val streamUrl = localProxy.register(
+            WebDavVideoOpenRequest(
+                accountId = "account-1",
+                remotePath = "/video.mp4",
+                displayName = "video.mp4",
+                size = 10L,
+                etag = null,
+                lastModified = null,
+                mimeType = "video/mp4",
+            ),
+        )
+        val firstRequest = thread(start = true) {
+            runCatching { httpRequest(streamUrl, method = "GET", range = "bytes=0-") }
+        }
+        assertTrue(input.readStarted.await(2, TimeUnit.SECONDS))
+        val parsed = URL(streamUrl)
+
+        val rejected = Socket(parsed.host, parsed.port).use { secondClient ->
+            secondClient.soTimeout = 1_000
+            secondClient.getOutputStream().write(buildRequest(parsed, method = "HEAD").toByteArray())
+            runCatching { secondClient.getInputStream().read() }
+                .fold(onSuccess = { it == -1 }, onFailure = { true })
+        }
+
+        localProxy.close()
+        firstRequest.join(1_000)
+        assertTrue("connections beyond the configured limit should be rejected", rejected)
+    }
+
+    @Test
     fun clientDisconnectDuringRangeStreamDoesNotBreakProxy() = runTest {
         val exceptionCount = AtomicInteger(0)
         val localScope = CoroutineScope(
@@ -897,6 +957,25 @@ class MuBoxVideoProxyTest {
         }
 
         assertEquals(1, boundSockets.size)
+    }
+
+    @Test
+    fun closedProxyCannotBindANewServerSocket() = runTest {
+        var bindCalls = 0
+        val localProxy = MuBoxVideoProxy(
+            coroutineScope = scope,
+            serverSocketFactory = { _, _ ->
+                bindCalls += 1
+                ServerSocket()
+            },
+        )
+        proxy = localProxy
+        localProxy.close()
+
+        val failure = runCatching { localProxy.start() }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(0, bindCalls)
     }
 
     @Test

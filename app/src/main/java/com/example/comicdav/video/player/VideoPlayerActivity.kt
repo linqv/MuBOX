@@ -143,60 +143,38 @@ class VideoPlayerActivity : ComponentActivity() {
     private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
     private val playbackSessionId: String = UUID.randomUUID().toString()
     private lateinit var playbackStopReceiver: BroadcastReceiver
+    private val mpvPropertyEventRouter by lazy(LazyThreadSafetyMode.NONE) {
+        MpvPropertyEventRouter(controller)
+    }
 
     private val mpvObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) = Unit
 
         override fun eventProperty(property: String, value: Long) {
             runOnUiThread {
-                when (property) {
-                    "aid" -> controller.onAudioTrackChanged(value.toInt())
-                    "sid" -> controller.onSubtitleTrackChanged(value.toInt().takeIf { it > 0 })
-                }
+                mpvPropertyEventRouter.route(property, value)
             }
         }
 
         override fun eventProperty(property: String, value: Boolean) {
-            if (property == "pause") {
-                runOnUiThread { controller.onPauseChanged(value) }
-            }
+            runOnUiThread { mpvPropertyEventRouter.route(property, value) }
         }
 
         override fun eventProperty(property: String, value: String) {
             runOnUiThread {
-                when (property) {
-                    "aid" -> controller.onAudioTrackChanged(value.toIntOrNull())
-                    "sid" -> controller.onSubtitleTrackChanged(value.toIntOrNull())
-                    "hwdec" -> controller.onHwdecChanged(value)
-                    "hwdec-current" -> controller.onActiveHwdecChanged(value)
-                    "current-tracks/video/decoder" -> controller.onActiveVideoDecoderChanged(value)
-                    "vo" -> controller.onVoChanged(value)
-                    "gpu-api" -> controller.onGpuApiChanged(value)
-                }
+                mpvPropertyEventRouter.route(property, value)
             }
         }
 
         override fun eventProperty(property: String, value: Double) {
             runOnUiThread {
-                when (property) {
-                    "duration" -> controller.onDurationChanged(value)
-                    "time-pos" -> controller.onPositionChanged(value)
-                    "speed" -> controller.onSpeedChanged(value)
-                    "volume" -> controller.onVolumeChanged(value)
-                    "audio-delay" -> controller.onAudioDelayChanged(value)
-                    "video-params/aspect" -> controller.onVideoAspectChanged(value)
-                    "video-out-params/aspect" -> controller.onVideoOutAspectChanged(value)
-                }
+                mpvPropertyEventRouter.route(property, value)
             }
         }
 
         override fun eventProperty(property: String, value: MPVNode) {
             runOnUiThread {
-                when (property) {
-                    "track-list" -> controller.onTrackListChanged(value)
-                    "video-params" -> controller.onVideoParamsChanged(value)
-                    "video-out-params" -> controller.onVideoOutParamsChanged(value)
-                }
+                mpvPropertyEventRouter.route(property, value)
             }
         }
 
@@ -231,8 +209,8 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val initialPlayerOrientationMode = intent.getStringExtra(EXTRA_PLAYER_ORIENTATION_MODE)
-            .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO)
+        val playerOptions = intent.videoPlayerOptions()
+        val initialPlayerOrientationMode = playerOptions.playerOrientationMode
         orientationSession = VideoPlayerOrientationSession(initialPlayerOrientationMode)
         requestedOrientation = orientationSession.initialRequestedOrientation()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -249,19 +227,15 @@ class VideoPlayerActivity : ComponentActivity() {
         playbackKey = intent.getStringExtra(EXTRA_PLAYBACK_KEY)
         episodeQueue = intent.episodeQueue()?.withCurrentPlaybackKey(playbackKey)
         currentEpisodeIndex = episodeQueue?.currentIndex ?: 0
-        resumeEnabled = intent.getBooleanExtra(EXTRA_RESUME_ENABLED, true)
-        val initialVideoOutputMode = intent.getStringExtra(EXTRA_VIDEO_OUTPUT_MODE)
-            .toEnumOrDefault(VideoOutputMode.AUTO)
-        val initialGpuApiMode = intent.getStringExtra(EXTRA_GPU_API_MODE)
-            .toEnumOrDefault(GpuApiMode.AUTO)
-        val initialVideoDecoderMode = intent.getStringExtra(EXTRA_VIDEO_DECODER_MODE)
-            .toEnumOrDefault(VideoDecoderMode.AUTO)
-        val initialMpvProfileMode = intent.getStringExtra(EXTRA_MPV_PROFILE_MODE)
-            .toEnumOrDefault(MpvProfileMode.FAST)
+        resumeEnabled = playerOptions.resumeEnabled
+        val initialVideoOutputMode = playerOptions.videoOutputMode
+        val initialGpuApiMode = playerOptions.gpuApiMode
+        val initialVideoDecoderMode = playerOptions.videoDecoderMode
+        val initialMpvProfileMode = playerOptions.mpvProfileMode
         val initialAnime4KSettings = Anime4KSettings(
-            enabled = intent.getBooleanExtra(EXTRA_ANIME4K_ENABLED, false),
-            mode = intent.getStringExtra(EXTRA_ANIME4K_MODE).toEnumOrDefault(Anime4KMode.A),
-            quality = intent.getStringExtra(EXTRA_ANIME4K_QUALITY).toEnumOrDefault(Anime4KQuality.FAST),
+            enabled = playerOptions.anime4kEnabled,
+            mode = playerOptions.anime4kMode,
+            quality = playerOptions.anime4kQuality,
         )
         val anime4kManager = Anime4KManager(applicationContext)
         val startupCompatibility = anime4kStartupCompatibility(
@@ -269,10 +243,9 @@ class VideoPlayerActivity : ComponentActivity() {
             requestedVideoOutputMode = initialVideoOutputMode,
             gpuApiMode = initialGpuApiMode,
         )
-        val controlsAutoHideMillis = intent.getIntExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, 5_000)
-        val proxyDebugInfoEnabled = intent.getBooleanExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, false)
-        val initialVideoBackgroundMode = intent.getStringExtra(EXTRA_VIDEO_BACKGROUND_MODE)
-            .toEnumOrDefault(VideoBackgroundMode.NONE)
+        val controlsAutoHideMillis = playerOptions.controlsAutoHideMillis
+        val proxyDebugInfoEnabled = playerOptions.proxyDebugInfoEnabled
+        val initialVideoBackgroundMode = playerOptions.videoBackgroundMode
         val postNotificationsGranted =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -660,54 +633,42 @@ class VideoPlayerActivity : ComponentActivity() {
         startPositionMillis: Long,
         subtitles: List<VideoSubtitleOpenRequest>,
         isWebDav: Boolean,
-    ): Boolean {
-        if (!canLoadMpv()) return false
-        val resolvedInput = try {
-            withContext(Dispatchers.IO) {
+    ): Boolean =
+        VideoPlaybackLoadCoordinator(
+            canLoad = ::canLoadMpv,
+            resolvePlaybackInput = { request ->
                 resolvePlaybackInput(
-                    uri = uri,
-                    subtitles = subtitles,
-                    isWebDav = isWebDav,
+                    uri = request.uri,
+                    subtitles = request.subtitles,
+                    isWebDav = request.isWebDav,
                 )
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            controller.onError(error.message ?: "视频播放器初始化失败")
-            return false
-        }
-        var consumedByMpv = false
-        try {
-            if (!canLoadMpv()) return false
-            if (audioFocusController.request()) {
+            },
+            requestAudioFocus = audioFocusController::request,
+            startPlayback = { resolvedInput, request, onFileLoaded ->
                 controller.load(
                     resolvedInput.videoUri.uri,
-                    displayName,
-                    startPositionMillis = startPositionMillis,
+                    request.displayName,
+                    startPositionMillis = request.startPositionMillis,
                     subtitles = resolvedInput.subtitleRequests(),
-                    onFileLoaded = {
-                        resolvedInput.videoUri.markConsumed()
-                    },
+                    onFileLoaded = onFileLoaded,
                 )
-                resolvedInput.markConsumed()
-                consumedByMpv = true
-                return true
-            } else {
+            },
+            onAudioFocusDenied = {
                 controller.markPaused(true)
                 controller.onError("无法获取音频焦点，已暂停播放")
-                return false
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            controller.onError(error.message ?: "视频播放器初始化失败")
-            return false
-        } finally {
-            if (!consumedByMpv) {
-                resolvedInput.closeIfUnused()
-            }
-        }
-    }
+            },
+            onFailure = { error ->
+                controller.onError(error.message ?: "视频播放器初始化失败")
+            },
+        ).load(
+            VideoPlaybackLoadRequest(
+                uri = uri,
+                displayName = displayName,
+                startPositionMillis = startPositionMillis,
+                subtitles = subtitles,
+                isWebDav = isWebDav,
+            ),
+        )
 
     private fun canLoadMpv(): Boolean =
         mpvInitialized && !isCleaningUp && !isFinishing
@@ -932,24 +893,14 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_ANIME4K_ENABLED = "com.example.comicdav.video.extra.ANIME4K_ENABLED"
         const val EXTRA_ANIME4K_MODE = "com.example.comicdav.video.extra.ANIME4K_MODE"
         const val EXTRA_ANIME4K_QUALITY = "com.example.comicdav.video.extra.ANIME4K_QUALITY"
+        const val EXTRA_PLAYER_OPTIONS = "com.example.comicdav.video.extra.PLAYER_OPTIONS"
         const val EXTRA_EPISODE_QUEUE_ID = "com.example.comicdav.video.extra.EPISODE_QUEUE_ID"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
             context: Context,
             request: LocalVideoOpenRequest,
-            resumeEnabled: Boolean = true,
-            videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
-            gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
-            videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
-            mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
-            controlsAutoHideMillis: Int = 5_000,
-            playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
-            proxyDebugInfoEnabled: Boolean = false,
-            videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
-            anime4kEnabled: Boolean = false,
-            anime4kMode: Anime4KMode = Anime4KMode.A,
-            anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+            options: VideoPlayerOptions = VideoPlayerOptions(),
             episodeQueue: VideoEpisodeQueue? = null,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
@@ -968,18 +919,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         lastModified = request.lastModified,
                     ),
                 )
-                .putExtra(EXTRA_RESUME_ENABLED, resumeEnabled)
-                .putExtra(EXTRA_VIDEO_OUTPUT_MODE, videoOutputMode.name)
-                .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
-                .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
-                .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
-                .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
-                .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
-                .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
-                .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
-                .putExtra(EXTRA_ANIME4K_ENABLED, anime4kEnabled)
-                .putExtra(EXTRA_ANIME4K_MODE, anime4kMode.name)
-                .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
+                .putVideoPlayerOptions(options)
                 .putSubtitleExtras(request.subtitles)
                 .putEpisodeQueueExtra(episodeQueue)
 
@@ -989,18 +929,7 @@ class VideoPlayerActivity : ComponentActivity() {
             uri: String,
             subtitleUrls: List<String>,
             streamIds: List<String>,
-            resumeEnabled: Boolean = true,
-            videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
-            gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
-            videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
-            mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST,
-            controlsAutoHideMillis: Int = 5_000,
-            playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
-            proxyDebugInfoEnabled: Boolean = false,
-            videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
-            anime4kEnabled: Boolean = false,
-            anime4kMode: Anime4KMode = Anime4KMode.A,
-            anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+            options: VideoPlayerOptions = VideoPlayerOptions(),
             episodeQueue: VideoEpisodeQueue? = null,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
@@ -1028,18 +957,7 @@ class VideoPlayerActivity : ComponentActivity() {
                             lastModified = request.lastModified,
                         ),
                     )
-                    .putExtra(EXTRA_RESUME_ENABLED, resumeEnabled)
-                    .putExtra(EXTRA_VIDEO_OUTPUT_MODE, videoOutputMode.name)
-                    .putExtra(EXTRA_GPU_API_MODE, gpuApiMode.name)
-                    .putExtra(EXTRA_VIDEO_DECODER_MODE, videoDecoderMode.name)
-                    .putExtra(EXTRA_MPV_PROFILE_MODE, mpvProfileMode.name)
-                    .putExtra(EXTRA_CONTROLS_AUTO_HIDE_MILLIS, controlsAutoHideMillis)
-                    .putExtra(EXTRA_PLAYER_ORIENTATION_MODE, playerOrientationMode.name)
-                    .putExtra(EXTRA_PROXY_DEBUG_INFO_ENABLED, proxyDebugInfoEnabled)
-                    .putExtra(EXTRA_VIDEO_BACKGROUND_MODE, videoBackgroundMode.name)
-                    .putExtra(EXTRA_ANIME4K_ENABLED, anime4kEnabled)
-                    .putExtra(EXTRA_ANIME4K_MODE, anime4kMode.name)
-                    .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
+                    .putVideoPlayerOptions(options)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
                     .putEpisodeQueueExtra(episodeQueue)
@@ -1327,39 +1245,8 @@ private fun VideoProxyRuntimeStats.toPlayerStatistics(): VideoProxyStatistics =
         diagnosticMessage = diagnosticMessage,
     )
 
-private data class ResolvedPlaybackInput(
-    val videoUri: ManagedPlaybackUri,
-    val subtitles: List<ResolvedSubtitlePlaybackUri>,
-) {
-    fun subtitleRequests(): List<VideoSubtitleOpenRequest> =
-        subtitles.map { subtitle ->
-            VideoSubtitleOpenRequest(
-                uri = subtitle.uri.uri,
-                displayName = subtitle.displayName,
-            )
-        }
-
-    fun markConsumed() {
-        videoUri.markConsumed()
-        subtitles.forEach { it.uri.markConsumed() }
-    }
-
-    fun closeIfUnused() {
-        videoUri.closeIfUnused()
-        subtitles.forEach { it.uri.closeIfUnused() }
-    }
-}
-
-private data class ResolvedSubtitlePlaybackUri(
-    val uri: ManagedPlaybackUri,
-    val displayName: String,
-)
-
 private data class PreparedVideoEpisode(
     val uri: String,
     val subtitles: List<VideoSubtitleOpenRequest>,
     val webDavStreamIds: List<String> = emptyList(),
 )
-
-private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =
-    this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default

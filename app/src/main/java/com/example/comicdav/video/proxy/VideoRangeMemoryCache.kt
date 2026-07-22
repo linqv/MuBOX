@@ -28,6 +28,15 @@ class VideoRangeMemoryCache(
         entries[SegmentKey(streamId, segmentIndex)]?.slice(start, endInclusive)
     }
 
+    internal fun getSegmentSliceReference(
+        streamId: String,
+        segmentIndex: Long,
+        start: Long,
+        endInclusive: Long,
+    ): SegmentSlice? = synchronized(lock) {
+        entries[SegmentKey(streamId, segmentIndex)]?.sliceReference(start, endInclusive)
+    }
+
     fun putSegment(streamId: String, segmentIndex: Long, start: Long, bytes: ByteArray): Boolean =
         putSegmentInternal(streamId, segmentIndex, start, bytes.copyOf())
 
@@ -100,12 +109,17 @@ class VideoRangeMemoryCache(
             get() = start + bytes.size - 1L
 
         fun slice(start: Long, endInclusive: Long): ByteArray {
+            val slice = sliceReference(start, endInclusive)
+            return slice.bytes.copyOfRange(slice.fromIndex, slice.toIndexExclusive)
+        }
+
+        internal fun sliceReference(start: Long, endInclusive: Long): SegmentSlice {
             require(start >= this.start) { "slice start is before segment start" }
             require(endInclusive <= this.endInclusive) { "slice end is after segment end" }
             require(start <= endInclusive) { "slice range must not be empty" }
             val from = (start - this.start).toInt()
             val toExclusive = (endInclusive - this.start + 1L).toInt()
-            return bytes.copyOfRange(from, toExclusive)
+            return SegmentSlice(bytes, from, toExclusive)
         }
 
         internal fun snapshot(): Segment =
@@ -132,6 +146,15 @@ class VideoRangeMemoryCache(
             result = 31 * result + bytes.contentHashCode()
             return result
         }
+    }
+
+    internal class SegmentSlice(
+        val bytes: ByteArray,
+        val fromIndex: Int,
+        val toIndexExclusive: Int,
+    ) {
+        val size: Int
+            get() = toIndexExclusive - fromIndex
     }
 
     private data class SegmentKey(

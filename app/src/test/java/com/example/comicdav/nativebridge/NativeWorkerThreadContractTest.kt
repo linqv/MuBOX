@@ -7,8 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Source-level contract test: verifies that blocking native entry points carry @WorkerThread
- * and that key callers dispatch to an IO context.
+ * Narrow source-level JNI contract: blocking native entry points must carry @WorkerThread.
+ * Dispatcher behavior is covered through injected-dispatcher tests at each caller boundary.
  */
 class NativeWorkerThreadContractTest {
 
@@ -86,24 +86,6 @@ class NativeWorkerThreadContractTest {
                 preceding.contains("@WorkerThread"),
             )
         }
-    }
-
-    @Test
-    fun openComicUseCase_openRemote_dispatchesToIo() {
-        val source = File(srcRoot, "feature/reader/OpenComicUseCase.kt").readText()
-        assertTrue(
-            "OpenComicUseCase should dispatch native call via withContext(ioDispatcher)",
-            source.contains("withContext(ioDispatcher)"),
-        )
-    }
-
-    @Test
-    fun webDavLibraryCoverExtractor_extractFirstPageCover_dispatchesToIo() {
-        val source = File(srcRoot, "feature/library/WebDavLibraryCoverExtractor.kt").readText()
-        assertTrue(
-            "WebDavLibraryCoverExtractor should dispatch native call via withContext(ioDispatcher)",
-            source.contains("withContext(ioDispatcher)"),
-        )
     }
 
     @Test

@@ -11,8 +11,8 @@ use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::archive::{ArchiveFormat, LocalArchiveSession, open_local_archive_fd_with_options};
 use crate::cache::index_cache::{
@@ -35,6 +35,19 @@ struct CbzSession {
     kind: SessionKind,
     diagnostics: SessionDiagnostics,
     index_cache: Option<SessionIndexCache>,
+    index_cache_dirty: bool,
+}
+
+impl Drop for CbzSession {
+    fn drop(&mut self) {
+        if !self.index_cache_dirty {
+            return;
+        }
+        let (Some(cache), SessionKind::Zip { index, .. }) = (&self.index_cache, &self.kind) else {
+            return;
+        };
+        let _ = store_index_cache_with_options(&cache.cache_dir, &cache.key, cache.options, index);
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -110,7 +123,9 @@ impl RangeReader for SessionReader {
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
-static SESSIONS: Lazy<Mutex<HashMap<ComicHandle, CbzSession>>> =
+type SharedSession = Arc<Mutex<CbzSession>>;
+
+static SESSIONS: Lazy<Mutex<HashMap<ComicHandle, SharedSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 const MAX_SESSIONS: usize = 256;
 thread_local! {
@@ -527,22 +542,31 @@ fn insert_session(
     }
     sessions.insert(
         handle,
-        CbzSession {
+        Arc::new(Mutex::new(CbzSession {
             kind,
             diagnostics: SessionDiagnostics::default(),
             index_cache,
-        },
+            index_cache_dirty: false,
+        })),
     );
     Ok(handle)
 }
 
-fn page_count(handle: ComicHandle) -> Result<i32> {
+fn session_for_handle(handle: ComicHandle) -> Result<SharedSession> {
     let sessions = SESSIONS
         .lock()
         .map_err(|_| anyhow!("native session table lock poisoned"))?;
-    let session = sessions
+    sessions
         .get(&handle)
-        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+        .cloned()
+        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()).into())
+}
+
+fn page_count(handle: ComicHandle) -> Result<i32> {
+    let session = session_for_handle(handle)?;
+    let session = session
+        .lock()
+        .map_err(|_| anyhow!("native session lock poisoned"))?;
     Ok(match &session.kind {
         SessionKind::Zip { index, .. } => index.pages.len() as i32,
         SessionKind::LocalArchive(archive) => archive.page_count() as i32,
@@ -553,33 +577,30 @@ fn load_page_to_file(handle: ComicHandle, page_index: usize, output_path: &Path)
     if output_path.is_file() && output_path.metadata()?.len() > 0 {
         return Ok(());
     }
-    let (bytes, index_cache_update) = {
-        let mut sessions = SESSIONS
+    let bytes = {
+        let session = session_for_handle(handle)?;
+        let mut session = session
             .lock()
-            .map_err(|_| anyhow!("native session table lock poisoned"))?;
-        let session = sessions
-            .get_mut(&handle)
-            .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
-        let index_cache = session.index_cache.clone();
+            .map_err(|_| anyhow!("native session lock poisoned"))?;
         match &mut session.kind {
             SessionKind::Zip { reader, index } => {
                 let page = index.extract_page(reader, page_index)?;
-                let cache_update = if page.data_offset_updated {
-                    index_cache.map(|cache| (cache, index.clone()))
-                } else {
-                    None
-                };
-                (page.bytes, cache_update)
+                if page.data_offset_updated {
+                    session.index_cache_dirty = true;
+                }
+                page.bytes
             }
-            SessionKind::LocalArchive(archive) => (archive.extract_page(page_index)?, None),
+            SessionKind::LocalArchive(archive) => {
+                if archive.materialize_solid_page_to_file(page_index, output_path)? {
+                    return Ok(());
+                }
+                archive.extract_page(page_index)?
+            }
         }
     };
     let tmp_path = output_path.with_extension("tmp");
     fs::write(&tmp_path, bytes)?;
     fs::rename(&tmp_path, output_path)?;
-    if let Some((cache, index)) = index_cache_update {
-        let _ = store_index_cache_with_options(&cache.cache_dir, &cache.key, cache.options, &index);
-    }
     Ok(())
 }
 
@@ -589,12 +610,10 @@ fn update_viewport(
     network_class: NetworkClass,
     forward_prefetch_window: usize,
 ) -> Result<()> {
-    let mut sessions = SESSIONS
+    let session = session_for_handle(handle)?;
+    let mut session = session
         .lock()
-        .map_err(|_| anyhow!("native session table lock poisoned"))?;
-    let session = sessions
-        .get_mut(&handle)
-        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+        .map_err(|_| anyhow!("native session lock poisoned"))?;
     let (index, reader) = match &session.kind {
         SessionKind::Zip { reader, index } => (index, reader),
         SessionKind::LocalArchive(_) => {
@@ -628,12 +647,10 @@ fn planned_ranges_for_viewport(
     network_class: NetworkClass,
     forward_prefetch_window: usize,
 ) -> Result<Vec<PlannedRangeDto>> {
-    let sessions = SESSIONS
+    let session = session_for_handle(handle)?;
+    let session = session
         .lock()
-        .map_err(|_| anyhow!("native session table lock poisoned"))?;
-    let session = sessions
-        .get(&handle)
-        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+        .map_err(|_| anyhow!("native session lock poisoned"))?;
     let (index, reader) = match &session.kind {
         SessionKind::Zip { reader, index } => (index, reader),
         SessionKind::LocalArchive(_) => return Ok(Vec::new()),
@@ -739,12 +756,10 @@ fn encode_planned_ranges(ranges: &[PlannedRangeDto]) -> String {
 }
 
 fn session_diagnostics(handle: ComicHandle) -> Result<String> {
-    let sessions = SESSIONS
+    let session = session_for_handle(handle)?;
+    let session = session
         .lock()
-        .map_err(|_| anyhow!("native session table lock poisoned"))?;
-    let session = sessions
-        .get(&handle)
-        .ok_or_else(|| ComicCoreError::InvalidZip("native handle not found".to_string()))?;
+        .map_err(|_| anyhow!("native session lock poisoned"))?;
     Ok(format!(
         "viewport_page={};planned_request_count={};planned_bytes={}",
         session
@@ -807,15 +822,23 @@ fn last_error_message_string() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::SessionReader;
+    use super::{
+        CbzIndex, CbzPageEntry, CbzSession, SessionIndexCache, SessionKind, SessionReader,
+    };
     use super::{comic_close, comic_open_local, comic_page_count};
+    use super::{insert_session, load_page_to_file};
     use super::{last_error_message_string, set_last_error};
+    use crate::cache::index_cache::{IndexCacheKey, load_index_cache};
+    use crate::image::ImageFormatOptions;
     use crate::zip::RangeReader;
     use anyhow::Result;
     use std::ffi::CString;
     use std::fs::File;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use std::sync::{Mutex, mpsc};
+    use std::thread;
+    use std::time::Duration;
+    use tempfile::{NamedTempFile, TempDir};
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
 
@@ -862,6 +885,117 @@ mod tests {
         assert_eq!(Some(vec![10, 11, 12]), cached);
     }
 
+    #[test]
+    fn dirty_index_is_flushed_once_when_session_is_dropped() {
+        let temp = TempDir::new().unwrap();
+        let key = IndexCacheKey {
+            comic_key: "drop-flush".to_string(),
+            file_size: 3,
+            validator: "etag-1".to_string(),
+        };
+        let index = CbzIndex {
+            pages: vec![CbzPageEntry {
+                name: "1.jpg".to_string(),
+                filename_len: 5,
+                local_header_offset: 0,
+                data_offset: Some(42),
+                compressed_size: 3,
+                uncompressed_size: 3,
+                compression_method: 0,
+                crc32: crc32fast::hash(&[1, 2, 3]),
+            }],
+        };
+        let session = CbzSession {
+            kind: SessionKind::Zip {
+                reader: SessionReader::Test(Box::new(CacheOnlyReader)),
+                index,
+            },
+            diagnostics: Default::default(),
+            index_cache: Some(SessionIndexCache {
+                cache_dir: temp.path().to_path_buf(),
+                key: key.clone(),
+                options: ImageFormatOptions::default(),
+            }),
+            index_cache_dirty: true,
+        };
+
+        drop(session);
+
+        let cached = load_index_cache(temp.path(), &key).unwrap().unwrap();
+        assert_eq!(Some(42), cached.pages[0].data_offset);
+    }
+
+    #[test]
+    fn slow_page_read_does_not_block_other_sessions_or_close() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let slow_handle = insert_test_zip_session(Box::new(BlockingReader {
+            entered: entered_tx,
+            release: Mutex::new(release_rx),
+        }));
+        let fast_handle = insert_test_zip_session(Box::new(CacheOnlyReader));
+        let temp = TempDir::new().unwrap();
+        let output_path = temp.path().join("slow-page.bin");
+        let thread_output_path = output_path.clone();
+        let load_thread =
+            thread::spawn(move || load_page_to_file(slow_handle, 0, &thread_output_path));
+
+        if entered_rx.recv_timeout(Duration::from_secs(1)).is_err() {
+            let _ = release_tx.send(());
+            let _ = load_thread.join();
+            panic!("slow page read did not enter the range reader");
+        }
+
+        let (close_done_tx, close_done_rx) = mpsc::channel();
+        let close_thread = thread::spawn(move || {
+            comic_close(slow_handle);
+            let _ = close_done_tx.send(());
+        });
+        let (count_tx, count_rx) = mpsc::channel();
+        let count_thread = thread::spawn(move || {
+            let _ = count_tx.send(comic_page_count(fast_handle));
+        });
+
+        let close_result = close_done_rx.recv_timeout(Duration::from_secs(1));
+        let fast_count_result = count_rx.recv_timeout(Duration::from_secs(1));
+        let closed_count = close_result.is_ok().then(|| comic_page_count(slow_handle));
+
+        let _ = release_tx.send(());
+        let load_result = load_thread.join().unwrap();
+        close_thread.join().unwrap();
+        count_thread.join().unwrap();
+        comic_close(fast_handle);
+
+        assert!(
+            close_result.is_ok(),
+            "close waited for an unrelated page read"
+        );
+        assert_eq!(Ok(1), fast_count_result);
+        assert_eq!(Some(-1), closed_count);
+        assert!(
+            load_result.is_ok(),
+            "in-flight read should finish after close"
+        );
+        assert_eq!(vec![1, 2, 3], std::fs::read(output_path).unwrap());
+    }
+
+    struct BlockingReader {
+        entered: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl RangeReader for BlockingReader {
+        fn size(&self) -> Result<u64> {
+            Ok(3)
+        }
+
+        fn read_range(&self, _start: u64, _end_inclusive: u64) -> Result<Vec<u8>> {
+            let _ = self.entered.send(());
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(vec![1, 2, 3])
+        }
+    }
+
     struct CacheOnlyReader;
 
     impl RangeReader for CacheOnlyReader {
@@ -878,6 +1012,28 @@ mod tests {
                 (start..=end_inclusive).map(|byte| byte as u8).collect(),
             ))
         }
+    }
+
+    fn insert_test_zip_session(reader: Box<dyn RangeReader + Send>) -> u64 {
+        insert_session(
+            SessionKind::Zip {
+                reader: SessionReader::Test(reader),
+                index: CbzIndex {
+                    pages: vec![CbzPageEntry {
+                        name: "1.jpg".to_string(),
+                        filename_len: 5,
+                        local_header_offset: 0,
+                        data_offset: Some(0),
+                        compressed_size: 3,
+                        uncompressed_size: 3,
+                        compression_method: 0,
+                        crc32: crc32fast::hash(&[1, 2, 3]),
+                    }],
+                },
+            },
+            None,
+        )
+        .unwrap()
     }
 
     fn make_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> NamedTempFile {

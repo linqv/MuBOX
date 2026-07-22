@@ -9,6 +9,7 @@ import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.VideoDownloadStore
 import com.example.comicdav.data.WebDavAccountStore
+import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.library.LibraryRepository
 import com.example.comicdav.data.library.createLibraryDatabase
@@ -17,9 +18,14 @@ import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
+import com.example.comicdav.network.WebDavClientProvider
 import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.security.CredentialCipher
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 internal val Context.readingProgressDataStore by preferencesDataStore(name = "reading_progress")
 internal val Context.appDataFolderDataStore by preferencesDataStore(name = "app_data_folder")
@@ -35,7 +41,14 @@ internal class AppContainer(context: Context) {
 
     val libraryRepository = LibraryRepository(libraryDatabase.libraryDao())
     val videoLibraryRepository = VideoLibraryRepository(libraryDatabase.videoLibraryDao())
-    val fileDirectoryRepository = FileDirectoryRepository(libraryDatabase.fileDirectoryDao(), credentialCipher)
+
+    val webDavAccountStore = WebDavAccountStore(context.webDavAccountDataStore, credentialCipher)
+    val fileDirectoryRepository = FileDirectoryRepository(libraryDatabase.fileDirectoryDao())
+    private val fileDirectoryCredentialMigrator = FileDirectoryCredentialMigrator(
+        dao = libraryDatabase.fileDirectoryDao(),
+        accountStore = webDavAccountStore,
+        cipher = credentialCipher,
+    )
 
     val localDirectoryReader = AndroidLocalDirectoryReader(context.applicationContext)
     val localComicOpener = LocalComicOpener(context.applicationContext)
@@ -50,7 +63,24 @@ internal class AppContainer(context: Context) {
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
-    val webDavAccountStore = WebDavAccountStore(context.webDavAccountDataStore, credentialCipher)
+    val webDavClientProvider = WebDavClientProvider(webDavAccountStore)
     val downloadRecordStore = DownloadRecordStore(context.downloadRecordsDataStore)
     val videoDownloadStore = VideoDownloadStore(context.videoDownloadRecordsDataStore)
+
+    fun startBackgroundMigrations(scope: CoroutineScope): Job = scope.launch {
+        try {
+            webDavAccountStore.migratePlaintextPasswords()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The account migration is idempotent and will be attempted again next process start.
+        }
+        try {
+            fileDirectoryCredentialMigrator.migrateLegacyCredentials()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Legacy fields remain intact, so the idempotent migration can retry next process start.
+        }
+    }
 }

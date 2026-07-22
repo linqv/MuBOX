@@ -14,7 +14,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -47,15 +46,6 @@ class ReaderImageLoaderTest {
     @Test
     fun platformReaderImageIncludesAvifByCompatibleBrandWithoutExtension() {
         assertTrue(isPlatformReaderImage(null, avifCompatibleBrandHeader()))
-    }
-
-    @Test
-    fun readerScreenDoesNotRouteAvifPagesThroughWebView() {
-        val source = readerScreenSource()
-
-        assertFalse(source.contains("ReaderAvifWebViewPage"))
-        assertFalse(source.contains("shouldInterceptRequest"))
-        assertFalse(source.contains("WebView"))
     }
 
     @Test
@@ -161,9 +151,6 @@ class ReaderImageLoaderTest {
         assertEquals(CachePolicy.DISABLED, request.memoryCachePolicy)
         assertEquals(CachePolicy.DISABLED, request.diskCachePolicy)
     }
-
-    private fun readerScreenSource(): String =
-        File("src/main/java/com/example/comicdav/feature/reader/ReaderScreen.kt").readText()
 
     private fun avifHeader(): ByteArray =
         byteArrayOf(

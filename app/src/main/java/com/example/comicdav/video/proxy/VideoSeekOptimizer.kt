@@ -70,7 +70,7 @@ internal class VideoSeekOptimizer(
         )
 
         if (shouldStreamSmallRangeDirectly(firstSegmentIndex, lastSegmentIndex, requestedBytes)) {
-            val cachedSlice = cache.getSegmentSlice(request.streamId, firstSegmentIndex, start, endInclusive)
+            val cachedSlice = cache.getSegmentSliceReference(request.streamId, firstSegmentIndex, start, endInclusive)
             if (cachedSlice == null) {
                 if (inFlight.containsKey(SegmentKey(request.streamId, firstSegmentIndex))) {
                     val segment = getOrFetchSegment(
@@ -81,9 +81,9 @@ internal class VideoSeekOptimizer(
                         diagnostics = diagnostics,
                         waiterKind = WaiterKind.FOREGROUND,
                     )
-                    val slice = segment.slice(start, endInclusive)
+                    val slice = segment.sliceReference(start, endInclusive)
                     return WebDavStreamResponse(
-                        stream = ByteArrayInputStream(slice),
+                        stream = ByteArraySlicesInputStream(listOf(slice)),
                         statusCode = 206,
                         contentLength = requestedBytes.toLong(),
                         contentRange = ContentRange(start, endInclusive, totalSize),
@@ -119,7 +119,7 @@ internal class VideoSeekOptimizer(
             }
         }
 
-        val slices = ArrayList<ByteArray>()
+        val slices = ArrayList<VideoRangeMemoryCache.SegmentSlice>()
         for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
             val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics)
             if (cachedSlice != null) {
@@ -133,7 +133,7 @@ internal class VideoSeekOptimizer(
                     diagnostics = diagnostics,
                     waiterKind = WaiterKind.FOREGROUND,
                 )
-                slices += segment.slice(segmentSlice.sliceStart, segmentSlice.sliceEnd)
+                slices += segment.sliceReference(segmentSlice.sliceStart, segmentSlice.sliceEnd)
             }
         }
 
@@ -285,7 +285,7 @@ internal class VideoSeekOptimizer(
         diagnostics: VideoProxyDiagnostics,
     ): WebDavStreamResponse? {
         val requestedBytes = checkedRequestedByteCount(start, endInclusive)
-        val slices = ArrayList<ByteArray>()
+        val slices = ArrayList<VideoRangeMemoryCache.SegmentSlice>()
         for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
             val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics) ?: return null
             slices += cachedSlice
@@ -327,8 +327,8 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         segmentSlice: RequestedSegmentSlice,
         diagnostics: VideoProxyDiagnostics,
-    ): ByteArray? {
-        val cachedSlice = cache.getSegmentSlice(
+    ): VideoRangeMemoryCache.SegmentSlice? {
+        val cachedSlice = cache.getSegmentSliceReference(
             streamId = request.streamId,
             segmentIndex = segmentSlice.segmentIndex,
             start = segmentSlice.sliceStart,
@@ -901,9 +901,9 @@ internal class VideoSeekOptimizer(
     )
 
     private class ByteArraySlicesInputStream(
-        slices: List<ByteArray>,
+        slices: List<VideoRangeMemoryCache.SegmentSlice>,
     ) : InputStream() {
-        private val slices = slices.filter { it.isNotEmpty() }
+        private val slices = slices.filter { it.size > 0 }
         private var sliceIndex = 0
         private var offset = 0
 
@@ -911,7 +911,7 @@ internal class VideoSeekOptimizer(
             while (sliceIndex < slices.size) {
                 val slice = slices[sliceIndex]
                 if (offset < slice.size) {
-                    return slice[offset++].toInt() and 0xff
+                    return slice.bytes[slice.fromIndex + offset++].toInt() and 0xff
                 }
                 sliceIndex += 1
                 offset = 0
@@ -932,7 +932,12 @@ internal class VideoSeekOptimizer(
                     continue
                 }
                 val count = minOf(remaining, slice.size - offset)
-                slice.copyInto(buffer, outputOffset, offset, offset + count)
+                slice.bytes.copyInto(
+                    destination = buffer,
+                    destinationOffset = outputOffset,
+                    startIndex = slice.fromIndex + offset,
+                    endIndex = slice.fromIndex + offset + count,
+                )
                 offset += count
                 outputOffset += count
                 remaining -= count

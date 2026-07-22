@@ -88,6 +88,7 @@ class FileDirectoryViewModel(
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun addWebDavDirectory(
         displayName: String,
         accountId: String,
@@ -102,9 +103,6 @@ class FileDirectoryViewModel(
                     displayName = displayName,
                     accountId = accountId,
                     path = path,
-                    baseUrl = baseUrl,
-                    username = username,
-                    password = password,
                 )
             }.fold(
                 onSuccess = {
@@ -208,6 +206,7 @@ class FileDirectoryViewModel(
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun updateWebDavDirectory(
         id: Long,
         displayName: String,
@@ -224,9 +223,6 @@ class FileDirectoryViewModel(
                     displayName = displayName,
                     accountId = accountId,
                     path = path,
-                    baseUrl = baseUrl,
-                    username = username,
-                    password = password,
                 )
             }.fold(
                 onSuccess = {

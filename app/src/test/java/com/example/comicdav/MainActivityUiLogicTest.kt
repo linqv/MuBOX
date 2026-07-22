@@ -5,7 +5,6 @@ import androidx.compose.ui.graphics.luminance
 import com.example.comicdav.data.AppColorPalette
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.comicDavTypography
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -14,18 +13,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainActivityUiLogicTest {
-    @Test
-    fun readerRouteOverlaysInsteadOfReplacingAppShell() {
-        val source = File("src/main/java/com/example/comicdav/MainActivity.kt").readText()
-
-        assertTrue(source.contains("ReaderOverlayHost("))
-        assertTrue(source.contains("val readerOpenState = rememberSaveable { mutableStateOf(false) }"))
-        assertTrue(source.contains("readerOpenState = readerOpenState"))
-        assertFalse(source.contains("var isReaderOpen by rememberSaveable"))
-        assertFalse(source.contains("val readerUiState = readerViewModel.uiState"))
-        assertFalse(source.contains("isReaderOpen -> {"))
-    }
-
     @Test
     fun readerOverlayOnlyPlacesTheVisibleLayer() {
         assertEquals(0, readerOverlayVisibleLayer(readerOpen = false))

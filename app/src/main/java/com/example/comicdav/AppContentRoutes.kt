@@ -17,6 +17,7 @@ import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryUiState
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderUiState
+import com.example.comicdav.feature.settings.SettingsAction
 import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryUiState
@@ -183,97 +184,88 @@ internal fun SettingsTabContent(
 ) {
     SettingsScreen(
         settings = settings,
-        onReadingDirectionChange = { value ->
-            scope.launch { appSettingsStore.updateReadingDirection(value) }
-        },
-        onReaderLoggingModeChange = { value ->
-            scope.launch { appSettingsStore.updateReaderLoggingMode(value) }
-        },
-        onColorPaletteChange = { value ->
-            scope.launch { appSettingsStore.updateColorPalette(value) }
-        },
-        onAvifImagesEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateAvifImagesEnabled(value) }
-        },
-        onAutoPageEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateAutoPageEnabled(value) }
-        },
-        onAutoPageSpeedChange = { value ->
-            scope.launch { appSettingsStore.updateAutoPageSpeedMillis(value) }
-        },
-        onScreenRotationLockChange = { value ->
-            scope.launch { appSettingsStore.updateScreenRotationLockEnabled(value) }
-        },
-        onVolumeKeysTurnPagesChange = { value ->
-            scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(value) }
-        },
-        onReaderPinchZoomEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateReaderPinchZoomEnabled(value) }
-        },
-        onPageImageCacheEnabledChange = { value ->
-            scope.launch { appSettingsStore.updatePageImageCacheEnabled(value) }
-        },
-        onDiskCacheLimitChange = { value ->
-            scope.launch { appSettingsStore.updateDiskCacheLimitMb(value) }
-        },
-        onWebDavPrefetchPageCountChange = { value ->
-            scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(value) }
-        },
-        onLibraryCoversEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateLibraryCoversEnabled(value) }
-        },
-        onVideoResumeEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateVideoResumeEnabled(value) }
-        },
-        onVideoBackgroundModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoBackgroundMode(value) }
-        },
-        onVideoSeekOptimizationEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(value) }
-        },
-        onVideoForwardPrefetchModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoForwardPrefetchMode(value) }
-        },
-        onVideoProxyDiagnosticsModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(value) }
-        },
-        onVideoPlayerProxyDebugInfoEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateVideoPlayerProxyDebugInfoEnabled(value) }
-        },
-        onVideoOutputModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoOutputMode(value) }
-        },
-        onGpuApiModeChange = { value ->
-            scope.launch { appSettingsStore.updateGpuApiMode(value) }
-        },
-        onAnime4KEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateAnime4KEnabled(value) }
-        },
-        onAnime4KModeChange = { value ->
-            scope.launch { appSettingsStore.updateAnime4KMode(value) }
-        },
-        onAnime4KQualityChange = { value ->
-            scope.launch { appSettingsStore.updateAnime4KQuality(value) }
-        },
-        onVideoDecoderModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoDecoderMode(value) }
-        },
-        onMpvProfileModeChange = { value ->
-            scope.launch { appSettingsStore.updateMpvProfileMode(value) }
-        },
-        onVideoControlsAutoHideMillisChange = { value ->
-            scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(value) }
-        },
-        onVideoPlayerOrientationModeChange = { value ->
-            scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(value) }
-        },
-        onVideoLibraryThumbnailsEnabledChange = { value ->
-            scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(value) }
+        onAction = { action ->
+            dispatchSettingsAction(
+                action = action,
+                appSettingsStore = appSettingsStore,
+                scope = scope,
+                onClearCacheCategory = onClearCacheCategory,
+                onClearAllCache = onClearAllCache,
+            )
         },
         cacheAnalysis = cacheAnalysis,
         cacheActionMessage = cacheActionMessage,
-        onClearCacheCategory = onClearCacheCategory,
-        onClearAllCache = onClearAllCache,
         modifier = modifier,
     )
+}
+
+internal fun dispatchSettingsAction(
+    action: SettingsAction,
+    appSettingsStore: AppSettingsStore,
+    scope: CoroutineScope,
+    onClearCacheCategory: (ComicCacheCategory) -> Unit,
+    onClearAllCache: () -> Unit,
+) {
+    when (action) {
+        is SettingsAction.SetReadingDirection ->
+            scope.launch { appSettingsStore.updateReadingDirection(action.value) }
+        is SettingsAction.SetReaderLoggingMode ->
+            scope.launch { appSettingsStore.updateReaderLoggingMode(action.value) }
+        is SettingsAction.SetColorPalette ->
+            scope.launch { appSettingsStore.updateColorPalette(action.value) }
+        is SettingsAction.SetAvifImagesEnabled ->
+            scope.launch { appSettingsStore.updateAvifImagesEnabled(action.value) }
+        is SettingsAction.SetAutoPageEnabled ->
+            scope.launch { appSettingsStore.updateAutoPageEnabled(action.value) }
+        is SettingsAction.SetAutoPageSpeedMillis ->
+            scope.launch { appSettingsStore.updateAutoPageSpeedMillis(action.value) }
+        is SettingsAction.SetScreenRotationLockEnabled ->
+            scope.launch { appSettingsStore.updateScreenRotationLockEnabled(action.value) }
+        is SettingsAction.SetVolumeKeysTurnPagesEnabled ->
+            scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(action.value) }
+        is SettingsAction.SetReaderPinchZoomEnabled ->
+            scope.launch { appSettingsStore.updateReaderPinchZoomEnabled(action.value) }
+        is SettingsAction.SetPageImageCacheEnabled ->
+            scope.launch { appSettingsStore.updatePageImageCacheEnabled(action.value) }
+        is SettingsAction.SetDiskCacheLimitMb ->
+            scope.launch { appSettingsStore.updateDiskCacheLimitMb(action.value) }
+        is SettingsAction.SetWebDavPrefetchPageCount ->
+            scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(action.value) }
+        is SettingsAction.SetLibraryCoversEnabled ->
+            scope.launch { appSettingsStore.updateLibraryCoversEnabled(action.value) }
+        is SettingsAction.SetVideoResumeEnabled ->
+            scope.launch { appSettingsStore.updateVideoResumeEnabled(action.value) }
+        is SettingsAction.SetVideoBackgroundMode ->
+            scope.launch { appSettingsStore.updateVideoBackgroundMode(action.value) }
+        is SettingsAction.SetVideoSeekOptimizationEnabled ->
+            scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(action.value) }
+        is SettingsAction.SetVideoForwardPrefetchMode ->
+            scope.launch { appSettingsStore.updateVideoForwardPrefetchMode(action.value) }
+        is SettingsAction.SetVideoProxyDiagnosticsMode ->
+            scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(action.value) }
+        is SettingsAction.SetVideoPlayerProxyDebugInfoEnabled ->
+            scope.launch { appSettingsStore.updateVideoPlayerProxyDebugInfoEnabled(action.value) }
+        is SettingsAction.SetVideoOutputMode ->
+            scope.launch { appSettingsStore.updateVideoOutputMode(action.value) }
+        is SettingsAction.SetGpuApiMode ->
+            scope.launch { appSettingsStore.updateGpuApiMode(action.value) }
+        is SettingsAction.SetAnime4KEnabled ->
+            scope.launch { appSettingsStore.updateAnime4KEnabled(action.value) }
+        is SettingsAction.SetAnime4KMode ->
+            scope.launch { appSettingsStore.updateAnime4KMode(action.value) }
+        is SettingsAction.SetAnime4KQuality ->
+            scope.launch { appSettingsStore.updateAnime4KQuality(action.value) }
+        is SettingsAction.SetVideoDecoderMode ->
+            scope.launch { appSettingsStore.updateVideoDecoderMode(action.value) }
+        is SettingsAction.SetMpvProfileMode ->
+            scope.launch { appSettingsStore.updateMpvProfileMode(action.value) }
+        is SettingsAction.SetVideoControlsAutoHideMillis ->
+            scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(action.value) }
+        is SettingsAction.SetVideoPlayerOrientationMode ->
+            scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(action.value) }
+        is SettingsAction.SetVideoLibraryThumbnailsEnabled ->
+            scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(action.value) }
+        is SettingsAction.ClearCacheCategory -> onClearCacheCategory(action.category)
+        SettingsAction.ClearAllCache -> onClearAllCache()
+    }
 }

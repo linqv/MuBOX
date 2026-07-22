@@ -7,7 +7,7 @@ import android.view.LayoutInflater
 import android.view.SurfaceHolder
 import android.widget.FrameLayout
 import `is`.xyz.mpv.BaseMPVView
-import `is`.xyz.mpv.MPVLib
+import com.example.comicdav.video.VideoPlaybackMemoryBudget
 import org.mubox.reader.R
 
 interface MpvFileLoader {
@@ -19,82 +19,70 @@ class MuBoxMpvView(
     context: Context,
     attrs: AttributeSet,
 ) : BaseMPVView(context, attrs), MpvFileLoader {
-    var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST
-    var videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO
-    var gpuApiMode: GpuApiMode = GpuApiMode.AUTO
-    var videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO
-    var anime4kSettings: Anime4KSettings = Anime4KSettings()
+    internal var nativeApi: MpvNativeApi = RealMpvNativeApi
+    private var startupConfiguration = MpvViewStartupConfiguration()
+
+    var mpvProfileMode: MpvProfileMode
+        get() = startupConfiguration.profileMode
+        set(value) {
+            startupConfiguration = startupConfiguration.copy(profileMode = value)
+        }
+    var videoOutputMode: VideoOutputMode
+        get() = startupConfiguration.videoOutputMode
+        set(value) {
+            startupConfiguration = startupConfiguration.copy(videoOutputMode = value)
+        }
+    var gpuApiMode: GpuApiMode
+        get() = startupConfiguration.gpuApiMode
+        set(value) {
+            startupConfiguration = startupConfiguration.copy(gpuApiMode = value)
+        }
+    var videoDecoderMode: VideoDecoderMode
+        get() = startupConfiguration.videoDecoderMode
+        set(value) {
+            startupConfiguration = startupConfiguration.copy(videoDecoderMode = value)
+        }
+    var anime4kSettings: Anime4KSettings
+        get() = startupConfiguration.anime4kSettings
+        set(value) {
+            startupConfiguration = startupConfiguration.copy(anime4kSettings = value)
+        }
     var anime4kManager: Anime4KManager? = null
 
-    private var surfaceAttached = false
-    private val pendingAfterLoadfileActions = mutableListOf<() -> Unit>()
+    private val surfaceAwareFileLoader = SurfaceAwareMpvFileLoader(
+        loadDirectly = { uri -> nativeApi.command("loadfile", uri) },
+        loadThroughView = ::playFile,
+    )
 
     override fun initOptions() {
-        MPVLib.setOptionString("profile", mpvProfileMode.profile)
-        MPVLib.setOptionString("gpu-api", gpuApiMode.gpuApi)
-        setVo(videoOutputMode.videoOutput)
-        MPVLib.setOptionString("hwdec", videoDecoderMode.hwdec)
-        MPVLib.setOptionString("hwdec-codecs", "all")
-        MPVLib.setOptionString("demuxer-max-bytes", "${64 * 1024 * 1024}")
-        MPVLib.setOptionString("demuxer-max-back-bytes", "${64 * 1024 * 1024}")
-        MPVLib.setOptionString("msg-level", "all=warn")
-        anime4kManager?.initialize()
-        val shaderChain = if (anime4kSettings.enabled && anime4kSettings.mode != Anime4KMode.OFF) {
-            anime4kManager?.shaderChain(anime4kSettings).orEmpty()
-        } else {
-            ""
-        }
-        if (shaderChain.isNotBlank()) {
-            if (gpuApiMode != GpuApiMode.VULKAN) {
-                MPVLib.setOptionString("opengl-pbo", "yes")
-                MPVLib.setOptionString("opengl-early-flush", "no")
-            }
-            MPVLib.setOptionString("vd-lavc-dr", "yes")
-            MPVLib.setOptionString("glsl-shaders", shaderChain)
-        }
-        MPVLib.setPropertyBoolean("keep-open", true)
-        MPVLib.setPropertyBoolean("input-default-bindings", true)
+        MpvStartupOptionsApplier(
+            nativeApi = nativeApi,
+            setVideoOutput = ::setVo,
+            initializeAnime4K = { anime4kManager?.initialize() },
+            anime4KShaderChain = { settings -> anime4kManager?.shaderChain(settings).orEmpty() },
+            memoryBudget = VideoPlaybackMemoryBudget.current(),
+        ).apply(startupConfiguration)
     }
 
     override fun observeProperties() {
-        MPVLib.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
-        MPVLib.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
-        MPVLib.observeProperty("track-list", MPVLib.MpvFormat.MPV_FORMAT_NODE_ARRAY)
-        MPVLib.observeProperty("aid", MPVLib.MpvFormat.MPV_FORMAT_INT64)
-        MPVLib.observeProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_INT64)
-        MPVLib.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("volume", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("audio-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
-        MPVLib.observeProperty("video-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP)
-        MPVLib.observeProperty("video-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("video-out-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        MPVLib.observeProperty("hwdec", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-        MPVLib.observeProperty("hwdec-current", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-        MPVLib.observeProperty("current-tracks/video/decoder", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-        MPVLib.observeProperty("vo", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-        MPVLib.observeProperty("gpu-api", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+        observeMpvPlaybackProperties(nativeApi)
     }
 
     override fun postInitOptions() = Unit
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        if (surfaceAttached) return
-        surfaceAttached = true
+        if (!surfaceAwareFileLoader.markSurfaceAttached()) return
         super.surfaceCreated(holder)
-        flushPendingAfterLoadfileActions()
+        surfaceAwareFileLoader.flushPendingAfterLoadfileActions()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        if (!surfaceAttached) return
-        surfaceAttached = false
+        if (!surfaceAwareFileLoader.markSurfaceDetached()) return
         super.surfaceDestroyed(holder)
     }
 
     fun attachExistingSurfaceIfReady() {
-        if (surfaceAttached) return
+        if (surfaceAwareFileLoader.isSurfaceAttached) return
         val surface = holder.surface ?: return
         if (!surface.isValid) return
 
@@ -106,20 +94,7 @@ class MuBoxMpvView(
     }
 
     override fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {
-        pendingAfterLoadfileActions.clear()
-        if (surfaceAttached) {
-            MPVLib.command("loadfile", uri)
-            afterLoadfile()
-        } else {
-            pendingAfterLoadfileActions += afterLoadfile
-            playFile(uri)
-        }
-    }
-
-    private fun flushPendingAfterLoadfileActions() {
-        val actions = pendingAfterLoadfileActions.toList()
-        pendingAfterLoadfileActions.clear()
-        actions.forEach { it() }
+        surfaceAwareFileLoader.playFileWhenReady(uri, afterLoadfile)
     }
 
     companion object {

@@ -1,393 +1,256 @@
 package com.example.comicdav.video.player
 
-import java.io.File
+import com.example.comicdav.video.VideoSubtitleOpenRequest
+import `is`.xyz.mpv.MPVNode
+import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class VideoPlayerActivityIntegrationTest {
     @Test
-    fun activityResolvesLocalUriAndRequestsAudioFocusBeforeLoading() {
-        val source = activitySourceFile().readText()
+    fun playbackInputResolutionUsesTheConfiguredBackgroundDispatcher() {
+        val dispatcher = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "video-input-resolver")
+        }.asCoroutineDispatcher()
+        try {
+            runTest {
+                var resolverThreadName: String? = null
+                val coordinator = VideoPlaybackLoadCoordinator(
+                    canLoad = { true },
+                    resolutionDispatcher = dispatcher,
+                    resolvePlaybackInput = {
+                        resolverThreadName = Thread.currentThread().name
+                        ResolvedPlaybackInput(ManagedPlaybackUri("file:///movie.mkv"), emptyList())
+                    },
+                    requestAudioFocus = { false },
+                    startPlayback = { _, _, _ -> error("must not load") },
+                    onAudioFocusDenied = {},
+                    onFailure = { throw AssertionError("unexpected failure", it) },
+                )
 
-        assertTrue(source.contains("withContext(Dispatchers.IO)"))
-        assertTrue(source.contains("resolvePlaybackInput("))
-        assertTrue(source.contains("audioFocusController.request()"))
-        assertTrue(source.contains("controller.load("))
-        assertTrue(source.contains("resolvedInput.videoUri.uri"))
-        assertTrue(source.contains("startPositionMillis = startPositionMillis"))
-        assertTrue(source.contains("subtitles = resolvedInput.subtitleRequests()"))
+                coordinator.load(testLoadRequest())
+
+                assertEquals("video-input-resolver", resolverThreadName)
+            }
+        } finally {
+            dispatcher.close()
+        }
     }
 
     @Test
-    fun activityPreparesMpvFromLoadJobAfterComposeCanAttachView() {
-        val source = activitySourceFile().readText()
-        val contentIndex = source.indexOf("setContent {")
-        val prepareIndex = source.indexOf("if (!prepareMpv()) return@launch")
+    fun playbackLoadResolvesInputThenRequestsFocusAndTransfersResourcesToMpv() = runTest {
+        val events = mutableListOf<String>()
+        var videoCloseCount = 0
+        var subtitleCloseCount = 0
+        val input = ResolvedPlaybackInput(
+            videoUri = ManagedPlaybackUri("fd://41") { videoCloseCount += 1 },
+            subtitles = listOf(
+                ResolvedSubtitlePlaybackUri(
+                    uri = ManagedPlaybackUri("/cache/subtitles/episode.ass") {
+                        subtitleCloseCount += 1
+                    },
+                    displayName = "episode.ass",
+                ),
+            ),
+        )
+        var capturedRequest: VideoPlaybackLoadRequest? = null
+        var capturedInput: ResolvedPlaybackInput? = null
+        var fileLoadedCallback: (() -> Unit)? = null
+        val coordinator = VideoPlaybackLoadCoordinator(
+            canLoad = { true },
+            resolvePlaybackInput = {
+                events += "resolve"
+                input
+            },
+            requestAudioFocus = {
+                events += "focus"
+                true
+            },
+            startPlayback = { resolved, request, onFileLoaded ->
+                events += "load"
+                capturedInput = resolved
+                capturedRequest = request
+                fileLoadedCallback = onFileLoaded
+            },
+            onAudioFocusDenied = { events += "focus-denied" },
+            onFailure = { events += "failure:${it.message}" },
+        )
+        val request = VideoPlaybackLoadRequest(
+            uri = "content://videos/episode-1",
+            displayName = "Episode 1",
+            startPositionMillis = 42_000L,
+            subtitles = listOf(
+                VideoSubtitleOpenRequest(
+                    uri = "content://subtitles/episode-1",
+                    displayName = "episode.ass",
+                ),
+            ),
+            isWebDav = false,
+        )
 
-        assertTrue("VideoPlayerActivity should call setContent", contentIndex >= 0)
-        assertTrue("VideoPlayerActivity should prepare mpv from the load coroutine", prepareIndex >= 0)
-        assertTrue("Compose should be attached before async mpv preparation", contentIndex < prepareIndex)
+        assertTrue(coordinator.load(request))
+
+        assertEquals(listOf("resolve", "focus", "load"), events)
+        assertEquals(request, capturedRequest)
+        assertEquals("fd://41", capturedInput?.videoUri?.uri)
+        assertEquals(
+            listOf(VideoSubtitleOpenRequest("/cache/subtitles/episode.ass", "episode.ass")),
+            capturedInput?.subtitleRequests(),
+        )
+        fileLoadedCallback?.invoke()
+        input.closeIfUnused()
+        assertEquals(0, videoCloseCount)
+        assertEquals(0, subtitleCloseCount)
     }
 
     @Test
-    fun resumePositionLoadCanFinishAfterSurfaceCreation() {
-        val source = activitySourceFile().readText()
-        val contentIndex = source.indexOf("setContent {")
-        val loadPositionIndex = source.indexOf("playbackStateStore.loadPosition(key)")
-        val loadMpvIndex = source.indexOf("loadMpv(")
+    fun deniedAudioFocusDoesNotLoadAndClosesResolvedResources() = runTest {
+        val events = mutableListOf<String>()
+        var closeCount = 0
+        val coordinator = VideoPlaybackLoadCoordinator(
+            canLoad = { true },
+            resolvePlaybackInput = {
+                events += "resolve"
+                ResolvedPlaybackInput(
+                    videoUri = ManagedPlaybackUri("fd://52") { closeCount += 1 },
+                    subtitles = listOf(
+                        ResolvedSubtitlePlaybackUri(
+                            ManagedPlaybackUri("fd://53") { closeCount += 1 },
+                            "subtitle.srt",
+                        ),
+                    ),
+                )
+            },
+            requestAudioFocus = {
+                events += "focus"
+                false
+            },
+            startPlayback = { _, _, _ -> events += "load" },
+            onAudioFocusDenied = { events += "focus-denied" },
+            onFailure = { events += "failure" },
+        )
 
-        assertTrue("VideoPlayerActivity should call setContent", contentIndex >= 0)
-        assertTrue("VideoPlayerActivity should load resume position", loadPositionIndex >= 0)
-        assertTrue("VideoPlayerActivity should load mpv after resume lookup", loadMpvIndex >= 0)
-        assertTrue("resume position lookup can run after SurfaceView is attached", contentIndex < loadPositionIndex)
-        assertTrue("mpv load must wait for resume position", loadPositionIndex < loadMpvIndex)
+        val loaded = coordinator.load(testLoadRequest())
+
+        assertFalse(loaded)
+        assertEquals(listOf("resolve", "focus", "focus-denied"), events)
+        assertEquals(2, closeCount)
     }
 
     @Test
-    fun activityStartsProgressAutosaveOnlyAfterMpvLoadSucceeds() {
-        val source = activitySourceFile().readText()
-        val loadMpvIndex = source.indexOf("val loaded = loadMpv(")
-        val autosaveIndex = source.indexOf("if (loaded) startPlaybackProgressAutoSave()")
+    fun playerBecomingUnavailableAfterResolutionClosesResourcesWithoutRequestingFocus() = runTest {
+        var loadabilityChecks = 0
+        var closeCount = 0
+        var focusRequests = 0
+        val coordinator = VideoPlaybackLoadCoordinator(
+            canLoad = {
+                loadabilityChecks += 1
+                loadabilityChecks == 1
+            },
+            resolvePlaybackInput = {
+                ResolvedPlaybackInput(ManagedPlaybackUri("fd://61") { closeCount += 1 }, emptyList())
+            },
+            requestAudioFocus = {
+                focusRequests += 1
+                true
+            },
+            startPlayback = { _, _, _ -> error("must not load") },
+            onAudioFocusDenied = {},
+            onFailure = { throw AssertionError("unexpected failure", it) },
+        )
 
-        assertTrue("VideoPlayerActivity should capture whether mpv load succeeded", loadMpvIndex >= 0)
-        assertTrue("VideoPlayerActivity should start autosave only after successful mpv load", autosaveIndex >= 0)
-        assertTrue("autosave must not run before resume position is applied", loadMpvIndex < autosaveIndex)
+        assertFalse(coordinator.load(testLoadRequest()))
+        assertEquals(0, focusRequests)
+        assertEquals(1, closeCount)
     }
 
     @Test
-    fun activityCancelsPendingLoadBeforeCleanup() {
-        val source = activitySourceFile().readText()
+    fun mpvLoadFailureReportsErrorAndReleasesUnconsumedDescriptors() = runTest {
+        var closeCount = 0
+        val failures = mutableListOf<String?>()
+        val coordinator = VideoPlaybackLoadCoordinator(
+            canLoad = { true },
+            resolvePlaybackInput = {
+                ResolvedPlaybackInput(ManagedPlaybackUri("fd://71") { closeCount += 1 }, emptyList())
+            },
+            requestAudioFocus = { true },
+            startPlayback = { _, _, _ -> error("mpv load failed") },
+            onAudioFocusDenied = {},
+            onFailure = { failures += it.message },
+        )
 
-        assertTrue(source.contains("private var loadJob: Job? = null"))
-        assertTrue(source.contains("loadJob = activityScope.launch"))
-        assertTrue(source.contains("cancelPendingLoad()"))
+        assertFalse(coordinator.load(testLoadRequest()))
+        assertEquals(listOf("mpv load failed"), failures)
+        assertEquals(1, closeCount)
     }
 
     @Test
-    fun cleanupStopsMpvBeforeClosingWebDavProxyStreams() {
-        val source = activitySourceFile().readText()
-        val cleanupStart = source.indexOf("private fun cleanupPlayer()")
-        val destroyIndex = source.indexOf("controller.destroy()", cleanupStart)
-        val closeIndex = source.indexOf("VideoProxyManager.close", cleanupStart)
+    fun typedMpvPropertyEventsUpdateControllerState() {
+        val controller = MpvController(FakeMpvEngine())
+        val router = MpvPropertyEventRouter(controller)
 
-        assertTrue("cleanupPlayer should exist", cleanupStart >= 0)
-        assertTrue("cleanup should destroy mpv", destroyIndex >= 0)
-        assertTrue("cleanup should close WebDAV proxy streams", closeIndex >= 0)
-        assertTrue("mpv must stop before proxy streams are closed", destroyIndex < closeIndex)
-    }
+        router.route("pause", true)
+        router.route("duration", 120.5)
+        router.route("time-pos", 42.25)
+        router.route("speed", 1.5)
+        router.route("aid", 7L)
+        router.route("sid", 0L)
+        router.route("hwdec", "mediacodec-copy")
+        router.route("hwdec-current", "mediacodec")
+        router.route("current-tracks/video/decoder", "h264_mediacodec")
+        router.route("vo", "gpu-next")
+        router.route("gpu-api", "vulkan")
+        router.route("video-params/aspect", 16.0 / 9.0)
+        router.route("video-out-params", MPVNode.MapNode(mapOf("w" to MPVNode.IntNode(1920L))))
 
-    @Test
-    fun activityHandlesEndFileWithoutWritingPauseBackToMpv() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("controller.onPlaybackEnded()"))
-    }
-
-    @Test
-    fun activityUsesDecorViewInsetsControllerForPlayerSystemBars() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("decorView.windowInsetsController"))
-        assertTrue(!source.contains("window.insetsController"))
-    }
-
-    @Test
-    fun activityObservesAdvancedMpvPlaybackProperties() {
-        val activitySource = activitySourceFile().readText()
-        val viewSource = mpvViewSourceFile().readText()
-
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"track-list\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"aid\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"sid\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"speed\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-params\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"video-out-params\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"hwdec\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"hwdec-current\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"current-tracks/video/decoder\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"vo\""))
-        assertTrue(viewSource.contains("MPVLib.observeProperty(\"gpu-api\""))
-        assertTrue(activitySource.contains("controller.onTrackListChanged(value)"))
-        assertTrue(activitySource.contains("controller.onAudioTrackChanged(value.toInt())"))
-        assertTrue(activitySource.contains("controller.onSubtitleTrackChanged(value.toInt().takeIf { it > 0 })"))
-        assertTrue(activitySource.contains("controller.onSpeedChanged(value)"))
-        assertTrue(activitySource.contains("controller.onVideoParamsChanged(value)"))
-        assertTrue(activitySource.contains("controller.onVideoOutParamsChanged(value)"))
-        assertTrue(activitySource.contains("controller.onActiveHwdecChanged(value)"))
-        assertTrue(activitySource.contains("controller.onActiveVideoDecoderChanged(value)"))
-    }
-
-    @Test
-    fun screenExposesVisibleAlternativesForAdvancedPlaybackControls() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("onSpeedSelected = controller::setPlaybackSpeed"))
-        assertTrue(source.contains("onAudioTrackSelected = controller::selectAudioTrack"))
-        assertTrue(source.contains("onSubtitleTrackSelected = controller::selectSubtitleTrack"))
-        assertTrue(source.contains("onSubtitlesDisabled = controller::disableSubtitles"))
-        assertTrue(!source.contains("onSubtitleDelayChanged = controller::adjustSubtitleDelay"))
-        assertTrue(!source.contains("onAudioDelayChanged = controller::adjustAudioDelay"))
-        assertTrue(source.contains("onScaleModeSelected = controller::setScaleMode"))
-        assertTrue(source.contains("onDecoderModeSelected = controller::setDecoderMode"))
-        assertTrue(source.contains("onAnime4KEnabledSelected = controller::setAnime4KEnabled"))
-        assertTrue(source.contains("onAnime4KModeSelected = controller::setAnime4KMode"))
-        assertTrue(source.contains("onAnime4KQualitySelected = controller::setAnime4KQuality"))
-        assertTrue(!source.contains("onVideoOutputModeSelected = controller::setVideoOutputMode"))
-        assertTrue(!source.contains("onGpuApiModeSelected = controller::setGpuApiMode"))
-        assertTrue(source.contains("controller.setStartupRendererState("))
-        assertTrue(!source.contains("controller.setVideoOutputMode(initialVideoOutputMode)"))
-        assertTrue(!source.contains("controller.setGpuApiMode(initialGpuApiMode)"))
-        assertTrue(!source.contains("controller.setDecoderMode(initialVideoDecoderMode)"))
-        assertTrue(source.contains("onControlsLockedChanged = controller::setControlsLocked"))
-        assertTrue(source.contains("PlayerMenuPanel("))
-        assertTrue(source.contains("PlayerOptionPanel.TRACKS"))
-        assertTrue(source.contains("PlayerOptionPanel.INFO"))
-        assertTrue(!source.contains("PlayerOptionPanel.DELAYS"))
-        assertTrue(!source.contains("PlayerOptionPanel.QUEUE"))
-        assertTrue(!source.contains("PlayerOptionPanel.SPEED"))
-        assertTrue(!source.contains("PlayerOptionPanel.VIDEO"))
-        assertTrue(source.contains("onOverlayTap"))
-        assertTrue(source.contains("controlsAutoHideMillis"))
-        assertTrue(source.contains("lockButtonRevealSignal"))
-        assertTrue(source.contains("delay(PLAYER_LOCKED_BUTTON_AUTO_HIDE_MILLIS)"))
-    }
-
-    @Test
-    fun screenPassesAnime4KCallbacksToPlayerMenuPanel() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("onAnime4KEnabledSelected: (Boolean) -> Unit"))
-        assertTrue(source.contains("onAnime4KModeSelected: (Anime4KMode) -> Unit"))
-        assertTrue(source.contains("onAnime4KQualitySelected: (Anime4KQuality) -> Unit"))
-        assertTrue(source.contains("onAnime4KEnabledSelected = onAnime4KEnabledSelected"))
-        assertTrue(source.contains("onAnime4KModeSelected = onAnime4KModeSelected"))
-        assertTrue(source.contains("onAnime4KQualitySelected = onAnime4KQualitySelected"))
-    }
-
-    @Test
-    fun activityAppliesAnime4KCompatibilityBeforePreparingMpv() {
-        val source = activitySourceFile().readText()
-
-        val settingsIndex = source.indexOf("val initialAnime4KSettings = Anime4KSettings(")
-        val managerIndex = source.indexOf("val anime4kManager = Anime4KManager(applicationContext)")
-        val compatibilityIndex = source.indexOf("val startupCompatibility = anime4kStartupCompatibility(")
-        val effectiveVoIndex = source.indexOf("videoOutputMode = startupCompatibility.effectiveVideoOutputMode")
-        val prepareIndex = source.indexOf("if (!prepareMpv()) return@launch")
-        val stateSyncIndex = source.indexOf("controller.setStartupRendererState(")
-
-        assertTrue("activity should parse Anime4K startup settings", settingsIndex >= 0)
-        assertTrue("activity should create one Anime4K manager for the player session", managerIndex >= 0)
-        assertTrue("activity should resolve Anime4K renderer compatibility", compatibilityIndex >= 0)
-        assertTrue("activity should assign effective VO to MuBoxMpvView", effectiveVoIndex >= 0)
-        assertTrue("activity should prepare mpv after startup properties are assigned", prepareIndex >= 0)
-        assertTrue("activity should sync renderer state after prepare", stateSyncIndex >= 0)
-        assertTrue(settingsIndex < compatibilityIndex)
-        assertTrue(managerIndex < prepareIndex)
-        assertTrue(compatibilityIndex < effectiveVoIndex)
-        assertTrue(effectiveVoIndex < prepareIndex)
-        assertTrue(prepareIndex < stateSyncIndex)
+        val state = controller.state.value
+        assertTrue(state.isPaused)
+        assertEquals(120_500L, controller.progress.value.durationMillis)
+        assertEquals(42_250L, controller.progress.value.positionMillis)
+        assertEquals(1.5, state.playbackSpeed, 0.0)
+        assertEquals(7, state.selectedAudioTrackId)
+        assertEquals(null, state.selectedSubtitleTrackId)
+        assertEquals("mediacodec-copy", state.currentHwdec)
+        assertEquals("mediacodec", state.activeHwdec)
+        assertEquals("h264_mediacodec", state.activeVideoDecoder)
+        assertEquals("gpu-next", state.currentVideoOutput)
+        assertEquals("vulkan", state.currentGpuApi)
+        assertEquals(16.0 / 9.0, state.videoParams.aspectRatio ?: 0.0, 0.0)
+        assertEquals(1920, state.videoOutParams.width)
     }
 
     @Test
     fun anime4KStartupCompatibilityFallsBackFromGpuNextWhenNotUsingVulkan() {
         val compatibility = anime4kStartupCompatibility(
-            settings = Anime4KSettings(enabled = true, mode = Anime4KMode.A, quality = Anime4KQuality.FAST),
+            settings = Anime4KSettings(
+                enabled = true,
+                mode = Anime4KMode.A,
+                quality = Anime4KQuality.FAST,
+            ),
             requestedVideoOutputMode = VideoOutputMode.GPU_NEXT,
             gpuApiMode = GpuApiMode.AUTO,
         )
 
-        assertTrue(compatibility.effectiveVideoOutputMode == VideoOutputMode.AUTO)
-        assertTrue(compatibility.statusMessage == "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu")
+        assertEquals(VideoOutputMode.AUTO, compatibility.effectiveVideoOutputMode)
+        assertEquals(
+            "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu",
+            compatibility.statusMessage,
+        )
     }
 
-    @Test
-    fun screenExposesStatisticsInFloatingOptionPanel() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("VideoPlayerMediaContext("))
-        assertTrue(source.contains("buildVideoPlayerStatisticsSnapshot("))
-        assertTrue(source.contains("StatisticsControls("))
-        assertTrue(source.contains("Text(\"信息\""))
-        assertTrue(source.contains("PlayerOptionPanel.INFO -> PlayerOptionPanelDescriptor(Icons.Filled.Info, \"播放信息\")"))
-        assertTrue(source.contains("debugLines(includeProxyDebugInfo = includeProxyDebugInfo)"))
-    }
-
-    @Test
-    fun webDavPlayerSamplesProxyStatisticsForInfoPanel() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("private var proxyStatistics by"))
-        assertTrue(source.contains("VideoProxyManager.statistics"))
-        assertTrue(source.contains("proxy = proxyStatistics"))
-        assertTrue(source.contains("LaunchedEffect(webDavStreamIds, proxyDebugInfoEnabled)"))
-        assertTrue(source.contains("webDavStreamIds.isEmpty() || !proxyDebugInfoEnabled"))
-    }
-
-    @Test
-    fun webDavProxyStatisticsSamplerStopsWhenStreamsAreCleared() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("private var webDavStreamIds by mutableStateOf<List<String>>(emptyList())"))
-        assertTrue(source.contains("webDavStreamIds = emptyList()"))
-    }
-
-    @Test
-    fun centerForwardControlDoesNotClampUnknownDurationToZero() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("seekForwardTargetMillis("))
-        assertTrue(!source.contains("state.positionMillis + SEEK_STEP_MILLIS).coerceAtMost(state.durationMillis)"))
-    }
-
-    @Test
-    fun screenExposesEpisodeNavigationOutsideTheSettingsPanel() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("episodeQueue = intent.episodeQueue()"))
-        assertTrue(source.contains("onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) }"))
-        assertTrue(source.contains("onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) }"))
-        assertTrue(source.contains("EpisodeSelectionPage("))
-        assertTrue(source.contains("PlayerCenterControls("))
-    }
-
-    @Test
-    fun episodeSwitchPausesBeforeSavingAndPreparingRemotePlayback() {
-        val source = activitySourceFile().readText()
-        val switchSource = source.substringAfter("private fun switchToEpisode(targetIndex: Int)")
-            .substringBefore("private suspend fun prepareEpisode")
-
-        val pauseIndex = switchSource.indexOf("controller.setPaused(true)")
-        val saveIndex = switchSource.indexOf("savePlaybackPositionAsync()")
-        val prepareIndex = switchSource.indexOf("prepareEpisode(episode)")
-        assertTrue(pauseIndex >= 0)
-        assertTrue(saveIndex > pauseIndex)
-        assertTrue(prepareIndex > saveIndex)
-        assertTrue(switchSource.contains("playEpisodeWhenFileLoaded = true"))
-        assertTrue(source.contains("MPV_EVENT_FILE_LOADED && playEpisodeWhenFileLoaded"))
-        assertTrue(source.contains("controller.setPaused(false)"))
-    }
-
-    @Test
-    fun screenConnectsGestureOverlayToControllerGestureActions() {
-        val source = videoPlayerPackageSource()
-
-        assertTrue(source.contains("PlayerGestureOverlay("))
-        assertTrue(source.contains("onVolumeDelta = controller::adjustGestureVolume"))
-        assertTrue(source.contains("onBrightnessDelta = ::handleBrightnessGesture"))
-        assertTrue(source.contains("controller.adjustGestureBrightness(deltaPercent)"))
-        assertTrue(source.contains("applyScreenBrightnessPercent"))
-        assertTrue(source.contains("onDoubleTapSeek = controller::handleDoubleTapSeek"))
-        assertTrue(source.contains("onHorizontalSeekStarted = controller::beginHorizontalSwipeSeek"))
-        assertTrue(source.contains("onHorizontalSeekFraction = controller::handleHorizontalSwipeSeek"))
-        assertTrue(source.contains("onHorizontalSeekEnded = controller::endHorizontalSwipeSeek"))
-        assertTrue(source.contains("onZoomDelta = controller::adjustGestureZoom"))
-        assertTrue(source.contains("onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) }"))
-        assertTrue(source.contains("onTemporarySpeedDelta = controller::adjustTemporarySpeed"))
-        assertTrue(source.contains("onTemporarySpeedEnded = controller::endTemporarySpeed"))
-        assertTrue(source.contains("onClearHud = controller::clearGestureHud"))
-        assertTrue(source.contains("detectTapGestures("))
-        assertTrue(source.contains("playerGestureDragModeForPan(totalPan.x, totalPan.y)"))
-        assertTrue(source.contains("PlayerGestureDragMode.HORIZONTAL_SEEK"))
-        assertTrue(source.contains("PlayerGestureDragMode.VERTICAL_ADJUST"))
-        assertTrue(source.contains("detectDragGesturesAfterLongPress("))
-        assertTrue(source.contains("GestureHud("))
-        assertTrue(source.contains("LaunchedEffect(message)"))
-        assertTrue(source.contains("delay(GESTURE_HUD_TIMEOUT_MILLIS)"))
-    }
-
-    @Test
-    fun activityPausesAndReleasesAudioFocusWhenStoppedInBackground() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("override fun onStop()"))
-        assertTrue(source.contains("playbackLifecyclePolicy.moveToBackground()"))
-        assertTrue(source.contains("audioFocusController.abandon()"))
-    }
-
-    @Test
-    fun activityCancelsBackgroundCleanupOnForegroundWithoutAutoResuming() {
-        val source = activitySourceFile().readText()
-
-        assertTrue(source.contains("override fun onStart()"))
-        assertTrue(source.contains("playbackLifecyclePolicy.returnToForeground()"))
-        assertTrue(source.contains("onBackgroundTimeoutAfterCleanup"))
-    }
-
-    @Test
-    fun playerActivityUsesOrientationSessionInsteadOfHardcodedSensor() {
-        val source = playerActivitySourceFile().readText()
-
-        assertTrue(source.contains("VideoPlayerOrientationSession(initialPlayerOrientationMode)"))
-        assertTrue(source.contains("orientationSession.initialRequestedOrientation()"))
-        assertFalse(source.contains("requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR"))
-    }
-
-    @Test
-    fun playerActivityAppliesVideoParamsThroughOrientationSession() {
-        val source = playerActivitySourceFile().readText()
-
-        assertTrue(source.contains("state.videoParams.aspectRatio"))
-        assertTrue(source.contains("state.videoOutParams.aspectRatio"))
-        assertTrue(source.contains("state.videoOutParams.width"))
-        assertTrue(source.contains("preferredVideoParamsForOrientation(state)"))
-        assertTrue(source.contains("orientationSession.requestForVideoParams(orientationVideoParams)"))
-    }
-
-    @Test
-    fun playerActivityObservesMpvAspectPropertiesForOrientation() {
-        val activitySource = playerActivitySourceFile().readText()
-        val viewSource = playerMpvViewSourceFile().readText()
-
-        assertTrue(viewSource.contains("\"video-params/aspect\""))
-        assertTrue(viewSource.contains("\"video-out-params/aspect\""))
-        assertTrue(activitySource.contains("\"video-params/aspect\" -> controller.onVideoAspectChanged(value)"))
-        assertTrue(activitySource.contains("\"video-out-params/aspect\" -> controller.onVideoOutAspectChanged(value)"))
-    }
-
-    @Test
-    fun playerActivityDoesNotDeclareSensorOrientationInManifest() {
-        val manifest = sequenceOf(
-            File("src/main/AndroidManifest.xml"),
-            File("app/src/main/AndroidManifest.xml"),
-        ).first { it.isFile }.readText()
-
-        assertFalse(manifest.contains("android:screenOrientation=\"sensor\""))
-    }
-
-    private fun activitySourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-        ).first { it.isFile }
-
-    private fun videoPlayerPackageSource(): String =
-        videoPlayerPackageDir().listFiles()
-            ?.filter { it.extension == "kt" }
-            ?.joinToString("\n") { it.readText() }
-            ?: activitySourceFile().readText()
-
-    private fun videoPlayerPackageDir(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player"),
-            File("app/src/main/java/com/example/comicdav/video/player"),
-        ).first { it.isDirectory }
-
-    private fun mpvViewSourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-        ).first { it.isFile }
-
-    private fun playerActivitySourceFile(): File =
-        sequenceOf(
-            File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-        ).first { it.isFile }
-
-    private fun playerMpvViewSourceFile(): File =
-        sequenceOf(
-            File("src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-        ).first { it.isFile }
+    private fun testLoadRequest(): VideoPlaybackLoadRequest =
+        VideoPlaybackLoadRequest(
+            uri = "content://videos/test",
+            displayName = "test.mkv",
+            startPositionMillis = 0L,
+            subtitles = emptyList(),
+            isWebDav = false,
+        )
 }

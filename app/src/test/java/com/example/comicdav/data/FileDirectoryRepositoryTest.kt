@@ -1,23 +1,35 @@
 package com.example.comicdav.data
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
+import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.data.library.LibraryDatabase
+import com.example.comicdav.security.CredentialCipher
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class FileDirectoryRepositoryTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
     private lateinit var database: LibraryDatabase
     private lateinit var repository: FileDirectoryRepository
 
@@ -75,17 +87,24 @@ class FileDirectoryRepositoryTest {
         assertNull(source.localTreeUri)
         assertEquals("https://example.test/dav|lin", source.webDavAccountId)
         assertEquals("/manga", source.webDavPath)
+        assertNull(source.webDavBaseUrl)
+        assertNull(source.webDavUsername)
+        assertNull(source.webDavPassword)
     }
 
     @Test
-    fun addWebDavDirectoryStoresConnectionDetails() = runTest {
-        val id = repository.addWebDavDirectory(
-            displayName = "/manga",
-            accountId = "https://example.test/dav|lin",
-            path = "/manga",
-            baseUrl = "https://example.test/dav",
-            username = "lin",
-            password = "secret",
+    fun observeSourcesReturnsLegacyRowsWithoutDecryptingOrWritingThem() = runTest {
+        val id = database.fileDirectoryDao().insertSource(
+            FileDirectorySourceEntity(
+                displayName = "/manga",
+                sourceType = FileDirectorySourceType.WEBDAV,
+                webDavAccountId = "https://example.test/dav|lin",
+                webDavPath = "/manga",
+                webDavBaseUrl = "https://example.test/dav",
+                webDavUsername = "lin",
+                webDavPassword = "v1:legacy-ciphertext",
+                addedAt = 1L,
+            ),
         )
 
         val source = repository.observeSources().first().single()
@@ -93,9 +112,11 @@ class FileDirectoryRepositoryTest {
         assertEquals(id, source.id)
         assertEquals("https://example.test/dav", source.webDavBaseUrl)
         assertEquals("lin", source.webDavUsername)
-        assertEquals("secret", source.webDavPassword)
-        assertEquals("/manga", source.webDavPath)
-        assertEquals("https://example.test/dav|lin", source.webDavAccountId)
+        assertEquals("v1:legacy-ciphertext", source.webDavPassword)
+        assertEquals(
+            "v1:legacy-ciphertext",
+            database.fileDirectoryDao().getSourcesWithLegacyCredentials().single().webDavPassword,
+        )
     }
 
     @Test
@@ -111,14 +132,18 @@ class FileDirectoryRepositoryTest {
     }
 
     @Test
-    fun updateWebDavDirectoryEditsExistingSource() = runTest {
-        val id = repository.addWebDavDirectory(
-            displayName = "/manga",
-            accountId = "https://example.test/dav|lin",
-            path = "/manga",
-            baseUrl = "https://example.test/dav",
-            username = "lin",
-            password = "old",
+    fun updateWebDavDirectoryStoresOnlyTheAccountReferenceAndClearsLegacyCredentials() = runTest {
+        val id = database.fileDirectoryDao().insertSource(
+            FileDirectorySourceEntity(
+                displayName = "/manga",
+                sourceType = FileDirectorySourceType.WEBDAV,
+                webDavAccountId = "https://example.test/dav|lin",
+                webDavPath = "/manga",
+                webDavBaseUrl = "https://example.test/dav",
+                webDavUsername = "lin",
+                webDavPassword = "old",
+                addedAt = 1L,
+            ),
         )
 
         repository.updateWebDavDirectory(
@@ -126,9 +151,6 @@ class FileDirectoryRepositoryTest {
             displayName = "漫画库",
             accountId = "https://cloud.example.test:8443/webdav|alex",
             path = "/books/",
-            baseUrl = "https://cloud.example.test:8443/webdav",
-            username = "alex",
-            password = "new",
         )
 
         val source = repository.observeSources().first().single()
@@ -136,8 +158,139 @@ class FileDirectoryRepositoryTest {
         assertEquals("漫画库", source.displayName)
         assertEquals("https://cloud.example.test:8443/webdav|alex", source.webDavAccountId)
         assertEquals("/books/", source.webDavPath)
-        assertEquals("https://cloud.example.test:8443/webdav", source.webDavBaseUrl)
-        assertEquals("alex", source.webDavUsername)
-        assertEquals("new", source.webDavPassword)
+        assertNull(source.webDavBaseUrl)
+        assertNull(source.webDavUsername)
+        assertNull(source.webDavPassword)
+    }
+
+    @Test
+    fun migratesLegacyCredentialsToAccountStoreThenClearsDirectoryColumns() = runTest {
+        val cipher = TestCredentialCipher()
+        val accountStore = WebDavAccountStore(
+            dataStore("legacy-directory-success.preferences_pb"),
+            cipher,
+        )
+        val id = insertLegacyWebDavSource(password = "v1:secret")
+        val migrator = FileDirectoryCredentialMigrator(
+            dao = database.fileDirectoryDao(),
+            accountStore = accountStore,
+            cipher = cipher,
+        )
+
+        val result = migrator.migrateLegacyCredentials()
+
+        assertEquals(listOf(id), result.migratedSourceIds)
+        assertTrue(result.failedSourceIds.isEmpty())
+        assertEquals(
+            SavedWebDavAccount(
+                accountId = "legacy-account-id",
+                baseUrl = "https://example.test/dav",
+                username = "lin",
+                password = "secret",
+            ),
+            accountStore.loadAccount("legacy-account-id"),
+        )
+        val source = repository.observeSources().first().single()
+        assertEquals("legacy-account-id", source.webDavAccountId)
+        assertNull(source.webDavBaseUrl)
+        assertNull(source.webDavUsername)
+        assertNull(source.webDavPassword)
+    }
+
+    @Test
+    fun failedLegacyCredentialMigrationLeavesRowForRetry() = runTest {
+        val cipher = TestCredentialCipher(failEncryption = true)
+        val accountStore = WebDavAccountStore(
+            dataStore("legacy-directory-retry.preferences_pb"),
+            cipher,
+        )
+        val id = insertLegacyWebDavSource(password = "secret")
+        val migrator = FileDirectoryCredentialMigrator(
+            dao = database.fileDirectoryDao(),
+            accountStore = accountStore,
+            cipher = cipher,
+        )
+
+        val failed = migrator.migrateLegacyCredentials()
+
+        assertEquals(listOf(id), failed.failedSourceIds)
+        assertEquals("secret", repository.observeSources().first().single().webDavPassword)
+        assertNull(accountStore.loadAccount("legacy-account-id"))
+
+        cipher.failEncryption = false
+        val retried = migrator.migrateLegacyCredentials()
+
+        assertEquals(listOf(id), retried.migratedSourceIds)
+        assertTrue(retried.failedSourceIds.isEmpty())
+        assertEquals("secret", accountStore.loadAccount("legacy-account-id")?.password)
+        assertNull(repository.observeSources().first().single().webDavPassword)
+    }
+
+    @Test
+    fun legacyMigrationDoesNotOverwriteAnExistingUnifiedAccount() = runTest {
+        val cipher = TestCredentialCipher()
+        val accountStore = WebDavAccountStore(
+            dataStore("legacy-directory-existing-account.preferences_pb"),
+            cipher,
+        )
+        accountStore.saveAccountForId(
+            accountId = "legacy-account-id",
+            baseUrl = "https://current.example.test/dav",
+            username = "current-user",
+            password = "current-password",
+        )
+        val id = insertLegacyWebDavSource(password = "stale-password")
+        val migrator = FileDirectoryCredentialMigrator(
+            dao = database.fileDirectoryDao(),
+            accountStore = accountStore,
+            cipher = cipher,
+        )
+
+        val result = migrator.migrateLegacyCredentials()
+
+        assertEquals(listOf(id), result.migratedSourceIds)
+        assertEquals(
+            SavedWebDavAccount(
+                accountId = "legacy-account-id",
+                baseUrl = "https://current.example.test/dav",
+                username = "current-user",
+                password = "current-password",
+            ),
+            accountStore.loadAccount("legacy-account-id"),
+        )
+        assertNull(repository.observeSources().first().single().webDavPassword)
+    }
+
+    private suspend fun insertLegacyWebDavSource(password: String): Long {
+        return database.fileDirectoryDao().insertSource(
+            FileDirectorySourceEntity(
+                displayName = "Legacy",
+                sourceType = FileDirectorySourceType.WEBDAV,
+                webDavAccountId = "legacy-account-id",
+                webDavPath = "/manga",
+                webDavBaseUrl = " https://example.test/dav ",
+                webDavUsername = "lin",
+                webDavPassword = password,
+                addedAt = 1L,
+            ),
+        )
+    }
+
+    private fun TestScope.dataStore(fileName: String): DataStore<Preferences> {
+        return PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { temp.newFile(fileName) },
+        )
+    }
+
+    private class TestCredentialCipher(
+        var failEncryption: Boolean = false,
+    ) : CredentialCipher {
+        override fun encrypt(plainText: String): String {
+            if (failEncryption) error("encryption unavailable")
+            return "v1:$plainText"
+        }
+
+        override fun decrypt(storedValue: String): String = storedValue.removePrefix("v1:")
     }
 }

@@ -19,9 +19,9 @@ interface FileDirectoryDao {
         SET displayName = :displayName,
             webDavAccountId = :accountId,
             webDavPath = :path,
-            webDavBaseUrl = :baseUrl,
-            webDavUsername = :username,
-            webDavPassword = :password
+            webDavBaseUrl = NULL,
+            webDavUsername = NULL,
+            webDavPassword = NULL
         WHERE id = :id AND sourceType = 'WEBDAV'
         """,
     )
@@ -30,14 +30,43 @@ interface FileDirectoryDao {
         displayName: String,
         accountId: String,
         path: String,
-        baseUrl: String?,
-        username: String?,
-        password: String?,
     )
 
     @Query("SELECT * FROM file_directory_sources ORDER BY addedAt DESC, id DESC")
     fun observeSources(): Flow<List<FileDirectorySourceEntity>>
 
-    @Query("UPDATE file_directory_sources SET webDavPassword = :encryptedPassword WHERE id = :id")
-    suspend fun updateWebDavPassword(id: Long, encryptedPassword: String)
+    @Query(
+        """
+        SELECT * FROM file_directory_sources
+        WHERE sourceType = 'WEBDAV'
+          AND (
+              webDavBaseUrl IS NOT NULL
+              OR webDavUsername IS NOT NULL
+              OR webDavPassword IS NOT NULL
+          )
+        ORDER BY id ASC
+        """,
+    )
+    suspend fun getSourcesWithLegacyCredentials(): List<FileDirectorySourceEntity>
+
+    @Query(
+        """
+        UPDATE file_directory_sources
+        SET webDavAccountId = CASE
+                WHEN webDavAccountId IS NULL OR TRIM(webDavAccountId) = '' THEN :accountId
+                ELSE webDavAccountId
+            END,
+            webDavBaseUrl = NULL,
+            webDavUsername = NULL,
+            webDavPassword = NULL
+        WHERE id = :id
+          AND sourceType = 'WEBDAV'
+          AND webDavBaseUrl = :expectedBaseUrl
+        """,
+    )
+    suspend fun clearLegacyCredentialsAfterMigration(
+        id: Long,
+        expectedBaseUrl: String,
+        accountId: String,
+    ): Int
 }

@@ -2,11 +2,16 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.data.ReaderLoggingMode
-import java.io.File
+import com.example.comicdav.runReaderLogIo
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -82,16 +87,15 @@ class ReaderDiagnosticLogTest {
     }
 
     @Test
-    fun readerLogDocumentCreationRunsOffMainThread() {
-        val source = File("src/main/java/com/example/comicdav/AppReaderLogging.kt").readText()
-        val ioCreation = Regex(
-            pattern = "withContext\\(Dispatchers\\.IO\\)\\s*\\{\\s*createReaderLogFile",
-        )
+    fun readerLogDocumentCreationUsesTheInjectedIoDispatcher() = runTest {
+        val ioDispatcher = StandardTestDispatcher(testScheduler)
+        var observedDispatcher: ContinuationInterceptor? = null
 
-        assertTrue(
-            "Creating a reader log document must not block route recomposition",
-            ioCreation.containsMatchIn(source),
-        )
+        runReaderLogIo(ioDispatcher) {
+            observedDispatcher = currentCoroutineContext()[ContinuationInterceptor]
+        }
+
+        assertSame(ioDispatcher, observedDispatcher)
     }
 
     @Test

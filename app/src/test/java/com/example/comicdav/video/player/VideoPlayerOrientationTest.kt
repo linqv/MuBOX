@@ -179,7 +179,7 @@ class VideoPlayerOrientationTest {
                 size = null,
                 lastModified = null,
             ),
-            playerOrientationMode = VideoPlayerOrientationMode.PORTRAIT,
+            options = VideoPlayerOptions(playerOrientationMode = VideoPlayerOrientationMode.PORTRAIT),
         )
 
         assertEquals(
@@ -205,7 +205,7 @@ class VideoPlayerOrientationTest {
             uri = "http://127.0.0.1:8080/stream/movie",
             subtitleUrls = emptyList(),
             streamIds = emptyList(),
-            playerOrientationMode = VideoPlayerOrientationMode.LANDSCAPE,
+            options = VideoPlayerOptions(playerOrientationMode = VideoPlayerOrientationMode.LANDSCAPE),
         )
 
         assertEquals(

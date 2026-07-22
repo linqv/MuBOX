@@ -1,6 +1,6 @@
 package com.example.comicdav.video.player
 
-import java.io.File
+import `is`.xyz.mpv.MPVLib
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,139 +22,135 @@ class ViewBackedMpvEngineTest {
     }
 
     @Test
-    fun activityUsesViewBackedEngineSoLoadWaitsForSurfaceCreation() {
-        val activitySource = activitySourceFile().readText()
-        val engineSource = engineSourceFile().readText()
+    fun viewBackedEngineDestroysItsViewOwnedRuntime() {
+        val loader = FakeMpvFileLoader()
 
-        assertTrue(
-            Regex(
-                """controller\s*=\s*MpvController\s*\(.*ViewBackedMpvEngine\s*\(\s*mpvView\s*\)""",
-                RegexOption.DOT_MATCHES_ALL,
-            ).containsMatchIn(activitySource),
+        ViewBackedMpvEngine(loader).destroy()
+
+        assertEquals(1, loader.destroyCount)
+    }
+
+    @Test
+    fun fileLoadWaitsForSurfaceAttachmentBeforeRunningPostLoadAction() {
+        val events = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = { events += "direct:$it" },
+            loadThroughView = { events += "view:$it" },
         )
-        assertTrue(engineSource.contains("override fun loadFile(uri: String)"))
-        assertTrue(engineSource.contains("view.playFileWhenReady(uri, afterLoadfile)"))
-        assertFalse(engineSource.contains("MPVLib.command(\"loadfile\", uri, \"replace\""))
+
+        loader.playFileWhenReady("content://videos/episode-1") {
+            events += "after-loadfile"
+        }
+
+        assertEquals(listOf("view:content://videos/episode-1"), events)
+        assertTrue(loader.markSurfaceAttached())
+        events += "surface-attached"
+        loader.flushPendingAfterLoadfileActions()
+        assertEquals(
+            listOf(
+                "view:content://videos/episode-1",
+                "surface-attached",
+                "after-loadfile",
+            ),
+            events,
+        )
     }
 
     @Test
-    fun muboxMpvViewLoadsImmediatelyWhenSurfaceAlreadyExists() {
-        val source = mpvViewSourceFile().readText()
+    fun fileLoadUsesDirectMpvCommandWhenSurfaceIsAlreadyAttached() {
+        val events = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = { events += "direct:$it" },
+            loadThroughView = { events += "view:$it" },
+        )
+        loader.markSurfaceAttached()
 
-        assertTrue(source.contains("private var surfaceAttached = false"))
-        assertTrue(source.contains("override fun surfaceCreated(holder: SurfaceHolder)"))
-        assertTrue(source.contains("override fun surfaceDestroyed(holder: SurfaceHolder)"))
-        assertTrue(source.contains("fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit)"))
-        assertTrue(source.contains("if (surfaceAttached)"))
-        assertTrue(source.contains("MPVLib.command(\"loadfile\", uri)"))
-        assertTrue(source.contains("flushPendingAfterLoadfileActions()"))
-        assertTrue(source.contains("playFile(uri)"))
+        loader.playFileWhenReady("file:///movies/episode-2.mkv") {
+            events += "after-loadfile"
+        }
+
+        assertEquals(
+            listOf("direct:file:///movies/episode-2.mkv", "after-loadfile"),
+            events,
+        )
     }
 
     @Test
-    fun muboxMpvViewAttachesSurfaceThatAlreadyExistsWhenMpvIsInitializedLate() {
-        val source = mpvViewSourceFile().readText()
-        val activitySource = activitySourceFile().readText()
+    fun newerDeferredLoadReplacesStalePostLoadAction() {
+        val callbacks = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = {},
+            loadThroughView = {},
+        )
 
-        assertTrue(source.contains("fun attachExistingSurfaceIfReady()"))
-        assertTrue(source.contains("holder.surface"))
-        assertTrue(source.contains("surface.isValid"))
-        assertTrue(source.contains("surfaceCreated(holder)"))
-        assertTrue(source.contains("PixelFormat.RGBA_8888"))
-        assertTrue(source.contains("surfaceChanged(holder, PixelFormat.RGBA_8888, frame.width(), frame.height())"))
+        loader.playFileWhenReady("first") { callbacks += "first" }
+        loader.playFileWhenReady("second") { callbacks += "second" }
+        loader.markSurfaceAttached()
+        loader.flushPendingAfterLoadfileActions()
 
-        val initializeIndex = activitySource.indexOf("mpvView.initialize(filesDir.path, cacheDir.path)")
-        val attachIndex = activitySource.indexOf("mpvView.attachExistingSurfaceIfReady()")
-
-        assertTrue(initializeIndex >= 0)
-        assertTrue(attachIndex >= 0)
-        assertTrue(initializeIndex < attachIndex)
+        assertEquals(listOf("second"), callbacks)
     }
 
     @Test
-    fun muboxMpvViewAppliesConfiguredMpvProfileBeforeOtherVideoOptions() {
-        val source = mpvViewSourceFile().readText()
+    fun surfaceTransitionsAreIdempotentAndLoadsDeferAgainAfterDetach() {
+        val events = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = { events += "direct:$it" },
+            loadThroughView = { events += "view:$it" },
+        )
 
-        assertTrue(source.contains("var mpvProfileMode: MpvProfileMode = MpvProfileMode.FAST"))
-        val profileOptionIndex = source.indexOf("MPVLib.setOptionString(\"profile\", mpvProfileMode.profile)")
-        val gpuApiIndex = source.indexOf("MPVLib.setOptionString(\"gpu-api\", gpuApiMode.gpuApi)")
-        val videoOutputIndex = source.indexOf("setVo(videoOutputMode.videoOutput)")
-        val videoDecoderIndex = source.indexOf("MPVLib.setOptionString(\"hwdec\", videoDecoderMode.hwdec)")
+        assertTrue(loader.markSurfaceAttached())
+        assertFalse(loader.markSurfaceAttached())
+        assertTrue(loader.markSurfaceDetached())
+        assertFalse(loader.markSurfaceDetached())
+        loader.playFileWhenReady("after-detach") { events += "callback" }
 
-        assertTrue(profileOptionIndex >= 0)
-        assertTrue(gpuApiIndex >= 0)
-        assertTrue(videoOutputIndex >= 0)
-        assertTrue(videoDecoderIndex >= 0)
-        assertTrue(profileOptionIndex < gpuApiIndex)
-        assertTrue(profileOptionIndex < videoOutputIndex)
-        assertTrue(profileOptionIndex < videoDecoderIndex)
+        assertEquals(listOf("view:after-detach"), events)
     }
 
     @Test
-    fun muboxMpvViewOnlySetsStartupShadersWhenAnime4KChainIsNonBlank() {
-        val source = mpvViewSourceFile().readText()
+    fun mpvViewSubscribesToTheTypedPlaybackPropertyContract() {
+        val api = RecordingMpvNativeApi()
 
-        assertTrue(source.contains("if (shaderChain.isNotBlank())"))
-        assertTrue(source.indexOf("if (shaderChain.isNotBlank())") < source.indexOf("MPVLib.setOptionString(\"glsl-shaders\", shaderChain)"))
+        observeMpvPlaybackProperties(api)
+
+        assertEquals(
+            listOf(
+                "observe:pause=${MPVLib.MpvFormat.MPV_FORMAT_FLAG}",
+                "observe:duration=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:time-pos=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:core-idle=${MPVLib.MpvFormat.MPV_FORMAT_FLAG}",
+                "observe:track-list=${MPVLib.MpvFormat.MPV_FORMAT_NODE_ARRAY}",
+                "observe:aid=${MPVLib.MpvFormat.MPV_FORMAT_INT64}",
+                "observe:sid=${MPVLib.MpvFormat.MPV_FORMAT_INT64}",
+                "observe:speed=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:volume=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:audio-delay=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:video-params=${MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP}",
+                "observe:video-out-params=${MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP}",
+                "observe:video-params/aspect=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:video-out-params/aspect=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
+                "observe:hwdec=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:hwdec-current=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:current-tracks/video/decoder=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:vo=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:gpu-api=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+            ),
+            api.events,
+        )
     }
-
-    @Test
-    fun muboxMpvViewInitializesAnime4KAssetsBeforeBuildingStartupShaderChain() {
-        val source = mpvViewSourceFile().readText()
-
-        val initializeIndex = source.indexOf("anime4kManager?.initialize()")
-        val shaderChainIndex = source.indexOf("anime4kManager?.shaderChain(anime4kSettings)")
-
-        assertTrue(initializeIndex >= 0)
-        assertTrue(shaderChainIndex >= 0)
-        assertTrue(initializeIndex < shaderChainIndex)
-    }
-
-    @Test
-    fun muboxMpvViewAppliesAnime4KOpenGlTuningOnlyOutsideVulkan() {
-        val source = mpvViewSourceFile().readText()
-
-        val shaderChainIndex = source.indexOf("if (shaderChain.isNotBlank())")
-        val nonVulkanIndex = source.indexOf("if (gpuApiMode != GpuApiMode.VULKAN)", shaderChainIndex)
-        val pboIndex = source.indexOf("MPVLib.setOptionString(\"opengl-pbo\", \"yes\")", nonVulkanIndex)
-        val earlyFlushIndex = source.indexOf("MPVLib.setOptionString(\"opengl-early-flush\", \"no\")", nonVulkanIndex)
-        val directRenderingIndex = source.indexOf("MPVLib.setOptionString(\"vd-lavc-dr\", \"yes\")", shaderChainIndex)
-        val shaderOptionIndex = source.indexOf("MPVLib.setOptionString(\"glsl-shaders\", shaderChain)", shaderChainIndex)
-
-        assertTrue(shaderChainIndex >= 0)
-        assertTrue(nonVulkanIndex > shaderChainIndex)
-        assertTrue(pboIndex > nonVulkanIndex)
-        assertTrue(earlyFlushIndex > nonVulkanIndex)
-        assertTrue(directRenderingIndex > shaderChainIndex)
-        assertTrue(shaderOptionIndex > directRenderingIndex)
-    }
-
-    private fun activitySourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-        ).first { it.isFile }
-
-    private fun engineSourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/MpvController.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/MpvController.kt"),
-        ).first { it.isFile }
-
-    private fun mpvViewSourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/MuBoxMpvView.kt"),
-        ).first { it.isFile }
 }
 
 private class FakeMpvFileLoader : MpvFileLoader {
     val loadedUris = mutableListOf<String>()
+    var destroyCount = 0
 
     override fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {
         loadedUris += uri
         afterLoadfile()
     }
 
-    override fun destroy() = Unit
+    override fun destroy() {
+        destroyCount += 1
+    }
 }

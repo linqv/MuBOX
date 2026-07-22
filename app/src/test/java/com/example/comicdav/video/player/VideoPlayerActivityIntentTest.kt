@@ -1,8 +1,10 @@
 package com.example.comicdav.video.player
 
 import android.content.Context
+import android.content.Intent
 import android.os.Parcel
 import androidx.test.core.app.ApplicationProvider
+import com.example.comicdav.toVideoPlayerOptions
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
@@ -26,6 +28,27 @@ class VideoPlayerActivityIntentTest {
         assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
         assertEquals(5000, settings.videoControlsAutoHideMillis)
         assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
+        assertEquals(VideoPlayerOptions(), settings.toVideoPlayerOptions())
+    }
+
+    @Test
+    fun appSettingsMapEveryPlaybackOptionIntoOneValue() {
+        val options = AppSettings(
+            videoResumeEnabled = false,
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.VULKAN,
+            videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
+            mpvProfileMode = MpvProfileMode.LOW_LATENCY,
+            videoControlsAutoHideMillis = 8_000,
+            videoPlayerOrientationMode = VideoPlayerOrientationMode.SENSOR,
+            videoPlayerProxyDebugInfoEnabled = true,
+            videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
+            anime4kEnabled = true,
+            anime4kMode = Anime4KMode.C_PLUS,
+            anime4kQuality = Anime4KQuality.HIGH,
+        ).toVideoPlayerOptions()
+
+        assertEquals(customPlayerOptions(), options)
     }
 
     @Test
@@ -46,6 +69,7 @@ class VideoPlayerActivityIntentTest {
         assertEquals(1024L, intent.getLongExtra(VideoPlayerActivity.EXTRA_SIZE, -1L))
         assertEquals(12345L, intent.getLongExtra(VideoPlayerActivity.EXTRA_LAST_MODIFIED, -1L))
         assertEquals(VideoPlayerActivity.SOURCE_LOCAL, intent.getStringExtra(VideoPlayerActivity.EXTRA_SOURCE))
+        assertEquals(VideoPlayerOptions(), intent.videoPlayerOptions())
         assertFalse(intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, true))
         assertEquals(
             Anime4KMode.A.name,
@@ -67,20 +91,14 @@ class VideoPlayerActivityIntentTest {
             lastModified = null,
         )
 
+        val options = customPlayerOptions()
         val intent = VideoPlayerActivity.localIntent(
             context = context,
             request = request,
-            videoOutputMode = VideoOutputMode.GPU_NEXT,
-            gpuApiMode = GpuApiMode.VULKAN,
-            videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
-            mpvProfileMode = MpvProfileMode.LOW_LATENCY,
-            controlsAutoHideMillis = 8000,
-            proxyDebugInfoEnabled = true,
-            anime4kEnabled = true,
-            anime4kMode = Anime4KMode.C_PLUS,
-            anime4kQuality = Anime4KQuality.HIGH,
+            options = options,
         )
 
+        assertEquals(options, intent.videoPlayerOptions())
         assertEquals(
             VideoOutputMode.GPU_NEXT.name,
             intent.getStringExtra(VideoPlayerActivity.EXTRA_VIDEO_OUTPUT_MODE),
@@ -117,6 +135,54 @@ class VideoPlayerActivityIntentTest {
             Anime4KQuality.HIGH.name,
             intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
         )
+    }
+
+    @Test
+    fun playerOptionsRoundTripThroughParcelableWireFormat() {
+        val options = customPlayerOptions()
+        val parcel = Parcel.obtain()
+        try {
+            options.writeToParcel(parcel, 0)
+            parcel.setDataPosition(0)
+
+            assertEquals(options, VideoPlayerOptions.CREATOR.createFromParcel(parcel))
+        } finally {
+            parcel.recycle()
+        }
+    }
+
+    @Test
+    fun playerOptionsReaderFallsBackToLegacyScalarExtras() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val options = customPlayerOptions()
+        val intent = VideoPlayerActivity.localIntent(
+            context = context,
+            request = LocalVideoOpenRequest("content://videos/legacy", "legacy.mkv", null, null),
+            options = options,
+        )
+        intent.removeExtra(VideoPlayerActivity.EXTRA_PLAYER_OPTIONS)
+
+        assertEquals(options, intent.videoPlayerOptions())
+    }
+
+    @Test
+    fun parcelableOptionsTakePrecedenceOverStaleLegacyExtras() {
+        val options = customPlayerOptions()
+        val intent = Intent()
+            .putVideoPlayerOptions(options)
+            .putExtra(VideoPlayerActivity.EXTRA_VIDEO_OUTPUT_MODE, VideoOutputMode.AUTO.name)
+
+        assertEquals(options, intent.videoPlayerOptions())
+    }
+
+    @Test
+    fun unknownLegacyEnumValuesUsePlayerDefaults() {
+        val intent = Intent()
+            .putExtra(VideoPlayerActivity.EXTRA_VIDEO_OUTPUT_MODE, "REMOVED_OUTPUT")
+            .putExtra(VideoPlayerActivity.EXTRA_GPU_API_MODE, "REMOVED_GPU_API")
+            .putExtra(VideoPlayerActivity.EXTRA_PLAYER_ORIENTATION_MODE, "REMOVED_ORIENTATION")
+
+        assertEquals(VideoPlayerOptions(), intent.videoPlayerOptions())
     }
 
     @Test
@@ -178,10 +244,7 @@ class VideoPlayerActivityIntentTest {
             uri = "http://127.0.0.1:1234/stream/current",
             subtitleUrls = emptyList(),
             streamIds = listOf("current"),
-            proxyDebugInfoEnabled = true,
-            anime4kEnabled = true,
-            anime4kMode = Anime4KMode.C_PLUS,
-            anime4kQuality = Anime4KQuality.HIGH,
+            options = customPlayerOptions(),
             episodeQueue = queue,
         )
 
@@ -281,5 +344,21 @@ class VideoPlayerActivityIntentTest {
 
         VideoEpisodeQueue(episodes = listOf(episode, episode))
     }
+
+    private fun customPlayerOptions(): VideoPlayerOptions =
+        VideoPlayerOptions(
+            resumeEnabled = false,
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.VULKAN,
+            videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
+            mpvProfileMode = MpvProfileMode.LOW_LATENCY,
+            controlsAutoHideMillis = 8_000,
+            playerOrientationMode = VideoPlayerOrientationMode.SENSOR,
+            proxyDebugInfoEnabled = true,
+            videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
+            anime4kEnabled = true,
+            anime4kMode = Anime4KMode.C_PLUS,
+            anime4kQuality = Anime4KQuality.HIGH,
+        )
 
 }

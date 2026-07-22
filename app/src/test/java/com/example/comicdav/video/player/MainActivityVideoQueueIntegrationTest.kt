@@ -1,67 +1,72 @@
 package com.example.comicdav.video.player
 
-import java.io.File
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
+import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.video.LocalVideoOpenRequest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class MainActivityVideoEpisodeIntegrationTest {
     @Test
     fun localAndWebDavDirectoryVideosBuildEpisodeQueues() {
-        val source = mainActivitySourceFile().readText()
+        val localEntries = listOf(
+            FileDirectoryBrowserItem("Show E01.mkv", "content://videos/1", isDirectory = false),
+            FileDirectoryBrowserItem("Show E01.ass", "content://videos/1-sub", isDirectory = false),
+            FileDirectoryBrowserItem("Show E02.mkv", "content://videos/2", isDirectory = false),
+        )
+        val localQueue = buildLocalDirectoryEpisodeQueue(localEntries, localEntries.last())
+        val webDavItems = listOf(
+            WebDavItem("Show E01.mkv", "/show/1.mkv", false, 10L, "one", 1L),
+            WebDavItem("Show E01.ass", "/show/1.ass", false, 2L, "sub", 1L),
+            WebDavItem("Show E02.mkv", "/show/2.mkv", false, 20L, "two", 2L),
+        )
+        val webDavQueue = buildWebDavDirectoryEpisodeQueue("account-1", webDavItems, webDavItems.last())
 
-        assertTrue(source.contains("buildLocalDirectoryEpisodeQueue("))
-        assertTrue(source.contains("buildWebDavDirectoryEpisodeQueue("))
-        assertTrue(source.contains("fileDirectoryViewModel.playbackDirectoryEntries()"))
-        assertTrue(source.contains("webDavViewModel.playbackDirectoryItems()"))
-        assertTrue(source.contains("episodeQueue = episodeQueue"))
-        assertTrue(source.contains("findSidecarSubtitles("))
+        assertEquals(1, localQueue?.currentIndex)
+        assertEquals(listOf("Show E01.mkv", "Show E02.mkv"), localQueue?.episodes?.map { it.displayName })
+        assertEquals(listOf("Show E01.ass"), localQueue?.episodes?.first()?.localRequest?.subtitles?.map { it.displayName })
+        assertEquals(1, webDavQueue?.currentIndex)
+        assertEquals(listOf("Show E01.mkv", "Show E02.mkv"), webDavQueue?.episodes?.map { it.displayName })
+        assertEquals(listOf("Show E01.ass"), webDavQueue?.episodes?.first()?.webDavRequest?.subtitles?.map { it.displayName })
     }
 
     @Test
-    fun playerActivityCarriesAndSwitchesEpisodeQueue() {
-        val source = playerActivitySourceFile().readText()
+    fun playerActivityCarriesNavigableEpisodeQueueOutsideBinderPayload() {
+        VideoEpisodeQueueRegistry.clearForTests()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val first = LocalVideoOpenRequest(
+            uri = "content://videos/episode-1",
+            displayName = "Episode 1",
+            size = 1L,
+            lastModified = 10L,
+        )
+        val second = first.copy(
+            uri = "content://videos/episode-2",
+            displayName = "Episode 2",
+            size = 2L,
+            lastModified = 20L,
+        )
+        val queue = VideoEpisodeQueue(
+            episodes = listOf(VideoEpisode.local(first), VideoEpisode.local(second)),
+            currentIndex = 1,
+        )
 
-        assertTrue(source.contains("EXTRA_EPISODE_QUEUE_ID"))
-        assertTrue(source.contains("VideoEpisodeQueueRegistry.register"))
-        assertTrue(source.contains("putEpisodeQueueExtra"))
-        assertTrue(source.contains("private fun switchToEpisode("))
-        assertTrue(source.contains("EpisodeSelectionPage("))
+        val intent = VideoPlayerActivity.localIntent(context, second, episodeQueue = queue)
+        val queueId = intent.getStringExtra(VideoPlayerActivity.EXTRA_EPISODE_QUEUE_ID)
+        val restored = VideoEpisodeQueueRegistry.consume(queueId)
+
+        assertNotNull(queueId)
+        assertEquals(1, restored?.currentIndex)
+        assertTrue(restored?.hasPrevious == true)
+        assertTrue(restored?.hasNext == false)
+        assertEquals("Episode 2", restored?.currentEpisode?.displayName)
     }
 
-    @Test
-    fun episodeSelectionContentRespectsNavigationBarInsets() {
-        val source = playerControlsSourceFile().readText()
-        val selectionPage = source.substringAfter("internal fun EpisodeSelectionPage(")
-            .substringBefore("internal fun PlayerBottomControls(")
-
-        assertTrue(selectionPage.contains(".navigationBarsPadding()"))
-    }
-
-    @Test
-    fun mainActivityRestoresMainPortraitAfterVideoPlayerResult() {
-        val source = mainActivitySourceFile().readText()
-
-        assertTrue(source.contains("ActivityResultContracts.StartActivityForResult()"))
-        assertTrue(source.contains("fun openVideoPlayer(intent: Intent)"))
-        assertTrue(source.contains("videoPlayerLauncher.launch(intent)"))
-        assertTrue(source.contains("forceMainPortraitState.value = true"))
-    }
-
-    private fun mainActivitySourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/MainActivity.kt"),
-            File("app/src/main/java/com/example/comicdav/MainActivity.kt"),
-        ).first { it.isFile }
-
-    private fun playerActivitySourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
-        ).first { it.isFile }
-
-    private fun playerControlsSourceFile(): File =
-        listOf(
-            File("src/main/java/com/example/comicdav/video/player/VideoPlayerControls.kt"),
-            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerControls.kt"),
-        ).first { it.isFile }
 }
