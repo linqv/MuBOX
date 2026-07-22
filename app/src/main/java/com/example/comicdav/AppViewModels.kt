@@ -1,9 +1,13 @@
 package com.example.comicdav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.comicdav.feature.downloads.AndroidDownloadBackend
+import com.example.comicdav.feature.downloads.DownloadCoordinator
 import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
 import com.example.comicdav.feature.library.LibraryViewModel
 import com.example.comicdav.feature.reader.ReaderViewModel
@@ -16,11 +20,26 @@ internal data class AppViewModels(
     val library: LibraryViewModel,
     val videoLibrary: VideoLibraryViewModel,
     val fileDirectory: FileDirectoryViewModel,
+    val downloads: DownloadCoordinator,
 )
 
 @Composable
-internal fun rememberAppViewModels(container: AppContainer): AppViewModels =
-    AppViewModels(
+internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
+    val context = LocalContext.current.applicationContext
+    val downloadCoordinatorFactory = remember(
+        context,
+        container.downloadRecordStore,
+        container.videoDownloadStore,
+    ) {
+        DownloadCoordinator.Factory(
+            AndroidDownloadBackend(
+                context = context,
+                downloadRecordStore = container.downloadRecordStore,
+                videoDownloadStore = container.videoDownloadStore,
+            ),
+        )
+    }
+    return AppViewModels(
         webDav = viewModel(),
         reader = viewModel(),
         library = viewModel(factory = viewModelFactory { LibraryViewModel(container.libraryRepository) }),
@@ -32,7 +51,9 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels =
                 FileDirectoryViewModel(container.fileDirectoryRepository, container.localDirectoryReader)
             },
         ),
+        downloads = viewModel(factory = downloadCoordinatorFactory),
     )
+}
 
 private inline fun <reified T : ViewModel> viewModelFactory(
     crossinline create: () -> T,
