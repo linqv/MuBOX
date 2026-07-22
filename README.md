@@ -85,11 +85,32 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleRelease -PtargetAb
 
 使用 `-PtargetAbi=<abi>` 只构建单一 ABI。
 
-## 测试 Rust 核心
+## 测试
+
+默认测试源集只保留可长期维护的测试：
+
+- 回归测试验证稳定的业务行为或已修复的缺陷，使用 `*Test` 命名。
+- 打包、资源、Manifest 和 ProGuard 等非运行时约束属于构建契约，优先使用 `*ContractTest` 命名。
+- `MainDispatcherRule`、`FakeMpvEngine` 等无 `@Test` 的文件是可复用测试支撑代码，不是独立用例。
+- 一次性调查代码、手工探针、日志和临时样本不得放入 `src/test`、`src/androidTest` 或生产源集；应保留在 Git 忽略的本地目录中，问题定位后删除或改写为有明确断言的回归测试。
+
+Android JVM 回归与构建契约：
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+Android 仪器测试（需连接设备或启动模拟器）：
+
+```bash
+./gradlew connectedDebugAndroidTest
+```
+
+Rust 核心：
 
 ```bash
 cd comic-core
-cargo test
+cargo test --locked
 ```
 
 ## 发布准备

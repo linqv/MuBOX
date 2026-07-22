@@ -4,11 +4,12 @@ import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class VideoPhase2BuildConfigTest {
+/** Guards the release inputs required by the embedded mpv runtime. */
+class MpvPackagingContractTest {
     @Test
     fun mpvAarIsBundledAndReferencedByGradle() {
         assertTrue(
-            "Phase 2 requires the mpv Android AAR in app/libs",
+            "The mpv Android AAR must be bundled in app/libs",
             File("libs/mpv-android-lib-v0.0.1.aar").isFile ||
                 File("app/libs/mpv-android-lib-v0.0.1.aar").isFile,
         )
