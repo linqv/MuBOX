@@ -156,56 +156,7 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
-    fun anime4KRuntimeSwitchOnGpuNextWithoutVulkanClearsShadersWithoutChangingVo() {
-        val enableEngine = FakeMpvEngine()
-        val enableController = MpvController(
-            engine = enableEngine,
-            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
-        )
-        enableController.setStartupRendererState(
-            videoOutputMode = VideoOutputMode.GPU_NEXT,
-            gpuApiMode = GpuApiMode.AUTO,
-            decoderMode = VideoDecoderMode.AUTO,
-        )
-
-        enableController.setAnime4KEnabled(true)
-
-        val enableState = enableController.state.value
-        assertEquals(listOf(""), enableEngine.stringPropertyHistory("glsl-shaders"))
-        assertEquals(emptyList<String>(), enableEngine.optionHistory("vo"))
-        assertFalse(enableState.anime4kEnabled)
-        assertEquals(Anime4KMode.A, enableState.anime4kMode)
-        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", enableState.statusMessage)
-
-        val switchEngine = FakeMpvEngine()
-        val switchController = MpvController(
-            engine = switchEngine,
-            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-b"),
-            initialAnime4KSettings = Anime4KSettings(
-                enabled = true,
-                mode = Anime4KMode.A,
-                quality = Anime4KQuality.HIGH,
-            ),
-        )
-        switchController.setStartupRendererState(
-            videoOutputMode = VideoOutputMode.GPU_NEXT,
-            gpuApiMode = GpuApiMode.AUTO,
-            decoderMode = VideoDecoderMode.AUTO,
-        )
-
-        switchController.setAnime4KMode(Anime4KMode.B)
-
-        val switchState = switchController.state.value
-        assertEquals(listOf(""), switchEngine.stringPropertyHistory("glsl-shaders"))
-        assertEquals(emptyList<String>(), switchEngine.optionHistory("vo"))
-        assertFalse(switchState.anime4kEnabled)
-        assertEquals(Anime4KMode.B, switchState.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, switchState.anime4kQuality)
-        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", switchState.statusMessage)
-    }
-
-    @Test
-    fun anime4KRuntimeSwitchUsesObservedGpuApiWhenConfiguredGpuApiIsAuto() {
+    fun anime4KRuntimeSwitchOnGpuNextWithAutoApiAppliesShadersWithoutChangingVo() {
         val engine = FakeMpvEngine()
         val controller = MpvController(
             engine = engine,
@@ -216,18 +167,34 @@ class MpvControllerAdvancedControlsTest {
             gpuApiMode = GpuApiMode.AUTO,
             decoderMode = VideoDecoderMode.AUTO,
         )
-        controller.onGpuApiChanged("vulkan")
 
         controller.setAnime4KEnabled(true)
 
         val state = controller.state.value
         assertEquals(listOf("chain-a"), engine.stringPropertyHistory("glsl-shaders"))
+        assertEquals(emptyList<String>(), engine.optionHistory("vo"))
         assertTrue(state.anime4kEnabled)
+        assertEquals(Anime4KMode.A, state.anime4kMode)
         assertEquals(null, state.statusMessage)
     }
 
     @Test
-    fun anime4KModeAndQualityChangesPreserveIncompatibleStatusWhileDisabled() {
+    fun observedGpuContextIsTrackedSeparatelyFromRequestedGpuApi() {
+        val controller = MpvController(FakeMpvEngine())
+        controller.setStartupRendererState(
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.AUTO,
+            decoderMode = VideoDecoderMode.AUTO,
+        )
+        controller.onGpuContextChanged("androidvk")
+
+        val state = controller.state.value
+        assertEquals("auto", state.currentGpuApi)
+        assertEquals("androidvk", state.currentGpuContext)
+    }
+
+    @Test
+    fun anime4KModeAndQualityChangesStayEnabledOnGpuNextOpenGl() {
         val engine = FakeMpvEngine()
         val controller = MpvController(
             engine = engine,
@@ -244,11 +211,11 @@ class MpvControllerAdvancedControlsTest {
         controller.setAnime4KQuality(Anime4KQuality.HIGH)
 
         val state = controller.state.value
-        assertEquals(listOf("", "", ""), engine.stringPropertyHistory("glsl-shaders"))
-        assertFalse(state.anime4kEnabled)
+        assertEquals(listOf("chain-a", "chain-a", "chain-a"), engine.stringPropertyHistory("glsl-shaders"))
+        assertTrue(state.anime4kEnabled)
         assertEquals(Anime4KMode.B, state.anime4kMode)
         assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
-        assertEquals("Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容", state.statusMessage)
+        assertEquals(null, state.statusMessage)
     }
 
     @Test
@@ -446,6 +413,9 @@ class MpvControllerAdvancedControlsTest {
         controller.onActiveVideoDecoderChanged("libdav1d")
         controller.onVoChanged("gpu-next")
         controller.onGpuApiChanged("vulkan")
+        controller.onGpuContextChanged("androidvk")
+        controller.onDecoderDroppedFramesChanged(2)
+        controller.onOutputDroppedFramesChanged(3)
 
         val state = controller.state.value
         assertEquals(1.75, state.playbackSpeed, 0.0)
@@ -457,6 +427,9 @@ class MpvControllerAdvancedControlsTest {
         assertEquals("libdav1d", state.activeVideoDecoder)
         assertEquals("gpu-next", state.currentVideoOutput)
         assertEquals("vulkan", state.currentGpuApi)
+        assertEquals("androidvk", state.currentGpuContext)
+        assertEquals(2L, state.decoderDroppedFrames)
+        assertEquals(3L, state.outputDroppedFrames)
     }
 
     @Test

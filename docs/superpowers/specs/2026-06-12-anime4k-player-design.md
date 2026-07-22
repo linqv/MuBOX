@@ -122,8 +122,8 @@ Runtime shader switching rules:
 
 - Use `setPropertyString("glsl-shaders", chainOrEmpty)` for runtime changes.
 - Use `setOptionString("glsl-shaders", chain)` only from `MuBoxMpvView.initOptions()`.
-- Runtime controls may enable/disable or switch shader chains only when the active renderer is compatible: `gpu`, or `gpu-next` with Vulkan.
-- If the active renderer is `gpu-next` without Vulkan, runtime enable/switch attempts do not modify `vo`; they clear `glsl-shaders`, keep `anime4kEnabled = false` for the session, and set `anime4kStatusMessage`.
+- Runtime controls may enable, disable, or switch shader chains on both `gpu` and `gpu-next`.
+- Runtime Anime4K changes do not modify `vo`; the selected renderer remains active while `glsl-shaders` is updated.
 
 The playback menu adds an Anime4K group below visual controls:
 
@@ -135,22 +135,26 @@ Runtime controls update the active session only. Global defaults remain controll
 
 ## Compatibility
 
-Anime4K shaders prefer the legacy `gpu` renderer. The player must decide renderer compatibility before mpv initialization when opening a session, and must not hot-switch `vo` during playback.
+mpv supports user shaders through both `gpu` and `gpu-next`. The player must preserve the configured renderer and must not hot-switch `vo` during playback.
 
 Startup rules:
 
 - Anime4K off: use the user's configured video output mode.
 - Anime4K on with `gpu`: keep `gpu`.
-- Anime4K on with `gpu-next` and Vulkan: allow the configured renderer.
-- Anime4K on with `gpu-next` and non-Vulkan GPU API: start this player session with effective VO `gpu`, set a short status explaining the compatibility fallback, and do not rewrite the user's global VO setting.
+- Anime4K on with `gpu-next`: keep `gpu-next` for both Vulkan and OpenGL-backed contexts.
+- An automatic GPU API selection is not treated as OpenGL before mpv resolves the actual context.
 
 Runtime rules:
 
 - Runtime Anime4K changes never call `setOptionString("vo", ...)`.
-- If the active session is already running `gpu-next` without Vulkan, Anime4K runtime enable/switch is rejected with a status message instead of forcing a renderer restart. The controller clears `glsl-shaders` and keeps the session Anime4K switch off.
-- Runtime hot-switching `glsl-shaders` is considered supported only for the compatible renderers above and must be covered by controller tests for command sequencing. Actual visual shader behavior remains an mpv/device integration concern.
+- Runtime Anime4K enable/switch updates only `glsl-shaders`, including on an active `gpu-next` session.
+- Runtime hot-switching must be covered by controller tests for command sequencing. Actual visual shader behavior remains an mpv/device integration concern.
 
-OpenGL-only tuning from `mpvEx` (`opengl-pbo`, `opengl-early-flush`) should only be applied when the session is not using Vulkan.
+OpenGL/direct-rendering tuning inherited from `mpvEx` (`opengl-pbo`, `opengl-early-flush`, `vd-lavc-dr`) is limited to the legacy `gpu` renderer. It is not forced on `gpu-next`, where it can cause device-specific artifacts independently of Anime4K shader support.
+
+The player observes `current-vo`, `current-gpu-context`, `decoder-frame-drop-count`, and `frame-drop-count` so diagnostics report the renderer, context, and accumulated dropped frames instead of inferring runtime behavior from requested options.
+
+Warnings tagged as Anime4K, GLSL, shader, libplacebo, or SPIR-V are forwarded to Logcat under `MuBoxMpvShader` for device-specific shader compilation diagnosis.
 
 ## Error Handling
 
@@ -170,8 +174,8 @@ Required tests:
 - Missing shader assets return an empty chain instead of a partial chain.
 - `MpvController` enabling Anime4K writes `glsl-shaders` with the computed chain.
 - `MpvController` disabling Anime4K clears `glsl-shaders`.
-- Startup compatibility resolves Anime4K + `gpu-next` + non-Vulkan to effective session VO `gpu` before mpv initialization.
-- `MpvController` rejects runtime Anime4K enable/switch on active `gpu-next` + non-Vulkan sessions without writing `vo`.
+- Startup compatibility preserves `gpu-next` with Anime4K for automatic, Vulkan, and OpenGL-backed GPU contexts.
+- `MpvController` applies runtime Anime4K enable/switch on active `gpu-next` sessions without writing `vo`.
 - Runtime Anime4K switching on compatible renderers writes only `glsl-shaders`.
 - `AppSettingsStore` defaults and update methods persist Anime4K values.
 - `PlayerOptionPanelUiTest` verifies the player menu includes Anime4K controls.

@@ -10,6 +10,8 @@ internal class MpvPropertyEventRouter(
         when (property) {
             "aid" -> controller.onAudioTrackChanged(value.toInt())
             "sid" -> controller.onSubtitleTrackChanged(value.toInt().takeIf { it > 0 })
+            "decoder-frame-drop-count" -> controller.onDecoderDroppedFramesChanged(value)
+            "frame-drop-count" -> controller.onOutputDroppedFramesChanged(value)
         }
     }
 
@@ -26,8 +28,9 @@ internal class MpvPropertyEventRouter(
             "hwdec" -> controller.onHwdecChanged(value)
             "hwdec-current" -> controller.onActiveHwdecChanged(value)
             "current-tracks/video/decoder" -> controller.onActiveVideoDecoderChanged(value)
-            "vo" -> controller.onVoChanged(value)
+            "vo", "current-vo" -> controller.onVoChanged(value)
             "gpu-api" -> controller.onGpuApiChanged(value)
+            "current-gpu-context" -> controller.onGpuContextChanged(value)
         }
     }
 

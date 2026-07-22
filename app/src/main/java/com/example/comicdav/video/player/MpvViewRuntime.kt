@@ -67,11 +67,13 @@ internal class MpvStartupOptionsApplier(
             ""
         }
         if (shaderChain.isNotBlank()) {
-            if (configuration.gpuApiMode != GpuApiMode.VULKAN) {
-                nativeApi.setOptionString("opengl-pbo", "yes")
-                nativeApi.setOptionString("opengl-early-flush", "no")
+            if (configuration.videoOutputMode == VideoOutputMode.AUTO) {
+                if (configuration.gpuApiMode != GpuApiMode.VULKAN) {
+                    nativeApi.setOptionString("opengl-pbo", "yes")
+                    nativeApi.setOptionString("opengl-early-flush", "no")
+                }
+                nativeApi.setOptionString("vd-lavc-dr", "yes")
             }
-            nativeApi.setOptionString("vd-lavc-dr", "yes")
             nativeApi.setOptionString("glsl-shaders", shaderChain)
         }
         nativeApi.setPropertyBoolean("keep-open", true)
@@ -103,7 +105,11 @@ internal val mpvObservedPlaybackProperties: List<MpvObservedProperty> = listOf(
     MpvObservedProperty("hwdec-current", MPVLib.MpvFormat.MPV_FORMAT_STRING),
     MpvObservedProperty("current-tracks/video/decoder", MPVLib.MpvFormat.MPV_FORMAT_STRING),
     MpvObservedProperty("vo", MPVLib.MpvFormat.MPV_FORMAT_STRING),
+    MpvObservedProperty("current-vo", MPVLib.MpvFormat.MPV_FORMAT_STRING),
     MpvObservedProperty("gpu-api", MPVLib.MpvFormat.MPV_FORMAT_STRING),
+    MpvObservedProperty("current-gpu-context", MPVLib.MpvFormat.MPV_FORMAT_STRING),
+    MpvObservedProperty("decoder-frame-drop-count", MPVLib.MpvFormat.MPV_FORMAT_INT64),
+    MpvObservedProperty("frame-drop-count", MPVLib.MpvFormat.MPV_FORMAT_INT64),
 )
 
 internal fun observeMpvPlaybackProperties(nativeApi: MpvNativeApi) {
@@ -111,6 +117,19 @@ internal fun observeMpvPlaybackProperties(nativeApi: MpvNativeApi) {
         nativeApi.observeProperty(property.name, property.format)
     }
 }
+
+internal fun isMpvShaderDiagnostic(prefix: String, text: String): Boolean {
+    val message = "$prefix $text".lowercase()
+    return SHADER_DIAGNOSTIC_MARKERS.any(message::contains)
+}
+
+private val SHADER_DIAGNOSTIC_MARKERS = listOf(
+    "anime4k",
+    "glsl",
+    "shader",
+    "libplacebo",
+    "spir-v",
+)
 
 /** Coordinates loadfile callbacks with the Surface lifecycle without depending on Android/JNI. */
 internal class SurfaceAwareMpvFileLoader(

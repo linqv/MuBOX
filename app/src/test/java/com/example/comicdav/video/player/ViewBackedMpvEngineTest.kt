@@ -134,7 +134,11 @@ class ViewBackedMpvEngineTest {
                 "observe:hwdec-current=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
                 "observe:current-tracks/video/decoder=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
                 "observe:vo=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:current-vo=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
                 "observe:gpu-api=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:current-gpu-context=${MPVLib.MpvFormat.MPV_FORMAT_STRING}",
+                "observe:decoder-frame-drop-count=${MPVLib.MpvFormat.MPV_FORMAT_INT64}",
+                "observe:frame-drop-count=${MPVLib.MpvFormat.MPV_FORMAT_INT64}",
             ),
             api.events,
         )

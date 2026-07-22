@@ -30,20 +30,14 @@ data class Anime4KStartupCompatibility(
     val statusMessage: String? = null,
 )
 
+@Suppress("UNUSED_PARAMETER")
 internal fun anime4kStartupCompatibility(
     settings: Anime4KSettings,
     requestedVideoOutputMode: VideoOutputMode,
     gpuApiMode: GpuApiMode,
 ): Anime4KStartupCompatibility {
-    if (!settings.enabled || settings.mode == Anime4KMode.OFF) {
-        return Anime4KStartupCompatibility(effectiveVideoOutputMode = requestedVideoOutputMode)
-    }
-    if (requestedVideoOutputMode == VideoOutputMode.GPU_NEXT && gpuApiMode != GpuApiMode.VULKAN) {
-        return Anime4KStartupCompatibility(
-            effectiveVideoOutputMode = VideoOutputMode.AUTO,
-            statusMessage = "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu",
-        )
-    }
+    // gpu-next implements mpv user shaders on both OpenGL and Vulkan. Do not downgrade the
+    // renderer pre-emptively; device-specific shader failures should be diagnosed at runtime.
     return Anime4KStartupCompatibility(effectiveVideoOutputMode = requestedVideoOutputMode)
 }
 

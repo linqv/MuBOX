@@ -15,6 +15,9 @@ class VideoPlayerStatisticsTest {
             activeVideoDecoder = "h264_mediacodec",
             currentVideoOutput = "gpu-next",
             currentGpuApi = "vulkan",
+            currentGpuContext = "androidvk",
+            decoderDroppedFrames = 2,
+            outputDroppedFrames = 3,
             videoParams = VideoParams(
                 codec = "h264",
                 width = 1280,
@@ -50,8 +53,9 @@ class VideoPlayerStatisticsTest {
         assertEquals("1280x720", snapshot.media.resolution)
         assertEquals("movie.zh.ass", snapshot.media.subtitleSource)
         assertEquals("h264_mediacodec / mediacodec-copy", snapshot.runtime.decoder)
-        assertEquals("gpu-next / vulkan", snapshot.runtime.renderer)
+        assertEquals("gpu-next / androidvk", snapshot.runtime.renderer)
         assertEquals(23.976, snapshot.runtime.estimatedFps)
+        assertEquals(5L, snapshot.runtime.droppedFrames)
     }
 
     @Test

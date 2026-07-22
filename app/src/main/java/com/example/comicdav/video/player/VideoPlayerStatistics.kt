@@ -69,10 +69,15 @@ fun buildVideoPlayerStatisticsSnapshot(
             decoder = activeDecoderLabel(state),
             renderer = listOfNotNull(
                 state.currentVideoOutput ?: state.videoOutputMode.videoOutput,
-                state.currentGpuApi?.takeIf { it != "auto" } ?: state.gpuApiMode.gpuApi.takeIf { it != "auto" },
+                state.currentGpuContext
+                    ?: state.currentGpuApi?.takeIf { it != "auto" }
+                    ?: state.gpuApiMode.gpuApi.takeIf { it != "auto" },
             ).joinToString(" / ").ifBlank { null },
             estimatedFps = state.videoOutParams.frameRate ?: state.videoParams.frameRate,
-            droppedFrames = null,
+            droppedFrames = listOfNotNull(
+                state.decoderDroppedFrames,
+                state.outputDroppedFrames,
+            ).takeIf { it.isNotEmpty() }?.sum(),
             avSyncSeconds = null,
             cacheUsedBytes = null,
         ),

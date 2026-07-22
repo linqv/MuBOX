@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.comicdav.video.VideoPlaybackMemoryBudget
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,9 +84,6 @@ class MuBoxMpvViewFactoryTest {
                 "option:demuxer-max-back-bytes=16777216",
                 "option:msg-level=all=warn",
                 "anime4k:initialize",
-                "option:opengl-pbo=yes",
-                "option:opengl-early-flush=no",
-                "option:vd-lavc-dr=yes",
                 "option:glsl-shaders=/files/shaders/a.glsl:/files/shaders/b.glsl",
                 "property:keep-open=true",
                 "property:input-default-bindings=true",
@@ -113,6 +111,36 @@ class MuBoxMpvViewFactoryTest {
         assertTrue(api.events.none { it.startsWith("option:opengl-") })
         assertTrue(api.events.contains("option:vd-lavc-dr=yes"))
         assertTrue(api.events.contains("option:glsl-shaders=/files/shaders/anime4k.glsl"))
+    }
+
+    @Test
+    fun legacyGpuAnime4KKeepsItsDirectRenderingTuning() {
+        val api = RecordingMpvNativeApi()
+        MpvStartupOptionsApplier(
+            nativeApi = api,
+            setVideoOutput = {},
+            initializeAnime4K = {},
+            anime4KShaderChain = { "/files/shaders/anime4k.glsl" },
+            memoryBudget = testPlaybackMemoryBudget,
+        ).apply(
+            MpvViewStartupConfiguration(
+                videoOutputMode = VideoOutputMode.AUTO,
+                gpuApiMode = GpuApiMode.AUTO,
+                anime4kSettings = Anime4KSettings(enabled = true),
+            ),
+        )
+
+        assertTrue(api.events.contains("option:opengl-pbo=yes"))
+        assertTrue(api.events.contains("option:opengl-early-flush=no"))
+        assertTrue(api.events.contains("option:vd-lavc-dr=yes"))
+        assertTrue(api.events.contains("option:glsl-shaders=/files/shaders/anime4k.glsl"))
+    }
+
+    @Test
+    fun shaderDiagnosticFilterKeepsShaderLogsAndRejectsUnrelatedWarnings() {
+        assertTrue(isMpvShaderDiagnostic("vo/gpu-next", "GLSL shader compilation failed"))
+        assertTrue(isMpvShaderDiagnostic("libplacebo", "hook warning"))
+        assertFalse(isMpvShaderDiagnostic("demux", "cache underrun"))
     }
 
     private fun newMpvView(): MuBoxMpvView =

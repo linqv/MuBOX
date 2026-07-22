@@ -205,8 +205,11 @@ class VideoPlayerActivityIntegrationTest {
         router.route("hwdec", "mediacodec-copy")
         router.route("hwdec-current", "mediacodec")
         router.route("current-tracks/video/decoder", "h264_mediacodec")
-        router.route("vo", "gpu-next")
+        router.route("current-vo", "gpu-next")
         router.route("gpu-api", "vulkan")
+        router.route("current-gpu-context", "androidvk")
+        router.route("decoder-frame-drop-count", 2L)
+        router.route("frame-drop-count", 3L)
         router.route("video-params/aspect", 16.0 / 9.0)
         router.route("video-out-params", MPVNode.MapNode(mapOf("w" to MPVNode.IntNode(1920L))))
 
@@ -222,12 +225,15 @@ class VideoPlayerActivityIntegrationTest {
         assertEquals("h264_mediacodec", state.activeVideoDecoder)
         assertEquals("gpu-next", state.currentVideoOutput)
         assertEquals("vulkan", state.currentGpuApi)
+        assertEquals("androidvk", state.currentGpuContext)
+        assertEquals(2L, state.decoderDroppedFrames)
+        assertEquals(3L, state.outputDroppedFrames)
         assertEquals(16.0 / 9.0, state.videoParams.aspectRatio ?: 0.0, 0.0)
         assertEquals(1920, state.videoOutParams.width)
     }
 
     @Test
-    fun anime4KStartupCompatibilityFallsBackFromGpuNextWhenNotUsingVulkan() {
+    fun anime4KStartupCompatibilityKeepsGpuNextWithAutoGpuApi() {
         val compatibility = anime4kStartupCompatibility(
             settings = Anime4KSettings(
                 enabled = true,
@@ -238,11 +244,8 @@ class VideoPlayerActivityIntegrationTest {
             gpuApiMode = GpuApiMode.AUTO,
         )
 
-        assertEquals(VideoOutputMode.AUTO, compatibility.effectiveVideoOutputMode)
-        assertEquals(
-            "Anime4K 与 gpu-next(OpenGL) 不兼容，已为本次播放使用 gpu",
-            compatibility.statusMessage,
-        )
+        assertEquals(VideoOutputMode.GPU_NEXT, compatibility.effectiveVideoOutputMode)
+        assertEquals(null, compatibility.statusMessage)
     }
 
     private fun testLoadRequest(): VideoPlaybackLoadRequest =

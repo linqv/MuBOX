@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -110,6 +111,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val playbackPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var mpvObserverRegistered = false
+    private var mpvLogObserverRegistered = false
     private var mpvInitialized = false
     private var isCleaningUp = false
     private var webDavStreamIds by mutableStateOf<List<String>>(emptyList())
@@ -203,6 +205,14 @@ class VideoPlayerActivity : ComponentActivity() {
                         playbackLifecyclePolicy.playbackInterrupted()
                     }
                 }
+            }
+        }
+    }
+
+    private val mpvLogObserver = object : MPVLib.LogObserver {
+        override fun logMessage(prefix: String, level: Int, text: String) {
+            if (isMpvShaderDiagnostic(prefix, text)) {
+                Log.w(MPV_SHADER_LOG_TAG, "mpv[$prefix][$level] ${text.trim()}")
             }
         }
     }
@@ -594,6 +604,10 @@ class VideoPlayerActivity : ComponentActivity() {
                 MPVLib.removeObserver(mpvObserver)
                 mpvObserverRegistered = false
             }
+            if (mpvLogObserverRegistered) {
+                MPVLib.removeLogObserver(mpvLogObserver)
+                mpvLogObserverRegistered = false
+            }
             if (mpvInitialized) {
                 controller.destroy()
                 mpvInitialized = false
@@ -613,6 +627,8 @@ class VideoPlayerActivity : ComponentActivity() {
                 Utils.copyAssets(this@VideoPlayerActivity)
             }
             if (isFinishing) return false
+            MPVLib.addLogObserver(mpvLogObserver)
+            mpvLogObserverRegistered = true
             mpvView.initialize(filesDir.path, cacheDir.path)
             mpvView.attachExistingSurfaceIfReady()
             mpvInitialized = true
@@ -622,6 +638,10 @@ class VideoPlayerActivity : ComponentActivity() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            if (mpvLogObserverRegistered) {
+                MPVLib.removeLogObserver(mpvLogObserver)
+                mpvLogObserverRegistered = false
+            }
             controller.onError(error.message ?: "视频播放器初始化失败")
             false
         }
@@ -1233,6 +1253,7 @@ private fun VideoPlayerScreen(
 private const val PLAYER_STATUS_BAR_REHIDE_MILLIS = 3_000L
 private const val PLAYBACK_PROGRESS_SAVE_INTERVAL_MILLIS = 10_000L
 private const val PROXY_STATISTICS_SAMPLE_INTERVAL_MILLIS = 1_000L
+private const val MPV_SHADER_LOG_TAG = "MuBoxMpvShader"
 
 private fun VideoProxyRuntimeStats.toPlayerStatistics(): VideoProxyStatistics =
     VideoProxyStatistics(

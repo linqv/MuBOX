@@ -36,6 +36,9 @@ data class MpvPlayerState(
     val activeVideoDecoder: String? = null,
     val currentVideoOutput: String? = null,
     val currentGpuApi: String? = null,
+    val currentGpuContext: String? = null,
+    val decoderDroppedFrames: Long? = null,
+    val outputDroppedFrames: Long? = null,
     val videoParams: VideoParams = VideoParams(),
     val videoOutParams: VideoParams = VideoParams(),
     val statisticsVisible: Boolean = false,
@@ -667,6 +670,18 @@ class MpvController(
         _state.value = _state.value.copy(currentGpuApi = value)
     }
 
+    fun onGpuContextChanged(value: String) {
+        _state.value = _state.value.copy(currentGpuContext = value.takeIf { it.isNotBlank() })
+    }
+
+    fun onDecoderDroppedFramesChanged(value: Long) {
+        _state.value = _state.value.copy(decoderDroppedFrames = value.coerceAtLeast(0L))
+    }
+
+    fun onOutputDroppedFramesChanged(value: Long) {
+        _state.value = _state.value.copy(outputDroppedFrames = value.coerceAtLeast(0L))
+    }
+
     fun onVideoParamsChanged(params: MPVNode) {
         val parsedParams = parseVideoParams(params)
         _state.value = _state.value.let { state ->
@@ -781,18 +796,7 @@ class MpvController(
                 anime4kEnabled = false,
                 anime4kMode = settings.mode,
                 anime4kQuality = settings.quality,
-                statusMessage = disabledAnime4KStatusMessage(),
-            )
-            return
-        }
-
-        if (isGpuNextWithoutObservedVulkan()) {
-            engine.setPropertyString("glsl-shaders", "")
-            _state.value = _state.value.copy(
-                anime4kEnabled = false,
-                anime4kMode = settings.mode,
-                anime4kQuality = settings.quality,
-                statusMessage = ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS,
+                statusMessage = null,
             )
             return
         }
@@ -817,22 +821,6 @@ class MpvController(
             statusMessage = null,
         )
     }
-
-    private fun isGpuNextWithoutObservedVulkan(): Boolean {
-        val state = _state.value
-        return state.videoOutputMode == VideoOutputMode.GPU_NEXT &&
-            !state.currentGpuApi.equals(GpuApiMode.VULKAN.gpuApi, ignoreCase = true)
-    }
-
-    private fun disabledAnime4KStatusMessage(): String? =
-        if (
-            _state.value.statusMessage == ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS &&
-            isGpuNextWithoutObservedVulkan()
-        ) {
-            ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS
-        } else {
-            null
-        }
 
     private fun speedHudText(speed: Double): String {
         val roundedSpeed = (speed * 100).roundToInt() / 100.0
@@ -956,6 +944,5 @@ class MpvController(
         const val DOUBLE_TAP_SEEK_MILLIS = 10_000L
         const val MIN_VIDEO_ZOOM = -1.0f
         const val MAX_VIDEO_ZOOM = 2.0f
-        const val ANIME4K_GPU_NEXT_OPENGL_INCOMPATIBLE_STATUS = "Anime4K 与当前 gpu-next(OpenGL) 渲染器不兼容"
     }
 }
