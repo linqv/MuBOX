@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,7 @@ internal fun webDavItemLongPressActions(item: WebDavItem): List<WebDavFileMenuAc
         -> emptyList()
     }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebDavBrowserScreen(
     uiState: WebDavUiState,
@@ -96,6 +99,7 @@ fun WebDavBrowserScreen(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     selectedFile: WebDavItem? = null,
 ) {
@@ -149,37 +153,43 @@ fun WebDavBrowserScreen(
                 )
             }
 
-            AnimatedContent(
-                targetState = uiState.items,
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRefresh,
                 modifier = Modifier.weight(1f),
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "WebDavListContent",
-            ) { items ->
-                LazyColumn(
+            ) {
+                AnimatedContent(
+                    targetState = uiState.items,
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(items) { item ->
-                        val clickAction = webDavItemClickAction(item)
-                        val longPressActions = webDavItemLongPressActions(item)
-                        val supportingLabel = webDavItemSupportingLabel(item)
-                        val isSelected = selectedFile?.path == item.path
-                        MuBoxDenseMediaRow(
-                            title = item.name,
-                            mediaKind = item.mediaKind,
-                            onClick = {
-                                when (clickAction) {
-                                    WebDavItemClickAction.OpenDirectory -> onItemClick(item)
-                                    WebDavItemClickAction.OpenComic -> onItemClick(item)
-                                    WebDavItemClickAction.OpenVideo -> onItemClick(item)
-                                    WebDavItemClickAction.NoAction -> Unit
-                                }
-                            },
-                            subtitle = supportingLabel.ifBlank { null },
-                            selected = isSelected,
-                            onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile(item) } },
-                            onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
-                        )
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "WebDavListContent",
+                ) { items ->
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(items) { item ->
+                            val clickAction = webDavItemClickAction(item)
+                            val longPressActions = webDavItemLongPressActions(item)
+                            val supportingLabel = webDavItemSupportingLabel(item)
+                            val isSelected = selectedFile?.path == item.path
+                            MuBoxDenseMediaRow(
+                                title = item.name,
+                                mediaKind = item.mediaKind,
+                                onClick = {
+                                    when (clickAction) {
+                                        WebDavItemClickAction.OpenDirectory -> onItemClick(item)
+                                        WebDavItemClickAction.OpenComic -> onItemClick(item)
+                                        WebDavItemClickAction.OpenVideo -> onItemClick(item)
+                                        WebDavItemClickAction.NoAction -> Unit
+                                    }
+                                },
+                                subtitle = supportingLabel.ifBlank { null },
+                                selected = isSelected,
+                                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile(item) } },
+                                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+                            )
+                        }
                     }
                 }
             }

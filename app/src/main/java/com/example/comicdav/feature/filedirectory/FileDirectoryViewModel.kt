@@ -14,6 +14,8 @@ import com.example.comicdav.feature.directorylisting.opposite
 import com.example.comicdav.video.MediaKind
 import com.example.comicdav.video.isBrowsableInSources
 import com.example.comicdav.video.mediaKindFor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 data class FileDirectoryBrowserItem(
@@ -41,6 +43,7 @@ data class FileDirectoryUiState(
     val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
     val currentTitle: String? = null,
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val error: String? = null,
     val message: String? = null,
 )
@@ -54,6 +57,8 @@ class FileDirectoryViewModel(
 
     private var navigationStack: List<DirectoryFrame> = emptyList()
     private var currentDirectoryEntries: List<FileDirectoryBrowserItem> = emptyList()
+    private var directoryLoadJob: Job? = null
+    private var directoryLoadGeneration: Long = 0L
 
     init {
         viewModelScope.launch {
@@ -140,9 +145,25 @@ class FileDirectoryViewModel(
     }
 
     fun closeLocalBrowser() {
+        directoryLoadGeneration += 1
+        directoryLoadJob?.cancel()
+        directoryLoadJob = null
         navigationStack = emptyList()
         currentDirectoryEntries = emptyList()
-        uiState = uiState.copy(entries = emptyList(), searchQuery = "", currentTitle = null, error = null)
+        uiState = uiState.copy(
+            entries = emptyList(),
+            searchQuery = "",
+            currentTitle = null,
+            isLoading = false,
+            isRefreshing = false,
+            error = null,
+        )
+    }
+
+    fun refreshCurrentDirectory() {
+        val frame = navigationStack.lastOrNull() ?: return
+        if (uiState.isLoading || uiState.isRefreshing) return
+        loadFrame(frame = frame, isRefresh = true)
     }
 
     fun updateSearchQuery(query: String) {
@@ -227,32 +248,46 @@ class FileDirectoryViewModel(
 
     private fun loadCurrentFrame() {
         val frame = navigationStack.lastOrNull() ?: return
-        uiState = uiState.copy(
-            entries = visibleEntries(query = ""),
-            isLoading = true,
-            searchQuery = "",
-            currentTitle = frame.title,
-            error = null,
-        )
-        viewModelScope.launch {
-            runCatching {
-                localDirectoryReader.listChildren(frame.documentUri)
-            }.fold(
-                onSuccess = { entries ->
-                    currentDirectoryEntries = filterBrowsableLocalDirectoryItems(entries)
-                    uiState = uiState.copy(
-                        entries = visibleEntries(query = ""),
-                        currentTitle = frame.title,
-                        isLoading = false,
-                    )
-                },
-                onFailure = { error ->
-                    uiState = uiState.copy(
-                        isLoading = false,
-                        error = error.message ?: "读取目录失败",
-                    )
-                },
+        loadFrame(frame = frame, isRefresh = false)
+    }
+
+    private fun loadFrame(frame: DirectoryFrame, isRefresh: Boolean) {
+        directoryLoadJob?.cancel()
+        val loadGeneration = ++directoryLoadGeneration
+        uiState = if (isRefresh) {
+            uiState.copy(isRefreshing = true, error = null)
+        } else {
+            uiState.copy(
+                isLoading = true,
+                isRefreshing = false,
+                searchQuery = "",
+                currentTitle = frame.title,
+                error = null,
             )
+        }
+        directoryLoadJob = viewModelScope.launch {
+            try {
+                val entries = localDirectoryReader.listChildren(frame.documentUri)
+                if (loadGeneration != directoryLoadGeneration) return@launch
+                if (navigationStack.lastOrNull() != frame) return@launch
+                currentDirectoryEntries = filterBrowsableLocalDirectoryItems(entries)
+                uiState = uiState.copy(
+                    entries = visibleEntries(),
+                    currentTitle = frame.title,
+                    isLoading = false,
+                    isRefreshing = false,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (loadGeneration != directoryLoadGeneration) return@launch
+                if (navigationStack.lastOrNull() != frame) return@launch
+                uiState = uiState.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    error = error.message ?: "读取目录失败",
+                )
+            }
         }
     }
 

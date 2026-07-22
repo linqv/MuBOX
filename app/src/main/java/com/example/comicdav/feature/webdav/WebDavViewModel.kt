@@ -43,6 +43,7 @@ data class WebDavUiState(
     val status: String = WEB_DAV_STATUS_NOT_CONNECTED,
     val message: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
 )
 
 private data class WebDavUrlFields(
@@ -223,6 +224,15 @@ class WebDavViewModel(
         loadPath(path, keepConnectedStatus = true)
     }
 
+    fun refreshCurrentDirectory() {
+        if (uiState.isLoading || uiState.isRefreshing) return
+        loadPath(
+            path = requestedDirectoryPath,
+            keepConnectedStatus = true,
+            forceRefresh = true,
+        )
+    }
+
     fun updateSearchQuery(query: String) {
         uiState = uiState.copy(searchQuery = query)
         scheduleVisibleItems()
@@ -248,12 +258,16 @@ class WebDavViewModel(
         return true
     }
 
-    private fun loadPath(path: String, keepConnectedStatus: Boolean = false) {
+    private fun loadPath(
+        path: String,
+        keepConnectedStatus: Boolean = false,
+        forceRefresh: Boolean = false,
+    ) {
         directoryLoadJob?.cancel()
         cancelDirectoryPresentation()
         val loadGeneration = ++directoryLoadGeneration
         requestedDirectoryPath = path
-        val cachedItems = directoryCache.get(path)
+        val cachedItems = if (forceRefresh) null else directoryCache.get(path)
         val hadConnectedSession = client != null && connectedAccountId != null
         val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
         client = activeClient
@@ -266,12 +280,22 @@ class WebDavViewModel(
         } else {
             WEB_DAV_STATUS_CONNECTING
         }
-        uiState = uiState.copy(
-            isLoading = true,
-            searchQuery = "",
-            status = loadingStatus,
-            message = "",
-        )
+        uiState = if (forceRefresh) {
+            uiState.copy(
+                isLoading = false,
+                isRefreshing = true,
+                status = loadingStatus,
+                message = "",
+            )
+        } else {
+            uiState.copy(
+                isLoading = true,
+                isRefreshing = false,
+                searchQuery = "",
+                status = loadingStatus,
+                message = "",
+            )
+        }
         directoryLoadJob = viewModelScope.launch {
             try {
                 val listedItems = cachedItems ?: activeClient.list(path)
@@ -318,6 +342,7 @@ class WebDavViewModel(
                     items = visibleItems,
                     status = WEB_DAV_STATUS_CONNECTED,
                     isLoading = false,
+                    isRefreshing = false,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -330,9 +355,10 @@ class WebDavViewModel(
                         status = WEB_DAV_STATUS_CONNECTED,
                         message = message,
                         isLoading = false,
+                        isRefreshing = false,
                     )
                 } else {
-                    uiState.copy(status = message, isLoading = false)
+                    uiState.copy(status = message, isLoading = false, isRefreshing = false)
                 }
             }
         }

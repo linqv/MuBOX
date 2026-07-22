@@ -515,6 +515,34 @@ class WebDavViewModelTest {
     }
 
     @Test
+    fun refreshCurrentWebDavDirectoryBypassesCacheAndPreservesSearch() = runTest(dispatcher) {
+        val client = FakeWebDavClient(
+            items = listOf(directoryItem("Alpha", "/Alpha/")),
+        )
+        val viewModel = testViewModel { _, _, _ -> client }
+
+        viewModel.connectToSavedSource("https://example.test/dav/", null, null, "/Comics/")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.updateSearchQuery("Alpha")
+        dispatcher.scheduler.advanceUntilIdle()
+        client.items = listOf(
+            directoryItem("Alpha 2", "/Alpha 2/"),
+            directoryItem("Beta", "/Beta/"),
+        )
+
+        viewModel.refreshCurrentDirectory()
+
+        assertTrue(viewModel.uiState.isRefreshing)
+        assertEquals(listOf("Alpha"), viewModel.uiState.items.map { it.name })
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.isRefreshing)
+        assertEquals("Alpha", viewModel.uiState.searchQuery)
+        assertEquals(listOf("Alpha 2"), viewModel.uiState.items.map { it.name })
+        assertEquals(listOf("/Comics/", "/Comics/"), client.listedPaths)
+    }
+
+    @Test
     fun changingCredentialsDoesNotReuseAnotherAccountsDirectoryCache() = runTest(dispatcher) {
         val firstClient = FakeWebDavClient(items = listOf(directoryItem("First", "/First/")))
         val secondClient = FakeWebDavClient(items = listOf(directoryItem("Second", "/Second/")))
@@ -599,7 +627,7 @@ class WebDavViewModelTest {
         )
 
     private class FakeWebDavClient(
-        private val items: List<WebDavItem> = emptyList(),
+        var items: List<WebDavItem> = emptyList(),
         private val itemsByPath: Map<String, List<WebDavItem>> = emptyMap(),
         private val failuresByPath: Map<String, Throwable> = emptyMap(),
         private val head: RemoteFileInfo = RemoteFileInfo("/", 0, null, null, supportsRange = true),

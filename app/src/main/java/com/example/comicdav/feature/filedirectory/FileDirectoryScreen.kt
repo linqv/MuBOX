@@ -33,10 +33,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -136,6 +138,7 @@ internal fun fileDirectorySourceSubtitle(source: FileDirectorySourceEntity): Str
             ?: "WebDAV 目录"
     }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileDirectoryScreen(
     uiState: FileDirectoryUiState,
@@ -152,6 +155,7 @@ fun FileDirectoryScreen(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     selectedComic: FileDirectoryBrowserItem? = null,
     selectedVideo: FileDirectoryBrowserItem? = null,
@@ -238,16 +242,22 @@ fun FileDirectoryScreen(
                         CircularProgressIndicator(color = colors.mediaAccent)
                     }
                 } else {
-                    EntryList(
-                        entries = uiState.entries,
-                        onOpenDirectory = onOpenDirectory,
-                        onOpenComic = onOpenComic,
-                        onOpenVideo = onOpenVideo,
-                        onSelectComic = onSelectComic,
-                        onSelectVideo = onSelectVideo,
-                        selectedEntry = selectedVideo ?: selectedComic,
+                    PullToRefreshBox(
+                        isRefreshing = uiState.isRefreshing,
+                        onRefresh = onRefresh,
                         modifier = Modifier.fillMaxSize(),
-                    )
+                    ) {
+                        EntryList(
+                            entries = uiState.entries,
+                            onOpenDirectory = onOpenDirectory,
+                            onOpenComic = onOpenComic,
+                            onOpenVideo = onOpenVideo,
+                            onSelectComic = onSelectComic,
+                            onSelectVideo = onSelectVideo,
+                            selectedEntry = selectedVideo ?: selectedComic,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             } else {
                 SourceList(

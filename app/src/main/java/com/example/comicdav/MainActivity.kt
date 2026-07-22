@@ -1890,6 +1890,7 @@ fun ComicDavApp() {
                                                 onSearchQueryChange = webDavViewModel::updateSearchQuery,
                                                 onSortFieldChange = webDavViewModel::updateSortField,
                                                 onToggleSortDirection = webDavViewModel::toggleSortDirection,
+                                                onRefresh = webDavViewModel::refreshCurrentDirectory,
                                                 selectedFile = selectedWebDavFile,
                                                 modifier = contentModifier,
                                             )
@@ -1975,6 +1976,7 @@ fun ComicDavApp() {
                                                 onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
                                                 onSortFieldChange = fileDirectoryViewModel::updateSortField,
                                                 onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
+                                                onRefresh = fileDirectoryViewModel::refreshCurrentDirectory,
                                                 onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                                 onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
                                                 onEditWebDavSource = ::editWebDavSource,
@@ -2002,6 +2004,7 @@ fun ComicDavApp() {
                                             onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
                                             onSortFieldChange = fileDirectoryViewModel::updateSortField,
                                             onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
+                                            onRefresh = fileDirectoryViewModel::refreshCurrentDirectory,
                                             onDeleteSource = { source -> fileDirectoryViewModel.deleteSource(source.id) },
                                             onDeleteLocalSourceWithFiles = ::deleteLocalSourceWithFiles,
                                             onEditWebDavSource = ::editWebDavSource,
