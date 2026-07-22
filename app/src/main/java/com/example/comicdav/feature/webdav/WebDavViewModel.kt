@@ -249,6 +249,14 @@ class WebDavViewModel(
         scheduleVisibleItems()
     }
 
+    fun playbackDirectoryItems(): List<WebDavItem> =
+        visibleItems(
+            entries = currentDirectoryItems,
+            query = "",
+            sortField = uiState.sortField,
+            sortDirection = uiState.sortDirection,
+        )
+
     fun handleBack(): Boolean {
         val navigationPath = requestedDirectoryPath
         if (isAtMountedRoot(navigationPath)) return false

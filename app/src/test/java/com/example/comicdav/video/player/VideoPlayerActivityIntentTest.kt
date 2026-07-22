@@ -1,12 +1,15 @@
 package com.example.comicdav.video.player
 
 import android.content.Context
+import android.os.Parcel
 import androidx.test.core.app.ApplicationProvider
 import com.example.comicdav.data.AppSettings
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -117,7 +120,8 @@ class VideoPlayerActivityIntentTest {
     }
 
     @Test
-    fun localIntentDoesNotCarryPlaybackQueueExtras() {
+    fun localIntentCarriesEpisodeQueue() {
+        VideoEpisodeQueueRegistry.clearForTests()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val request = LocalVideoOpenRequest(
             uri = "content://media/external/video/42",
@@ -126,13 +130,30 @@ class VideoPlayerActivityIntentTest {
             lastModified = 200L,
         )
 
-        val intent = VideoPlayerActivity.localIntent(context, request)
+        val queue = VideoEpisodeQueue(
+            episodes = listOf(
+                VideoEpisode.local(
+                    request.copy(
+                        uri = "content://media/external/video/41",
+                        displayName = "Episode 01.mkv",
+                    ),
+                ),
+                VideoEpisode.local(request),
+            ),
+            currentIndex = 1,
+        )
+        val intent = VideoPlayerActivity.localIntent(context, request, episodeQueue = queue)
 
-        assertFalse(intent.hasQueueExtras())
+        val queueId = intent.getStringExtra(VideoPlayerActivity.EXTRA_EPISODE_QUEUE_ID)
+        assertNotNull(queueId)
+        val restored = requireNotNull(VideoEpisodeQueueRegistry.consume(queueId))
+        assertEquals(2, restored.episodes.size)
+        assertEquals(1, restored.currentIndex)
     }
 
     @Test
-    fun webDavIntentDoesNotCarryPlaybackQueueExtras() {
+    fun webDavIntentCarriesEpisodeQueue() {
+        VideoEpisodeQueueRegistry.clearForTests()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val request = WebDavVideoOpenRequest(
             accountId = "account",
@@ -144,6 +165,13 @@ class VideoPlayerActivityIntentTest {
             mimeType = "video/x-matroska",
         )
 
+        val queue = VideoEpisodeQueue(
+            episodes = listOf(
+                VideoEpisode.webDav(request.copy(remotePath = "/shows/01.mkv", displayName = "01.mkv")),
+                VideoEpisode.webDav(request),
+            ),
+            currentIndex = 1,
+        )
         val intent = VideoPlayerActivity.webDavIntent(
             context = context,
             request = request,
@@ -154,9 +182,12 @@ class VideoPlayerActivityIntentTest {
             anime4kEnabled = true,
             anime4kMode = Anime4KMode.C_PLUS,
             anime4kQuality = Anime4KQuality.HIGH,
+            episodeQueue = queue,
         )
 
-        assertFalse(intent.hasQueueExtras())
+        val queueId = intent.getStringExtra(VideoPlayerActivity.EXTRA_EPISODE_QUEUE_ID)
+        assertNotNull(queueId)
+        assertEquals(2, VideoEpisodeQueueRegistry.consume(queueId)?.episodes?.size)
         assertEquals(
             true,
             intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
@@ -175,6 +206,80 @@ class VideoPlayerActivityIntentTest {
         )
     }
 
-    private fun android.content.Intent.hasQueueExtras(): Boolean =
-        extras?.keySet().orEmpty().any { it.contains("QUEUE") }
+    @Test
+    fun largeEpisodeQueueStaysOutOfIntentBinderPayload() {
+        VideoEpisodeQueueRegistry.clearForTests()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val episodes = (1..4_000).map { number ->
+            VideoEpisode.local(
+                LocalVideoOpenRequest(
+                    uri = "content://videos/$number",
+                    displayName = "Episode $number.mkv",
+                    size = number.toLong(),
+                    lastModified = number.toLong(),
+                ),
+            )
+        }
+        val queue = VideoEpisodeQueue(episodes = episodes)
+        val intent = VideoPlayerActivity.localIntent(
+            context = context,
+            request = requireNotNull(queue.currentEpisode?.localRequest),
+            episodeQueue = queue,
+        )
+
+        val queueId = intent.getStringExtra(VideoPlayerActivity.EXTRA_EPISODE_QUEUE_ID)
+        assertNotNull(queueId)
+        val parcel = Parcel.obtain()
+        try {
+            parcel.writeBundle(intent.extras)
+            assertTrue("Intent extras should remain well below Binder limits", parcel.dataSize() < 64 * 1024)
+        } finally {
+            parcel.recycle()
+        }
+        assertEquals(4_000, VideoEpisodeQueueRegistry.consume(queueId)?.episodes?.size)
+    }
+
+    @Test
+    fun episodeQueueClampsIndexAndRestoresCurrentEpisodeByStableKey() {
+        val episodes = listOf(
+            VideoEpisode.local(
+                LocalVideoOpenRequest("content://videos/1", "第 1 集.mkv", 1L, 1L),
+            ),
+            VideoEpisode.webDav(
+                WebDavVideoOpenRequest(
+                    accountId = "account",
+                    remotePath = "/shows/2.mkv",
+                    displayName = "第 2 集.mkv",
+                    size = 2L,
+                    etag = "etag-2",
+                    lastModified = 2L,
+                    mimeType = "video/x-matroska",
+                ),
+            ),
+            VideoEpisode.local(
+                LocalVideoOpenRequest("content://videos/3", "第 3 集.mkv", 3L, 3L),
+            ),
+        )
+
+        val clamped = VideoEpisodeQueue(episodes = episodes, currentIndex = 99)
+        val restored = clamped.withCurrentPlaybackKey(episodes[1].playbackKey)
+
+        assertEquals(2, clamped.currentIndex)
+        assertTrue(clamped.hasPrevious)
+        assertFalse(clamped.hasNext)
+        assertEquals(1, restored.currentIndex)
+        assertEquals(VideoEpisodeSource.WEB_DAV, restored.currentEpisode?.source)
+        assertTrue(restored.hasPrevious)
+        assertTrue(restored.hasNext)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun episodeQueueRejectsDuplicatePlaybackKeys() {
+        val episode = VideoEpisode.local(
+            LocalVideoOpenRequest("content://videos/1", "第 1 集.mkv", 1L, 1L),
+        )
+
+        VideoEpisodeQueue(episodes = listOf(episode, episode))
+    }
+
 }

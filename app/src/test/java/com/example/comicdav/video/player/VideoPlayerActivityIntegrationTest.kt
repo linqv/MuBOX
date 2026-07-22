@@ -241,15 +241,31 @@ class VideoPlayerActivityIntegrationTest {
     }
 
     @Test
-    fun screenDoesNotExposePlaybackQueueInFloatingOptionPanel() {
+    fun screenExposesEpisodeNavigationOutsideTheSettingsPanel() {
         val source = activitySourceFile().readText()
 
-        assertTrue(!source.contains("val playbackQueue = intent.playbackQueue()"))
-        assertTrue(!source.contains("queue = playbackQueue"))
-        assertTrue(!source.contains("QueueControls(queue = queue)"))
-        assertTrue(!source.contains("queue?.previousItem()?.displayName"))
-        assertTrue(!source.contains("queue?.currentItem?.displayName"))
-        assertTrue(!source.contains("queue?.nextItem()?.displayName"))
+        assertTrue(source.contains("episodeQueue = intent.episodeQueue()"))
+        assertTrue(source.contains("onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) }"))
+        assertTrue(source.contains("onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) }"))
+        assertTrue(source.contains("EpisodeSelectionPage("))
+        assertTrue(source.contains("PlayerCenterControls("))
+    }
+
+    @Test
+    fun episodeSwitchPausesBeforeSavingAndPreparingRemotePlayback() {
+        val source = activitySourceFile().readText()
+        val switchSource = source.substringAfter("private fun switchToEpisode(targetIndex: Int)")
+            .substringBefore("private suspend fun prepareEpisode")
+
+        val pauseIndex = switchSource.indexOf("controller.setPaused(true)")
+        val saveIndex = switchSource.indexOf("savePlaybackPositionAsync()")
+        val prepareIndex = switchSource.indexOf("prepareEpisode(episode)")
+        assertTrue(pauseIndex >= 0)
+        assertTrue(saveIndex > pauseIndex)
+        assertTrue(prepareIndex > saveIndex)
+        assertTrue(switchSource.contains("playEpisodeWhenFileLoaded = true"))
+        assertTrue(source.contains("MPV_EVENT_FILE_LOADED && playEpisodeWhenFileLoaded"))
+        assertTrue(source.contains("controller.setPaused(false)"))
     }
 
     @Test

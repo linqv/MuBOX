@@ -37,13 +37,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.comicdav.appSettingsDataStore
+import com.example.comicdav.data.AppSettingsStore
+import com.example.comicdav.data.WebDavAccountStore
+import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.ui.ComicDavTheme
 import com.example.comicdav.video.LocalVideoOpenRequest
 import com.example.comicdav.video.VideoSubtitleOpenRequest
 import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.proxy.MuBoxVideoProxy
 import com.example.comicdav.video.proxy.VideoProxyManager
+import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.VideoProxyRuntimeStats
+import com.example.comicdav.webDavAccountDataStore
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
@@ -54,6 +60,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -112,6 +119,26 @@ class VideoPlayerActivity : ComponentActivity() {
     private var loadJob: Job? = null
     private var progressSaveJob: Job? = null
     private var proxyStatistics by mutableStateOf<VideoProxyStatistics?>(null)
+    private var episodeQueue: VideoEpisodeQueue? = null
+    private var currentEpisodeIndex by mutableIntStateOf(0)
+    private var isEpisodeSwitching by mutableStateOf(false)
+    private var isActivityInForeground = false
+    @Volatile
+    private var ignoreNextMpvStopEndFile = false
+    @Volatile
+    private var playEpisodeWhenFileLoaded = false
+    private var playerMediaContext by mutableStateOf(
+        VideoPlayerMediaContext(displayName = "视频", source = SOURCE_LOCAL, remotePath = null),
+    )
+    private val playerSettingsStore by lazy {
+        AppSettingsStore(applicationContext.appSettingsDataStore)
+    }
+    private val playerWebDavAccountStore by lazy {
+        WebDavAccountStore(
+            dataStore = applicationContext.webDavAccountDataStore,
+            cipher = AndroidKeystoreCredentialCipher(),
+        )
+    }
     private val systemBarsHandler = Handler(Looper.getMainLooper())
     private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
     private val playbackSessionId: String = UUID.randomUUID().toString()
@@ -174,7 +201,20 @@ class VideoPlayerActivity : ComponentActivity() {
         }
 
         override fun event(eventId: Int, data: MPVNode) {
+            if (eventId == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED && playEpisodeWhenFileLoaded) {
+                runOnUiThread {
+                    if (!playEpisodeWhenFileLoaded) return@runOnUiThread
+                    playEpisodeWhenFileLoaded = false
+                    if (isActivityInForeground && canLoadMpv()) {
+                        controller.setPaused(false)
+                    }
+                }
+            }
             if (eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE) {
+                if (ignoreNextMpvStopEndFile && isMpvEndFileStop(data)) {
+                    ignoreNextMpvStopEndFile = false
+                    return
+                }
                 val errorMessage = mpvEndFileErrorMessage(data)
                 runOnUiThread {
                     if (errorMessage == null) {
@@ -200,13 +240,15 @@ class VideoPlayerActivity : ComponentActivity() {
         val uri = intent.getStringExtra(EXTRA_URI)
         val displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: intent.data?.lastPathSegment ?: "视频"
         val source = intent.getStringExtra(EXTRA_SOURCE)
-        val mediaContext = VideoPlayerMediaContext(
+        playerMediaContext = VideoPlayerMediaContext(
             displayName = displayName,
             source = source ?: SOURCE_LOCAL,
             remotePath = intent.getStringExtra(EXTRA_REMOTE_PATH),
         )
         val subtitles = intent.subtitleRequests()
         playbackKey = intent.getStringExtra(EXTRA_PLAYBACK_KEY)
+        episodeQueue = intent.episodeQueue()?.withCurrentPlaybackKey(playbackKey)
+        currentEpisodeIndex = episodeQueue?.currentIndex ?: 0
         resumeEnabled = intent.getBooleanExtra(EXTRA_RESUME_ENABLED, true)
         val initialVideoOutputMode = intent.getStringExtra(EXTRA_VIDEO_OUTPUT_MODE)
             .toEnumOrDefault(VideoOutputMode.AUTO)
@@ -302,7 +344,7 @@ class VideoPlayerActivity : ComponentActivity() {
             },
             onStartForegroundPlayback = {
                 runCatching {
-                    VideoPlaybackService.start(this, mediaContext.displayName, playbackSessionId)
+                    VideoPlaybackService.start(this, playerMediaContext.displayName, playbackSessionId)
                     true
                 }.getOrElse {
                     controller.onError("后台播放启动失败，已暂停")
@@ -393,7 +435,13 @@ class VideoPlayerActivity : ComponentActivity() {
                     onTemporarySpeedDelta = controller::adjustTemporarySpeed,
                     onTemporarySpeedEnded = controller::endTemporarySpeed,
                     onClearHud = controller::clearGestureHud,
-                    mediaContext = mediaContext,
+                    mediaContext = playerMediaContext,
+                    episodeQueue = episodeQueue,
+                    currentEpisodeIndex = currentEpisodeIndex,
+                    isEpisodeSwitching = isEpisodeSwitching,
+                    onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) },
+                    onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) },
+                    onEpisodeSelected = ::switchToEpisode,
                     controlsAutoHideMillis = controlsAutoHideMillis,
                     proxyStatistics = proxyStatistics,
                     proxyDebugInfoEnabled = proxyDebugInfoEnabled,
@@ -401,48 +449,56 @@ class VideoPlayerActivity : ComponentActivity() {
             }
         }
 
+        isEpisodeSwitching = true
         loadJob = activityScope.launch {
-            if (!prepareMpv()) return@launch
-            controller.setStartupRendererState(
-                videoOutputMode = startupCompatibility.effectiveVideoOutputMode,
-                gpuApiMode = initialGpuApiMode,
-                decoderMode = initialVideoDecoderMode,
-            )
-            val startPositionMillis = loadVideoStartPosition(
-                resumeEnabled = resumeEnabled,
-                playbackKey = playbackKey,
-                loadPosition = { key ->
-                    withContext(Dispatchers.IO) {
-                        playbackStateStore.loadPosition(key)
-                    }
-                },
-                onFailure = { error ->
-                    System.err.println("Failed to load video resume position: ${error.message ?: error::class.java.simpleName}")
-                },
-            )
-            if (!canLoadMpv()) return@launch
-            val loaded = loadMpv(
-                uri = uri,
-                displayName = displayName,
-                startPositionMillis = startPositionMillis,
-                subtitles = subtitles,
-            )
-            if (loaded) startPlaybackProgressAutoSave()
+            try {
+                if (!prepareMpv()) return@launch
+                controller.setStartupRendererState(
+                    videoOutputMode = startupCompatibility.effectiveVideoOutputMode,
+                    gpuApiMode = initialGpuApiMode,
+                    decoderMode = initialVideoDecoderMode,
+                )
+                val startPositionMillis = loadVideoStartPosition(
+                    resumeEnabled = resumeEnabled,
+                    playbackKey = playbackKey,
+                    loadPosition = { key ->
+                        withContext(Dispatchers.IO) {
+                            playbackStateStore.loadPosition(key)
+                        }
+                    },
+                    onFailure = { error ->
+                        System.err.println("Failed to load video resume position: ${error.message ?: error::class.java.simpleName}")
+                    },
+                )
+                if (!canLoadMpv()) return@launch
+                val loaded = loadMpv(
+                    uri = uri,
+                    displayName = displayName,
+                    startPositionMillis = startPositionMillis,
+                    subtitles = subtitles,
+                    isWebDav = source == SOURCE_WEB_DAV,
+                )
+                if (loaded) startPlaybackProgressAutoSave()
+            } finally {
+                isEpisodeSwitching = false
+            }
         }
     }
 
     override fun onStart() {
         super.onStart()
+        isActivityInForeground = true
         if (::playbackLifecyclePolicy.isInitialized) {
             playbackLifecyclePolicy.returnToForeground()
         }
     }
 
     override fun onStop() {
-        super.onStop()
+        isActivityInForeground = false
         if (::playbackLifecyclePolicy.isInitialized && !isFinishing && !isCleaningUp) {
             playbackLifecyclePolicy.moveToBackground()
         }
+        super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -549,6 +605,7 @@ class VideoPlayerActivity : ComponentActivity() {
         if (isCleaningUp) return
         cancelPendingLoad()
         stopPlaybackProgressAutoSave()
+        playEpisodeWhenFileLoaded = false
         isCleaningUp = true
         try {
             savePlaybackPositionAsync()
@@ -602,6 +659,7 @@ class VideoPlayerActivity : ComponentActivity() {
         displayName: String,
         startPositionMillis: Long,
         subtitles: List<VideoSubtitleOpenRequest>,
+        isWebDav: Boolean,
     ): Boolean {
         if (!canLoadMpv()) return false
         val resolvedInput = try {
@@ -609,7 +667,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 resolvePlaybackInput(
                     uri = uri,
                     subtitles = subtitles,
-                    isWebDav = intent.getStringExtra(EXTRA_SOURCE) == SOURCE_WEB_DAV,
+                    isWebDav = isWebDav,
                 )
             }
         } catch (error: CancellationException) {
@@ -713,6 +771,117 @@ class VideoPlayerActivity : ComponentActivity() {
         )
     }
 
+    private fun switchToEpisode(targetIndex: Int) {
+        val queue = episodeQueue ?: return
+        val episode = queue.episodes.getOrNull(targetIndex) ?: return
+        if (targetIndex == currentEpisodeIndex || isEpisodeSwitching) return
+
+        val wasPlayingBeforeSwitch = !controller.state.value.isPaused
+        controller.setPaused(true)
+        savePlaybackPositionAsync()
+        isEpisodeSwitching = true
+        loadJob = activityScope.launch {
+            var preparedEpisode: PreparedVideoEpisode? = null
+            var adoptedEpisode = false
+            try {
+                preparedEpisode = prepareEpisode(episode)
+                val startPositionMillis = loadVideoStartPosition(
+                    resumeEnabled = resumeEnabled,
+                    playbackKey = episode.playbackKey,
+                    loadPosition = { key ->
+                        withContext(Dispatchers.IO) {
+                            playbackStateStore.loadPosition(key)
+                        }
+                    },
+                    onFailure = { error ->
+                        System.err.println("Failed to load episode resume position: ${error.message ?: error::class.java.simpleName}")
+                    },
+                )
+                if (!canLoadMpv()) return@launch
+                ignoreNextMpvStopEndFile = true
+                playEpisodeWhenFileLoaded = true
+                val loaded = loadMpv(
+                    uri = preparedEpisode.uri,
+                    displayName = episode.displayName,
+                    startPositionMillis = startPositionMillis,
+                    subtitles = preparedEpisode.subtitles,
+                    isWebDav = episode.source == VideoEpisodeSource.WEB_DAV,
+                )
+                if (!loaded) {
+                    ignoreNextMpvStopEndFile = false
+                    return@launch
+                }
+
+                val previousStreamIds = webDavStreamIds
+                webDavStreamIds = preparedEpisode.webDavStreamIds
+                playbackKey = episode.playbackKey
+                currentEpisodeIndex = targetIndex
+                playerMediaContext = VideoPlayerMediaContext(
+                    displayName = episode.displayName,
+                    source = if (episode.source == VideoEpisodeSource.WEB_DAV) SOURCE_WEB_DAV else SOURCE_LOCAL,
+                    remotePath = episode.webDavRequest?.remotePath ?: episode.localRequest?.uri,
+                )
+                adoptedEpisode = true
+                VideoProxyManager.close(previousStreamIds)
+                startPlaybackProgressAutoSave()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                controller.onError(error.message ?: "切换剧集失败，请重试")
+            } finally {
+                if (!adoptedEpisode) {
+                    playEpisodeWhenFileLoaded = false
+                    preparedEpisode?.webDavStreamIds?.let(VideoProxyManager::close)
+                    if (wasPlayingBeforeSwitch && isActivityInForeground && canLoadMpv()) {
+                        if (audioFocusController.request()) controller.setPaused(false)
+                    }
+                }
+                isEpisodeSwitching = false
+            }
+        }
+    }
+
+    private suspend fun prepareEpisode(episode: VideoEpisode): PreparedVideoEpisode =
+        when (episode.source) {
+            VideoEpisodeSource.LOCAL -> {
+                val request = requireNotNull(episode.localRequest)
+                PreparedVideoEpisode(
+                    uri = request.uri,
+                    subtitles = request.subtitles,
+                )
+            }
+            VideoEpisodeSource.WEB_DAV -> {
+                val request = requireNotNull(episode.webDavRequest)
+                val account = withContext(Dispatchers.IO) {
+                    playerWebDavAccountStore.loadAccount(request.accountId)
+                } ?: error("缺少 WebDAV 账号，请重新连接后再切换剧集")
+                val proxySettings = withContext(Dispatchers.IO) {
+                    playerSettingsStore.settings.first().let { settings ->
+                        VideoProxySettings(
+                            seekOptimizationEnabled = settings.videoSeekOptimizationEnabled,
+                            forwardPrefetchMode = settings.videoForwardPrefetchMode,
+                            diagnosticsMode = settings.videoProxyDiagnosticsMode,
+                        )
+                    }
+                }
+                val session = VideoProxyManager.open(
+                    request = request,
+                    account = account,
+                    proxySettings = proxySettings,
+                )
+                PreparedVideoEpisode(
+                    uri = session.url,
+                    subtitles = request.subtitles.zip(session.subtitleUrls).map { (subtitle, subtitleUrl) ->
+                        VideoSubtitleOpenRequest(
+                            uri = subtitleUrl,
+                            displayName = subtitle.displayName,
+                        )
+                    },
+                    webDavStreamIds = session.streamIds,
+                )
+            }
+        }
+
     private fun handleBrightnessGesture(deltaPercent: Int) {
         controller.adjustGestureBrightness(deltaPercent)
         controller.state.value.gestureState.brightnessPercent?.let(::applyScreenBrightnessPercent)
@@ -735,6 +904,9 @@ class VideoPlayerActivity : ComponentActivity() {
             )
         }
     }
+
+    private fun Intent.episodeQueue(): VideoEpisodeQueue? =
+        VideoEpisodeQueueRegistry.consume(getStringExtra(EXTRA_EPISODE_QUEUE_ID))
 
     companion object {
         private const val REQUEST_POST_NOTIFICATIONS = 2001
@@ -760,6 +932,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_ANIME4K_ENABLED = "com.example.comicdav.video.extra.ANIME4K_ENABLED"
         const val EXTRA_ANIME4K_MODE = "com.example.comicdav.video.extra.ANIME4K_MODE"
         const val EXTRA_ANIME4K_QUALITY = "com.example.comicdav.video.extra.ANIME4K_QUALITY"
+        const val EXTRA_EPISODE_QUEUE_ID = "com.example.comicdav.video.extra.EPISODE_QUEUE_ID"
         const val SOURCE_LOCAL = "local"
 
         fun localIntent(
@@ -777,6 +950,7 @@ class VideoPlayerActivity : ComponentActivity() {
             anime4kEnabled: Boolean = false,
             anime4kMode: Anime4KMode = Anime4KMode.A,
             anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+            episodeQueue: VideoEpisodeQueue? = null,
         ): Intent =
             Intent(context, VideoPlayerActivity::class.java)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -807,6 +981,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 .putExtra(EXTRA_ANIME4K_MODE, anime4kMode.name)
                 .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
                 .putSubtitleExtras(request.subtitles)
+                .putEpisodeQueueExtra(episodeQueue)
 
         fun webDavIntent(
             context: Context,
@@ -826,6 +1001,7 @@ class VideoPlayerActivity : ComponentActivity() {
             anime4kEnabled: Boolean = false,
             anime4kMode: Anime4KMode = Anime4KMode.A,
             anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+            episodeQueue: VideoEpisodeQueue? = null,
         ): Intent =
             request.subtitles.zip(subtitleUrls)
                 .map { (subtitle, subtitleUrl) ->
@@ -866,6 +1042,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     .putExtra(EXTRA_ANIME4K_QUALITY, anime4kQuality.name)
                     .putStringArrayListExtra(EXTRA_WEB_DAV_STREAM_IDS, ArrayList(streamIds))
                     .putSubtitleExtras(subtitles)
+                    .putEpisodeQueueExtra(episodeQueue)
                 }
 
         private const val SOURCE_WEB_DAV = "webdav"
@@ -873,6 +1050,13 @@ class VideoPlayerActivity : ComponentActivity() {
         private fun Intent.putSubtitleExtras(subtitles: List<VideoSubtitleOpenRequest>): Intent =
             putStringArrayListExtra(EXTRA_SUBTITLE_URIS, ArrayList(subtitles.map { it.uri }))
                 .putStringArrayListExtra(EXTRA_SUBTITLE_NAMES, ArrayList(subtitles.map { it.displayName }))
+
+        private fun Intent.putEpisodeQueueExtra(episodeQueue: VideoEpisodeQueue?): Intent =
+            apply {
+                if (episodeQueue != null) {
+                    putExtra(EXTRA_EPISODE_QUEUE_ID, VideoEpisodeQueueRegistry.register(episodeQueue))
+                }
+            }
     }
 }
 
@@ -907,6 +1091,12 @@ private fun VideoPlayerScreen(
     onTemporarySpeedEnded: () -> Unit,
     onClearHud: () -> Unit,
     mediaContext: VideoPlayerMediaContext,
+    episodeQueue: VideoEpisodeQueue?,
+    currentEpisodeIndex: Int,
+    isEpisodeSwitching: Boolean,
+    onPreviousEpisode: () -> Unit,
+    onNextEpisode: () -> Unit,
+    onEpisodeSelected: (Int) -> Unit,
     controlsAutoHideMillis: Int,
     proxyStatistics: VideoProxyStatistics?,
     proxyDebugInfoEnabled: Boolean,
@@ -921,18 +1111,26 @@ private fun VideoPlayerScreen(
     }
 
     var menuVisible by remember { mutableStateOf(false) }
+    var episodePageVisible by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
     var lockButtonVisible by remember { mutableStateOf(true) }
     var lockButtonRevealSignal by remember { mutableIntStateOf(0) }
     val controlsLocked = state.gestureState.controlsLocked
 
+    BackHandler(enabled = episodePageVisible) {
+        episodePageVisible = false
+    }
+
     LaunchedEffect(
         controlsVisible,
         menuVisible,
+        episodePageVisible,
         controlsLocked,
         controlsAutoHideMillis,
     ) {
-        if (!controlsVisible || controlsLocked || menuVisible || controlsAutoHideMillis <= 0) return@LaunchedEffect
+        if (!controlsVisible || controlsLocked || menuVisible || episodePageVisible || controlsAutoHideMillis <= 0) {
+            return@LaunchedEffect
+        }
         delay(controlsAutoHideMillis.toLong())
         menuVisible = false
         controlsVisible = false
@@ -941,6 +1139,7 @@ private fun VideoPlayerScreen(
     LaunchedEffect(controlsLocked) {
         if (controlsLocked) {
             menuVisible = false
+            episodePageVisible = false
             controlsVisible = false
             lockButtonVisible = false
         } else {
@@ -985,6 +1184,7 @@ private fun VideoPlayerScreen(
                     onClearHud = onClearHud,
                     onOverlayTap = {
                         menuVisible = false
+                        episodePageVisible = false
                         controlsVisible = !controlsVisible
                     },
                     modifier = Modifier.fillMaxSize(),
@@ -997,7 +1197,13 @@ private fun VideoPlayerScreen(
                     source = mediaContext.source,
                     onClose = onClose,
                     onMenuClick = {
+                        episodePageVisible = false
                         menuVisible = !menuVisible
+                    },
+                    showEpisodeButton = (episodeQueue?.episodes?.size ?: 0) > 1,
+                    onEpisodeClick = {
+                        menuVisible = false
+                        episodePageVisible = true
                     },
                     onOrientationToggle = onOrientationToggle,
                     modifier = Modifier
@@ -1012,6 +1218,7 @@ private fun VideoPlayerScreen(
                         val nextLocked = !controlsLocked
                         onControlsLockedChanged(nextLocked)
                         menuVisible = false
+                        episodePageVisible = false
                         controlsVisible = !nextLocked
                         lockButtonVisible = !nextLocked
                     },
@@ -1052,6 +1259,11 @@ private fun VideoPlayerScreen(
             if (!controlsLocked && controlsVisible) {
                 PlayerCenterControls(
                     isPaused = state.isPaused,
+                    hasPreviousEpisode = episodeQueue?.let { currentEpisodeIndex > 0 } == true,
+                    hasNextEpisode = episodeQueue?.let { currentEpisodeIndex < it.episodes.lastIndex } == true,
+                    isEpisodeSwitching = isEpisodeSwitching,
+                    onPreviousEpisode = onPreviousEpisode,
+                    onNextEpisode = onNextEpisode,
                     onPlayPause = {
                         controlsVisible = true
                         onPlayPause()
@@ -1079,6 +1291,21 @@ private fun VideoPlayerScreen(
                         onSeek(it)
                     },
                     modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+
+            if (!controlsLocked && episodePageVisible && episodeQueue != null) {
+                EpisodeSelectionPage(
+                    queue = episodeQueue,
+                    currentEpisodeIndex = currentEpisodeIndex,
+                    isSwitching = isEpisodeSwitching,
+                    onDismiss = { episodePageVisible = false },
+                    onEpisodeSelected = { index ->
+                        episodePageVisible = false
+                        controlsVisible = true
+                        onEpisodeSelected(index)
+                    },
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -1126,6 +1353,12 @@ private data class ResolvedPlaybackInput(
 private data class ResolvedSubtitlePlaybackUri(
     val uri: ManagedPlaybackUri,
     val displayName: String,
+)
+
+private data class PreparedVideoEpisode(
+    val uri: String,
+    val subtitles: List<VideoSubtitleOpenRequest>,
+    val webDavStreamIds: List<String> = emptyList(),
 )
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =

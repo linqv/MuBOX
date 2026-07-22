@@ -119,6 +119,28 @@ class WebDavViewModelTest {
     }
 
     @Test
+    fun playbackDirectoryItemsIgnoreSearchButPreserveDirectorySort() = runTest(dispatcher) {
+        val client = FakeWebDavClient(
+            items = listOf(
+                WebDavItem("Show E02.mkv", "/Show E02.mkv", false, 2L, null, null),
+                WebDavItem("Show E01.mkv", "/Show E01.mkv", false, 1L, null, null),
+            ),
+        )
+        val viewModel = testViewModel { _, _, _ -> client }
+
+        viewModel.connectToSavedSource("https://example.test/dav/", null, null, "/")
+        dispatcher.scheduler.advanceUntilIdle()
+        viewModel.updateSearchQuery("E02")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("Show E02.mkv"), viewModel.uiState.items.map { it.name })
+        assertEquals(
+            listOf("Show E01.mkv", "Show E02.mkv"),
+            viewModel.playbackDirectoryItems().map { it.name },
+        )
+    }
+
+    @Test
     fun changingSortFieldUsesComputationDispatcher() = runTest(dispatcher) {
         val computationDispatcher = QueuedCoroutineDispatcher()
         val client = FakeWebDavClient(

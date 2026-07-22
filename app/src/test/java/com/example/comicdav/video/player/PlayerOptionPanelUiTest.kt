@@ -47,6 +47,14 @@ class PlayerOptionPanelUiTest {
     }
 
     @Test
+    fun playerExposesPreviousNextAndEpisodeSelectionControls() {
+        assertEquals(
+            listOf("上一集", "下一集", "选集"),
+            episodeNavigationControlDescriptions(),
+        )
+    }
+
+    @Test
     fun scalePanelOnlyContainsPerPlaybackVisualControls() {
         assertEquals(
             listOf("画面", "Anime4K", "预设", "质量"),

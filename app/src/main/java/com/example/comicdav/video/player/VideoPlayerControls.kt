@@ -3,6 +3,7 @@ package com.example.comicdav.video.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -10,17 +11,29 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -32,6 +45,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +56,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -46,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToLong
@@ -60,6 +80,8 @@ internal fun PlayerTopBar(
     source: String,
     onClose: () -> Unit,
     onMenuClick: () -> Unit,
+    showEpisodeButton: Boolean,
+    onEpisodeClick: () -> Unit,
     onOrientationToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -70,25 +92,45 @@ internal fun PlayerTopBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onOrientationToggle, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = onOrientationToggle, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
             Icon(Icons.Filled.ScreenRotation, "切换横竖屏", tint = Color.White, modifier = Modifier.size(22.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = onMenuClick, modifier = Modifier.size(40.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (showEpisodeButton) {
+                TextButton(
+                    onClick = onEpisodeClick,
+                    modifier = Modifier.heightIn(min = PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.PlaylistPlay,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("选集", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
                 Icon(Icons.Filled.Menu, "菜单", tint = Color.White, modifier = Modifier.size(22.dp))
             }
-            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onClose, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
                 Icon(Icons.Filled.Close, "关闭", tint = Color.White, modifier = Modifier.size(22.dp))
             }
         }
     }
 }
 
-// ─── Center controls: rewind 10s, play/pause, forward 10s ───
+// ─── Center controls: previous, seek, play/pause, seek, next ───
 
 @Composable
 internal fun PlayerCenterControls(
     isPaused: Boolean,
+    hasPreviousEpisode: Boolean,
+    hasNextEpisode: Boolean,
+    isEpisodeSwitching: Boolean,
+    onPreviousEpisode: () -> Unit,
+    onNextEpisode: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
@@ -96,22 +138,203 @@ internal fun PlayerCenterControls(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(36.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onSeekBackward, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Filled.Replay10, "后退10秒", tint = Color.White, modifier = Modifier.size(32.dp))
-        }
-        IconButton(onClick = onPlayPause, modifier = Modifier.size(56.dp)) {
+        IconButton(
+            onClick = onPreviousEpisode,
+            enabled = hasPreviousEpisode && !isEpisodeSwitching,
+            modifier = Modifier.size(44.dp),
+        ) {
             Icon(
-                if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                if (isPaused) "播放" else "暂停",
-                tint = Color.White,
-                modifier = Modifier.size(42.dp),
+                Icons.Filled.SkipPrevious,
+                "上一集",
+                tint = if (hasPreviousEpisode && !isEpisodeSwitching) Color.White else Color.White.copy(alpha = 0.32f),
+                modifier = Modifier.size(28.dp),
             )
         }
-        IconButton(onClick = onSeekForward, modifier = Modifier.size(48.dp)) {
+        IconButton(
+            onClick = onSeekBackward,
+            enabled = !isEpisodeSwitching,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(Icons.Filled.Replay10, "后退10秒", tint = Color.White, modifier = Modifier.size(32.dp))
+        }
+        IconButton(
+            onClick = onPlayPause,
+            enabled = !isEpisodeSwitching,
+            modifier = Modifier.size(56.dp),
+        ) {
+            if (isEpisodeSwitching) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(30.dp),
+                    strokeWidth = 3.dp,
+                    color = Color.White,
+                )
+            } else {
+                Icon(
+                    if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    if (isPaused) "播放" else "暂停",
+                    tint = Color.White,
+                    modifier = Modifier.size(42.dp),
+                )
+            }
+        }
+        IconButton(
+            onClick = onSeekForward,
+            enabled = !isEpisodeSwitching,
+            modifier = Modifier.size(48.dp),
+        ) {
             Icon(Icons.Filled.Forward10, "前进10秒", tint = Color.White, modifier = Modifier.size(32.dp))
+        }
+        IconButton(
+            onClick = onNextEpisode,
+            enabled = hasNextEpisode && !isEpisodeSwitching,
+            modifier = Modifier.size(44.dp),
+        ) {
+            Icon(
+                Icons.Filled.SkipNext,
+                "下一集",
+                tint = if (hasNextEpisode && !isEpisodeSwitching) Color.White else Color.White.copy(alpha = 0.32f),
+                modifier = Modifier.size(28.dp),
+            )
+        }
+    }
+}
+
+// ─── Episode selection: adaptive full-page sheet ───
+
+@Composable
+internal fun EpisodeSelectionPage(
+    queue: VideoEpisodeQueue,
+    currentEpisodeIndex: Int,
+    isSwitching: Boolean,
+    onDismiss: () -> Unit,
+    onEpisodeSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = rememberMuBoxColors()
+    val firstVisibleIndex = (currentEpisodeIndex - 2).coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstVisibleIndex)
+    LaunchedEffect(currentEpisodeIndex) {
+        if (queue.episodes.isNotEmpty()) {
+            listState.scrollToItem((currentEpisodeIndex - 2).coerceAtLeast(0))
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val sheetWidthFraction = if (maxWidth < 600.dp) 1f else 0.46f
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (sheetWidthFraction < 1f) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color.Black.copy(alpha = 0.58f))
+                        .clickable(onClick = onDismiss),
+                )
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(sheetWidthFraction),
+                color = colors.playerSheet,
+                contentColor = Color.White,
+                border = BorderStroke(1.dp, colors.playerOsdBorder),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 64.dp)
+                            .padding(start = 20.dp, end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("选集", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                            Text(
+                                "第 ${(currentEpisodeIndex + 1).coerceAtMost(queue.episodes.size)} / ${queue.episodes.size} 集",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f),
+                            )
+                        }
+                        if (isSwitching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = colors.playerProgress,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.Close, "关闭选集", tint = Color.White)
+                        }
+                    }
+                    HorizontalDivider(color = colors.playerOsdBorder)
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        itemsIndexed(
+                            items = queue.episodes,
+                            key = { _, episode -> episode.playbackKey },
+                        ) { index, episode ->
+                            val isCurrent = index == currentEpisodeIndex
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isCurrent) colors.playerOsdSelected else Color.White.copy(alpha = 0.06f),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (isCurrent) colors.playerProgress else colors.playerOsdBorder,
+                                ),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 56.dp)
+                                        .clickable(
+                                            enabled = !isCurrent && !isSwitching,
+                                            onClick = { onEpisodeSelected(index) },
+                                        )
+                                        .semantics { selected = isCurrent }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = (index + 1).toString().padStart(2, '0'),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (isCurrent) colors.playerProgress else Color.White.copy(alpha = 0.58f),
+                                    )
+                                    Spacer(Modifier.width(14.dp))
+                                    Text(
+                                        text = episode.displayName,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (isCurrent) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Icon(
+                                            Icons.Filled.Check,
+                                            contentDescription = "正在播放",
+                                            tint = colors.playerProgress,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -440,6 +663,8 @@ internal fun PlayerOptionPanel.sideRailDescriptor(): PlayerOptionPanelDescriptor
 
 internal fun rightSideControlDescriptions(): List<String> =
     listOf("切换横竖屏") + PlayerOptionPanel.entries.map { it.sideRailDescriptor().contentDescription }
+
+internal fun episodeNavigationControlDescriptions(): List<String> = listOf("上一集", "下一集", "选集")
 
 internal fun bottomQuickControlLabels(): List<String> = listOf("倍速", "画面", "解码")
 

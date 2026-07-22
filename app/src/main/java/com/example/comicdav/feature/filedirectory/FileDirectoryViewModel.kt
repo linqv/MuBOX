@@ -190,6 +190,9 @@ class FileDirectoryViewModel(
         )
     }
 
+    fun playbackDirectoryEntries(): List<FileDirectoryBrowserItem> =
+        visibleEntries(query = "")
+
     fun deleteSource(id: Long) {
         viewModelScope.launch {
             runCatching {

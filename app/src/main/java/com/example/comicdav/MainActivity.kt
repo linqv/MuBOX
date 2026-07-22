@@ -81,6 +81,8 @@ import com.example.comicdav.video.WebDavVideoOpenRequest
 import com.example.comicdav.video.findSidecarSubtitles
 import com.example.comicdav.video.mediaKindFor
 import com.example.comicdav.video.mimeTypeForMediaFileName
+import com.example.comicdav.video.player.VideoEpisode
+import com.example.comicdav.video.player.VideoEpisodeQueue
 import com.example.comicdav.video.player.VideoPlayerActivity
 import com.example.comicdav.video.proxy.VideoProxyManager
 import com.example.comicdav.video.proxy.VideoProxySettings
@@ -431,23 +433,12 @@ fun ComicDavApp() {
 
     fun openLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
         pendingWebDavVideoOpen = null
-        val request = LocalVideoOpenRequest(
-            uri = item.uri,
-            displayName = item.name,
-            size = item.size,
-            lastModified = item.lastModified,
-            subtitles = findSidecarSubtitles(
-                videoFileName = item.name,
-                candidates = fileDirectoryUiState.entries,
-                nameOf = FileDirectoryBrowserItem::name,
-                isDirectoryOf = FileDirectoryBrowserItem::isDirectory,
-            ).map { subtitle ->
-                VideoSubtitleOpenRequest(
-                    uri = subtitle.uri,
-                    displayName = subtitle.name,
-                )
-            },
+        val episodeQueue = buildLocalDirectoryEpisodeQueue(
+            entries = fileDirectoryViewModel.playbackDirectoryEntries(),
+            currentItem = item,
         )
+        val request = episodeQueue?.currentEpisode?.localRequest
+            ?: localVideoEpisodeRequest(item, fileDirectoryUiState.entries)
         pendingLocalVideoOpen = request
         localOpenError = null
         openVideoPlayer(
@@ -466,6 +457,7 @@ fun ComicDavApp() {
                 anime4kEnabled = appSettings.anime4kEnabled,
                 anime4kMode = appSettings.anime4kMode,
                 anime4kQuality = appSettings.anime4kQuality,
+                episodeQueue = episodeQueue,
             ),
         )
     }
@@ -859,30 +851,13 @@ fun ComicDavApp() {
 
     fun openWebDavVideo(item: WebDavItem) {
         val accountId = webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
-        val request = WebDavVideoOpenRequest(
+        val episodeQueue = buildWebDavDirectoryEpisodeQueue(
             accountId = accountId,
-            remotePath = item.path,
-            displayName = item.name,
-            size = item.size,
-            etag = item.etag,
-            lastModified = item.lastModified,
-            mimeType = mimeTypeForMediaFileName(item.name),
-            subtitles = findSidecarSubtitles(
-                videoFileName = item.name,
-                candidates = uiState.items,
-                nameOf = WebDavItem::name,
-                isDirectoryOf = WebDavItem::isDirectory,
-            ).map { subtitle ->
-                WebDavSubtitleOpenRequest(
-                    remotePath = subtitle.path,
-                    displayName = subtitle.name,
-                    size = subtitle.size,
-                    etag = subtitle.etag,
-                    lastModified = subtitle.lastModified,
-                    mimeType = mimeTypeForMediaFileName(subtitle.name),
-                )
-            },
+            items = webDavViewModel.playbackDirectoryItems(),
+            currentItem = item,
         )
+        val request = episodeQueue?.currentEpisode?.webDavRequest
+            ?: webDavVideoEpisodeRequest(accountId, item, uiState.items)
         pendingLocalVideoOpen = null
         pendingWebDavVideoOpen = request
         localOpenError = null
@@ -915,6 +890,7 @@ fun ComicDavApp() {
                             anime4kEnabled = appSettings.anime4kEnabled,
                             anime4kMode = appSettings.anime4kMode,
                             anime4kQuality = appSettings.anime4kQuality,
+                            episodeQueue = episodeQueue,
                         ),
                     )
                 }
@@ -2162,3 +2138,88 @@ fun ComicDavApp() {
         }
     }
 }
+
+private fun buildLocalDirectoryEpisodeQueue(
+    entries: List<FileDirectoryBrowserItem>,
+    currentItem: FileDirectoryBrowserItem,
+): VideoEpisodeQueue? {
+    val videos = entries.filter { it.mediaKind == MediaKind.Video }
+    val subtitles = entries.filter { it.mediaKind == MediaKind.Subtitle }
+    val currentIndex = videos.indexOfFirst { it.uri == currentItem.uri }
+    if (currentIndex < 0) return null
+    val episodes = videos.map { video ->
+        VideoEpisode.local(localVideoEpisodeRequest(video, subtitles))
+    }
+    return VideoEpisodeQueue(episodes = episodes, currentIndex = currentIndex)
+}
+
+private fun buildWebDavDirectoryEpisodeQueue(
+    accountId: String,
+    items: List<WebDavItem>,
+    currentItem: WebDavItem,
+): VideoEpisodeQueue? {
+    val videos = items.filter { item ->
+        mediaKindFor(name = item.name, isDirectory = item.isDirectory) == MediaKind.Video
+    }
+    val subtitles = items.filter { item ->
+        mediaKindFor(name = item.name, isDirectory = item.isDirectory) == MediaKind.Subtitle
+    }
+    val currentIndex = videos.indexOfFirst { it.path == currentItem.path }
+    if (currentIndex < 0) return null
+    val episodes = videos.map { video ->
+        VideoEpisode.webDav(webDavVideoEpisodeRequest(accountId, video, subtitles))
+    }
+    return VideoEpisodeQueue(episodes = episodes, currentIndex = currentIndex)
+}
+
+private fun localVideoEpisodeRequest(
+    video: FileDirectoryBrowserItem,
+    directoryEntries: List<FileDirectoryBrowserItem>,
+): LocalVideoOpenRequest =
+    LocalVideoOpenRequest(
+        uri = video.uri,
+        displayName = video.name,
+        size = video.size,
+        lastModified = video.lastModified,
+        subtitles = findSidecarSubtitles(
+            videoFileName = video.name,
+            candidates = directoryEntries,
+            nameOf = FileDirectoryBrowserItem::name,
+            isDirectoryOf = FileDirectoryBrowserItem::isDirectory,
+        ).map { subtitle ->
+            VideoSubtitleOpenRequest(
+                uri = subtitle.uri,
+                displayName = subtitle.name,
+            )
+        },
+    )
+
+private fun webDavVideoEpisodeRequest(
+    accountId: String,
+    video: WebDavItem,
+    directoryItems: List<WebDavItem>,
+): WebDavVideoOpenRequest =
+    WebDavVideoOpenRequest(
+        accountId = accountId,
+        remotePath = video.path,
+        displayName = video.name,
+        size = video.size,
+        etag = video.etag,
+        lastModified = video.lastModified,
+        mimeType = mimeTypeForMediaFileName(video.name),
+        subtitles = findSidecarSubtitles(
+            videoFileName = video.name,
+            candidates = directoryItems,
+            nameOf = WebDavItem::name,
+            isDirectoryOf = WebDavItem::isDirectory,
+        ).map { subtitle ->
+            WebDavSubtitleOpenRequest(
+                remotePath = subtitle.path,
+                displayName = subtitle.name,
+                size = subtitle.size,
+                etag = subtitle.etag,
+                lastModified = subtitle.lastModified,
+                mimeType = mimeTypeForMediaFileName(subtitle.name),
+            )
+        },
+    )

@@ -18,5 +18,11 @@ internal fun mpvEndFileErrorMessage(data: MPVNode): String? {
     return "视频播放失败：$detail"
 }
 
+internal fun isMpvEndFileStop(data: MPVNode): Boolean {
+    val fields = runCatching { data.asMap() }.getOrNull() ?: return false
+    val reasonNode = fields["reason"] ?: return false
+    return reasonNode.asString()?.lowercase(Locale.ROOT) == "stop" || reasonNode.asInt() == 2L
+}
+
 private val normalEndFileReasons = setOf("eof", "stop", "quit", "redirect")
 private val normalEndFileReasonCodes = setOf(0L, 2L, 3L, 5L)

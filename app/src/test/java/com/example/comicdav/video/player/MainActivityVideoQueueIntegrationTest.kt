@@ -1,29 +1,40 @@
 package com.example.comicdav.video.player
 
 import java.io.File
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MainActivityVideoQueueRemovalTest {
+class MainActivityVideoEpisodeIntegrationTest {
     @Test
-    fun localAndWebDavVideoOpenNoLongerBuildPlaybackQueues() {
+    fun localAndWebDavDirectoryVideosBuildEpisodeQueues() {
         val source = mainActivitySourceFile().readText()
 
-        assertFalse(source.contains("val localPlaybackQueue = buildLocalDirectoryPlaybackQueue("))
-        assertFalse(source.contains("val webDavPlaybackQueue = buildWebDavPlaybackQueue("))
-        assertFalse(source.contains("queue = localPlaybackQueue"))
-        assertFalse(source.contains("queue = webDavPlaybackQueue"))
-        assertFalse(source.contains("VideoQueueSource."))
+        assertTrue(source.contains("buildLocalDirectoryEpisodeQueue("))
+        assertTrue(source.contains("buildWebDavDirectoryEpisodeQueue("))
+        assertTrue(source.contains("fileDirectoryViewModel.playbackDirectoryEntries()"))
+        assertTrue(source.contains("webDavViewModel.playbackDirectoryItems()"))
+        assertTrue(source.contains("episodeQueue = episodeQueue"))
+        assertTrue(source.contains("findSidecarSubtitles("))
     }
 
     @Test
-    fun playerActivityNoLongerDefinesQueueExtras() {
+    fun playerActivityCarriesAndSwitchesEpisodeQueue() {
         val source = playerActivitySourceFile().readText()
 
-        assertFalse(source.contains("EXTRA_QUEUE_"))
-        assertFalse(source.contains("putQueueExtras"))
-        assertFalse(source.contains("playbackQueue()"))
+        assertTrue(source.contains("EXTRA_EPISODE_QUEUE_ID"))
+        assertTrue(source.contains("VideoEpisodeQueueRegistry.register"))
+        assertTrue(source.contains("putEpisodeQueueExtra"))
+        assertTrue(source.contains("private fun switchToEpisode("))
+        assertTrue(source.contains("EpisodeSelectionPage("))
+    }
+
+    @Test
+    fun episodeSelectionContentRespectsNavigationBarInsets() {
+        val source = playerControlsSourceFile().readText()
+        val selectionPage = source.substringAfter("internal fun EpisodeSelectionPage(")
+            .substringBefore("internal fun PlayerBottomControls(")
+
+        assertTrue(selectionPage.contains(".navigationBarsPadding()"))
     }
 
     @Test
@@ -34,7 +45,6 @@ class MainActivityVideoQueueRemovalTest {
         assertTrue(source.contains("fun openVideoPlayer(intent: Intent)"))
         assertTrue(source.contains("videoPlayerLauncher.launch(intent)"))
         assertTrue(source.contains("forceMainPortraitState.value = true"))
-        assertFalse(source.contains("context.startActivity(\n            VideoPlayerActivity."))
     }
 
     private fun mainActivitySourceFile(): File =
@@ -47,5 +57,11 @@ class MainActivityVideoQueueRemovalTest {
         listOf(
             File("src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
             File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerActivity.kt"),
+        ).first { it.isFile }
+
+    private fun playerControlsSourceFile(): File =
+        listOf(
+            File("src/main/java/com/example/comicdav/video/player/VideoPlayerControls.kt"),
+            File("app/src/main/java/com/example/comicdav/video/player/VideoPlayerControls.kt"),
         ).first { it.isFile }
 }
