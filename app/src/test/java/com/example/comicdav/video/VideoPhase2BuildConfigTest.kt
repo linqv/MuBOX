@@ -20,21 +20,27 @@ class VideoPhase2BuildConfigTest {
     }
 
     @Test
-    fun nativeMpvLibrariesUseLegacyPackaging() {
+    fun nativeMpvLibrariesUseModernPackaging() {
         val buildScript = appBuildGradleFile().readText()
 
         assertTrue(buildScript.contains("packaging"))
         assertTrue(buildScript.contains("jniLibs"))
-        assertTrue(buildScript.contains("useLegacyPackaging = true"))
+        assertTrue(buildScript.contains("useLegacyPackaging = false"))
     }
 
     @Test
-    fun releaseRulesKeepMpvPublicApi() {
+    fun releaseRulesKeepMpvNativeAbiSurface() {
         val rules = proguardRulesFile().readText()
 
         assertTrue(
-            rules.contains("-keep,allowoptimization class is.xyz.mpv.** { public protected *; }"),
+            rules.contains("-keep,allowoptimization class is.xyz.mpv.MPVLib"),
         )
+        assertTrue(rules.contains("native <methods>;"))
+        assertTrue(rules.contains("public static void eventProperty(...);"))
+        assertTrue(rules.contains("public static void event(...);"))
+        assertTrue(rules.contains("public static void logMessage(...);"))
+        assertTrue(rules.contains("-keep,allowoptimization class is.xyz.mpv.MPVNode { *; }"))
+        assertTrue(rules.contains("-keep,allowoptimization class is.xyz.mpv.MPVNode\$* { *; }"))
     }
 
     private fun appBuildGradleFile(): File =
