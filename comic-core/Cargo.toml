@@ -33,3 +33,6 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false

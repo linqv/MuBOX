@@ -208,7 +208,9 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            // API 23+ can load page-aligned native libraries directly from the APK.
+            // This avoids an install-time extraction/copy and its duplicate disk usage.
+            useLegacyPackaging = false
         }
     }
 
@@ -226,8 +228,13 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            isDebuggable = false
+            isJniDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
+            ndk {
+                debugSymbolLevel = "NONE"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

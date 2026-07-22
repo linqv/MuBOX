@@ -14,6 +14,19 @@
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleRelease -PtargetAbi=arm64-v8a
 ```
 
+Release builds deliberately use the slowest, most aggressive optimization path:
+
+- Rust `opt-level = 3`, Fat LTO across the full crate graph, one codegen unit,
+  abort-on-panic, and stripped symbols.
+- R8 full-mode code optimization, obfuscation, class repackaging, and integrated
+  resource shrinking. AGP 9.2 enables these pipelines by default once release
+  minification and resource shrinking are enabled.
+- Uncompressed, page-aligned native libraries for direct loading on API 23+.
+
+Do not use `target-cpu=native` for distribution builds: it optimizes for the
+build host rather than the Android target device and can produce incompatible
+binaries.
+
 ## Manual Smoke Test
 
 - Launch MuBOX and confirm the launcher icon and app name are correct.
