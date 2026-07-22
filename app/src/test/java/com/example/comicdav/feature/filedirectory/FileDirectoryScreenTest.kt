@@ -223,6 +223,35 @@ class FileDirectoryScreenTest {
         assertEquals("目录刷新失败", viewModel.uiState.error)
     }
 
+    @Test
+    fun localDirectoryBreadcrumbTracksTheFullNavigationPath() = runTest(dispatcher) {
+        val nestedDirectory = FileDirectoryBrowserItem(
+            name = "Series",
+            uri = "content://tree/comics/series",
+            isDirectory = true,
+        )
+        val viewModel = FileDirectoryViewModel(
+            FakeFileDirectoryCatalog(),
+            MutableLocalDirectoryReader(children = listOf(nestedDirectory)),
+        )
+        advanceUntilIdle()
+
+        viewModel.openLocalSource(localSource())
+        advanceUntilIdle()
+        assertEquals(listOf("Comics"), viewModel.uiState.breadcrumbLabels)
+
+        viewModel.openLocalDirectory(nestedDirectory)
+        advanceUntilIdle()
+        assertEquals(listOf("Comics", "Series"), viewModel.uiState.breadcrumbLabels)
+
+        viewModel.goUp()
+        advanceUntilIdle()
+        assertEquals(listOf("Comics"), viewModel.uiState.breadcrumbLabels)
+
+        viewModel.goUp()
+        assertTrue(viewModel.uiState.breadcrumbLabels.isEmpty())
+    }
+
     private fun contrastRatio(foreground: Color, background: Color): Float {
         val lighter = maxOf(foreground.luminance(), background.luminance())
         val darker = minOf(foreground.luminance(), background.luminance())

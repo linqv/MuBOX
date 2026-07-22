@@ -150,7 +150,6 @@ fun FileDirectoryScreen(
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
     onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
-    onGoUp: () -> Unit,
     onDismissMessage: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
@@ -168,106 +167,117 @@ fun FileDirectoryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .background(colors.background),
     ) {
-        if (uiState.currentTitle == null) {
-            FileDirectoryHomeHeader(
-                onAddLocalDirectory = onAddLocalDirectory,
-                onOpenWebDav = onOpenWebDav,
-                onOpenLibrary = onOpenLibrary,
-            )
-        } else {
+        val isBrowsing = uiState.currentTitle != null
+        if (isBrowsing) {
             FileDirectoryBrowseHeader(
-                title = uiState.currentTitle,
+                breadcrumbLabels = uiState.breadcrumbLabels.ifEmpty { listOfNotNull(uiState.currentTitle) },
                 searchQuery = uiState.searchQuery,
                 sortField = uiState.sortField,
                 sortDirection = uiState.sortDirection,
-                onGoUp = onGoUp,
                 onSearchQueryChange = onSearchQueryChange,
                 onSortFieldChange = onSortFieldChange,
                 onToggleSortDirection = onToggleSortDirection,
             )
         }
 
-        if (uiState.message != null || uiState.error != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = if (uiState.error == null) {
-                    colors.panelHigh
-                } else {
-                    colors.errorSurface
-                },
-                contentColor = if (uiState.error == null) colors.text else colors.errorText,
-                border = BorderStroke(
-                    1.dp,
-                    if (uiState.error == null) colors.border else colors.errorText.copy(alpha = 0.35f),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(
+                    horizontal = 16.dp,
+                    vertical = if (isBrowsing) 12.dp else 14.dp,
                 ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 14.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(if (isBrowsing) 12.dp else 14.dp),
+        ) {
+            if (!isBrowsing) {
+                FileDirectoryHomeHeader(
+                    onAddLocalDirectory = onAddLocalDirectory,
+                    onOpenWebDav = onOpenWebDav,
+                    onOpenLibrary = onOpenLibrary,
+                )
+            }
+
+            if (uiState.message != null || uiState.error != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (uiState.error == null) {
+                        colors.panelHigh
+                    } else {
+                        colors.errorSurface
+                    },
+                    contentColor = if (uiState.error == null) colors.text else colors.errorText,
+                    border = BorderStroke(
+                        1.dp,
+                        if (uiState.error == null) colors.border else colors.errorText.copy(alpha = 0.35f),
+                    ),
                 ) {
-                    Text(
-                        text = uiState.error ?: uiState.message.orEmpty(),
-                        modifier = Modifier.weight(1f),
-                        color = if (uiState.error == null) colors.text else colors.errorText,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    TextButton(onClick = onDismissMessage) {
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
-                            text = "知道了",
-                            color = if (uiState.error == null) colors.mediaAccent else colors.errorText,
+                            text = uiState.error ?: uiState.message.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            color = if (uiState.error == null) colors.text else colors.errorText,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                        TextButton(onClick = onDismissMessage) {
+                            Text(
+                                text = "知道了",
+                                color = if (uiState.error == null) colors.mediaAccent else colors.errorText,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        AnimatedContent(
-            targetState = uiState.currentTitle != null,
-            modifier = Modifier.weight(1f),
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "FileDirectoryContent",
-        ) { isBrowsing ->
-            if (isBrowsing) {
-                if (uiState.isLoading) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(color = colors.mediaAccent)
+            AnimatedContent(
+                targetState = isBrowsing,
+                modifier = Modifier.weight(1f),
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "FileDirectoryContent",
+            ) { browsing ->
+                if (browsing) {
+                    if (uiState.isLoading) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(color = colors.mediaAccent)
+                        }
+                    } else {
+                        PullToRefreshBox(
+                            isRefreshing = uiState.isRefreshing,
+                            onRefresh = onRefresh,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            EntryList(
+                                entries = uiState.entries,
+                                onOpenDirectory = onOpenDirectory,
+                                onOpenComic = onOpenComic,
+                                onOpenVideo = onOpenVideo,
+                                onSelectComic = onSelectComic,
+                                onSelectVideo = onSelectVideo,
+                                selectedEntry = selectedVideo ?: selectedComic,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                 } else {
-                    PullToRefreshBox(
-                        isRefreshing = uiState.isRefreshing,
-                        onRefresh = onRefresh,
+                    SourceList(
+                        sources = uiState.sources,
+                        onOpenSource = onOpenSource,
+                        onDeleteSource = onDeleteSource,
+                        onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
+                        onEditWebDavSource = onEditWebDavSource,
                         modifier = Modifier.fillMaxSize(),
-                    ) {
-                        EntryList(
-                            entries = uiState.entries,
-                            onOpenDirectory = onOpenDirectory,
-                            onOpenComic = onOpenComic,
-                            onOpenVideo = onOpenVideo,
-                            onSelectComic = onSelectComic,
-                            onSelectVideo = onSelectVideo,
-                            selectedEntry = selectedVideo ?: selectedComic,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+                    )
                 }
-            } else {
-                SourceList(
-                    sources = uiState.sources,
-                    onOpenSource = onOpenSource,
-                    onDeleteSource = onDeleteSource,
-                    onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
-                    onEditWebDavSource = onEditWebDavSource,
-                    modifier = Modifier.fillMaxSize(),
-                )
             }
         }
     }
@@ -333,24 +343,22 @@ private fun FileDirectoryHomeHeader(
 
 @Composable
 private fun FileDirectoryBrowseHeader(
-    title: String,
+    breadcrumbLabels: List<String>,
     searchQuery: String,
     sortField: DirectorySortField,
     sortDirection: com.example.comicdav.feature.directorylisting.DirectorySortDirection,
-    onGoUp: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
 ) {
     DirectoryListingTopBar(
-        breadcrumbLabels = listOf(title),
+        breadcrumbLabels = breadcrumbLabels,
         searchQuery = searchQuery,
         sortField = sortField,
         sortDirection = sortDirection,
         onSearchQueryChange = onSearchQueryChange,
         onSortFieldChange = onSortFieldChange,
         onToggleSortDirection = onToggleSortDirection,
-        onNavigateBack = onGoUp,
     )
 }
 
@@ -610,9 +618,6 @@ private fun EntryList(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item {
-            SectionTitle(text = "当前目录")
-        }
         items(entries, key = { it.uri }) { entry ->
             FileDirectoryEntryRow(
                 entry = entry,

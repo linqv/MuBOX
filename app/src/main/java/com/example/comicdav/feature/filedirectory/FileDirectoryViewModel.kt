@@ -42,6 +42,7 @@ data class FileDirectoryUiState(
     val sortField: DirectorySortField = DirectorySortField.NAME,
     val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
     val currentTitle: String? = null,
+    val breadcrumbLabels: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val error: String? = null,
@@ -154,6 +155,7 @@ class FileDirectoryViewModel(
             entries = emptyList(),
             searchQuery = "",
             currentTitle = null,
+            breadcrumbLabels = emptyList(),
             isLoading = false,
             isRefreshing = false,
             error = null,
@@ -254,6 +256,7 @@ class FileDirectoryViewModel(
     private fun loadFrame(frame: DirectoryFrame, isRefresh: Boolean) {
         directoryLoadJob?.cancel()
         val loadGeneration = ++directoryLoadGeneration
+        val breadcrumbLabels = navigationStack.map(DirectoryFrame::title)
         uiState = if (isRefresh) {
             uiState.copy(isRefreshing = true, error = null)
         } else {
@@ -262,6 +265,7 @@ class FileDirectoryViewModel(
                 isRefreshing = false,
                 searchQuery = "",
                 currentTitle = frame.title,
+                breadcrumbLabels = breadcrumbLabels,
                 error = null,
             )
         }
@@ -274,6 +278,7 @@ class FileDirectoryViewModel(
                 uiState = uiState.copy(
                     entries = visibleEntries(),
                     currentTitle = frame.title,
+                    breadcrumbLabels = breadcrumbLabels,
                     isLoading = false,
                     isRefreshing = false,
                 )
