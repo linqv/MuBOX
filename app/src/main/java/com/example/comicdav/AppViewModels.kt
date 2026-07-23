@@ -37,11 +37,16 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
                 downloadRecordStore = container.downloadRecordStore,
                 videoDownloadStore = container.videoDownloadStore,
             ),
+            reportFailure = { event, error -> container.diagnostics.error(event, error) },
         )
     }
     return AppViewModels(
-        webDav = viewModel(),
-        reader = viewModel(),
+        webDav = viewModel(
+            factory = viewModelFactory { WebDavViewModel(clientFactory = container::createWebDavClient) },
+        ),
+        reader = viewModel(
+            factory = viewModelFactory { ReaderViewModel(openSession = container::openLocalComicSession) },
+        ),
         library = viewModel(factory = viewModelFactory { LibraryViewModel(container.libraryRepository) }),
         videoLibrary = viewModel(
             factory = viewModelFactory { VideoLibraryViewModel(container.videoLibraryRepository) },

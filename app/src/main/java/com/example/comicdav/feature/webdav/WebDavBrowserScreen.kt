@@ -31,14 +31,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.model.transfer.TransferProgress
+import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 
 internal fun webDavBreadcrumbLabels(path: String): List<String> =
@@ -92,7 +93,7 @@ fun WebDavBrowserScreen(
     onSelectFile: (WebDavItem) -> Unit,
     onSaveDirectory: () -> Unit,
     showSaveDirectoryAction: Boolean,
-    downloadProgress: DownloadProgressUi?,
+    downloadProgress: TransferProgress?,
     downloadError: String?,
     actionMessage: String?,
     onCancelDownload: () -> Unit,
@@ -210,7 +211,7 @@ fun WebDavBrowserScreen(
 @Composable
 private fun WebDavTransferPanel(
     message: String,
-    downloadProgress: DownloadProgressUi?,
+    downloadProgress: TransferProgress?,
     downloadError: String?,
     onCancelDownload: () -> Unit,
 ) {
@@ -228,7 +229,7 @@ private fun WebDavTransferPanel(
         ) {
             if (downloadProgress != null) {
                 Text(
-                    text = downloadProgress.label,
+                    text = downloadProgress.downloadLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.text,
                 )
@@ -290,13 +291,5 @@ internal fun formatByteSize(bytes: Long): String {
     }
 }
 
-data class DownloadProgressUi(
-    val downloadedBytes: Long,
-    val totalBytes: Long,
-) {
-    val fraction: Float
-        get() = if (totalBytes <= 0L) 0f else (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 1f)
-
-    val label: String
-        get() = "正在下载 ${downloadedBytes / 1024} KiB / ${totalBytes / 1024} KiB"
-}
+private val TransferProgress.downloadLabel: String
+    get() = "正在下载 ${downloadedBytes / 1024} KiB / ${totalBytes / 1024} KiB"

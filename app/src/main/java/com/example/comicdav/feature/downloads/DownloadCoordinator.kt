@@ -6,16 +6,17 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.comicdav.DownloadProgressThrottler
+import com.example.comicdav.core.model.transfer.ComicDownloadRequest
+import com.example.comicdav.core.model.transfer.DownloadMediaType
+import com.example.comicdav.core.model.transfer.DownloadOrigin
+import com.example.comicdav.core.model.transfer.DownloadTask
+import com.example.comicdav.core.model.transfer.TransferProgress
+import com.example.comicdav.core.model.transfer.VideoDownloadRequest
 import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.VideoDownloadStore
-import com.example.comicdav.downloadWebDavComicRecordToDataFolder
-import com.example.comicdav.downloadWebDavVideoToDataFolder
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
-import com.example.comicdav.feature.webdav.DownloadProgressUi
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavClient
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -27,53 +28,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-internal enum class DownloadMediaType {
-    COMIC,
-    VIDEO,
-}
-
-internal enum class DownloadOrigin {
-    WEB_DAV_BROWSER,
-    LIBRARY,
-}
-
-internal data class ComicDownloadRequest(
-    val folderUri: String,
-    val accountId: String,
-    val remotePath: String,
-    val fileName: String,
-    val size: Long?,
-    val etag: String?,
-    val lastModified: Long?,
-    val origin: DownloadOrigin,
-)
-
-internal data class VideoDownloadRequest(
-    val folderUri: String,
-    val accountId: String,
-    val remotePath: String,
-    val fileName: String,
-    val size: Long?,
-    val etag: String?,
-    val lastModified: Long?,
-    val origin: DownloadOrigin = DownloadOrigin.WEB_DAV_BROWSER,
-)
-
-internal data class DownloadTask(
-    val id: Long,
-    val fileName: String,
-    val remotePath: String,
-    val mediaType: DownloadMediaType,
-    val origin: DownloadOrigin,
-    val totalBytes: Long?,
-)
-
 internal sealed interface DownloadState {
     data object Idle : DownloadState
 
     data class Running(
         val task: DownloadTask,
-        val progress: DownloadProgressUi,
+        val progress: TransferProgress,
     ) : DownloadState
 
     data class Succeeded(
@@ -93,7 +53,7 @@ internal sealed interface DownloadState {
     ) : DownloadState
 }
 
-internal val DownloadState.activeProgress: DownloadProgressUi?
+internal val DownloadState.activeProgress: TransferProgress?
     get() = (this as? DownloadState.Running)?.progress
 
 /**
@@ -103,7 +63,7 @@ internal val DownloadState.activeProgress: DownloadProgressUi?
  */
 internal class DownloadCoordinator(
     private val backend: DownloadBackend,
-    private val reportFailure: (String, Throwable) -> Unit = ReaderDiagnosticLog::error,
+    private val reportFailure: (String, Throwable) -> Unit = { _, _ -> },
     private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow<DownloadState>(DownloadState.Idle)
@@ -205,7 +165,7 @@ internal class DownloadCoordinator(
         activeCancellation = cancellation
         mutableState.value = DownloadState.Running(
             task = task,
-            progress = DownloadProgressUi(
+            progress = TransferProgress(
                 downloadedBytes = 0L,
                 totalBytes = task.totalBytes?.coerceAtLeast(0L) ?: 0L,
             ),
@@ -225,7 +185,7 @@ internal class DownloadCoordinator(
                     ) {
                         mutableState.value = DownloadState.Running(
                             task = task,
-                            progress = DownloadProgressUi(downloadedBytes, totalBytes),
+                            progress = TransferProgress(downloadedBytes, totalBytes),
                         )
                     }
                 }
@@ -288,11 +248,12 @@ internal class DownloadCoordinator(
 
     internal class Factory(
         private val backend: DownloadBackend,
+        private val reportFailure: (String, Throwable) -> Unit = { _, _ -> },
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(DownloadCoordinator::class.java))
-            return DownloadCoordinator(backend) as T
+            return DownloadCoordinator(backend, reportFailure = reportFailure) as T
         }
     }
 }

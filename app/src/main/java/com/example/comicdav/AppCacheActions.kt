@@ -7,7 +7,7 @@ import com.example.comicdav.data.analyzeComicCache
 import com.example.comicdav.data.clearComicCache
 import com.example.comicdav.data.clearComicCacheCategory
 import com.example.comicdav.data.formatCacheSize
-import com.example.comicdav.feature.reader.ReaderPageCache
+import com.example.comicdav.feature.reader.pruneReaderPageCache
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +47,7 @@ internal class AppCacheActions(
         viewModels.reader.updatePageCacheMaxBytes(pageCacheLimitBytes)
         withContext(Dispatchers.IO) {
             if (pageImageCacheEnabled) {
-                ReaderPageCache.prune(context.cacheDir, maxBytes = pageCacheLimitBytes)
+                pruneReaderPageCache(context.cacheDir, maxBytes = pageCacheLimitBytes)
             } else {
                 clearComicCacheCategory(context.cacheDir, ComicCacheCategory.READER_PAGES)
             }

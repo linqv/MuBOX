@@ -15,5 +15,6 @@ class ComicDavApplicationTest {
         val application = ApplicationProvider.getApplicationContext<ComicDavApplication>()
 
         assertSame(application.appContainer, application.appContainer)
+        assertSame(application.videoPlayerDependencies, application.videoPlayerDependencies)
     }
 }

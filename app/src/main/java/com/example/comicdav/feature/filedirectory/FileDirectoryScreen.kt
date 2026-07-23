@@ -50,7 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
 import com.example.comicdav.feature.directorylisting.DirectorySortField
@@ -58,7 +58,7 @@ import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxColors
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 
 
@@ -109,7 +109,7 @@ internal fun fileDirectoryEntryLongPressActions(entry: FileDirectoryBrowserItem)
         -> emptyList()
     }
 
-internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<SourceManagementAction> {
+internal fun sourceManagementActions(source: FileDirectorySource): List<SourceManagementAction> {
     return when (source.sourceType) {
         FileDirectorySourceType.LOCAL -> listOf(
             SourceManagementAction.RemoveSource,
@@ -122,14 +122,14 @@ internal fun sourceManagementActions(source: FileDirectorySourceEntity): List<So
     }
 }
 
-internal fun fileDirectorySourceTitle(source: FileDirectorySourceEntity): String =
+internal fun fileDirectorySourceTitle(source: FileDirectorySource): String =
     if (source.sourceType == FileDirectorySourceType.WEBDAV) {
         decodeWebDavPathForDisplay(source.displayName)
     } else {
         source.displayName
     }
 
-internal fun fileDirectorySourceSubtitle(source: FileDirectorySourceEntity): String =
+internal fun fileDirectorySourceSubtitle(source: FileDirectorySource): String =
     when (source.sourceType) {
         FileDirectorySourceType.LOCAL -> "本地文件夹"
         FileDirectorySourceType.WEBDAV -> source.webDavPath
@@ -145,7 +145,7 @@ fun FileDirectoryScreen(
     onAddLocalDirectory: () -> Unit,
     onOpenWebDav: () -> Unit,
     onOpenLibrary: () -> Unit,
-    onOpenSource: (FileDirectorySourceEntity) -> Unit,
+    onOpenSource: (FileDirectorySource) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
     onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
@@ -159,9 +159,9 @@ fun FileDirectoryScreen(
     selectedComic: FileDirectoryBrowserItem? = null,
     selectedVideo: FileDirectoryBrowserItem? = null,
     onSelectVideo: (FileDirectoryBrowserItem) -> Unit = onSelectComic,
-    onDeleteSource: (FileDirectorySourceEntity) -> Unit = {},
-    onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit = {},
-    onEditWebDavSource: (FileDirectorySourceEntity) -> Unit = {},
+    onDeleteSource: (FileDirectorySource) -> Unit = {},
+    onDeleteLocalSourceWithFiles: (FileDirectorySource) -> Unit = {},
+    onEditWebDavSource: (FileDirectorySource) -> Unit = {},
 ) {
     val colors = rememberMuBoxColors()
     Column(
@@ -364,14 +364,14 @@ private fun FileDirectoryBrowseHeader(
 
 @Composable
 private fun SourceList(
-    sources: List<FileDirectorySourceEntity>,
-    onOpenSource: (FileDirectorySourceEntity) -> Unit,
-    onDeleteSource: (FileDirectorySourceEntity) -> Unit,
-    onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit,
-    onEditWebDavSource: (FileDirectorySourceEntity) -> Unit,
+    sources: List<FileDirectorySource>,
+    onOpenSource: (FileDirectorySource) -> Unit,
+    onDeleteSource: (FileDirectorySource) -> Unit,
+    onDeleteLocalSourceWithFiles: (FileDirectorySource) -> Unit,
+    onEditWebDavSource: (FileDirectorySource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var sourceBeingManaged by remember { mutableStateOf<FileDirectorySourceEntity?>(null) }
+    var sourceBeingManaged by remember { mutableStateOf<FileDirectorySource?>(null) }
     val colors = rememberMuBoxColors()
 
     if (sources.isEmpty()) {
@@ -441,7 +441,7 @@ private fun SourceList(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DirectorySourceRow(
-    source: FileDirectorySourceEntity,
+    source: FileDirectorySource,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     isSelected: Boolean,
@@ -528,7 +528,7 @@ private fun DirectorySourceRow(
 
 @Composable
 private fun SourceManagementDialog(
-    source: FileDirectorySourceEntity,
+    source: FileDirectorySource,
     onDismiss: () -> Unit,
     onDeleteSource: () -> Unit,
     onDeleteLocalSourceWithFiles: () -> Unit,

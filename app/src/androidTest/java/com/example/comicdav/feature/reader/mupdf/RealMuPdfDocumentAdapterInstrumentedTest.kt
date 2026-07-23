@@ -3,7 +3,7 @@ package com.example.comicdav.feature.reader.mupdf
 import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.example.comicdav.data.LocalDocumentFormat
+import com.example.comicdav.core.model.media.LocalDocumentFormat
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test

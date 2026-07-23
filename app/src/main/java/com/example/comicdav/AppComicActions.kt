@@ -2,18 +2,18 @@ package com.example.comicdav
 
 import android.content.Context
 import android.net.Uri
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
-import com.example.comicdav.feature.reader.OpenComicUseCase
+import com.example.comicdav.infrastructure.reader.OpenComicUseCase
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.localComicCacheKey
-import com.example.comicdav.feature.reader.readerImageFormatCacheKey
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.model.media.readerImageFormatCacheKey
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -263,6 +263,7 @@ internal class AppComicActions(
                 accountId = accountId,
                 cache = container.remoteCache,
                 progressStore = container.progressStore,
+                diagnostics = container.diagnostics,
                 avifImagesEnabled = avifImagesEnabled,
                 webDavPrefetchPageCount = settings.webDavPrefetchPageCount,
             ).open(

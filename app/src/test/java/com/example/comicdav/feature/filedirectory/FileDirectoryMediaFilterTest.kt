@@ -1,6 +1,6 @@
 package com.example.comicdav.feature.filedirectory
 
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

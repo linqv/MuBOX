@@ -18,3 +18,11 @@ dependencyResolutionManagement {
 
 rootProject.name = "MuBOX"
 include(":app")
+include(":core:model")
+include(":core:diagnostics")
+include(":nativebridge")
+include(":webdav")
+include(":ui")
+include(":data")
+include(":feature:reader")
+include(":feature:video")

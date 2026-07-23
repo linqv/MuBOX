@@ -22,7 +22,6 @@ import javax.inject.Inject
 
 plugins {
     id("com.android.application")
-    id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -379,6 +378,15 @@ fun androidSdkDir(): File {
 }
 
 dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":core:diagnostics"))
+    implementation(project(":nativebridge"))
+    implementation(project(":webdav"))
+    implementation(project(":ui"))
+    implementation(project(":data"))
+    implementation(project(":feature:reader"))
+    implementation(project(":feature:video"))
+
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -399,16 +407,12 @@ dependencies {
     implementation(files("libs/fitz-1.27.1.aar"))
     implementation(files("libs/mpv-android-lib-v0.0.1.aar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("androidx.room:room-testing:2.8.4")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.15.1")
     androidTestImplementation("androidx.test:core:1.6.1")

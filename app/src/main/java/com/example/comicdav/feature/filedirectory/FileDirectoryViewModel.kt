@@ -5,27 +5,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.comicdav.core.model.media.MediaEntry
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.feature.directorylisting.DirectorySortDirection
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
 import com.example.comicdav.feature.directorylisting.opposite
-import com.example.comicdav.video.MediaKind
-import com.example.comicdav.video.isBrowsableInSources
-import com.example.comicdav.video.mediaKindFor
+import com.example.comicdav.core.model.media.MediaKind
+import com.example.comicdav.core.model.media.isBrowsableInSources
+import com.example.comicdav.core.model.media.mediaKindFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-data class FileDirectoryBrowserItem(
-    val name: String,
-    val uri: String,
-    val isDirectory: Boolean,
-    val size: Long? = null,
-    val lastModified: Long? = null,
-    val mediaKind: MediaKind = mediaKindFor(name = name, isDirectory = isDirectory),
-)
+typealias FileDirectoryBrowserItem = MediaEntry
 
 interface LocalDirectoryReader {
     fun rootDocumentUri(treeUri: String): String
@@ -36,7 +30,7 @@ internal fun filterBrowsableLocalDirectoryItems(items: List<FileDirectoryBrowser
     items.filter { it.mediaKind.isBrowsableInSources }
 
 data class FileDirectoryUiState(
-    val sources: List<FileDirectorySourceEntity> = emptyList(),
+    val sources: List<FileDirectorySource> = emptyList(),
     val entries: List<FileDirectoryBrowserItem> = emptyList(),
     val searchQuery: String = "",
     val sortField: DirectorySortField = DirectorySortField.NAME,
@@ -115,7 +109,7 @@ class FileDirectoryViewModel(
         }
     }
 
-    fun openLocalSource(source: FileDirectorySourceEntity) {
+    fun openLocalSource(source: FileDirectorySource) {
         val treeUri = source.localTreeUri ?: return
         val rootDocumentUri = localDirectoryReader.rootDocumentUri(treeUri)
         navigationStack = listOf(DirectoryFrame(source.displayName, rootDocumentUri))

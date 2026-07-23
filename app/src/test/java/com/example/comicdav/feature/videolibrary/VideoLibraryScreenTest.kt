@@ -1,11 +1,11 @@
 package com.example.comicdav.feature.videolibrary
 
-import com.example.comicdav.data.AppColorPalette
-import com.example.comicdav.data.videolibrary.LocalVideoSourceEntity
-import com.example.comicdav.data.videolibrary.VideoLibraryItemEntity
+import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.data.videolibrary.LocalVideoSource
+import com.example.comicdav.data.videolibrary.VideoLibraryItem
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
-import com.example.comicdav.data.videolibrary.WebDavVideoSourceEntity
+import com.example.comicdav.data.videolibrary.WebDavVideoSource
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
 import org.junit.Assert.assertEquals
@@ -47,7 +47,7 @@ class VideoLibraryScreenTest {
     fun sourceMetaShowsLocalFileName() {
         val item = videoLibraryItem(
             sourceType = VideoSourceType.LOCAL,
-            localSource = LocalVideoSourceEntity(
+            localSource = LocalVideoSource(
                 videoLibraryItemId = 1L,
                 uri = "content://video/1",
                 fileName = "local-movie.mp4",
@@ -63,7 +63,7 @@ class VideoLibraryScreenTest {
     fun sourceMetaDecodesWebDavRemotePath() {
         val item = videoLibraryItem(
             sourceType = VideoSourceType.WEBDAV,
-            webDavSource = WebDavVideoSourceEntity(
+            webDavSource = WebDavVideoSource(
                 videoLibraryItemId = 1L,
                 accountId = "account",
                 remotePath = "/%E8%A7%86%E9%A2%91/remote-movie.mp4",
@@ -79,11 +79,11 @@ class VideoLibraryScreenTest {
 
     private fun videoLibraryItem(
         sourceType: VideoSourceType,
-        localSource: LocalVideoSourceEntity? = null,
-        webDavSource: WebDavVideoSourceEntity? = null,
+        localSource: LocalVideoSource? = null,
+        webDavSource: WebDavVideoSource? = null,
     ): VideoLibraryItemWithSources {
         return VideoLibraryItemWithSources(
-            item = VideoLibraryItemEntity(
+            item = VideoLibraryItem(
                 id = 1L,
                 title = "movie",
                 displayName = "movie.mp4",

@@ -2,7 +2,7 @@ package com.example.comicdav
 
 import android.content.Context
 import android.net.Uri
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
@@ -34,11 +34,11 @@ internal class AppSourceActions(
         fileDirectoryViewModel.addLocalDirectory(displayName = displayName, treeUri = treeUri)
     }
 
-    fun deleteSource(source: FileDirectorySourceEntity) {
+    fun deleteSource(source: FileDirectorySource) {
         fileDirectoryViewModel.deleteSource(source.id)
     }
 
-    fun deleteLocalSourceWithFiles(source: FileDirectorySourceEntity) {
+    fun deleteLocalSourceWithFiles(source: FileDirectorySource) {
         val treeUriText = source.localTreeUri
         if (treeUriText.isNullOrBlank()) {
             deleteSource(source)
@@ -75,7 +75,7 @@ internal class AppSourceActions(
         callbacks.selectTab(AppTab.LIBRARY)
     }
 
-    fun openSource(source: FileDirectorySourceEntity) {
+    fun openSource(source: FileDirectorySource) {
         when (source.sourceType) {
             FileDirectorySourceType.LOCAL -> {
                 callbacks.setActionMessage(null)
@@ -85,7 +85,7 @@ internal class AppSourceActions(
         }
     }
 
-    fun editWebDavSource(source: FileDirectorySourceEntity) {
+    fun editWebDavSource(source: FileDirectorySource) {
         val baseUrl = source.webDavBaseUrl
             ?.takeIf { it.isNotBlank() }
             ?: source.webDavAccountId?.substringBefore("|").orEmpty()
@@ -157,7 +157,7 @@ internal class AppSourceActions(
         fileDirectoryViewModel.clearMessage()
     }
 
-    private fun openWebDavSource(source: FileDirectorySourceEntity) {
+    private fun openWebDavSource(source: FileDirectorySource) {
         val expectedAccountId = source.webDavAccountId
         val path = source.webDavPath ?: "/"
         callbacks.setActionMessage(null)

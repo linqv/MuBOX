@@ -2,6 +2,7 @@ package com.example.comicdav
 
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicDownloadCache
@@ -9,16 +10,17 @@ import com.example.comicdav.data.DownloadRecordStore
 import com.example.comicdav.data.ReadingProgressStore
 import com.example.comicdav.data.VideoDownloadStore
 import com.example.comicdav.data.WebDavAccountStore
-import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
-import com.example.comicdav.data.filedirectory.FileDirectoryRepository
-import com.example.comicdav.data.library.LibraryRepository
-import com.example.comicdav.data.library.createLibraryDatabase
-import com.example.comicdav.data.videolibrary.VideoLibraryRepository
+import com.example.comicdav.data.database.createAppPersistence
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.feature.reader.LocalComicOpener
+import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.infrastructure.diagnostics.AndroidLogcatDiagnosticSink
+import com.example.comicdav.nativebridge.ComicEngine
+import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
 import com.example.comicdav.network.WebDavClientProvider
+import com.example.comicdav.network.WebDavCredentialsSnapshot
 import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.security.CredentialCipher
 import java.io.File
@@ -35,35 +37,73 @@ internal val Context.downloadRecordsDataStore by preferencesDataStore(name = "do
 internal val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
 
 internal class AppContainer(context: Context) {
+    val diagnostics = ConfigurableDiagnostics(defaultSink = AndroidLogcatDiagnosticSink())
+
+    init {
+        ReaderDiagnosticLog.attach(diagnostics)
+    }
+
     val credentialCipher: CredentialCipher = AndroidKeystoreCredentialCipher()
 
-    private val libraryDatabase = createLibraryDatabase(context)
+    private val appPersistence = createAppPersistence(context)
 
-    val libraryRepository = LibraryRepository(libraryDatabase.libraryDao())
-    val videoLibraryRepository = VideoLibraryRepository(libraryDatabase.videoLibraryDao())
+    val libraryRepository = appPersistence.libraryRepository
+    val videoLibraryRepository = appPersistence.videoLibraryRepository
 
     val webDavAccountStore = WebDavAccountStore(context.webDavAccountDataStore, credentialCipher)
-    val fileDirectoryRepository = FileDirectoryRepository(libraryDatabase.fileDirectoryDao())
-    private val fileDirectoryCredentialMigrator = FileDirectoryCredentialMigrator(
-        dao = libraryDatabase.fileDirectoryDao(),
-        accountStore = webDavAccountStore,
-        cipher = credentialCipher,
-    )
+    val fileDirectoryRepository = appPersistence.fileDirectoryRepository
 
     val localDirectoryReader = AndroidLocalDirectoryReader(context.applicationContext)
-    val localComicOpener = LocalComicOpener(context.applicationContext)
+    val localComicOpener = LocalComicOpener(
+        context = context.applicationContext,
+        openSession = { fd, size, format, avifImagesEnabled ->
+            ComicEngine(diagnostics = diagnostics).openLocalFd(
+                fd = fd,
+                size = size,
+                format = format.nativeName,
+                avifImagesEnabled = avifImagesEnabled,
+            )
+        },
+        diagnostics = diagnostics,
+    )
 
     val remoteCache = ComicDownloadCache(File(context.cacheDir, "remote-comics"))
     val coverExtractor = WebDavLibraryCoverExtractor(
         appCacheDir = context.cacheDir,
         remoteCacheDir = remoteCache.cacheDir,
+        diagnostics = diagnostics,
     )
     val videoThumbnailExtractor = VideoThumbnailExtractor(cacheDir = context.cacheDir)
 
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
-    val webDavClientProvider = WebDavClientProvider(webDavAccountStore)
+    val webDavClientProvider = WebDavClientProvider(
+        loadCredentials = { accountId ->
+            webDavAccountStore.loadAccount(accountId)?.let { account ->
+                WebDavCredentialsSnapshot(
+                    baseUrl = account.baseUrl,
+                    username = account.username,
+                    password = account.password,
+                )
+            }
+        },
+        diagnostics = diagnostics,
+    )
+    val videoPlayerDependencies = AppVideoPlayerDependencies(
+        settingsStore = appSettingsStore,
+        clientProvider = webDavClientProvider,
+    )
+
+    fun createWebDavClient(baseUrl: String, username: String?, password: String?) =
+        OkHttpWebDavClient(
+            baseUrl = baseUrl,
+            username = username?.takeIf(String::isNotBlank),
+            password = password?.takeIf(String::isNotBlank),
+            diagnostics = com.example.comicdav.network.WebDavNetworkDiagnostics(diagnostics),
+        )
+
+    fun openLocalComicSession(path: String) = ComicEngine(diagnostics = diagnostics).openLocal(path)
     val downloadRecordStore = DownloadRecordStore(context.downloadRecordsDataStore)
     val videoDownloadStore = VideoDownloadStore(context.videoDownloadRecordsDataStore)
 
@@ -76,7 +116,10 @@ internal class AppContainer(context: Context) {
             // The account migration is idempotent and will be attempted again next process start.
         }
         try {
-            fileDirectoryCredentialMigrator.migrateLegacyCredentials()
+            appPersistence.migrateLegacyFileDirectoryCredentials(
+                accountStore = webDavAccountStore,
+                cipher = credentialCipher,
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {

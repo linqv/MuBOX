@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::zip::RangeReader;
 
-pub mod jni_range_reader;
+pub(crate) mod jni_range_reader;
 
 pub trait RangeCallbacks {
     fn size(&self, file_id: u64) -> Result<u64>;

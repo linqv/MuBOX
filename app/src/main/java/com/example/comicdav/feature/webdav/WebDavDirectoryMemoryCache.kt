@@ -1,6 +1,6 @@
 package com.example.comicdav.feature.webdav
 
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 
 internal class WebDavDirectoryMemoryCache(
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },

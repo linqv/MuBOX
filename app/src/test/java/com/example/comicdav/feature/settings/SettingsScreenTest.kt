@@ -1,6 +1,6 @@
 package com.example.comicdav.feature.settings
 
-import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.core.model.settings.AppColorPalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

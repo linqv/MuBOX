@@ -3,8 +3,8 @@ package com.example.comicdav.feature.filedirectory
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.example.comicdav.video.isBrowsableInSources
-import com.example.comicdav.video.mediaKindFor
+import com.example.comicdav.core.model.media.isBrowsableInSources
+import com.example.comicdav.core.model.media.mediaKindFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

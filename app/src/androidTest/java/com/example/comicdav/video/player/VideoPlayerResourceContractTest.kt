@@ -13,7 +13,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mubox.reader.R
+import com.example.comicdav.video.R
 
 @RunWith(AndroidJUnit4::class)
 class VideoPlayerResourceContractTest {

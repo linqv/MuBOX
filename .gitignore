@@ -18,6 +18,7 @@ agent.md
 .gitignore
 mpvEx/
 REVIEW.md
+/MODULE_COUPLING_ANALYSIS.md
 debug_logs/
 .kiro/
 .kotlin/

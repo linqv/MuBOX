@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.model.transfer.ComicDownloadRequest
+import com.example.comicdav.core.model.transfer.DownloadOrigin
+import com.example.comicdav.core.model.transfer.VideoDownloadRequest
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavClient
+import com.example.comicdav.core.remote.WebDavItem
 import java.io.Closeable
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred

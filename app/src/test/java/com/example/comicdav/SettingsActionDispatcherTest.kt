@@ -1,22 +1,23 @@
 package com.example.comicdav
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.core.model.settings.Anime4KMode
+import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.model.settings.GpuApiMode
+import com.example.comicdav.core.model.settings.MpvProfileMode
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.settings.ReadingDirection
+import com.example.comicdav.core.model.settings.VideoBackgroundMode
+import com.example.comicdav.core.model.settings.VideoDecoderMode
+import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
+import com.example.comicdav.core.model.settings.VideoOutputMode
+import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
+import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.ReaderLoggingMode
-import com.example.comicdav.data.ReadingDirection
 import com.example.comicdav.feature.settings.SettingsAction
-import com.example.comicdav.video.player.Anime4KMode
-import com.example.comicdav.video.player.Anime4KQuality
-import com.example.comicdav.video.player.GpuApiMode
-import com.example.comicdav.video.player.MpvProfileMode
-import com.example.comicdav.video.player.VideoBackgroundMode
-import com.example.comicdav.video.player.VideoDecoderMode
-import com.example.comicdav.video.player.VideoOutputMode
-import com.example.comicdav.video.player.VideoPlayerOrientationMode
-import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
-import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -28,6 +29,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsActionDispatcherTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()

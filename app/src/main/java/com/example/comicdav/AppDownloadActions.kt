@@ -5,12 +5,12 @@ import android.net.Uri
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.feature.downloads.ComicDownloadRequest
-import com.example.comicdav.feature.downloads.DownloadMediaType
-import com.example.comicdav.feature.downloads.DownloadOrigin
+import com.example.comicdav.core.model.transfer.ComicDownloadRequest
+import com.example.comicdav.core.model.transfer.DownloadMediaType
+import com.example.comicdav.core.model.transfer.DownloadOrigin
 import com.example.comicdav.feature.downloads.DownloadState
-import com.example.comicdav.feature.downloads.VideoDownloadRequest
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.model.transfer.VideoDownloadRequest
+import com.example.comicdav.core.remote.WebDavItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 

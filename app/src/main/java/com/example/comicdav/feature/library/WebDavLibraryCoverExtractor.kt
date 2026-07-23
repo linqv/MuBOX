@@ -1,13 +1,15 @@
 package com.example.comicdav.feature.library
 
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
+import com.example.comicdav.core.model.media.readerImageFormatCacheKey
+import com.example.comicdav.core.ports.ComicReaderSession
+import com.example.comicdav.core.ports.RemoteRangeComicSessionFactory
 import com.example.comicdav.data.ComicCacheKey
-import com.example.comicdav.feature.reader.RemoteRangeComicSessionFactory
-import com.example.comicdav.feature.reader.readerImageFormatCacheKey
 import com.example.comicdav.nativebridge.ComicEngine
-import com.example.comicdav.nativebridge.ComicReaderSession
 import com.example.comicdav.nativebridge.RangeProviderRegistry
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.network.WebDavRangeProvider
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,6 +19,7 @@ import kotlinx.coroutines.withContext
 class WebDavLibraryCoverExtractor(
     private val appCacheDir: File,
     private val remoteCacheDir: File,
+    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val openRemoteSession: RemoteRangeComicSessionFactory = {
             fileId,
             size,
@@ -26,7 +29,7 @@ class WebDavLibraryCoverExtractor(
             avifImagesEnabled,
             webDavPrefetchPageCount,
         ->
-        ComicEngine().openRemote(
+        ComicEngine(diagnostics = diagnostics).openRemote(
             fileId = fileId,
             size = size,
             cacheDir = cacheDir,
@@ -59,7 +62,9 @@ class WebDavLibraryCoverExtractor(
             return@withContext coverFile.absolutePath
         }
 
-        val fileId = RangeProviderRegistry.register(WebDavRangeProvider(client, remotePath, info.size))
+        val fileId = RangeProviderRegistry.register(
+            WebDavRangeProvider(client, remotePath, info.size, diagnostics = diagnostics),
+        )
         var session: ComicReaderSession? = null
         val tmpFile = File(coverFile.parentFile, "${coverFile.name}.tmp")
         try {

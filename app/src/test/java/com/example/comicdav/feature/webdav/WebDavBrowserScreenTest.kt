@@ -1,11 +1,11 @@
 package com.example.comicdav.feature.webdav
 
-import com.example.comicdav.data.AppColorPalette
-import com.example.comicdav.network.WebDavException
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.remote.WebDavException
+import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

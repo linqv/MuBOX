@@ -1,8 +1,10 @@
 package com.example.comicdav
 
+import com.example.comicdav.feature.downloads.DownloadProgressThrottler
+import com.example.comicdav.feature.downloads.localDownloadFileNameForRemoteFile
 import android.content.pm.ActivityInfo
 import androidx.compose.ui.graphics.luminance
-import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.comicDavTypography
 import org.junit.Assert.assertEquals

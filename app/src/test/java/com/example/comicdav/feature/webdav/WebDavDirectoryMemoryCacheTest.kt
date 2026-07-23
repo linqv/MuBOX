@@ -1,6 +1,6 @@
 package com.example.comicdav.feature.webdav
 
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test

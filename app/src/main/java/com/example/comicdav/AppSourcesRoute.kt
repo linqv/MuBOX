@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.comicdav.feature.filedirectory.FileDirectoryUiState
 import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
-import com.example.comicdav.feature.webdav.DownloadProgressUi
+import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.feature.webdav.WebDavAccountScreen
 import com.example.comicdav.feature.webdav.WebDavBrowserScreen
@@ -21,7 +21,7 @@ internal data class AppSourcesRouteState(
     val editingWebDavSourceId: Long?,
     val localOpenError: String?,
     val actionMessage: String?,
-    val downloadProgress: DownloadProgressUi?,
+    val downloadProgress: TransferProgress?,
     val selection: AppSelection,
 )
 

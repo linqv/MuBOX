@@ -51,12 +51,12 @@ import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.MediaKind
-import com.example.comicdav.video.mediaKindFor
+import com.example.comicdav.core.model.media.MediaKind
+import com.example.comicdav.core.model.media.mediaKindFor
 
 internal fun mainAppRequestedOrientation(screenRotationLockEnabled: Boolean): Int =
     if (screenRotationLockEnabled) {

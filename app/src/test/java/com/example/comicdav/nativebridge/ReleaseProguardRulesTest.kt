@@ -10,6 +10,13 @@ class ReleaseProguardRulesTest {
         val rules = proguardRulesFile().readText()
 
         assertTrue(
+            rules.contains(
+                "-keep,allowoptimization class " +
+                    "com.example.comicdav.nativebridge.ComicNative",
+            ),
+        )
+        assertTrue(rules.contains("native <methods>;"))
+        assertTrue(
             rules.contains("-keepnames class com.example.comicdav.nativebridge.RangeProviderRegistry"),
         )
         assertTrue(
@@ -23,7 +30,7 @@ class ReleaseProguardRulesTest {
     }
 
     @Test
-    fun releaseBuildUsesDefaultNativeMethodRules() {
+    fun releaseBuildUsesDefaultRulesAlongsideExplicitDynamicRegistrationRule() {
         val buildScript = appBuildGradleFile().readText()
 
         assertTrue(buildScript.contains("getDefaultProguardFile(\"proguard-android-optimize.txt\")"))

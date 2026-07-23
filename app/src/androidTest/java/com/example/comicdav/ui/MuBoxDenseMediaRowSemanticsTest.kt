@@ -10,7 +10,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test

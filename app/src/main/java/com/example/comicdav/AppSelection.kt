@@ -3,7 +3,7 @@ package com.example.comicdav
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 
 internal sealed interface AppSelection {
     data object None : AppSelection

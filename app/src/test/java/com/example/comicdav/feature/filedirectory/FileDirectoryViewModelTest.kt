@@ -2,7 +2,7 @@ package com.example.comicdav.feature.filedirectory
 
 import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -69,7 +69,7 @@ class FileDirectoryViewModelTest {
 
     @Test
     fun openLocalSourceListsChildrenWithoutRecordingRecentAccess() = runTest(dispatcher) {
-        val source = FileDirectorySourceEntity(
+        val source = FileDirectorySource(
             id = 7L,
             displayName = "Comics",
             sourceType = FileDirectorySourceType.LOCAL,
@@ -94,12 +94,12 @@ class FileDirectoryViewModelTest {
         assertFalse(viewModel.uiState.isLoading)
         assertEquals("Comics", viewModel.uiState.currentTitle)
         assertEquals(listOf("book.cbz", "book.pdf", "Series"), viewModel.uiState.entries.map { it.name })
-        assertEquals(emptyList<FileDirectorySourceEntity>(), catalog.recentWrites)
+        assertEquals(emptyList<FileDirectorySource>(), catalog.recentWrites)
     }
 
     @Test
     fun playbackDirectoryEntriesIgnoreSearchButPreserveDirectorySort() = runTest(dispatcher) {
-        val source = FileDirectorySourceEntity(
+        val source = FileDirectorySource(
             id = 7L,
             displayName = "Videos",
             sourceType = FileDirectorySourceType.LOCAL,
@@ -129,7 +129,7 @@ class FileDirectoryViewModelTest {
 
     @Test
     fun handleBackFromNestedLocalDirectoryReturnsToParentDirectory() = runTest(dispatcher) {
-        val source = FileDirectorySourceEntity(
+        val source = FileDirectorySource(
             id = 7L,
             displayName = "Comics",
             sourceType = FileDirectorySourceType.LOCAL,
@@ -166,7 +166,7 @@ class FileDirectoryViewModelTest {
 
     @Test
     fun handleBackFromLocalRootClosesLocalBrowser() = runTest(dispatcher) {
-        val source = FileDirectorySourceEntity(
+        val source = FileDirectorySource(
             id = 7L,
             displayName = "Comics",
             sourceType = FileDirectorySourceType.LOCAL,
@@ -237,16 +237,16 @@ class FileDirectoryViewModelTest {
     }
 
     private class FakeFileDirectoryCatalog(
-        initialSources: List<FileDirectorySourceEntity> = emptyList(),
+        initialSources: List<FileDirectorySource> = emptyList(),
     ) : FileDirectoryCatalog {
         private val sources = MutableStateFlow(initialSources)
         val localAdds = mutableListOf<LocalDirectoryAdd>()
         val webDavAdds = mutableListOf<WebDavDirectoryAdd>()
         val webDavUpdates = mutableListOf<WebDavDirectoryUpdate>()
-        val recentWrites = mutableListOf<FileDirectorySourceEntity>()
+        val recentWrites = mutableListOf<FileDirectorySource>()
         val deletedSourceIds = mutableListOf<Long>()
 
-        override fun observeSources(): Flow<List<FileDirectorySourceEntity>> = sources
+        override fun observeSources(): Flow<List<FileDirectorySource>> = sources
 
         override suspend fun addLocalDirectory(displayName: String, treeUri: String): Long {
             localAdds += LocalDirectoryAdd(displayName, treeUri)

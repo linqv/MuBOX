@@ -16,15 +16,6 @@
         android:theme="@style/Theme.MuBOX"
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
-            android:name="com.example.comicdav.video.player.VideoPlayerActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:theme="@style/Theme.MuBOX" />
-        <service
-            android:name="com.example.comicdav.video.player.VideoPlaybackService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="false" />
-        <activity
             android:name="com.example.comicdav.MainActivity"
             android:exported="true">
             <intent-filter>

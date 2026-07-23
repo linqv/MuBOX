@@ -46,7 +46,7 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.text.SimpleDateFormat
 import java.util.Date

@@ -2,11 +2,11 @@ package com.example.comicdav
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 internal fun ReaderRoute(
     readerUiState: ReaderUiState,
     localOpenError: String?,
-    downloadProgress: com.example.comicdav.feature.webdav.DownloadProgressUi?,
+    downloadProgress: com.example.comicdav.core.model.transfer.TransferProgress?,
     appSettings: AppSettings,
     readerLandscapeModeEnabled: Boolean = false,
     readerLandscapeOrientationLocked: Boolean = false,
@@ -80,7 +80,7 @@ internal fun FileDirectoryTabContent(
     onAddLocalDirectory: () -> Unit,
     onOpenWebDav: () -> Unit,
     onOpenLibrary: () -> Unit,
-    onOpenSource: (FileDirectorySourceEntity) -> Unit,
+    onOpenSource: (FileDirectorySource) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
     onOpenVideo: (FileDirectoryBrowserItem) -> Unit,
@@ -91,9 +91,9 @@ internal fun FileDirectoryTabContent(
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
     onRefresh: () -> Unit,
-    onDeleteSource: (FileDirectorySourceEntity) -> Unit,
-    onDeleteLocalSourceWithFiles: (FileDirectorySourceEntity) -> Unit,
-    onEditWebDavSource: (FileDirectorySourceEntity) -> Unit,
+    onDeleteSource: (FileDirectorySource) -> Unit,
+    onDeleteLocalSourceWithFiles: (FileDirectorySource) -> Unit,
+    onEditWebDavSource: (FileDirectorySource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     FileDirectoryScreen(

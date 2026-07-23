@@ -3,13 +3,13 @@ package com.example.comicdav.feature.filedirectory
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.data.AppColorPalette
+import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
+import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -99,7 +99,7 @@ class FileDirectoryScreenTest {
 
     @Test
     fun webDavSourceSubtitleDecodesPercentEncodedPath() {
-        val source = FileDirectorySourceEntity(
+        val source = FileDirectorySource(
             displayName = "漫画",
             sourceType = FileDirectorySourceType.WEBDAV,
             webDavPath = "/%E6%BC%AB%E7%94%BB/%E8%A7%86%E9%A2%91/",
@@ -153,7 +153,7 @@ class FileDirectoryScreenTest {
 
     @Test
     fun webDavSourcesCanBeEditedFromManagementActions() {
-        val webDavSource = FileDirectorySourceEntity(
+        val webDavSource = FileDirectorySource(
             id = 1L,
             displayName = "漫画库",
             sourceType = FileDirectorySourceType.WEBDAV,
@@ -258,7 +258,7 @@ class FileDirectoryScreenTest {
         return (lighter + 0.05f) / (darker + 0.05f)
     }
 
-    private fun localSource() = FileDirectorySourceEntity(
+    private fun localSource() = FileDirectorySource(
         id = 7L,
         displayName = "Comics",
         sourceType = FileDirectorySourceType.LOCAL,
@@ -267,7 +267,7 @@ class FileDirectoryScreenTest {
     )
 
     private class FakeFileDirectoryCatalog : FileDirectoryCatalog {
-        override fun observeSources(): Flow<List<FileDirectorySourceEntity>> = flowOf(emptyList())
+        override fun observeSources(): Flow<List<FileDirectorySource>> = flowOf(emptyList())
 
         override suspend fun addLocalDirectory(displayName: String, treeUri: String): Long = 1L
 

@@ -4,21 +4,14 @@ import android.content.Context
 import android.net.Uri
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.createReaderLogFile
+import com.example.comicdav.feature.reader.runReaderLogIo
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 internal const val READER_DIAGNOSTIC_PREFS = "reader_diagnostics"
 internal const val READER_LOG_FOLDER_URI_KEY = "log_folder_uri"
 private val readerLogStartGeneration = AtomicLong(0L)
-
-internal suspend fun <T> runReaderLogIo(
-    dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    block: suspend () -> T,
-): T = withContext(dispatcher) { block() }
 
 internal fun loadReaderLogFolderUri(context: Context): String? {
     return context

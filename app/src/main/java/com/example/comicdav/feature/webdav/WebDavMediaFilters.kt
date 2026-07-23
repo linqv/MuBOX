@@ -1,9 +1,9 @@
 package com.example.comicdav.feature.webdav
 
-import com.example.comicdav.network.WebDavItem
-import com.example.comicdav.video.MediaKind
-import com.example.comicdav.video.isBrowsableInSources
-import com.example.comicdav.video.mediaKindFor
+import com.example.comicdav.core.remote.WebDavItem
+import com.example.comicdav.core.model.media.MediaKind
+import com.example.comicdav.core.model.media.isBrowsableInSources
+import com.example.comicdav.core.model.media.mediaKindFor
 
 internal val WebDavItem.mediaKind: MediaKind
     get() = mediaKindFor(name = name, isDirectory = isDirectory)

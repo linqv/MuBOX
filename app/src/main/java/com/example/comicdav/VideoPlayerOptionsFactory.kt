@@ -1,6 +1,6 @@
 package com.example.comicdav
 
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.video.player.VideoPlayerOptions
 
 internal fun AppSettings.toVideoPlayerOptions(): VideoPlayerOptions =

@@ -1,9 +1,9 @@
 package com.example.comicdav.feature.library
 
-import com.example.comicdav.nativebridge.ComicReaderSession
-import com.example.comicdav.nativebridge.PlannedRemoteRange
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
+import com.example.comicdav.core.ports.ComicReaderSession
+import com.example.comicdav.core.ports.PlannedRemoteRange
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavClient
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -168,7 +168,7 @@ class WebDavLibraryCoverExtractorTest {
     }
 
     private class FakeWebDavClient : WebDavClient {
-        override suspend fun list(path: String) = emptyList<com.example.comicdav.network.WebDavItem>()
+        override suspend fun list(path: String) = emptyList<com.example.comicdav.core.remote.WebDavItem>()
 
         override suspend fun head(path: String) = RemoteFileInfo(
             path = path,

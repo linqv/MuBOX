@@ -1,13 +1,13 @@
 package com.example.comicdav
 
-import com.example.comicdav.data.library.LibraryItemEntity
+import com.example.comicdav.data.library.LibraryItem
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
-import com.example.comicdav.data.videolibrary.VideoLibraryItemEntity
+import com.example.comicdav.data.videolibrary.VideoLibraryItem
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -34,7 +34,7 @@ class AppSelectionTest {
         isDirectory = false,
     )
     private val libraryItem = LibraryItemWithSources(
-        item = LibraryItemEntity(
+        item = LibraryItem(
             id = 11L,
             title = "Comic",
             displayName = "Comic.cbz",
@@ -45,7 +45,7 @@ class AppSelectionTest {
         webDavSource = null,
     )
     private val videoLibraryItem = VideoLibraryItemWithSources(
-        item = VideoLibraryItemEntity(
+        item = VideoLibraryItem(
             id = 12L,
             title = "Episode",
             displayName = "Episode.mkv",

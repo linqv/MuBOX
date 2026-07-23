@@ -2,9 +2,9 @@ package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.feature.directorylisting.DirectorySortField
-import com.example.comicdav.network.RemoteFileInfo
-import com.example.comicdav.network.WebDavClient
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.RemoteFileInfo
+import com.example.comicdav.core.remote.WebDavClient
+import com.example.comicdav.core.remote.WebDavItem
 import java.io.File
 import java.util.ArrayDeque
 import kotlinx.coroutines.CancellationException

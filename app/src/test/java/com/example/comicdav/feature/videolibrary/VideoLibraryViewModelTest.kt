@@ -1,7 +1,7 @@
 package com.example.comicdav.feature.videolibrary
 
 import com.example.comicdav.data.videolibrary.VideoLibraryCatalog
-import com.example.comicdav.data.videolibrary.VideoLibraryItemEntity
+import com.example.comicdav.data.videolibrary.VideoLibraryItem
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +70,7 @@ class VideoLibraryViewModelTest {
         displayName: String,
     ): VideoLibraryItemWithSources {
         return VideoLibraryItemWithSources(
-            item = VideoLibraryItemEntity(
+            item = VideoLibraryItem(
                 id = id,
                 title = displayName,
                 displayName = displayName,

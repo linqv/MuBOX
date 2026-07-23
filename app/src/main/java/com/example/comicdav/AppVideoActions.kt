@@ -3,26 +3,26 @@ package com.example.comicdav
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
-import com.example.comicdav.network.WebDavItem
-import com.example.comicdav.video.LocalVideoOpenRequest
-import com.example.comicdav.video.VideoSubtitleOpenRequest
-import com.example.comicdav.video.WebDavSubtitleOpenRequest
-import com.example.comicdav.video.WebDavVideoOpenRequest
-import com.example.comicdav.video.findSidecarSubtitles
-import com.example.comicdav.video.mimeTypeForMediaFileName
+import com.example.comicdav.core.remote.WebDavItem
+import com.example.comicdav.core.model.media.LocalVideoOpenRequest
+import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
+import com.example.comicdav.core.model.media.WebDavSubtitleOpenRequest
+import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
+import com.example.comicdav.core.model.media.findSidecarSubtitles
+import com.example.comicdav.core.model.media.mimeTypeForMediaFileName
 import com.example.comicdav.video.player.VideoPlayerActivity
 import com.example.comicdav.video.player.buildLocalDirectoryEpisodeQueue
 import com.example.comicdav.video.player.buildWebDavDirectoryEpisodeQueue
 import com.example.comicdav.video.player.localVideoEpisodeRequest
 import com.example.comicdav.video.player.webDavVideoEpisodeRequest
 import com.example.comicdav.video.proxy.VideoProxyManager
-import com.example.comicdav.video.proxy.VideoProxySettings
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -166,11 +166,11 @@ internal class AppVideoActions(
         callbacks.setActionMessage("已进入内部视频打开流程：${item.name}")
         scope.launch {
             runCatching {
-                val account = webDavResolver.accountForPlayback(accountId)
+                val clientFactory = webDavResolver.clientFactoryForPlayback(accountId)
                     ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
                 startWebDavVideoPlayback(
                     request = request,
-                    account = account,
+                    clientFactory = clientFactory,
                     proxySettings = settings.toVideoProxySettings(),
                 ) { session ->
                     callbacks.launchPlayer(
@@ -353,11 +353,11 @@ internal class AppVideoActions(
                     videoFileName = source.fileName,
                 )
                 val playbackRequest = request.copy(subtitles = subtitles)
-                val account = webDavResolver.accountForPlayback(source.accountId)
+                val clientFactory = webDavResolver.clientFactoryForPlayback(source.accountId)
                     ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
                 startWebDavVideoPlayback(
                     request = playbackRequest,
-                    account = account,
+                    clientFactory = clientFactory,
                     proxySettings = settings.toVideoProxySettings(),
                 ) { session ->
                     videoLibraryViewModel.markOpened(item.item.id)
@@ -390,11 +390,11 @@ internal class AppVideoActions(
         )
 
     private suspend fun extractWebDavVideoThumbnail(request: WebDavVideoOpenRequest): String? {
-        val account = webDavResolver.accountForPlayback(request.accountId)
+        val clientFactory = webDavResolver.clientFactoryForPlayback(request.accountId)
             ?: error("缺少 WebDAV 账号，请重新连接后再提取缩略图")
         val session = VideoProxyManager.open(
             request = request.copy(subtitles = emptyList()),
-            account = account,
+            clientFactory = clientFactory,
             proxySettings = settings.toVideoProxySettings(),
         )
         return try {

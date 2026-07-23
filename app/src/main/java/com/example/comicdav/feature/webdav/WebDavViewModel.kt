@@ -10,9 +10,9 @@ import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
 import com.example.comicdav.feature.directorylisting.opposite
 import com.example.comicdav.network.OkHttpWebDavClient
-import com.example.comicdav.network.WebDavClient
-import com.example.comicdav.network.WebDavException
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavClient
+import com.example.comicdav.core.remote.WebDavException
+import com.example.comicdav.core.remote.WebDavItem
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets

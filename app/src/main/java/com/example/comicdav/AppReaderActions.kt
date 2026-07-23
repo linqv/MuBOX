@@ -1,6 +1,6 @@
 package com.example.comicdav
 
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import kotlinx.coroutines.CoroutineScope

@@ -31,19 +31,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.formatCacheSize
-import com.example.comicdav.feature.webdav.DownloadProgressUi
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 
 @Composable
 fun DownloadsScreen(
     comicDownloads: List<DownloadRecord>,
     videoDownloads: List<VideoDownloadRecord>,
-    activeDownload: DownloadProgressUi?,
+    activeDownload: TransferProgress?,
     onOpenComicDownload: (DownloadRecord) -> Unit,
     onPlayVideoDownload: (VideoDownloadRecord) -> Unit,
     onCancelActiveDownload: () -> Unit,
@@ -192,7 +192,7 @@ private fun SectionTitle(title: String) {
 
 @Composable
 private fun ActiveDownloadCard(
-    progress: DownloadProgressUi,
+    progress: TransferProgress,
     onCancel: () -> Unit,
 ) {
     val colors = rememberMuBoxColors()

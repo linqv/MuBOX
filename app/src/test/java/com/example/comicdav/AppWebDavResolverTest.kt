@@ -92,7 +92,7 @@ class AppWebDavResolverTest {
         baseUrl: String = "",
         username: String = "",
         password: String = "",
-        client: com.example.comicdav.network.WebDavClient? = null,
+        client: com.example.comicdav.core.remote.WebDavClient? = null,
     ): ActiveWebDavConnection =
         ActiveWebDavConnection(
             activeAccountId = activeAccountId,

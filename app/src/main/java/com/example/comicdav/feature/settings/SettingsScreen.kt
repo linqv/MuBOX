@@ -34,37 +34,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.data.AppColorPalette
-import com.example.comicdav.data.AppSettings
+import com.example.comicdav.core.model.settings.Anime4KMode
+import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.GpuApiMode
+import com.example.comicdav.core.model.settings.MpvProfileMode
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.settings.ReadingDirection
+import com.example.comicdav.core.model.settings.VideoBackgroundMode
+import com.example.comicdav.core.model.settings.VideoDecoderMode
+import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
+import com.example.comicdav.core.model.settings.VideoOutputMode
+import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
+import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
+import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import com.example.comicdav.data.displayLabel
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
-import com.example.comicdav.data.ReadingDirection
-import com.example.comicdav.data.ReaderLoggingMode
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.MuBoxActionRow
 import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.video.player.Anime4KMode
-import com.example.comicdav.video.player.Anime4KQuality
-import com.example.comicdav.video.player.GpuApiMode
-import com.example.comicdav.video.player.MpvProfileMode
-import com.example.comicdav.video.player.VideoDecoderMode
-import com.example.comicdav.video.player.VideoBackgroundMode
-import com.example.comicdav.video.player.VideoOutputMode
-import com.example.comicdav.video.player.VideoPlayerOrientationMode
-import com.example.comicdav.video.player.gpuApiModeLabel
-import com.example.comicdav.video.player.mpvProfileModeLabel
-import com.example.comicdav.video.player.playerControlAutoHideLabel
-import com.example.comicdav.video.player.playerControlAutoHideOptionsMillis
-import com.example.comicdav.video.player.videoBackgroundModeLabel
-import com.example.comicdav.video.player.videoDecoderModeLabel
-import com.example.comicdav.video.player.videoOutputModeLabel
-import com.example.comicdav.video.player.videoPlayerOrientationModeLabel
-import com.example.comicdav.video.proxy.VideoForwardPrefetchMode
-import com.example.comicdav.video.proxy.VideoProxyDiagnosticsMode
+import com.example.comicdav.ui.settings.gpuApiModeLabel
+import com.example.comicdav.ui.settings.mpvProfileModeLabel
+import com.example.comicdav.ui.settings.playerControlAutoHideLabel
+import com.example.comicdav.ui.settings.videoBackgroundModeLabel
+import com.example.comicdav.ui.settings.videoDecoderModeLabel
+import com.example.comicdav.ui.settings.videoOutputModeLabel
+import com.example.comicdav.ui.settings.videoPlayerOrientationModeLabel
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -695,9 +695,23 @@ private fun VideoProxyDiagnosticsMode.label(): String =
         VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
 
-private fun anime4kModeLabel(mode: Anime4KMode): String = mode.label
+private fun anime4kModeLabel(mode: Anime4KMode): String =
+    when (mode) {
+        Anime4KMode.OFF -> "关闭"
+        Anime4KMode.A -> "A"
+        Anime4KMode.B -> "B"
+        Anime4KMode.C -> "C"
+        Anime4KMode.A_PLUS -> "A+"
+        Anime4KMode.B_PLUS -> "B+"
+        Anime4KMode.C_PLUS -> "C+"
+    }
 
-private fun anime4kQualityLabel(quality: Anime4KQuality): String = quality.label
+private fun anime4kQualityLabel(quality: Anime4KQuality): String =
+    when (quality) {
+        Anime4KQuality.FAST -> "Fast"
+        Anime4KQuality.BALANCED -> "Balanced"
+        Anime4KQuality.HIGH -> "High"
+    }
 
 internal fun settingsControlRowMinHeightDp(): Int = 64
 

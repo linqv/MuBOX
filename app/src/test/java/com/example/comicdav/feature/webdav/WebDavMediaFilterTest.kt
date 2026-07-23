@@ -1,8 +1,8 @@
 package com.example.comicdav.feature.webdav
 
-import com.example.comicdav.network.WebDavItem
+import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.shouldShowWebDavAccountForm
-import com.example.comicdav.video.MediaKind
+import com.example.comicdav.core.model.media.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
