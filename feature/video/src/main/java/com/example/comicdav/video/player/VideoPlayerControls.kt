@@ -101,18 +101,16 @@ internal fun PlayerTopBar(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (showEpisodeButton) {
-                TextButton(
+                IconButton(
                     onClick = onEpisodeClick,
-                    modifier = Modifier.heightIn(min = PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
+                    modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.PlaylistPlay,
-                        contentDescription = null,
+                        contentDescription = "选集",
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(22.dp),
                     )
-                    Spacer(Modifier.width(6.dp))
-                    Text("选集", color = Color.White, style = MaterialTheme.typography.labelLarge)
                 }
             }
             IconButton(onClick = onMenuClick, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
@@ -282,8 +280,8 @@ internal fun EpisodeSelectionPage(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         itemsIndexed(
                             items = queue.episodes,
@@ -291,7 +289,7 @@ internal fun EpisodeSelectionPage(
                         ) { index, episode ->
                             val isCurrent = index == currentEpisodeIndex
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = if (isCurrent) colors.playerOsdSelected else Color.White.copy(alpha = 0.06f),
                                 border = BorderStroke(
                                     width = 1.dp,
@@ -301,13 +299,13 @@ internal fun EpisodeSelectionPage(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(min = 56.dp)
+                                        .heightIn(min = 48.dp)
                                         .clickable(
                                             enabled = !isCurrent && !isSwitching,
                                             onClick = { onEpisodeSelected(index) },
                                         )
                                         .semantics { selected = isCurrent }
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -315,13 +313,13 @@ internal fun EpisodeSelectionPage(
                                         style = MaterialTheme.typography.labelLarge,
                                         color = if (isCurrent) colors.playerProgress else Color.White.copy(alpha = 0.58f),
                                     )
-                                    Spacer(Modifier.width(14.dp))
+                                    Spacer(Modifier.width(10.dp))
                                     Text(
                                         text = episode.displayName,
                                         modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = Color.White,
-                                        maxLines = 2,
+                                        maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     if (isCurrent) {
@@ -330,7 +328,7 @@ internal fun EpisodeSelectionPage(
                                             Icons.Filled.Check,
                                             contentDescription = "正在播放",
                                             tint = colors.playerProgress,
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(18.dp),
                                         )
                                     }
                                 }
