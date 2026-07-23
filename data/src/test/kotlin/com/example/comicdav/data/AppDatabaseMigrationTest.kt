@@ -31,10 +31,12 @@ class AppDatabaseMigrationTest {
         try {
             val library = database.libraryDao().getLibrary()
             val directories = database.fileDirectoryDao().observeSources().first()
+            val history = database.watchHistoryDao().observeAll().first()
 
             assertEquals(1, library.size)
             assertEquals("Chapter 01", library.single().item.displayName)
             assertTrue(directories.isEmpty())
+            assertTrue(history.isEmpty())
 
             val directoryId = database.fileDirectoryDao().insertSource(
                 FileDirectorySourceEntity(

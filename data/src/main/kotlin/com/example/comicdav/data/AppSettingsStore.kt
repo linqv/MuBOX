@@ -77,6 +77,8 @@ class AppSettingsStore(
             videoBackgroundMode = preferences[VIDEO_BACKGROUND_MODE]
                 .toEnumOrDefault(VideoBackgroundMode.NONE),
             videoLibraryThumbnailsEnabled = preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] ?: true,
+            historyRetentionDays = coerceHistoryRetentionDays(preferences[HISTORY_RETENTION_DAYS] ?: 90),
+            historyMaxRecords = coerceHistoryMaxRecords(preferences[HISTORY_MAX_RECORDS] ?: 200),
         )
     }
 
@@ -259,6 +261,18 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateHistoryRetentionDays(days: Int) {
+        dataStore.edit { preferences ->
+            preferences[HISTORY_RETENTION_DAYS] = coerceHistoryRetentionDays(days)
+        }
+    }
+
+    suspend fun updateHistoryMaxRecords(maxRecords: Int) {
+        dataStore.edit { preferences ->
+            preferences[HISTORY_MAX_RECORDS] = coerceHistoryMaxRecords(maxRecords)
+        }
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
@@ -290,11 +304,15 @@ class AppSettingsStore(
         val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
         val VIDEO_BACKGROUND_MODE = stringPreferencesKey("video_background_mode")
         val VIDEO_LIBRARY_THUMBNAILS_ENABLED = booleanPreferencesKey("video_library_thumbnails_enabled")
+        val HISTORY_RETENTION_DAYS = intPreferencesKey("history_retention_days")
+        val HISTORY_MAX_RECORDS = intPreferencesKey("history_max_records")
     }
 }
 
 private val SupportedDiskCacheLimitMb = listOf(500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
+private val SupportedHistoryRetentionDays = listOf(0, 7, 30, 90, 180, 365)
+private val SupportedHistoryMaxRecords = listOf(50, 100, 200, 500, 1_000)
 
 private fun coerceStoredDiskCacheLimitMb(limitMb: Int): Int =
     when {
@@ -311,6 +329,12 @@ private fun coerceWebDavPrefetchPageCount(pageCount: Int): Int =
 
 private fun coerceVideoControlsAutoHideMillis(millis: Int): Int =
     playerControlAutoHideOptionsMillis().minBy { kotlin.math.abs(it - millis) }
+
+private fun coerceHistoryRetentionDays(days: Int): Int =
+    SupportedHistoryRetentionDays.minBy { kotlin.math.abs(it - days) }
+
+private fun coerceHistoryMaxRecords(maxRecords: Int): Int =
+    SupportedHistoryMaxRecords.minBy { kotlin.math.abs(it - maxRecords) }
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T {
     return this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default

@@ -3,6 +3,9 @@ package com.example.comicdav
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.example.comicdav.core.model.history.WatchHistoryEntry
+import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.data.VideoDownloadRecord
@@ -66,6 +69,67 @@ internal class AppVideoActions(
                 episodeQueue = episodeQueue,
             ),
         )
+    }
+
+    fun openHistoryEntry(entry: WatchHistoryEntry) {
+        if (entry.mediaType != WatchMediaType.VIDEO) return
+        when (entry.sourceType) {
+            WatchSourceType.LOCAL -> {
+                callbacks.setError(null)
+                callbacks.launchPlayer(
+                    VideoPlayerActivity.localIntent(
+                        context = context,
+                        request = LocalVideoOpenRequest(
+                            uri = entry.sourceLocator,
+                            displayName = entry.displayTitle,
+                            size = entry.size,
+                            lastModified = entry.lastModified,
+                        ),
+                        options = settings.toVideoPlayerOptions(),
+                    ),
+                )
+            }
+            WatchSourceType.WEB_DAV -> {
+                val accountId = entry.accountId
+                if (accountId.isNullOrBlank()) {
+                    callbacks.setError("这条历史记录缺少 WebDAV 账号")
+                    return
+                }
+                val request = WebDavVideoOpenRequest(
+                    accountId = accountId,
+                    remotePath = entry.sourceLocator,
+                    displayName = entry.displayTitle,
+                    size = entry.size,
+                    etag = entry.etag,
+                    lastModified = entry.lastModified,
+                    mimeType = mimeTypeForMediaFileName(entry.displayTitle),
+                )
+                scope.launch {
+                    runCatching {
+                        val clientFactory = webDavResolver.clientFactoryForPlayback(accountId)
+                            ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
+                        startWebDavVideoPlayback(
+                            request = request,
+                            clientFactory = clientFactory,
+                            proxySettings = settings.toVideoProxySettings(),
+                        ) { session ->
+                            callbacks.launchPlayer(
+                                VideoPlayerActivity.webDavIntent(
+                                    context = context,
+                                    request = request,
+                                    uri = session.url,
+                                    subtitleUrls = session.subtitleUrls,
+                                    streamIds = session.streamIds,
+                                    options = settings.toVideoPlayerOptions(),
+                                ),
+                            )
+                        }
+                    }.onFailure { error ->
+                        callbacks.setError(error.message ?: "打开历史视频失败")
+                    }
+                }
+            }
+        }
     }
 
     fun favoriteLocalDirectoryVideo(item: FileDirectoryBrowserItem) {

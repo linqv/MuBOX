@@ -132,6 +132,33 @@ class ComicDownloadCacheTest {
         assertFalse(temp.root.resolve("cancelled.tmp").exists())
     }
 
+    @Test
+    fun clearDeletesDownloadIndexAndNativePagesForKeyOnly() {
+        val cache = ComicDownloadCache(temp.root)
+        val key = ComicCacheKey("book")
+        val download = temp.root.resolve("book.cbz").apply { writeBytes(ByteArray(3)) }
+        val temporary = temp.root.resolve("book.tmp").apply { writeBytes(ByteArray(5)) }
+        val index = cache.indexCacheFile(key).apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(7))
+        }
+        val nativePagesDir = temp.root.resolve("book/pages").apply { mkdirs() }
+        val nativePage = nativePagesDir.resolve("page-0.jpg").apply { writeBytes(ByteArray(13)) }
+        val similarlyPrefixed = temp.root.resolve("book-extra.cbz").apply {
+            writeBytes(ByteArray(11))
+        }
+
+        val bytesDeleted = cache.clear(key)
+
+        assertEquals(28L, bytesDeleted)
+        assertFalse(download.exists())
+        assertFalse(temporary.exists())
+        assertFalse(index.exists())
+        assertFalse(nativePage.exists())
+        assertFalse(nativePagesDir.exists())
+        assertTrue(similarlyPrefixed.exists())
+    }
+
     private class FailingDownloadClient : com.example.comicdav.core.remote.WebDavClient {
         override suspend fun list(path: String) = error("unused")
         override suspend fun head(path: String) = error("unused")

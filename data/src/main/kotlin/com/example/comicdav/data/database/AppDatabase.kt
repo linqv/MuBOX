@@ -10,6 +10,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.comicdav.data.filedirectory.FileDirectoryDao
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
 import com.example.comicdav.data.filedirectory.FileDirectoryTypeConverters
+import com.example.comicdav.data.history.WatchHistoryDao
+import com.example.comicdav.data.history.WatchHistoryEntity
 import com.example.comicdav.data.library.LibraryDao
 import com.example.comicdav.data.library.LibraryItemEntity
 import com.example.comicdav.data.library.LibraryTypeConverters
@@ -32,8 +34,9 @@ internal const val APP_DATABASE_NAME = "comicdav-library.db"
         VideoLibraryItemEntity::class,
         LocalVideoSourceEntity::class,
         WebDavVideoSourceEntity::class,
+        WatchHistoryEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(LibraryTypeConverters::class, FileDirectoryTypeConverters::class, VideoLibraryTypeConverters::class)
@@ -41,6 +44,7 @@ internal abstract class AppDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun fileDirectoryDao(): FileDirectoryDao
     abstract fun videoLibraryDao(): VideoLibraryDao
+    abstract fun watchHistoryDao(): WatchHistoryDao
 }
 
 internal fun createAppDatabase(
@@ -52,7 +56,7 @@ internal fun createAppDatabase(
         AppDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         .build()
 }
 
@@ -174,6 +178,30 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL(
             "CREATE UNIQUE INDEX IF NOT EXISTS `index_webdav_video_sources_accountId_remotePath` " +
                 "ON `webdav_video_sources` (`accountId`, `remotePath`)",
+        )
+    }
+}
+
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `watch_history` (
+                `mediaKey` TEXT NOT NULL,
+                `mediaType` TEXT NOT NULL,
+                `title` TEXT NOT NULL,
+                `sourceType` TEXT NOT NULL,
+                `sourceLocator` TEXT NOT NULL,
+                `accountId` TEXT,
+                `size` INTEGER,
+                `etag` TEXT,
+                `lastModified` INTEGER,
+                `progress` INTEGER NOT NULL,
+                `total` INTEGER NOT NULL,
+                `lastWatchedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`mediaKey`)
+            )
+            """.trimIndent(),
         )
     }
 }

@@ -23,6 +23,7 @@ import com.example.comicdav.network.WebDavClientProvider
 import com.example.comicdav.network.WebDavCredentialsSnapshot
 import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.security.CredentialCipher
+import com.example.comicdav.video.player.VideoPlaybackStateStore
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,7 @@ internal val Context.appSettingsDataStore by preferencesDataStore(name = "app_se
 internal val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
 internal val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
 internal val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
+internal val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
 
 internal class AppContainer(context: Context) {
     val diagnostics = ConfigurableDiagnostics(defaultSink = AndroidLogcatDiagnosticSink())
@@ -49,6 +51,7 @@ internal class AppContainer(context: Context) {
 
     val libraryRepository = appPersistence.libraryRepository
     val videoLibraryRepository = appPersistence.videoLibraryRepository
+    val watchHistoryRepository = appPersistence.watchHistoryRepository
 
     val webDavAccountStore = WebDavAccountStore(context.webDavAccountDataStore, credentialCipher)
     val fileDirectoryRepository = appPersistence.fileDirectoryRepository
@@ -78,6 +81,7 @@ internal class AppContainer(context: Context) {
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
+    val videoPlaybackStateStore = VideoPlaybackStateStore(context.videoPlaybackStateDataStore)
     val webDavClientProvider = WebDavClientProvider(
         loadCredentials = { accountId ->
             webDavAccountStore.loadAccount(accountId)?.let { account ->
@@ -93,6 +97,8 @@ internal class AppContainer(context: Context) {
     val videoPlayerDependencies = AppVideoPlayerDependencies(
         settingsStore = appSettingsStore,
         clientProvider = webDavClientProvider,
+        historyRepository = watchHistoryRepository,
+        legacyPlaybackStateStore = videoPlaybackStateStore,
     )
 
     fun createWebDavClient(baseUrl: String, username: String?, password: String?) =

@@ -45,7 +45,15 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
             factory = viewModelFactory { WebDavViewModel(clientFactory = container::createWebDavClient) },
         ),
         reader = viewModel(
-            factory = viewModelFactory { ReaderViewModel(openSession = container::openLocalComicSession) },
+            factory = viewModelFactory {
+                ReaderViewModel(
+                    openSession = container::openLocalComicSession,
+                    savePage = container.progressStore::savePage,
+                    recordHistory = { entry ->
+                        container.watchHistoryRepository.upsert(entry)
+                    },
+                )
+            },
         ),
         library = viewModel(factory = viewModelFactory { LibraryViewModel(container.libraryRepository) }),
         videoLibrary = viewModel(

@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.core.io.FileLruPruner
+import com.example.comicdav.core.model.media.readerImageFormatCacheKey
 import java.io.File
 
 internal object ReaderPageCache {
@@ -25,6 +26,23 @@ internal object ReaderPageCache {
         root.deleteRecursively()
     }
 
+    fun clearComicPages(cacheDir: File, comicKey: String): Long {
+        val pageCacheKeys = setOf(
+            readerImageFormatCacheKey(comicKey, avifImagesEnabled = false),
+            readerImageFormatCacheKey(comicKey, avifImagesEnabled = true),
+        ).mapTo(mutableSetOf(), ::safeCacheKey)
+        val persistentTargets = pageCacheKeys.map { safeKey ->
+            File(cacheDir, "comicdav-pages/$safeKey")
+        }
+        val transientTargets = File(cacheDir, "comicdav-pages-transient")
+            .listFiles()
+            ?.filter { candidate ->
+                candidate.isDirectory && candidate.name.isTransientDirectoryFor(pageCacheKeys)
+            }
+            .orEmpty()
+        return deleteTargets(persistentTargets + transientTargets)
+    }
+
     fun prune(cacheDir: File, protectedFile: File? = null): Int {
         return prune(cacheDir = cacheDir, protectedFile = protectedFile, maxBytes = DEFAULT_MAX_BYTES)
     }
@@ -42,8 +60,32 @@ internal object ReaderPageCache {
 
     private fun safeCacheKey(cacheKey: String?): String =
         (cacheKey ?: "default").replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+    private fun String.isTransientDirectoryFor(pageCacheKeys: Set<String>): Boolean {
+        val separatorIndex = lastIndexOf('_')
+        if (separatorIndex <= 0 || separatorIndex == lastIndex) return false
+        val pageCacheKey = substring(0, separatorIndex)
+        val generation = substring(separatorIndex + 1)
+        return pageCacheKey in pageCacheKeys && generation.all(Char::isDigit)
+    }
+
+    private fun deleteTargets(targets: List<File>): Long =
+        targets
+            .distinctBy { target -> target.absolutePath }
+            .sumOf { target -> target.deleteAndReturnBytes() }
+
+    private fun File.deleteAndReturnBytes(): Long {
+        if (!exists()) return 0L
+        val bytes = if (isFile) length() else walkTopDown().filter(File::isFile).sumOf(File::length)
+        val deleted = if (isDirectory) deleteRecursively() else delete()
+        return if (deleted) bytes else 0L
+    }
 }
 
 /** App-level cache maintenance entry point; page file layout stays feature-internal. */
 fun pruneReaderPageCache(cacheDir: File, maxBytes: Long): Int =
     ReaderPageCache.prune(cacheDir = cacheDir, maxBytes = maxBytes)
+
+/** Removes persistent and transient pages for one comic without exposing the cache layout. */
+fun clearReaderPageCacheForComic(cacheDir: File, comicKey: String): Long =
+    ReaderPageCache.clearComicPages(cacheDir = cacheDir, comicKey = comicKey)

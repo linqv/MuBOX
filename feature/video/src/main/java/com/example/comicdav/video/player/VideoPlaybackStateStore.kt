@@ -37,6 +37,10 @@ class VideoPlaybackStateStore(
         }
     }
 
+    suspend fun clearAll() {
+        dataStore.edit { preferences -> preferences.clear() }
+    }
+
     private fun positionPreferenceKey(playbackKey: String): Preferences.Key<Long> =
         longPreferencesKey("video_position_${playbackKey.sha256Hex()}")
 }

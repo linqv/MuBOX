@@ -1,5 +1,8 @@
 package com.example.comicdav.video.player
 
+import com.example.comicdav.core.model.history.WatchHistoryMetadata
+import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.core.model.history.WatchSourceType
 internal data class RestoredVideoEpisodeSelection(
     val index: Int,
     val episode: VideoEpisode,
@@ -24,4 +27,42 @@ internal fun VideoEpisode.toPlayerMediaContext(): VideoPlayerMediaContext =
             VideoPlayerLaunchContract.SOURCE_LOCAL
         },
         remotePath = webDavRequest?.remotePath ?: localRequest?.uri,
+    )
+
+internal fun VideoEpisode.toWatchHistoryMetadata(): WatchHistoryMetadata =
+    localRequest?.let { request ->
+        WatchHistoryMetadata(
+            mediaKey = playbackKey,
+            mediaType = WatchMediaType.VIDEO,
+            title = request.displayName,
+            sourceType = WatchSourceType.LOCAL,
+            sourceLocator = request.uri,
+            size = request.size,
+            lastModified = request.lastModified,
+        )
+    } ?: requireNotNull(webDavRequest).let { request ->
+        WatchHistoryMetadata(
+            mediaKey = playbackKey,
+            mediaType = WatchMediaType.VIDEO,
+            title = request.displayName,
+            sourceType = WatchSourceType.WEB_DAV,
+            sourceLocator = request.remotePath,
+            accountId = request.accountId,
+            size = request.size,
+            etag = request.etag,
+            lastModified = request.lastModified,
+        )
+    }
+
+internal fun VideoPlayerLaunchArguments.toWatchHistoryMetadata(playbackKey: String?): WatchHistoryMetadata =
+    WatchHistoryMetadata(
+        mediaKey = playbackKey.orEmpty(),
+        mediaType = WatchMediaType.VIDEO,
+        title = displayName,
+        sourceType = if (isWebDav) WatchSourceType.WEB_DAV else WatchSourceType.LOCAL,
+        sourceLocator = remotePath ?: uri.orEmpty(),
+        accountId = accountId,
+        size = size,
+        etag = etag,
+        lastModified = lastModified,
     )

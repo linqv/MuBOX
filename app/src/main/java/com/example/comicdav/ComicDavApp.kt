@@ -5,17 +5,23 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.downloads.DownloadsScreen
 import com.example.comicdav.feature.downloads.activeProgress
@@ -47,9 +53,24 @@ internal fun ComicDavApp(container: AppContainer) {
     val videoDownloadStore = container.videoDownloadStore
     val downloadState by downloadCoordinator.state.collectAsState()
     val downloadProgress = downloadState.activeProgress
-    val appSettings by appSettingsStore.settings.collectAsState(initial = AppSettings(videoResumeEnabled = false))
+    val loadedAppSettings by appSettingsStore.settings.collectAsState(initial = null)
+    val appSettings = loadedAppSettings ?: AppSettings(videoResumeEnabled = false)
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     val videoDownloadRecords by videoDownloadStore.records.collectAsState(initial = emptyList())
+    val watchHistory by container.watchHistoryRepository.history.collectAsState(initial = emptyList())
+    val historyMediaKeys = remember(watchHistory) {
+        watchHistory.mapTo(linkedSetOf()) { entry -> entry.mediaKey }.toSet()
+    }
+    var observedHistoryMediaKeys by remember { mutableStateOf(historyMediaKeys) }
+    var historyAdditionRevision by remember { mutableIntStateOf(0) }
+    SideEffect {
+        if (historyMediaKeys != observedHistoryMediaKeys) {
+            if (hasHistoryEntryAdditions(observedHistoryMediaKeys, historyMediaKeys)) {
+                historyAdditionRevision += 1
+            }
+            observedHistoryMediaKeys = historyMediaKeys
+        }
+    }
     val actions = rememberAppActionGraph(
         context = context,
         scope = scope,
@@ -101,6 +122,20 @@ internal fun ComicDavApp(container: AppContainer) {
         cacheActions.applyReaderPageCacheSettings(
             pageImageCacheEnabled = appSettings.pageImageCacheEnabled,
             diskCacheLimitMb = appSettings.diskCacheLimitMb,
+        )
+    }
+
+    // Prune only after the stored settings have loaded; the placeholder defaults above
+    // (90 days / 200 records) must never drive deletion for users who chose looser limits.
+    LaunchedEffect(
+        loadedAppSettings?.historyRetentionDays,
+        loadedAppSettings?.historyMaxRecords,
+        historyAdditionRevision,
+    ) {
+        val historySettings = loadedAppSettings ?: return@LaunchedEffect
+        cacheActions.pruneHistory(
+            retentionDays = historySettings.historyRetentionDays,
+            maxRecords = historySettings.historyMaxRecords,
         )
     }
 
@@ -317,6 +352,15 @@ internal fun ComicDavApp(container: AppContainer) {
                                         scope = scope,
                                         cacheAnalysis = ui.cacheAnalysis,
                                         cacheActionMessage = ui.cacheActionMessage,
+                                        history = watchHistory,
+                                        onOpenHistoryEntry = { entry ->
+                                            when (entry.mediaType) {
+                                                WatchMediaType.COMIC -> comicActions.openHistoryEntry(entry)
+                                                WatchMediaType.VIDEO -> videoActions.openHistoryEntry(entry)
+                                            }
+                                        },
+                                        onDeleteHistoryEntry = cacheActions::deleteHistoryEntry,
+                                        onClearHistory = cacheActions::clearHistory,
                                         onClearCacheCategory = cacheActions::clearCategory,
                                         onClearAllCache = cacheActions::clearAll,
                                         modifier = contentModifier,
@@ -330,3 +374,8 @@ internal fun ComicDavApp(container: AppContainer) {
         }
     }
 }
+
+internal fun hasHistoryEntryAdditions(
+    previousMediaKeys: Set<String>,
+    currentMediaKeys: Set<String>,
+): Boolean = currentMediaKeys.any { mediaKey -> mediaKey !in previousMediaKeys }

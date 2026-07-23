@@ -78,20 +78,34 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun rootSettingsLayoutKeepsOnlyCommonAndManagementGroups() {
+    fun rootSettingsLayoutKeepsHistoryPolicyInRootSettings() {
         val layout = rootSettingsGroupLayout()
 
         assertEquals(
-            listOf("通用", "内容设置", "缓存"),
+            listOf("通用", "内容设置", "观看历史设置", "缓存"),
             layout.map { it.title },
         )
     }
 
     @Test
-    fun rootSettingsLayoutLinksToComicAndVideoSettings() {
+    fun rootSettingsLayoutLinksToHistoryComicAndVideoSettings() {
         val contentRows = rootSettingsGroupLayout().rowsInGroup("内容设置")
 
-        assertEquals(listOf("漫画设置", "视频设置"), contentRows)
+        assertEquals(listOf("观看历史", "漫画设置", "视频设置"), contentRows)
+    }
+
+    @Test
+    fun historyPolicyLabelsExposePermanentAndBoundedOptions() {
+        assertEquals("永久", historyRetentionLabel(0))
+        assertEquals("90 天", historyRetentionLabel(90))
+        assertEquals("200 条", historyMaxRecordsLabel(200))
+    }
+
+    @Test
+    fun rootSettingsLayoutContainsAllHistoryManagementRows() {
+        val historyRows = rootSettingsGroupLayout().rowsInGroup("观看历史设置")
+
+        assertEquals(listOf("保留时长", "最大保留记录", "清空观看历史"), historyRows)
     }
 
     @Test

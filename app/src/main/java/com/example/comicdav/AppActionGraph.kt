@@ -55,6 +55,18 @@ internal fun rememberAppActionGraph(
         onLocalDirectorySelected = sourceActions::addLocalDirectory,
         onVideoPlayerClosed = { ui.forceMainPortraitState.value = true },
     )
+    val cacheActions = remember(context, scope, container, viewModels, ui) {
+        AppCacheActions(
+            context = context,
+            scope = scope,
+            container = container,
+            viewModels = viewModels,
+            callbacks = AppCacheActionCallbacks(
+                setAnalysis = { analysis -> ui.cacheAnalysis = analysis },
+                setActionMessage = { message -> ui.cacheActionMessage = message },
+            ),
+        )
+    }
 
     return remember(
         context,
@@ -67,16 +79,8 @@ internal fun rememberAppActionGraph(
         ui.logFolderUriText,
         launchers,
         sourceActions,
+        cacheActions,
     ) {
-        val cacheActions = AppCacheActions(
-            context = context,
-            scope = scope,
-            viewModels = viewModels,
-            callbacks = AppCacheActionCallbacks(
-                setAnalysis = { analysis -> ui.cacheAnalysis = analysis },
-                setActionMessage = { message -> ui.cacheActionMessage = message },
-            ),
-        )
         val downloadActions = AppDownloadActions(
             context = context,
             scope = scope,

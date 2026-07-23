@@ -31,6 +31,8 @@ class AppSettingsStoreTest {
         assertEquals(VideoProxyDiagnosticsMode.OFF, settings.videoProxyDiagnosticsMode)
         assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
         assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
+        assertEquals(90, settings.historyRetentionDays)
+        assertEquals(200, settings.historyMaxRecords)
     }
 
     @Test
@@ -138,6 +140,18 @@ class AppSettingsStoreTest {
         store.updateReaderPinchZoomEnabled(true)
 
         assertTrue(store.settings.first().readerPinchZoomEnabled)
+    }
+
+    @Test
+    fun historyPolicyCanBeUpdatedAndIsCoercedToSupportedOptions() = runTest {
+        val store = createStore("history_policy.preferences_pb")
+
+        store.updateHistoryRetentionDays(31)
+        store.updateHistoryMaxRecords(490)
+
+        val settings = store.settings.first()
+        assertEquals(30, settings.historyRetentionDays)
+        assertEquals(500, settings.historyMaxRecords)
     }
 
     private fun TestScope.createStore(fileName: String): AppSettingsStore {

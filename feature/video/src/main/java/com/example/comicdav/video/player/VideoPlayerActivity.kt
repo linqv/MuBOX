@@ -24,7 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import androidx.datastore.preferences.preferencesDataStore
+import com.example.comicdav.core.model.history.WatchHistoryMetadata
 import com.example.comicdav.core.model.media.LocalVideoOpenRequest
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
@@ -37,10 +37,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
-
-private val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
 
 internal data class VideoBackgroundPermissionDecision(
     val mode: VideoBackgroundMode,
@@ -76,6 +75,8 @@ class VideoPlayerActivity : ComponentActivity() {
     private var currentEpisodeIndex by mutableIntStateOf(0)
     private var isEpisodeSwitching by mutableStateOf(false)
     private var isActivityInForeground = false
+    private var historyAutoSaveJob: kotlinx.coroutines.Job? = null
+    private lateinit var currentHistoryMetadata: WatchHistoryMetadata
     private var playerMediaContext by mutableStateOf(
         VideoPlayerMediaContext(displayName = "视频", source = SOURCE_LOCAL, remotePath = null),
     )
@@ -114,6 +115,8 @@ class VideoPlayerActivity : ComponentActivity() {
         )
         currentEpisodeIndex = restoredEpisode?.index ?: episodeQueue?.currentIndex ?: 0
         val initialPlaybackKey = restoredEpisode?.episode?.playbackKey ?: launchPlaybackKey
+        currentHistoryMetadata = restoredEpisode?.episode?.toWatchHistoryMetadata()
+            ?: launchArguments.toWatchHistoryMetadata(initialPlaybackKey)
         playerMediaContext = restoredEpisode?.episode?.toPlayerMediaContext()
             ?: VideoPlayerMediaContext(
                 displayName = launchArguments.displayName,
@@ -150,9 +153,8 @@ class VideoPlayerActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
         }
         videoBackgroundMode = backgroundPermissionDecision.mode
-        val playbackStateStore = VideoPlaybackStateStore(applicationContext.videoPlaybackStateDataStore)
         val progressSaver = VideoPlaybackProgressSaver(playbackPersistenceScope) { key, positionMillis, durationMillis ->
-            playbackStateStore.savePosition(
+            playerDependencies.savePlaybackPosition(
                 playbackKey = key,
                 positionMillis = positionMillis,
                 durationMillis = durationMillis,
@@ -188,7 +190,7 @@ class VideoPlayerActivity : ComponentActivity() {
             initialPlaybackKey = initialPlaybackKey,
             loadPosition = { key ->
                 withContext(Dispatchers.IO) {
-                    playbackStateStore.loadPosition(key)
+                    playerDependencies.loadPlaybackPosition(key)
                 }
             },
             savePositionAsync = { key, positionMillis, durationMillis ->
@@ -399,6 +401,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         adoptedRestoredEpisode = true
                     }
                     playbackPersistenceCoordinator.startAutoSave()
+                    startHistoryAutoSave()
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -543,6 +546,8 @@ class VideoPlayerActivity : ComponentActivity() {
             onBeforeMpvCleanup = {
                 playbackPersistenceCoordinator.stopAutoSave()
                 playbackPersistenceCoordinator.saveCurrentPositionAsync()
+                stopHistoryAutoSave()
+                saveCurrentHistoryAsync()
                 runCatching { audioFocusController.abandon() }
                 runCatching { VideoPlaybackService.stop(this) }
             },
@@ -561,6 +566,7 @@ class VideoPlayerActivity : ComponentActivity() {
         val wasPlayingBeforeSwitch = !controller.state.value.isPaused
         controller.setPaused(true)
         playbackPersistenceCoordinator.saveCurrentPositionAsync()
+        saveCurrentHistoryAsync()
         isEpisodeSwitching = true
         sessionCoordinator.launchLoad {
             var preparedEpisode: PreparedVideoEpisode? = null
@@ -591,11 +597,13 @@ class VideoPlayerActivity : ComponentActivity() {
                 val previousStreamIds = webDavStreamIds
                 webDavStreamIds = prepared.webDavStreamIds
                 playbackPersistenceCoordinator.adoptPlaybackKey(episode.playbackKey)
+                currentHistoryMetadata = episode.toWatchHistoryMetadata()
                 currentEpisodeIndex = targetIndex
                 playerMediaContext = episode.toPlayerMediaContext()
                 adoptedEpisode = true
                 episodeCoordinator.close(previousStreamIds)
                 playbackPersistenceCoordinator.startAutoSave()
+                startHistoryAutoSave()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -618,6 +626,40 @@ class VideoPlayerActivity : ComponentActivity() {
         controller.state.value.gestureState.brightnessPercent?.let(::applyScreenBrightnessPercent)
     }
 
+    private fun startHistoryAutoSave() {
+        if (historyAutoSaveJob != null) return
+        saveCurrentHistoryAsync()
+        historyAutoSaveJob = activityScope.launch {
+            while (true) {
+                delay(HISTORY_PROGRESS_SAVE_INTERVAL_MILLIS)
+                saveCurrentHistoryAsync()
+            }
+        }
+    }
+
+    private fun stopHistoryAutoSave() {
+        historyAutoSaveJob?.cancel()
+        historyAutoSaveJob = null
+    }
+
+    private fun saveCurrentHistoryAsync() {
+        // Episode switches reset player progress before the new episode's metadata is
+        // adopted; saving in that window would zero out the previous episode's entry.
+        if (isEpisodeSwitching) return
+        if (!::controller.isInitialized || !::currentHistoryMetadata.isInitialized) return
+        val progress = controller.progress.value
+        val metadata = currentHistoryMetadata
+        playbackPersistenceScope.launch {
+            runCatching {
+                playerDependencies.recordWatchHistory(
+                    metadata = metadata,
+                    positionMillis = progress.positionMillis,
+                    durationMillis = progress.durationMillis,
+                )
+            }
+        }
+    }
+
     private fun applyScreenBrightnessPercent(percent: Int) {
         val clampedPercent = percent.coerceIn(0, 100)
         window.attributes = window.attributes.apply {
@@ -633,6 +675,8 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_DISPLAY_NAME = VideoPlayerLaunchContract.EXTRA_DISPLAY_NAME
         const val EXTRA_SIZE = VideoPlayerLaunchContract.EXTRA_SIZE
         const val EXTRA_LAST_MODIFIED = VideoPlayerLaunchContract.EXTRA_LAST_MODIFIED
+        const val EXTRA_ACCOUNT_ID = VideoPlayerLaunchContract.EXTRA_ACCOUNT_ID
+        const val EXTRA_ETAG = VideoPlayerLaunchContract.EXTRA_ETAG
         const val EXTRA_SUBTITLE_URIS = VideoPlayerLaunchContract.EXTRA_SUBTITLE_URIS
         const val EXTRA_SUBTITLE_NAMES = VideoPlayerLaunchContract.EXTRA_SUBTITLE_NAMES
         const val EXTRA_WEB_DAV_STREAM_IDS = VideoPlayerLaunchContract.EXTRA_WEB_DAV_STREAM_IDS
@@ -653,6 +697,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_PLAYER_OPTIONS = VideoPlayerLaunchContract.EXTRA_PLAYER_OPTIONS
         const val EXTRA_EPISODE_QUEUE_ID = VideoPlayerLaunchContract.EXTRA_EPISODE_QUEUE_ID
         const val SOURCE_LOCAL = VideoPlayerLaunchContract.SOURCE_LOCAL
+        private const val HISTORY_PROGRESS_SAVE_INTERVAL_MILLIS = 10_000L
 
         fun localIntent(
             context: Context,

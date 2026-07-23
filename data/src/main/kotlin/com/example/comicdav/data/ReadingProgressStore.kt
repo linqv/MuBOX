@@ -23,6 +23,14 @@ class ReadingProgressStore(
             .first()
     }
 
+    suspend fun deletePage(comicKey: String) {
+        dataStore.edit { preferences -> preferences.remove(keyFor(comicKey)) }
+    }
+
+    suspend fun clear() {
+        dataStore.edit { preferences -> preferences.clear() }
+    }
+
     private fun keyFor(comicKey: String): Preferences.Key<Int> {
         return intPreferencesKey("page_$comicKey")
     }

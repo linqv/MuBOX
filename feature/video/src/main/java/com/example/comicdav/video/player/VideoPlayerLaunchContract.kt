@@ -13,6 +13,8 @@ object VideoPlayerLaunchContract {
     const val EXTRA_DISPLAY_NAME = "com.example.comicdav.video.extra.DISPLAY_NAME"
     const val EXTRA_SIZE = "com.example.comicdav.video.extra.SIZE"
     const val EXTRA_LAST_MODIFIED = "com.example.comicdav.video.extra.LAST_MODIFIED"
+    const val EXTRA_ACCOUNT_ID = "com.example.comicdav.video.extra.ACCOUNT_ID"
+    const val EXTRA_ETAG = "com.example.comicdav.video.extra.ETAG"
     const val EXTRA_SUBTITLE_URIS = "com.example.comicdav.video.extra.SUBTITLE_URIS"
     const val EXTRA_SUBTITLE_NAMES = "com.example.comicdav.video.extra.SUBTITLE_NAMES"
     const val EXTRA_WEB_DAV_STREAM_IDS = "com.example.comicdav.video.extra.WEB_DAV_STREAM_IDS"
@@ -85,6 +87,8 @@ object VideoPlayerLaunchContract {
             .putExtra(EXTRA_DISPLAY_NAME, request.displayName)
             .putExtra(EXTRA_SIZE, request.size ?: -1L)
             .putExtra(EXTRA_LAST_MODIFIED, request.lastModified ?: -1L)
+            .putExtra(EXTRA_ACCOUNT_ID, request.accountId)
+            .putExtra(EXTRA_ETAG, request.etag)
             .putExtra(
                 EXTRA_PLAYBACK_KEY,
                 webDavVideoPlaybackKey(
@@ -114,6 +118,10 @@ object VideoPlayerLaunchContract {
             remotePath = intent.getStringExtra(EXTRA_REMOTE_PATH),
             subtitles = intent.subtitleRequests(),
             playbackKey = intent.getStringExtra(EXTRA_PLAYBACK_KEY),
+            size = intent.getLongExtra(EXTRA_SIZE, -1L).takeIf { it >= 0L },
+            lastModified = intent.getLongExtra(EXTRA_LAST_MODIFIED, -1L).takeIf { it >= 0L },
+            accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID),
+            etag = intent.getStringExtra(EXTRA_ETAG),
             options = intent.videoPlayerOptions(),
             episodeQueue = VideoEpisodeQueueStore.read(
                 context.applicationContext.noBackupFilesDir,
@@ -158,6 +166,10 @@ internal data class VideoPlayerLaunchArguments(
     val remotePath: String?,
     val subtitles: List<VideoSubtitleOpenRequest>,
     val playbackKey: String?,
+    val size: Long?,
+    val lastModified: Long?,
+    val accountId: String?,
+    val etag: String?,
     val options: VideoPlayerOptions,
     val episodeQueue: VideoEpisodeQueue?,
     val webDavStreamIds: List<String>,

@@ -2,6 +2,10 @@ package com.example.comicdav
 
 import android.content.Context
 import android.net.Uri
+import com.example.comicdav.core.model.history.WatchHistoryEntry
+import com.example.comicdav.core.model.history.WatchHistoryMetadata
+import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.data.DownloadRecord
@@ -53,6 +57,9 @@ internal class AppComicActions(
                 size = item.size,
                 lastModified = item.lastModified,
             ),
+            sourceLocator = item.uri,
+            size = item.size,
+            lastModified = item.lastModified,
             readyEvent = "open_directory_local_fd_ready",
             failureEvent = "open_directory_local_fd_failed uri=${item.uri}",
             onFailure = { error -> fileDirectoryViewModel.showError(error.message ?: "打开本地文件失败") },
@@ -76,6 +83,39 @@ internal class AppComicActions(
                         onOpenSucceeded = { libraryViewModel.markOpened(item.item.id) },
                     )
                 }
+            }
+        }
+    }
+
+    fun openHistoryEntry(entry: WatchHistoryEntry) {
+        if (entry.mediaType != WatchMediaType.COMIC) return
+        when (entry.sourceType) {
+            WatchSourceType.LOCAL -> openDirectLocalComic(
+                uri = Uri.parse(entry.sourceLocator),
+                fileName = entry.displayTitle,
+                comicKey = entry.mediaKey,
+                sourceLocator = entry.sourceLocator,
+                size = entry.size,
+                lastModified = entry.lastModified,
+                readyEvent = "open_history_local_ready",
+                failureEvent = "open_history_local_failed uri=${entry.sourceLocator}",
+                onFailure = { error ->
+                    callbacks.setError(error.message ?: "无法打开这条历史记录，原文件可能已移动")
+                },
+            )
+            WatchSourceType.WEB_DAV -> {
+                val accountId = entry.accountId
+                if (accountId.isNullOrBlank()) {
+                    callbacks.setError("这条历史记录缺少 WebDAV 账号")
+                    return
+                }
+                openRemoteComic(
+                    accountId = accountId,
+                    remotePath = entry.sourceLocator,
+                    size = entry.size,
+                    etag = entry.etag,
+                    lastModified = entry.lastModified,
+                )
             }
         }
     }
@@ -258,7 +298,19 @@ internal class AppComicActions(
         )
         ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
         val avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled)
-        readerViewModel.openRemote(cacheDir = context.cacheDir) {
+        readerViewModel.openRemote(
+            cacheDir = context.cacheDir,
+            historyMetadata = comicHistoryMetadata(
+                mediaKey = "",
+                title = remotePath.substringAfterLast('/').ifBlank { remotePath },
+                sourceType = WatchSourceType.WEB_DAV,
+                sourceLocator = remotePath,
+                accountId = accountId,
+                size = size,
+                etag = etag,
+                lastModified = lastModified,
+            ),
+        ) {
             val result = OpenComicUseCase(
                 accountId = accountId,
                 cache = container.remoteCache,
@@ -296,6 +348,9 @@ internal class AppComicActions(
                     size = record.sizeBytes,
                     lastModified = record.downloadedAtMillis,
                 ),
+                sourceLocator = localUri,
+                size = record.sizeBytes,
+                lastModified = record.downloadedAtMillis,
                 readyEvent = "open_download_local_ready",
                 failureEvent = "open_download_local_failed uri=$localUri",
                 onFailure = { error ->
@@ -329,6 +384,9 @@ internal class AppComicActions(
                 size = source.size,
                 lastModified = source.lastModified,
             ),
+            sourceLocator = source.uri,
+            size = source.size,
+            lastModified = source.lastModified,
             readyEvent = "open_library_local_fd_ready",
             failureEvent = "open_library_local_fd_failed",
             onOpened = { libraryViewModel.markOpened(item.item.id) },
@@ -340,6 +398,9 @@ internal class AppComicActions(
         uri: Uri,
         fileName: String,
         comicKey: String,
+        sourceLocator: String,
+        size: Long? = null,
+        lastModified: Long? = null,
         readyEvent: String,
         failureEvent: String,
         onOpened: () -> Unit = {},
@@ -365,9 +426,17 @@ internal class AppComicActions(
                     readerViewModel.openExistingSession(
                         openedSession = session,
                         cacheDir = context.cacheDir,
-                        initialPage = 0,
+                        initialPage = container.progressStore.loadPage(comicKey),
                         comicKey = comicKey,
                         pageCacheKey = readerImageFormatCacheKey(comicKey, avifImagesEnabled),
+                        historyMetadata = comicHistoryMetadata(
+                            mediaKey = comicKey,
+                            title = fileName,
+                            sourceType = WatchSourceType.LOCAL,
+                            sourceLocator = sourceLocator,
+                            size = size,
+                            lastModified = lastModified,
+                        ),
                     )
                     callbacks.setReaderOpen(true)
                 },
@@ -382,6 +451,28 @@ internal class AppComicActions(
     private fun currentWebDavAccountId(): String =
         webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
 }
+
+internal fun comicHistoryMetadata(
+    mediaKey: String,
+    title: String,
+    sourceType: WatchSourceType,
+    sourceLocator: String,
+    accountId: String? = null,
+    size: Long? = null,
+    etag: String? = null,
+    lastModified: Long? = null,
+): WatchHistoryMetadata =
+    WatchHistoryMetadata(
+        mediaKey = mediaKey,
+        mediaType = WatchMediaType.COMIC,
+        title = title,
+        sourceType = sourceType,
+        sourceLocator = sourceLocator,
+        accountId = accountId,
+        size = size,
+        etag = etag,
+        lastModified = lastModified,
+    )
 
 private fun WebDavItem.toKnownRemoteFileInfo(): RemoteFileInfo? =
     size?.let { knownSize ->

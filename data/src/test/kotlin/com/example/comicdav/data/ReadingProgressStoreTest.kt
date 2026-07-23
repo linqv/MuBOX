@@ -27,6 +27,20 @@ class ReadingProgressStoreTest {
     }
 
     @Test
+    fun deleteAndClearRemoveStoredComicProgress() = runTest {
+        val store = ReadingProgressStore(dataStore("reading-progress-clear.preferences_pb"))
+        store.savePage("comic-1", 3)
+        store.savePage("comic-2", 8)
+
+        store.deletePage("comic-1")
+        assertEquals(0, store.loadPage("comic-1"))
+        assertEquals(8, store.loadPage("comic-2"))
+
+        store.clear()
+        assertEquals(0, store.loadPage("comic-2"))
+    }
+
+    @Test
     fun returnsNullWhenFolderUriHasNotBeenSaved() = runTest {
         val store = AppDataFolderStore(dataStore("app-data-folder-empty.preferences_pb"))
 

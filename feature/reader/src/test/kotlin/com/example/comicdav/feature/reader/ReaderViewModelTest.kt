@@ -3,6 +3,10 @@ package com.example.comicdav.feature.reader
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.history.WatchHistoryEntry
+import com.example.comicdav.core.model.history.WatchHistoryMetadata
+import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.PlannedRemoteRange
 import java.io.File
@@ -207,6 +211,39 @@ class ReaderViewModelTest {
         assertNotEquals(cachedFile.absolutePath, viewModel.uiState.pageFiles[0]?.absolutePath)
         assertEquals(listOf(0.toByte()), viewModel.uiState.pageFiles[0]?.readBytes()?.toList())
         assertEquals(listOf(42.toByte()), cachedFile.readBytes().toList())
+    }
+
+    @Test
+    fun openingAndTurningPagesRecordsOneBasedComicProgress() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        mainDispatcher.set(dispatcher)
+        val recorded = mutableListOf<WatchHistoryEntry>()
+        val viewModel = ReaderViewModel(
+            ioDispatcher = dispatcher,
+            recordHistory = recorded::add,
+        )
+        viewModel.openExistingSession(
+            openedSession = RecordingComicSession(pageCount = 12, forwardPrefetchPageCount = 0),
+            cacheDir = temp.root,
+            initialPage = 2,
+            comicKey = "comic-key",
+            historyMetadata = WatchHistoryMetadata(
+                mediaKey = "comic-key",
+                mediaType = WatchMediaType.COMIC,
+                title = "Volume 1",
+                sourceType = WatchSourceType.LOCAL,
+                sourceLocator = "content://volume-1",
+            ),
+        )
+        runCurrent()
+
+        assertEquals(3L, recorded.last().progress)
+        assertEquals(12L, recorded.last().total)
+
+        viewModel.selectPage(5)
+        runCurrent()
+
+        assertEquals(6L, recorded.last().progress)
     }
 
 }

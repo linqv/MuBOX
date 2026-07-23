@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.model.history.WatchHistoryEntry
+import com.example.comicdav.core.model.history.WatchHistoryMetadata
 import com.example.comicdav.core.ports.ComicReaderSession
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -18,6 +20,7 @@ import kotlinx.coroutines.withContext
 
 typealias ComicSessionFactory = (path: String) -> ComicReaderSession
 typealias SaveReadingProgress = suspend (comicKey: String, pageIndex: Int) -> Unit
+typealias RecordReadingHistory = suspend (entry: WatchHistoryEntry) -> Unit
 
 data class ReaderUiState(
     val pageCount: Int = 0,
@@ -34,6 +37,7 @@ class ReaderViewModel(
     },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val savePage: SaveReadingProgress = { _, _ -> },
+    private val recordHistory: RecordReadingHistory = {},
     prunePageCache: (cacheDir: File, protectedFile: File, maxBytes: Long) -> Unit = { cacheDir, protectedFile, maxBytes ->
         ReaderPageCache.prune(cacheDir, protectedFile, maxBytes)
     },
@@ -43,6 +47,7 @@ class ReaderViewModel(
         private set
 
     private val diagnostics = ReaderDiagnosticsTracker(elapsedRealtimeMs)
+    private var historyMetadata: WatchHistoryMetadata? = null
     private val sessionCoordinator = ReaderSessionCoordinator(ioDispatcher)
     private val pageLoadCoordinator = ReaderPageLoadCoordinator(
         ioDispatcher = ioDispatcher,
@@ -71,8 +76,15 @@ class ReaderViewModel(
         pageLoadCoordinator.updatePageImageCacheEnabled(enabled)
     }
 
-    fun openLocal(path: String, cacheDir: File, initialPage: Int = 0, comicKey: String? = null) {
+    fun openLocal(
+        path: String,
+        cacheDir: File,
+        initialPage: Int = 0,
+        comicKey: String? = null,
+        historyMetadata: WatchHistoryMetadata? = null,
+    ) {
         closeCurrentSession()
+        this.historyMetadata = historyMetadata
         diagnostics.reset()
         val pageCacheKey = comicKey ?: "local-${path.hashCode()}"
         val opening = requireNotNull(
@@ -114,6 +126,7 @@ class ReaderViewModel(
                     )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, opening.generation)
                     prefetchCoordinator.prefetchNeighbors(opened.currentPage)
+                    saveHistory(opened.currentPage, opened.session.pageCount)
                 },
                 onFailure = { error ->
                     ReaderDiagnosticLog.error("open_local_failed", error)
@@ -129,8 +142,10 @@ class ReaderViewModel(
         initialPage: Int,
         comicKey: String,
         pageCacheKey: String = comicKey,
+        historyMetadata: WatchHistoryMetadata? = null,
     ) {
         closeCurrentSession()
+        this.historyMetadata = historyMetadata
         diagnostics.reset()
         startOpenedSession(
             openedSession = openedSession,
@@ -187,6 +202,7 @@ class ReaderViewModel(
                     )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, openGeneration)
                     prefetchCoordinator.prefetchNeighbors(opened.currentPage)
+                    saveHistory(opened.currentPage, opened.session.pageCount)
                 },
                 onFailure = { error ->
                     sessionCoordinator.closeSessionAsync(openedSession)
@@ -199,9 +215,11 @@ class ReaderViewModel(
 
     fun openRemote(
         cacheDir: File,
+        historyMetadata: WatchHistoryMetadata? = null,
         openComic: suspend () -> OpenComicResult,
     ) {
         closeCurrentSession()
+        this.historyMetadata = historyMetadata
         diagnostics.reset()
         val openGeneration = sessionCoordinator.generation
         val remoteOpenStartedAtMs = elapsedRealtimeMs()
@@ -220,6 +238,8 @@ class ReaderViewModel(
                         return@fold
                     }
                     sessionCoordinator.clearRemoteOpen(currentCoroutineContext()[Job])
+                    this@ReaderViewModel.historyMetadata =
+                        this@ReaderViewModel.historyMetadata?.copy(mediaKey = result.comicKey)
                     val remoteDurationMs = (elapsedRealtimeMs() - remoteOpenStartedAtMs).coerceAtLeast(0L)
                     diagnostics.recordRemoteOpenDuration(remoteDurationMs)
                     ReaderDiagnosticLog.event(
@@ -388,11 +408,22 @@ class ReaderViewModel(
             viewModelScope.launch {
                 runCatching {
                     savePage(key, pageIndex)
+                    saveHistory(pageIndex, uiState.pageCount)
                 }.onFailure { error ->
                     ReaderDiagnosticLog.error("save_progress_failed page=$pageIndex key=$key", error)
                 }
             }
         }
+    }
+
+    private suspend fun saveHistory(pageIndex: Int, pageCount: Int) {
+        val metadata = historyMetadata ?: return
+        recordHistory(
+            metadata.entry(
+                progress = (pageIndex + 1).toLong(),
+                total = pageCount.toLong(),
+            ),
+        )
     }
 
     private data class OpenedReader(

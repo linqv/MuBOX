@@ -3,6 +3,7 @@ package com.example.comicdav
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
@@ -178,6 +179,10 @@ internal fun SettingsTabContent(
     scope: CoroutineScope,
     cacheAnalysis: ComicCacheAnalysis,
     cacheActionMessage: String?,
+    history: List<WatchHistoryEntry>,
+    onOpenHistoryEntry: (WatchHistoryEntry) -> Unit,
+    onDeleteHistoryEntry: (WatchHistoryEntry) -> Unit,
+    onClearHistory: () -> Unit,
     onClearCacheCategory: (ComicCacheCategory) -> Unit,
     onClearAllCache: () -> Unit,
     modifier: Modifier = Modifier,
@@ -191,8 +196,12 @@ internal fun SettingsTabContent(
                 scope = scope,
                 onClearCacheCategory = onClearCacheCategory,
                 onClearAllCache = onClearAllCache,
+                onDeleteHistoryEntry = onDeleteHistoryEntry,
+                onClearHistory = onClearHistory,
             )
         },
+        history = history,
+        onOpenHistoryEntry = onOpenHistoryEntry,
         cacheAnalysis = cacheAnalysis,
         cacheActionMessage = cacheActionMessage,
         modifier = modifier,
@@ -205,6 +214,8 @@ internal fun dispatchSettingsAction(
     scope: CoroutineScope,
     onClearCacheCategory: (ComicCacheCategory) -> Unit,
     onClearAllCache: () -> Unit,
+    onDeleteHistoryEntry: (WatchHistoryEntry) -> Unit = {},
+    onClearHistory: () -> Unit = {},
 ) {
     when (action) {
         is SettingsAction.SetReadingDirection ->
@@ -265,6 +276,12 @@ internal fun dispatchSettingsAction(
             scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(action.value) }
         is SettingsAction.SetVideoLibraryThumbnailsEnabled ->
             scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(action.value) }
+        is SettingsAction.SetHistoryRetentionDays ->
+            scope.launch { appSettingsStore.updateHistoryRetentionDays(action.value) }
+        is SettingsAction.SetHistoryMaxRecords ->
+            scope.launch { appSettingsStore.updateHistoryMaxRecords(action.value) }
+        is SettingsAction.DeleteHistoryEntry -> onDeleteHistoryEntry(action.entry)
+        SettingsAction.ClearHistory -> onClearHistory()
         is SettingsAction.ClearCacheCategory -> onClearCacheCategory(action.category)
         SettingsAction.ClearAllCache -> onClearAllCache()
     }

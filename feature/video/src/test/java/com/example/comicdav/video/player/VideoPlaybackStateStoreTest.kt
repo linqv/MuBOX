@@ -45,6 +45,18 @@ class VideoPlaybackStateStoreTest {
     }
 
     @Test
+    fun clearAllRemovesEveryResumePosition() = runTest {
+        val store = store("clear_all.preferences_pb")
+        store.savePosition("video-1", 10_000L, 60_000L)
+        store.savePosition("video-2", 20_000L, 60_000L)
+
+        store.clearAll()
+
+        assertEquals(0L, store.loadPosition("video-1"))
+        assertEquals(0L, store.loadPosition("video-2"))
+    }
+
+    @Test
     fun buildsDifferentStableKeysForDifferentVideoSources() {
         val localKey = localVideoPlaybackKey(
             uri = "content://video/1",

@@ -67,6 +67,8 @@ class SettingsActionDispatcherTest {
             SettingsAction.SetVideoControlsAutoHideMillis(10_000),
             SettingsAction.SetVideoPlayerOrientationMode(VideoPlayerOrientationMode.LANDSCAPE),
             SettingsAction.SetVideoLibraryThumbnailsEnabled(false),
+            SettingsAction.SetHistoryRetentionDays(180),
+            SettingsAction.SetHistoryMaxRecords(500),
         )
 
         actions.forEach { action ->
@@ -110,6 +112,8 @@ class SettingsActionDispatcherTest {
         assertEquals(10_000, settings.videoControlsAutoHideMillis)
         assertEquals(VideoPlayerOrientationMode.LANDSCAPE, settings.videoPlayerOrientationMode)
         assertFalse(settings.videoLibraryThumbnailsEnabled)
+        assertEquals(180, settings.historyRetentionDays)
+        assertEquals(500, settings.historyMaxRecords)
     }
 
     @Test

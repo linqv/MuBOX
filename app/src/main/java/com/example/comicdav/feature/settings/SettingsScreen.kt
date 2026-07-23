@@ -2,28 +2,41 @@ package com.example.comicdav.feature.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +61,8 @@ import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
+import com.example.comicdav.core.model.history.WatchHistoryEntry
+import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import com.example.comicdav.data.displayLabel
 import com.example.comicdav.data.ComicCacheAnalysis
@@ -56,6 +71,7 @@ import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.MuBoxActionRow
 import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxEmptyState
 import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.ui.settings.gpuApiModeLabel
@@ -67,16 +83,22 @@ import com.example.comicdav.ui.settings.videoOutputModeLabel
 import com.example.comicdav.ui.settings.videoPlayerOrientationModeLabel
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
 private val SupportedDiskCacheLimitMb = listOf(500, 1024, 2048, 3072, 4096, 5120)
 private val SupportedWebDavPrefetchPageCounts = listOf(2, 4, 6, 8, 10, 12)
+private val SupportedHistoryRetentionDays = listOf(0, 7, 30, 90, 180, 365)
+private val SupportedHistoryMaxRecords = listOf(50, 100, 200, 500, 1_000)
 
 private enum class SettingsPage {
     ROOT,
     COMIC,
     VIDEO,
+    HISTORY,
 }
 
 sealed interface SettingsAction {
@@ -109,6 +131,10 @@ sealed interface SettingsAction {
     data class SetVideoControlsAutoHideMillis(val value: Int) : SettingsAction
     data class SetVideoPlayerOrientationMode(val value: VideoPlayerOrientationMode) : SettingsAction
     data class SetVideoLibraryThumbnailsEnabled(val value: Boolean) : SettingsAction
+    data class SetHistoryRetentionDays(val value: Int) : SettingsAction
+    data class SetHistoryMaxRecords(val value: Int) : SettingsAction
+    data class DeleteHistoryEntry(val entry: WatchHistoryEntry) : SettingsAction
+    data object ClearHistory : SettingsAction
     data class ClearCacheCategory(val category: ComicCacheCategory) : SettingsAction
     data object ClearAllCache : SettingsAction
 }
@@ -126,7 +152,11 @@ internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
         ),
         SettingsGroupLayout(
             title = "内容设置",
-            rows = listOf("漫画设置", "视频设置"),
+            rows = listOf("观看历史", "漫画设置", "视频设置"),
+        ),
+        SettingsGroupLayout(
+            title = "观看历史设置",
+            rows = listOf("保留时长", "最大保留记录", "清空观看历史"),
         ),
         SettingsGroupLayout(
             title = "缓存",
@@ -189,11 +219,14 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
 fun SettingsScreen(
     settings: AppSettings,
     onAction: (SettingsAction) -> Unit,
+    history: List<WatchHistoryEntry> = emptyList(),
+    onOpenHistoryEntry: (WatchHistoryEntry) -> Unit = {},
     cacheAnalysis: ComicCacheAnalysis = ComicCacheAnalysis(),
     cacheActionMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     var currentPage by remember { mutableStateOf(SettingsPage.ROOT) }
+    var confirmingHistoryClear by remember { mutableStateOf(false) }
 
     BackHandler(enabled = currentPage != SettingsPage.ROOT) {
         currentPage = SettingsPage.ROOT
@@ -251,6 +284,16 @@ fun SettingsScreen(
             )
             return
         }
+        SettingsPage.HISTORY -> {
+            HistorySettingsPage(
+                history = history,
+                onOpenEntry = onOpenHistoryEntry,
+                onDeleteEntry = { onAction(SettingsAction.DeleteHistoryEntry(it)) },
+                onBack = { currentPage = SettingsPage.ROOT },
+                modifier = modifier,
+            )
+            return
+        }
         SettingsPage.ROOT -> Unit
     }
 
@@ -283,6 +326,13 @@ fun SettingsScreen(
 
         MuBoxBoxedList(title = "内容设置") {
             MuBoxActionRow(
+                title = "观看历史",
+                onClick = { currentPage = SettingsPage.HISTORY },
+                subtitle = if (history.isEmpty()) "暂无记录" else "${history.size} 条记录，继续上次进度",
+                leading = { Icon(Icons.Filled.History, contentDescription = null) },
+                trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
+            )
+            MuBoxActionRow(
                 title = "漫画设置",
                 onClick = { currentPage = SettingsPage.COMIC },
                 subtitle = "阅读方向、翻页、预取、封面和诊断",
@@ -293,6 +343,29 @@ fun SettingsScreen(
                 onClick = { currentPage = SettingsPage.VIDEO },
                 subtitle = "播放、WebDAV 流式读取、解码和封面",
                 trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
+            )
+        }
+
+        MuBoxBoxedList(title = "观看历史设置") {
+            DropdownRow(
+                title = "保留时长",
+                selected = settings.historyRetentionDays,
+                options = SupportedHistoryRetentionDays,
+                label = ::historyRetentionLabel,
+                onSelected = { onAction(SettingsAction.SetHistoryRetentionDays(it)) },
+            )
+            DropdownRow(
+                title = "最大保留记录",
+                selected = settings.historyMaxRecords,
+                options = SupportedHistoryMaxRecords,
+                label = ::historyMaxRecordsLabel,
+                onSelected = { onAction(SettingsAction.SetHistoryMaxRecords(it)) },
+            )
+            CacheActionRow(
+                title = "清空观看历史",
+                subtitle = "${history.size} 条记录；同时清理恢复位置和关联漫画缓存",
+                enabled = history.isNotEmpty(),
+                onClear = { confirmingHistoryClear = true },
             )
         }
 
@@ -389,7 +462,201 @@ fun SettingsScreen(
             overflow = TextOverflow.Ellipsis,
         )
     }
+    if (confirmingHistoryClear) {
+        AlertDialog(
+            onDismissRequest = { confirmingHistoryClear = false },
+            title = { Text("清空全部观看历史？") },
+            text = { Text("将删除全部恢复位置和关联漫画缓存，此操作无法撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmingHistoryClear = false
+                        onAction(SettingsAction.ClearHistory)
+                    },
+                ) {
+                    Text("清空")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingHistoryClear = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
 }
+
+@Composable
+private fun HistorySettingsPage(
+    history: List<WatchHistoryEntry>,
+    onOpenEntry: (WatchHistoryEntry) -> Unit,
+    onDeleteEntry: (WatchHistoryEntry) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = rememberMuBoxColors()
+    var pendingDelete by remember { mutableStateOf<WatchHistoryEntry?>(null) }
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            MuBoxHeaderBar(
+                title = "观看历史",
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            )
+        }
+        if (history.isEmpty()) {
+            item {
+                MuBoxEmptyState(
+                    icon = Icons.Filled.History,
+                    title = "暂无观看历史",
+                    body = "打开漫画或视频后，进度会自动显示在这里",
+                )
+            }
+        } else {
+            item {
+                Text(
+                    text = "最近观看",
+                    modifier = Modifier.padding(start = 16.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.muted,
+                )
+            }
+            items(
+                items = history,
+                key = WatchHistoryEntry::mediaKey,
+            ) { entry ->
+                HistoryEntryRow(
+                    entry = entry,
+                    onOpen = { onOpenEntry(entry) },
+                    onDelete = { pendingDelete = entry },
+                )
+            }
+        }
+    }
+    pendingDelete?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这条历史记录？") },
+            text = { Text("将同时清理《${entry.displayTitle}》的恢复位置和关联漫画缓存。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDeleteEntry(entry)
+                    },
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun HistoryEntryRow(
+    entry: WatchHistoryEntry,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = rememberMuBoxColors()
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+        shape = MaterialTheme.shapes.large,
+        color = colors.boxedList,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (entry.mediaType == WatchMediaType.COMIC) {
+                    Icons.Filled.Book
+                } else {
+                    Icons.Filled.Movie
+                },
+                contentDescription = null,
+                tint = colors.mediaAccent,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = entry.displayTitle,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${historyProgressLabel(entry)} · ${formatHistoryTime(entry.lastWatchedAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                LinearProgressIndicator(
+                    progress = { entry.progressFraction },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = colors.mediaAccent,
+                    trackColor = colors.panelHigh,
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = "删除 ${entry.displayTitle} 的历史记录和关联缓存",
+                    tint = colors.errorText,
+                )
+            }
+        }
+    }
+}
+
+internal fun historyRetentionLabel(days: Int): String =
+    if (days <= 0) "永久" else "$days 天"
+
+internal fun historyMaxRecordsLabel(maxRecords: Int): String = "$maxRecords 条"
+
+internal fun historyProgressLabel(entry: WatchHistoryEntry): String =
+    when (entry.mediaType) {
+        WatchMediaType.COMIC -> "第 ${entry.progress.coerceAtLeast(1L)} / ${entry.total.coerceAtLeast(1L)} 页"
+        WatchMediaType.VIDEO -> "${formatVideoHistoryDuration(entry.progress)} / ${formatVideoHistoryDuration(entry.total)}"
+    }
+
+private fun formatVideoHistoryDuration(millis: Long): String {
+    val totalSeconds = millis.coerceAtLeast(0L) / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(Locale.US, hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(Locale.US, minutes, seconds)
+    }
+}
+
+private fun formatHistoryTime(timestamp: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(timestamp))
 
 @Composable
 private fun ComicSettingsPage(

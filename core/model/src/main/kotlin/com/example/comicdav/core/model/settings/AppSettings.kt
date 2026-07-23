@@ -54,6 +54,8 @@ data class AppSettings(
     val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
     val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
     val videoLibraryThumbnailsEnabled: Boolean = true,
+    val historyRetentionDays: Int = 90,
+    val historyMaxRecords: Int = 200,
 ) {
     val loggingEnabled: Boolean
         get() = readerLoggingMode != ReaderLoggingMode.OFF

@@ -74,12 +74,45 @@ class ComicDownloadCache(
         return FileLruPruner.prune(cacheDir, maxCacheBytes, protectedFiles)
     }
 
+    fun clear(key: ComicCacheKey): Long {
+        val targets = listOf(
+            cacheDir.resolve("${key.value}.cbz"),
+            cacheDir.resolve("${key.value}.tmp"),
+            indexCacheFile(key),
+            nativePageCacheDir(key),
+        )
+        return targets
+            .distinctBy { target -> target.absolutePath }
+            .sumOf { target -> target.deleteAndReturnBytes() }
+    }
+
+    internal fun indexCacheFile(key: ComicCacheKey): File =
+        cacheDir.resolve("index").resolve("${key.value.sha256()}.json")
+
+    // The native engine stores prefetched pages under <cacheDir>/<safe(comicKey)>/pages/.
+    private fun nativePageCacheDir(key: ComicCacheKey): File =
+        cacheDir.resolve(key.value.safePathSegment())
+
     private companion object {
         const val DEFAULT_MAX_CACHE_BYTES = 512L * 1024L * 1024L
     }
+}
+
+private fun File.deleteAndReturnBytes(): Long {
+    if (!exists()) return 0L
+    val bytes = if (isFile) length() else walkTopDown().filter(File::isFile).sumOf(File::length)
+    val deleted = if (isDirectory) deleteRecursively() else delete()
+    return if (deleted) bytes else 0L
 }
 
 private fun String.sha256(): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
     return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
 }
+
+// Mirrors safe_path_segment in comic-core so the native page cache directory is found.
+private fun String.safePathSegment(): String =
+    map { ch -> if (ch.isSafePathSegmentChar()) ch else '_' }.joinToString("")
+
+private fun Char.isSafePathSegmentChar(): Boolean =
+    this in 'A'..'Z' || this in 'a'..'z' || this in '0'..'9' || this == '.' || this == '_' || this == '-'
