@@ -35,9 +35,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -106,10 +106,10 @@ internal fun PlayerTopBar(
                     modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.PlaylistPlay,
+                        Icons.Filled.FormatListNumbered,
                         contentDescription = "选集",
                         tint = Color.White,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }

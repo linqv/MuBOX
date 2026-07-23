@@ -163,7 +163,7 @@ internal fun VideoPlayerScreen(
                         episodePageVisible = false
                         menuVisible = !menuVisible
                     },
-                    showEpisodeButton = (episodeQueue?.episodes?.size ?: 0) > 1,
+                    showEpisodeButton = !episodeQueue?.episodes.isNullOrEmpty(),
                     onEpisodeClick = {
                         menuVisible = false
                         episodePageVisible = true
