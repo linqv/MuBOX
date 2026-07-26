@@ -1,8 +1,6 @@
 package com.example.comicdav.video.player
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
@@ -29,13 +27,13 @@ class MuBoxMpvViewFactoryTest {
         view.videoOutputMode = VideoOutputMode.GPU_NEXT
         view.gpuApiMode = GpuApiMode.VULKAN
         view.videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS
-        view.anime4kSettings = Anime4KSettings(enabled = true, mode = Anime4KMode.B)
+        view.anime4kProfile = Anime4KProfile.EXTREME
 
         assertEquals(MpvProfileMode.LOW_LATENCY, view.mpvProfileMode)
         assertEquals(VideoOutputMode.GPU_NEXT, view.videoOutputMode)
         assertEquals(GpuApiMode.VULKAN, view.gpuApiMode)
         assertEquals(VideoDecoderMode.HARDWARE_PLUS, view.videoDecoderMode)
-        assertEquals(Anime4KSettings(enabled = true, mode = Anime4KMode.B), view.anime4kSettings)
+        assertEquals(Anime4KProfile.EXTREME, view.anime4kProfile)
     }
 
     @Test
@@ -46,7 +44,7 @@ class MuBoxMpvViewFactoryTest {
         assertEquals(VideoOutputMode.AUTO, view.videoOutputMode)
         assertEquals(GpuApiMode.AUTO, view.gpuApiMode)
         assertEquals(VideoDecoderMode.AUTO, view.videoDecoderMode)
-        assertEquals(Anime4KSettings(), view.anime4kSettings)
+        assertEquals(Anime4KProfile.OFF, view.anime4kProfile)
         assertNull(view.anime4kManager)
     }
 
@@ -54,17 +52,13 @@ class MuBoxMpvViewFactoryTest {
     fun startupOptionsApplyProfileRendererDecoderAndAnime4KBeforeMediaLoad() {
         val api = RecordingMpvNativeApi()
         val events = api.events
-        val settings = Anime4KSettings(
-            enabled = true,
-            mode = Anime4KMode.C_PLUS,
-            quality = Anime4KQuality.HIGH,
-        )
+        val profile = Anime4KProfile.EXTREME
         val applier = MpvStartupOptionsApplier(
             nativeApi = api,
             setVideoOutput = { events += "vo:$it" },
             initializeAnime4K = { events += "anime4k:initialize" },
             anime4KShaderChain = {
-                assertEquals(settings, it)
+                assertEquals(profile, it)
                 "/files/shaders/a.glsl:/files/shaders/b.glsl"
             },
             memoryBudget = testPlaybackMemoryBudget,
@@ -76,7 +70,7 @@ class MuBoxMpvViewFactoryTest {
                 videoOutputMode = VideoOutputMode.GPU_NEXT,
                 gpuApiMode = GpuApiMode.AUTO,
                 videoDecoderMode = VideoDecoderMode.HARDWARE_PLUS,
-                anime4kSettings = settings,
+                anime4kProfile = profile,
             ),
         )
 
@@ -111,7 +105,7 @@ class MuBoxMpvViewFactoryTest {
         ).apply(
             MpvViewStartupConfiguration(
                 gpuApiMode = GpuApiMode.VULKAN,
-                anime4kSettings = Anime4KSettings(enabled = true),
+                anime4kProfile = Anime4KProfile.EFFICIENCY,
             ),
         )
 
@@ -133,7 +127,7 @@ class MuBoxMpvViewFactoryTest {
             MpvViewStartupConfiguration(
                 videoOutputMode = VideoOutputMode.AUTO,
                 gpuApiMode = GpuApiMode.AUTO,
-                anime4kSettings = Anime4KSettings(enabled = true),
+                anime4kProfile = Anime4KProfile.EFFICIENCY,
             ),
         )
 

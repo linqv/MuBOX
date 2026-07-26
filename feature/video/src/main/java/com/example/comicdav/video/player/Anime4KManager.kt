@@ -1,9 +1,7 @@
 package com.example.comicdav.video.player
 
 import android.content.Context
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import java.io.File
@@ -15,7 +13,7 @@ data class Anime4KStartupCompatibility(
 
 @Suppress("UNUSED_PARAMETER")
 internal fun anime4kStartupCompatibility(
-    settings: Anime4KSettings,
+    profile: Anime4KProfile,
     requestedVideoOutputMode: VideoOutputMode,
     gpuApiMode: GpuApiMode,
 ): Anime4KStartupCompatibility {
@@ -27,54 +25,41 @@ internal fun anime4kStartupCompatibility(
 internal val expectedAnime4KShaderAssetNames = listOf(
     "Anime4K_Clamp_Highlights.glsl",
     "Anime4K_Restore_CNN_S.glsl",
-    "Anime4K_Restore_CNN_M.glsl",
     "Anime4K_Restore_CNN_L.glsl",
-    "Anime4K_Restore_CNN_Soft_S.glsl",
-    "Anime4K_Restore_CNN_Soft_M.glsl",
-    "Anime4K_Restore_CNN_Soft_L.glsl",
     "Anime4K_Upscale_CNN_x2_S.glsl",
-    "Anime4K_Upscale_CNN_x2_M.glsl",
     "Anime4K_Upscale_CNN_x2_L.glsl",
-    "Anime4K_Upscale_Denoise_CNN_x2_S.glsl",
-    "Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
     "Anime4K_Upscale_Denoise_CNN_x2_L.glsl",
     "Anime4K_AutoDownscalePre_x2.glsl",
 )
 
 internal fun anime4kShaderChain(
-    enabled: Boolean,
-    mode: Anime4KMode,
-    quality: Anime4KQuality,
+    profile: Anime4KProfile,
     shaderDir: File,
 ): String {
-    if (!enabled || mode == Anime4KMode.OFF) return ""
-    val shaderFiles = anime4kShaderNames(mode, quality).map { name -> File(shaderDir, name) }
+    val shaderFiles = anime4kShaderNames(profile).map { name -> File(shaderDir, name) }
+    if (shaderFiles.isEmpty()) return ""
     if (shaderFiles.any { file -> !file.isFile }) return ""
     return shaderFiles.joinToString(":") { file -> file.absolutePath }
 }
 
-internal fun anime4kShaderNames(mode: Anime4KMode, quality: Anime4KQuality): List<String> {
-    if (mode == Anime4KMode.OFF) return emptyList()
-
-    val suffix = quality.shaderSuffix
-    val restore = "Anime4K_Restore_CNN_$suffix.glsl"
-    val restoreSoft = "Anime4K_Restore_CNN_Soft_$suffix.glsl"
-    val upscale = "Anime4K_Upscale_CNN_x2_$suffix.glsl"
-    val upscaleDenoise = "Anime4K_Upscale_Denoise_CNN_x2_$suffix.glsl"
-    val autoDownscalePre = "Anime4K_AutoDownscalePre_x2.glsl"
-
-    val modeShaders = when (mode) {
-        Anime4KMode.OFF -> emptyList()
-        Anime4KMode.A -> listOf(restore, upscale, autoDownscalePre, upscale)
-        Anime4KMode.B -> listOf(restoreSoft, upscale, autoDownscalePre, upscale)
-        Anime4KMode.C -> listOf(upscaleDenoise, autoDownscalePre, upscale)
-        Anime4KMode.A_PLUS -> listOf(restore, upscale, autoDownscalePre, restore, upscale)
-        Anime4KMode.B_PLUS -> listOf(restoreSoft, upscale, autoDownscalePre, restoreSoft, upscale)
-        Anime4KMode.C_PLUS -> listOf(upscaleDenoise, autoDownscalePre, restore, upscale)
+internal fun anime4kShaderNames(profile: Anime4KProfile): List<String> =
+    when (profile) {
+        Anime4KProfile.OFF -> emptyList()
+        Anime4KProfile.EFFICIENCY -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Restore_CNN_S.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KProfile.EXTREME -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Upscale_Denoise_CNN_x2_L.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_Restore_CNN_L.glsl",
+            "Anime4K_Upscale_CNN_x2_L.glsl",
+        )
     }
-
-    return listOf("Anime4K_Clamp_Highlights.glsl") + modeShaders
-}
 
 internal fun staleAnime4KShaderFiles(
     shaderDir: File,
@@ -96,19 +81,12 @@ internal fun staleAnime4KShaderFiles(
 
 internal fun anime4kShaderAssetPath(assetName: String): String = "shaders/$assetName"
 
-private val Anime4KQuality.shaderSuffix: String
-    get() = when (this) {
-        Anime4KQuality.FAST -> "S"
-        Anime4KQuality.BALANCED -> "M"
-        Anime4KQuality.HIGH -> "L"
-    }
-
 interface Anime4KShaderProvider {
-    fun shaderChain(settings: Anime4KSettings): String
+    fun shaderChain(profile: Anime4KProfile): String
 }
 
 object EmptyAnime4KShaderProvider : Anime4KShaderProvider {
-    override fun shaderChain(settings: Anime4KSettings): String = ""
+    override fun shaderChain(profile: Anime4KProfile): String = ""
 }
 
 class Anime4KManager(context: Context) : Anime4KShaderProvider {
@@ -131,12 +109,9 @@ class Anime4KManager(context: Context) : Anime4KShaderProvider {
         }.getOrDefault(false)
     }
 
-    override fun shaderChain(settings: Anime4KSettings): String {
-        if (!settings.enabled || settings.mode == Anime4KMode.OFF) return ""
+    override fun shaderChain(profile: Anime4KProfile): String {
         return anime4kShaderChain(
-            enabled = settings.enabled,
-            mode = settings.mode,
-            quality = settings.quality,
+            profile = profile,
             shaderDir = shaderDir,
         )
     }

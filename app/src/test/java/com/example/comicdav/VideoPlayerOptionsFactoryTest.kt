@@ -1,7 +1,6 @@
 package com.example.comicdav
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
@@ -40,9 +39,7 @@ class VideoPlayerOptionsFactoryTest {
             videoPlayerOrientationMode = VideoPlayerOrientationMode.SENSOR,
             videoPlayerProxyDebugInfoEnabled = true,
             videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
-            anime4kEnabled = true,
-            anime4kMode = Anime4KMode.C_PLUS,
-            anime4kQuality = Anime4KQuality.HIGH,
+            anime4kProfile = Anime4KProfile.EXTREME,
         ).toVideoPlayerOptions()
 
         assertEquals(
@@ -56,9 +53,7 @@ class VideoPlayerOptionsFactoryTest {
                 playerOrientationMode = VideoPlayerOrientationMode.SENSOR,
                 proxyDebugInfoEnabled = true,
                 videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
-                anime4kEnabled = true,
-                anime4kMode = Anime4KMode.C_PLUS,
-                anime4kQuality = Anime4KQuality.HIGH,
+                anime4kProfile = Anime4KProfile.EXTREME,
             ),
             options,
         )

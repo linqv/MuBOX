@@ -44,8 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
@@ -119,9 +118,7 @@ sealed interface SettingsAction {
     data class SetVideoPlayerProxyDebugInfoEnabled(val value: Boolean) : SettingsAction
     data class SetVideoOutputMode(val value: VideoOutputMode) : SettingsAction
     data class SetGpuApiMode(val value: GpuApiMode) : SettingsAction
-    data class SetAnime4KEnabled(val value: Boolean) : SettingsAction
-    data class SetAnime4KMode(val value: Anime4KMode) : SettingsAction
-    data class SetAnime4KQuality(val value: Anime4KQuality) : SettingsAction
+    data class SetAnime4KProfile(val value: Anime4KProfile) : SettingsAction
     data class SetVideoDecoderMode(val value: VideoDecoderMode) : SettingsAction
     data class SetMpvProfileMode(val value: MpvProfileMode) : SettingsAction
     data class SetVideoControlsAutoHideMillis(val value: Int) : SettingsAction
@@ -200,8 +197,6 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "视频输出 (VO)",
                 "GPU API",
                 "Anime4K",
-                "Anime4K 预设",
-                "Anime4K 质量",
                 "默认解码器",
                 "MPV Profile",
                 "控制自动隐藏",
@@ -261,9 +256,7 @@ fun SettingsScreen(
                 },
                 onVideoOutputModeChange = { onAction(SettingsAction.SetVideoOutputMode(it)) },
                 onGpuApiModeChange = { onAction(SettingsAction.SetGpuApiMode(it)) },
-                onAnime4KEnabledChange = { onAction(SettingsAction.SetAnime4KEnabled(it)) },
-                onAnime4KModeChange = { onAction(SettingsAction.SetAnime4KMode(it)) },
-                onAnime4KQualityChange = { onAction(SettingsAction.SetAnime4KQuality(it)) },
+                onAnime4KProfileChange = { onAction(SettingsAction.SetAnime4KProfile(it)) },
                 onVideoDecoderModeChange = { onAction(SettingsAction.SetVideoDecoderMode(it)) },
                 onMpvProfileModeChange = { onAction(SettingsAction.SetMpvProfileMode(it)) },
                 onVideoControlsAutoHideMillisChange = {
@@ -699,9 +692,7 @@ private fun VideoSettingsPage(
     onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit,
     onVideoOutputModeChange: (VideoOutputMode) -> Unit,
     onGpuApiModeChange: (GpuApiMode) -> Unit,
-    onAnime4KEnabledChange: (Boolean) -> Unit,
-    onAnime4KModeChange: (Anime4KMode) -> Unit,
-    onAnime4KQualityChange: (Anime4KQuality) -> Unit,
+    onAnime4KProfileChange: (Anime4KProfile) -> Unit,
     onVideoDecoderModeChange: (VideoDecoderMode) -> Unit,
     onMpvProfileModeChange: (MpvProfileMode) -> Unit,
     onVideoControlsAutoHideMillisChange: (Int) -> Unit,
@@ -783,25 +774,12 @@ private fun VideoSettingsPage(
                 label = ::gpuApiModeLabel,
                 onSelected = onGpuApiModeChange,
             )
-            MuBoxSwitchRow(
+            DropdownRow(
                 title = "Anime4K",
-                checked = settings.anime4kEnabled,
-                onCheckedChange = onAnime4KEnabledChange,
-                subtitle = "启用 Anime4K 动画画面实时放大；不兼容时播放器会自动关闭",
-            )
-            DropdownRow(
-                title = "Anime4K 预设",
-                selected = settings.anime4kMode,
-                options = Anime4KMode.entries.filterNot { it == Anime4KMode.OFF },
-                label = ::anime4kModeLabel,
-                onSelected = onAnime4KModeChange,
-            )
-            DropdownRow(
-                title = "Anime4K 质量",
-                selected = settings.anime4kQuality,
-                options = Anime4KQuality.entries,
-                label = ::anime4kQualityLabel,
-                onSelected = onAnime4KQualityChange,
+                selected = settings.anime4kProfile,
+                options = Anime4KProfile.entries,
+                label = ::anime4kProfileLabel,
+                onSelected = onAnime4KProfileChange,
             )
             DropdownRow(
                 title = "默认解码器",
@@ -902,22 +880,11 @@ private fun VideoProxyDiagnosticsMode.label(): String =
         VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
 
-private fun anime4kModeLabel(mode: Anime4KMode): String =
-    when (mode) {
-        Anime4KMode.OFF -> "关闭"
-        Anime4KMode.A -> "A"
-        Anime4KMode.B -> "B"
-        Anime4KMode.C -> "C"
-        Anime4KMode.A_PLUS -> "A+"
-        Anime4KMode.B_PLUS -> "B+"
-        Anime4KMode.C_PLUS -> "C+"
-    }
-
-private fun anime4kQualityLabel(quality: Anime4KQuality): String =
-    when (quality) {
-        Anime4KQuality.FAST -> "Fast"
-        Anime4KQuality.BALANCED -> "Balanced"
-        Anime4KQuality.HIGH -> "High"
+private fun anime4kProfileLabel(profile: Anime4KProfile): String =
+    when (profile) {
+        Anime4KProfile.OFF -> "关闭"
+        Anime4KProfile.EFFICIENCY -> "效率"
+        Anime4KProfile.EXTREME -> "极致"
     }
 
 internal fun settingsControlRowMinHeightDp(): Int = 64

@@ -18,8 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import kotlinx.coroutines.delay
 
@@ -37,9 +36,7 @@ internal fun VideoPlayerScreen(
     onSubtitlesDisabled: () -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
-    onAnime4KEnabledSelected: (Boolean) -> Unit,
-    onAnime4KModeSelected: (Anime4KMode) -> Unit,
-    onAnime4KQualitySelected: (Anime4KQuality) -> Unit,
+    onAnime4KProfileSelected: (Anime4KProfile) -> Unit,
     onOrientationToggle: () -> Unit,
     onControlsLockedChanged: (Boolean) -> Unit,
     onVolumeDelta: (Int) -> Unit,
@@ -201,9 +198,7 @@ internal fun VideoPlayerScreen(
                     onSpeedSelected = onSpeedSelected,
                     onScaleModeSelected = onScaleModeSelected,
                     onDecoderModeSelected = onDecoderModeSelected,
-                    onAnime4KEnabledSelected = onAnime4KEnabledSelected,
-                    onAnime4KModeSelected = onAnime4KModeSelected,
-                    onAnime4KQualitySelected = onAnime4KQualitySelected,
+                    onAnime4KProfileSelected = onAnime4KProfileSelected,
                     onAudioTrackSelected = onAudioTrackSelected,
                     onSubtitleTrackSelected = onSubtitleTrackSelected,
                     onSubtitlesDisabled = onSubtitlesDisabled,

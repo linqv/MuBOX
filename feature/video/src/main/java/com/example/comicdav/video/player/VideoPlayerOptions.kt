@@ -4,14 +4,14 @@ import android.content.Intent
 import android.os.Build
 import android.os.Parcel
 import android.os.Parcelable
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoBackgroundMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
+import com.example.comicdav.core.model.settings.anime4KProfileFromLegacy
 
 data class VideoPlayerOptions(
     val resumeEnabled: Boolean = true,
@@ -23,9 +23,7 @@ data class VideoPlayerOptions(
     val playerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
     val proxyDebugInfoEnabled: Boolean = false,
     val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
-    val anime4kEnabled: Boolean = false,
-    val anime4kMode: Anime4KMode = Anime4KMode.A,
-    val anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+    val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
 ) : Parcelable {
     private constructor(parcel: Parcel) : this(
         resumeEnabled = parcel.readInt() != 0,
@@ -37,9 +35,7 @@ data class VideoPlayerOptions(
         playerOrientationMode = parcel.readEnumOrDefault(VideoPlayerOrientationMode.VIDEO),
         proxyDebugInfoEnabled = parcel.readInt() != 0,
         videoBackgroundMode = parcel.readEnumOrDefault(VideoBackgroundMode.NONE),
-        anime4kEnabled = parcel.readInt() != 0,
-        anime4kMode = parcel.readEnumOrDefault(Anime4KMode.A),
-        anime4kQuality = parcel.readEnumOrDefault(Anime4KQuality.FAST),
+        anime4kProfile = parcel.readEnumOrDefault(Anime4KProfile.OFF),
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
@@ -52,9 +48,7 @@ data class VideoPlayerOptions(
         parcel.writeString(playerOrientationMode.name)
         parcel.writeInt(if (proxyDebugInfoEnabled) 1 else 0)
         parcel.writeString(videoBackgroundMode.name)
-        parcel.writeInt(if (anime4kEnabled) 1 else 0)
-        parcel.writeString(anime4kMode.name)
-        parcel.writeString(anime4kQuality.name)
+        parcel.writeString(anime4kProfile.name)
     }
 
     override fun describeContents(): Int = 0
@@ -84,9 +78,7 @@ internal fun Intent.putVideoPlayerOptions(options: VideoPlayerOptions): Intent =
         .putExtra(VideoPlayerLaunchContract.EXTRA_PLAYER_ORIENTATION_MODE, options.playerOrientationMode.name)
         .putExtra(VideoPlayerLaunchContract.EXTRA_PROXY_DEBUG_INFO_ENABLED, options.proxyDebugInfoEnabled)
         .putExtra(VideoPlayerLaunchContract.EXTRA_VIDEO_BACKGROUND_MODE, options.videoBackgroundMode.name)
-        .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_ENABLED, options.anime4kEnabled)
-        .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE, options.anime4kMode.name)
-        .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY, options.anime4kQuality.name)
+        .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_PROFILE, options.anime4kProfile.name)
 
 internal fun Intent.videoPlayerOptions(): VideoPlayerOptions =
     parceledVideoPlayerOptions() ?: legacyVideoPlayerOptions()
@@ -125,14 +117,13 @@ private fun Intent.legacyVideoPlayerOptions(): VideoPlayerOptions {
         ),
         videoBackgroundMode = getStringExtra(VideoPlayerLaunchContract.EXTRA_VIDEO_BACKGROUND_MODE)
             .toEnumOrDefault(defaults.videoBackgroundMode),
-        anime4kEnabled = getBooleanExtra(
-            VideoPlayerLaunchContract.EXTRA_ANIME4K_ENABLED,
-            defaults.anime4kEnabled,
-        ),
-        anime4kMode = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE)
-            .toEnumOrDefault(defaults.anime4kMode),
-        anime4kQuality = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY)
-            .toEnumOrDefault(defaults.anime4kQuality),
+        anime4kProfile = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_PROFILE)
+            .toEnumOrNull<Anime4KProfile>()
+            ?: anime4KProfileFromLegacy(
+                enabled = getBooleanExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_ENABLED, false),
+                mode = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE),
+                quality = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY),
+            ),
     )
 }
 
@@ -141,3 +132,6 @@ private inline fun <reified T : Enum<T>> Parcel.readEnumOrDefault(default: T): T
 
 private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(default: T): T =
     this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: default
+
+private inline fun <reified T : Enum<T>> String?.toEnumOrNull(): T? =
+    this?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() }

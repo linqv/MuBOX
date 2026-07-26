@@ -1,8 +1,6 @@
 package com.example.comicdav.video.player
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.AssetManager
@@ -25,36 +23,33 @@ class Anime4KManagerTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun modeABalancedBuildsExpectedShaderChain() {
+    fun efficiencyBuildsSmallModelRestoreAndUpscaleChain() {
         val shaderDir = temporaryFolder.newFolder("shaders")
         expectedAnime4KShaderAssetNames.forEach { File(shaderDir, it).writeText("// $it") }
 
         val chain = anime4kShaderChain(
-            enabled = true,
-            mode = Anime4KMode.A,
-            quality = Anime4KQuality.BALANCED,
+            profile = Anime4KProfile.EFFICIENCY,
             shaderDir = shaderDir,
         )
 
         assertEquals(
             listOf(
                 "Anime4K_Clamp_Highlights.glsl",
-                "Anime4K_Restore_CNN_M.glsl",
-                "Anime4K_Upscale_CNN_x2_M.glsl",
+                "Anime4K_Restore_CNN_S.glsl",
+                "Anime4K_Upscale_CNN_x2_S.glsl",
                 "Anime4K_AutoDownscalePre_x2.glsl",
-                "Anime4K_Upscale_CNN_x2_M.glsl",
+                "Anime4K_Upscale_CNN_x2_S.glsl",
             ).joinToString(":") { File(shaderDir, it).absolutePath },
             chain,
         )
     }
 
     @Test
-    fun disabledOrOffModeReturnsEmptyShaderChain() {
+    fun offReturnsEmptyShaderChain() {
         val shaderDir = temporaryFolder.newFolder("shaders")
         expectedAnime4KShaderAssetNames.forEach { File(shaderDir, it).writeText("// $it") }
 
-        assertEquals("", anime4kShaderChain(false, Anime4KMode.A, Anime4KQuality.FAST, shaderDir))
-        assertEquals("", anime4kShaderChain(true, Anime4KMode.OFF, Anime4KQuality.FAST, shaderDir))
+        assertEquals("", anime4kShaderChain(Anime4KProfile.OFF, shaderDir))
     }
 
     @Test
@@ -64,7 +59,7 @@ class Anime4KManagerTest {
             .filterNot { it == "Anime4K_Upscale_CNN_x2_L.glsl" }
             .forEach { File(shaderDir, it).writeText("// $it") }
 
-        assertEquals("", anime4kShaderChain(true, Anime4KMode.A, Anime4KQuality.HIGH, shaderDir))
+        assertEquals("", anime4kShaderChain(Anime4KProfile.EXTREME, shaderDir))
     }
 
     @Test
@@ -96,13 +91,7 @@ class Anime4KManagerTest {
         assertFalse(manager.initialize())
         assertEquals(
             "",
-            manager.shaderChain(
-                Anime4KSettings(
-                    enabled = true,
-                    mode = Anime4KMode.A,
-                    quality = Anime4KQuality.FAST,
-                ),
-            ),
+            manager.shaderChain(Anime4KProfile.EFFICIENCY),
         )
     }
 
@@ -118,13 +107,7 @@ class Anime4KManagerTest {
 
         assertEquals(
             "",
-            manager.shaderChain(
-                Anime4KSettings(
-                    enabled = true,
-                    mode = Anime4KMode.A,
-                    quality = Anime4KQuality.FAST,
-                ),
-            ),
+            manager.shaderChain(Anime4KProfile.EFFICIENCY),
         )
         assertFalse("shaderChain should only inspect existing files", shaderDir.exists())
     }

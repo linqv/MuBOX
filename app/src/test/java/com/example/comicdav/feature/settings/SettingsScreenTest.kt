@@ -168,8 +168,6 @@ class SettingsScreenTest {
                 "视频输出 (VO)",
                 "GPU API",
                 "Anime4K",
-                "Anime4K 预设",
-                "Anime4K 质量",
                 "默认解码器",
                 "MPV Profile",
                 "控制自动隐藏",

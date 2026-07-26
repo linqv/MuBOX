@@ -4,8 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Parcel
 import androidx.test.core.app.ApplicationProvider
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoBackgroundMode
@@ -43,14 +42,9 @@ class VideoPlayerActivityIntentTest {
         assertEquals(12345L, intent.getLongExtra(VideoPlayerActivity.EXTRA_LAST_MODIFIED, -1L))
         assertEquals(VideoPlayerActivity.SOURCE_LOCAL, intent.getStringExtra(VideoPlayerActivity.EXTRA_SOURCE))
         assertEquals(VideoPlayerOptions(), intent.videoPlayerOptions())
-        assertFalse(intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, true))
         assertEquals(
-            Anime4KMode.A.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
-        )
-        assertEquals(
-            Anime4KQuality.FAST.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
+            Anime4KProfile.OFF.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_PROFILE),
         )
     }
 
@@ -97,16 +91,8 @@ class VideoPlayerActivityIntentTest {
             intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
         )
         assertEquals(
-            true,
-            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, false),
-        )
-        assertEquals(
-            Anime4KMode.C_PLUS.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
-        )
-        assertEquals(
-            Anime4KQuality.HIGH.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
+            Anime4KProfile.EXTREME.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_PROFILE),
         )
     }
 
@@ -136,6 +122,16 @@ class VideoPlayerActivityIntentTest {
         intent.removeExtra(VideoPlayerActivity.EXTRA_PLAYER_OPTIONS)
 
         assertEquals(options, intent.videoPlayerOptions())
+    }
+
+    @Test
+    fun oldAnime4KScalarExtrasMigrateToExtremeProfile() {
+        val intent = Intent()
+            .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_ENABLED, true)
+            .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE, "C_PLUS")
+            .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY, "HIGH")
+
+        assertEquals(Anime4KProfile.EXTREME, intent.videoPlayerOptions().anime4kProfile)
     }
 
     @Test
@@ -229,16 +225,8 @@ class VideoPlayerActivityIntentTest {
             intent.getBooleanExtra(VideoPlayerActivity.EXTRA_PROXY_DEBUG_INFO_ENABLED, false),
         )
         assertEquals(
-            true,
-            intent.getBooleanExtra(VideoPlayerActivity.EXTRA_ANIME4K_ENABLED, false),
-        )
-        assertEquals(
-            Anime4KMode.C_PLUS.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_MODE),
-        )
-        assertEquals(
-            Anime4KQuality.HIGH.name,
-            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_QUALITY),
+            Anime4KProfile.EXTREME.name,
+            intent.getStringExtra(VideoPlayerActivity.EXTRA_ANIME4K_PROFILE),
         )
     }
 
@@ -329,9 +317,7 @@ class VideoPlayerActivityIntentTest {
             playerOrientationMode = VideoPlayerOrientationMode.SENSOR,
             proxyDebugInfoEnabled = true,
             videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
-            anime4kEnabled = true,
-            anime4kMode = Anime4KMode.C_PLUS,
-            anime4kQuality = Anime4KQuality.HIGH,
+            anime4kProfile = Anime4KProfile.EXTREME,
         )
 
 }

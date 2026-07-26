@@ -26,27 +26,22 @@ enum class GpuApiMode {
     VULKAN,
 }
 
-enum class Anime4KMode {
+enum class Anime4KProfile {
     OFF,
-    A,
-    B,
-    C,
-    A_PLUS,
-    B_PLUS,
-    C_PLUS,
+    EFFICIENCY,
+    EXTREME,
 }
 
-enum class Anime4KQuality {
-    FAST,
-    BALANCED,
-    HIGH,
-}
-
-data class Anime4KSettings(
-    val enabled: Boolean = false,
-    val mode: Anime4KMode = Anime4KMode.A,
-    val quality: Anime4KQuality = Anime4KQuality.FAST,
-)
+fun anime4KProfileFromLegacy(
+    enabled: Boolean,
+    mode: String?,
+    quality: String?,
+): Anime4KProfile =
+    when {
+        !enabled || mode == "OFF" -> Anime4KProfile.OFF
+        mode == "C_PLUS" && quality == "HIGH" -> Anime4KProfile.EXTREME
+        else -> Anime4KProfile.EFFICIENCY
+    }
 
 enum class VideoPlayerOrientationMode {
     VIDEO,

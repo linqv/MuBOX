@@ -22,8 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -458,9 +457,7 @@ internal fun PlayerMenuPanel(
     onSpeedSelected: (Double) -> Unit,
     onScaleModeSelected: (VideoScaleMode) -> Unit,
     onDecoderModeSelected: (VideoDecoderMode) -> Unit,
-    onAnime4KEnabledSelected: (Boolean) -> Unit,
-    onAnime4KModeSelected: (Anime4KMode) -> Unit,
-    onAnime4KQualitySelected: (Anime4KQuality) -> Unit,
+    onAnime4KProfileSelected: (Anime4KProfile) -> Unit,
     onAudioTrackSelected: (Int) -> Unit,
     onSubtitleTrackSelected: (Int) -> Unit,
     onSubtitlesDisabled: () -> Unit,
@@ -496,23 +493,9 @@ internal fun PlayerMenuPanel(
                 }
             }
             ControlGroup("Anime4K") {
-                anime4kEnabledControlOptions().forEach { (label, enabled) ->
-                    CompactTextButton(label, state.anime4kEnabled == enabled) { onAnime4KEnabledSelected(enabled) }
-                }
-            }
-            ControlGroup("预设") {
-                Anime4KMode.entries
-                    .filterNot { it == Anime4KMode.OFF }
-                    .forEach { mode ->
-                        CompactTextButton(anime4kModeControlLabel(mode), state.anime4kMode == mode) {
-                            onAnime4KModeSelected(mode)
-                        }
-                    }
-            }
-            ControlGroup("质量") {
-                Anime4KQuality.entries.forEach { quality ->
-                    CompactTextButton(anime4kQualityControlLabel(quality), state.anime4kQuality == quality) {
-                        onAnime4KQualitySelected(quality)
+                Anime4KProfile.entries.forEach { profile ->
+                    CompactTextButton(anime4kProfileControlLabel(profile), state.anime4kProfile == profile) {
+                        onAnime4KProfileSelected(profile)
                     }
                 }
             }
@@ -670,26 +653,13 @@ internal fun episodeNavigationControlDescriptions(): List<String> = listOf("上�
 
 internal fun bottomQuickControlLabels(): List<String> = listOf("倍速", "画面", "解码")
 
-internal fun scaleModeControlGroupLabels(): List<String> = listOf("画面", "Anime4K", "预设", "质量")
+internal fun scaleModeControlGroupLabels(): List<String> = listOf("画面", "Anime4K")
 
-internal fun anime4kEnabledControlOptions(): List<Pair<String, Boolean>> = listOf("关" to false, "开" to true)
-
-internal fun anime4kModeControlLabel(mode: Anime4KMode): String =
-    when (mode) {
-        Anime4KMode.OFF -> "关闭"
-        Anime4KMode.A -> "A"
-        Anime4KMode.B -> "B"
-        Anime4KMode.C -> "C"
-        Anime4KMode.A_PLUS -> "A+"
-        Anime4KMode.B_PLUS -> "B+"
-        Anime4KMode.C_PLUS -> "C+"
-    }
-
-internal fun anime4kQualityControlLabel(quality: Anime4KQuality): String =
-    when (quality) {
-        Anime4KQuality.FAST -> "Fast"
-        Anime4KQuality.BALANCED -> "Balanced"
-        Anime4KQuality.HIGH -> "High"
+internal fun anime4kProfileControlLabel(profile: Anime4KProfile): String =
+    when (profile) {
+        Anime4KProfile.OFF -> "关闭"
+        Anime4KProfile.EFFICIENCY -> "效率"
+        Anime4KProfile.EXTREME -> "极致"
     }
 
 internal fun playerBottomStatusText(state: MpvPlayerState): String? =

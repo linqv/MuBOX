@@ -1,8 +1,7 @@
 package com.example.comicdav.video.player
 
 import `is`.xyz.mpv.MPVLib
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
@@ -43,14 +42,14 @@ internal data class MpvViewStartupConfiguration(
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val videoDecoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
-    val anime4kSettings: Anime4KSettings = Anime4KSettings(),
+    val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
 )
 
 internal class MpvStartupOptionsApplier(
     private val nativeApi: MpvNativeApi,
     private val setVideoOutput: (String) -> Unit,
     private val initializeAnime4K: () -> Unit,
-    private val anime4KShaderChain: (Anime4KSettings) -> String,
+    private val anime4KShaderChain: (Anime4KProfile) -> String,
     private val memoryBudget: VideoPlaybackMemoryBudget,
 ) {
     fun apply(configuration: MpvViewStartupConfiguration) {
@@ -64,11 +63,8 @@ internal class MpvStartupOptionsApplier(
         nativeApi.setOptionString("msg-level", "all=warn")
 
         initializeAnime4K()
-        val shaderChain = if (
-            configuration.anime4kSettings.enabled &&
-            configuration.anime4kSettings.mode != Anime4KMode.OFF
-        ) {
-            anime4KShaderChain(configuration.anime4kSettings)
+        val shaderChain = if (configuration.anime4kProfile != Anime4KProfile.OFF) {
+            anime4KShaderChain(configuration.anime4kProfile)
         } else {
             ""
         }

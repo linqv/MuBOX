@@ -7,7 +7,7 @@ import android.view.LayoutInflater
 import android.view.SurfaceHolder
 import android.widget.FrameLayout
 import `is`.xyz.mpv.BaseMPVView
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
@@ -47,10 +47,10 @@ class MuBoxMpvView(
         set(value) {
             startupConfiguration = startupConfiguration.copy(videoDecoderMode = value)
         }
-    var anime4kSettings: Anime4KSettings
-        get() = startupConfiguration.anime4kSettings
+    var anime4kProfile: Anime4KProfile
+        get() = startupConfiguration.anime4kProfile
         set(value) {
-            startupConfiguration = startupConfiguration.copy(anime4kSettings = value)
+            startupConfiguration = startupConfiguration.copy(anime4kProfile = value)
         }
     var anime4kManager: Anime4KManager? = null
 
@@ -64,7 +64,7 @@ class MuBoxMpvView(
             nativeApi = nativeApi,
             setVideoOutput = ::setVo,
             initializeAnime4K = { anime4kManager?.initialize() },
-            anime4KShaderChain = { settings -> anime4kManager?.shaderChain(settings).orEmpty() },
+            anime4KShaderChain = { profile -> anime4kManager?.shaderChain(profile).orEmpty() },
             memoryBudget = VideoPlaybackMemoryBudget.current(),
         ).apply(startupConfiguration)
     }

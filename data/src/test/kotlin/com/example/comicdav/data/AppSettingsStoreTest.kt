@@ -1,8 +1,10 @@
 package com.example.comicdav.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
@@ -64,28 +66,40 @@ class AppSettingsStoreTest {
     }
 
     @Test
-    fun anime4kDefaultsAreDisabledWithFastModeA() = runTest {
+    fun anime4kDefaultsToOff() = runTest {
         val store = createStore("anime4k_defaults.preferences_pb")
 
         val settings = store.settings.first()
 
-        assertFalse(settings.anime4kEnabled)
-        assertEquals(Anime4KMode.A, settings.anime4kMode)
-        assertEquals(Anime4KQuality.FAST, settings.anime4kQuality)
+        assertEquals(Anime4KProfile.OFF, settings.anime4kProfile)
     }
 
     @Test
-    fun anime4kSettingsCanBeUpdatedAndReadBack() = runTest {
+    fun anime4kProfileCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("anime4k_updates.preferences_pb")
 
-        store.updateAnime4KEnabled(true)
-        store.updateAnime4KMode(Anime4KMode.C_PLUS)
-        store.updateAnime4KQuality(Anime4KQuality.HIGH)
+        store.updateAnime4KProfile(Anime4KProfile.EXTREME)
 
         val settings = store.settings.first()
-        assertTrue(settings.anime4kEnabled)
-        assertEquals(Anime4KMode.C_PLUS, settings.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, settings.anime4kQuality)
+        assertEquals(Anime4KProfile.EXTREME, settings.anime4kProfile)
+    }
+
+    @Test
+    fun legacyAnime4kSettingsMigrateToClosestProfile() = runTest {
+        val preferencesFile = temporaryFolder.newFile("anime4k_legacy.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        dataStore.edit { preferences ->
+            preferences[booleanPreferencesKey("anime4k_enabled")] = true
+            preferences[stringPreferencesKey("anime4k_mode")] = "C_PLUS"
+            preferences[stringPreferencesKey("anime4k_quality")] = "HIGH"
+        }
+
+        val settings = AppSettingsStore(dataStore).settings.first()
+
+        assertEquals(Anime4KProfile.EXTREME, settings.anime4kProfile)
     }
 
     @Test

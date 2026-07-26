@@ -28,7 +28,6 @@ import com.example.comicdav.core.model.history.WatchHistoryMetadata
 import com.example.comicdav.core.model.media.LocalVideoOpenRequest
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
-import com.example.comicdav.core.model.settings.Anime4KSettings
 import com.example.comicdav.core.model.settings.VideoBackgroundMode
 import com.example.comicdav.ui.ComicDavTheme
 import kotlinx.coroutines.CancellationException
@@ -127,14 +126,10 @@ class VideoPlayerActivity : ComponentActivity() {
         val initialGpuApiMode = playerOptions.gpuApiMode
         val initialVideoDecoderMode = playerOptions.videoDecoderMode
         val initialMpvProfileMode = playerOptions.mpvProfileMode
-        val initialAnime4KSettings = Anime4KSettings(
-            enabled = playerOptions.anime4kEnabled,
-            mode = playerOptions.anime4kMode,
-            quality = playerOptions.anime4kQuality,
-        )
+        val initialAnime4KProfile = playerOptions.anime4kProfile
         val anime4kManager = Anime4KManager(applicationContext)
         val startupCompatibility = anime4kStartupCompatibility(
-            settings = initialAnime4KSettings,
+            profile = initialAnime4KProfile,
             requestedVideoOutputMode = initialVideoOutputMode,
             gpuApiMode = initialGpuApiMode,
         )
@@ -176,12 +171,12 @@ class VideoPlayerActivity : ComponentActivity() {
         mpvView.videoOutputMode = startupCompatibility.effectiveVideoOutputMode
         mpvView.gpuApiMode = initialGpuApiMode
         mpvView.videoDecoderMode = initialVideoDecoderMode
-        mpvView.anime4kSettings = initialAnime4KSettings
+        mpvView.anime4kProfile = initialAnime4KProfile
         mpvView.anime4kManager = anime4kManager
         controller = MpvController(
             engine = ViewBackedMpvEngine(mpvView),
             anime4kShaderProvider = anime4kManager,
-            initialAnime4KSettings = initialAnime4KSettings,
+            initialAnime4KProfile = initialAnime4KProfile,
             initialAnime4KStatusMessage = startupCompatibility.statusMessage,
         )
         playbackPersistenceCoordinator = VideoPlaybackPersistenceCoordinator(
@@ -317,9 +312,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     onSubtitlesDisabled = controller::disableSubtitles,
                     onScaleModeSelected = controller::setScaleMode,
                     onDecoderModeSelected = controller::setDecoderMode,
-                    onAnime4KEnabledSelected = controller::setAnime4KEnabled,
-                    onAnime4KModeSelected = controller::setAnime4KMode,
-                    onAnime4KQualitySelected = controller::setAnime4KQuality,
+                    onAnime4KProfileSelected = controller::setAnime4KProfile,
                     onOrientationToggle = {
                         requestedOrientation = orientationSession.toggleFixedOrientation(
                             resources.configuration.orientation,
@@ -691,9 +684,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_PLAYER_ORIENTATION_MODE = VideoPlayerLaunchContract.EXTRA_PLAYER_ORIENTATION_MODE
         const val EXTRA_PROXY_DEBUG_INFO_ENABLED = VideoPlayerLaunchContract.EXTRA_PROXY_DEBUG_INFO_ENABLED
         const val EXTRA_VIDEO_BACKGROUND_MODE = VideoPlayerLaunchContract.EXTRA_VIDEO_BACKGROUND_MODE
-        const val EXTRA_ANIME4K_ENABLED = VideoPlayerLaunchContract.EXTRA_ANIME4K_ENABLED
-        const val EXTRA_ANIME4K_MODE = VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE
-        const val EXTRA_ANIME4K_QUALITY = VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY
+        const val EXTRA_ANIME4K_PROFILE = VideoPlayerLaunchContract.EXTRA_ANIME4K_PROFILE
         const val EXTRA_PLAYER_OPTIONS = VideoPlayerLaunchContract.EXTRA_PLAYER_OPTIONS
         const val EXTRA_EPISODE_QUEUE_ID = VideoPlayerLaunchContract.EXTRA_EPISODE_QUEUE_ID
         const val SOURCE_LOCAL = VideoPlayerLaunchContract.SOURCE_LOCAL

@@ -1,9 +1,7 @@
 package com.example.comicdav.video.player
 
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
@@ -28,9 +26,7 @@ data class MpvPlayerState(
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val statusMessage: String? = null,
-    val anime4kEnabled: Boolean = false,
-    val anime4kMode: Anime4KMode = Anime4KMode.A,
-    val anime4kQuality: Anime4KQuality = Anime4KQuality.FAST,
+    val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val gestureState: VideoGestureState = VideoGestureState(),
     val audioTracks: List<MpvTrack> = emptyList(),
@@ -224,15 +220,13 @@ class ViewBackedMpvEngine(
 class MpvController(
     private val engine: MpvEngine,
     private val anime4kShaderProvider: Anime4KShaderProvider = EmptyAnime4KShaderProvider,
-    initialAnime4KSettings: Anime4KSettings = Anime4KSettings(),
+    initialAnime4KProfile: Anime4KProfile = Anime4KProfile.OFF,
     initialAnime4KStatusMessage: String? = null,
 ) {
     private val _state = MutableStateFlow(
         MpvPlayerState(
             statusMessage = initialAnime4KStatusMessage,
-            anime4kEnabled = initialAnime4KSettings.enabled && initialAnime4KSettings.mode != Anime4KMode.OFF,
-            anime4kMode = initialAnime4KSettings.mode,
-            anime4kQuality = initialAnime4KSettings.quality,
+            anime4kProfile = initialAnime4KProfile,
         ),
     )
     val state: StateFlow<MpvPlayerState> = _state.asStateFlow()
@@ -407,40 +401,9 @@ class MpvController(
         )
     }
 
-    fun setAnime4KEnabled(enabled: Boolean) {
+    fun setAnime4KProfile(profile: Anime4KProfile) {
         if (!canWriteEngine()) return
-        val state = _state.value
-        applyAnime4KSettings(
-            Anime4KSettings(
-                enabled = enabled,
-                mode = state.anime4kMode,
-                quality = state.anime4kQuality,
-            ),
-        )
-    }
-
-    fun setAnime4KMode(mode: Anime4KMode) {
-        if (!canWriteEngine()) return
-        val state = _state.value
-        applyAnime4KSettings(
-            Anime4KSettings(
-                enabled = mode != Anime4KMode.OFF && state.anime4kEnabled,
-                mode = mode,
-                quality = state.anime4kQuality,
-            ),
-        )
-    }
-
-    fun setAnime4KQuality(quality: Anime4KQuality) {
-        if (!canWriteEngine()) return
-        val state = _state.value
-        applyAnime4KSettings(
-            Anime4KSettings(
-                enabled = state.anime4kEnabled,
-                mode = state.anime4kMode,
-                quality = quality,
-            ),
-        )
+        applyAnime4KProfile(profile)
     }
 
     fun setStartupRendererState(
@@ -765,25 +728,21 @@ class MpvController(
         _state.value = _state.value.copy(playbackSpeed = clampedSpeed)
     }
 
-    private fun applyAnime4KSettings(settings: Anime4KSettings) {
-        if (!settings.enabled || settings.mode == Anime4KMode.OFF) {
+    private fun applyAnime4KProfile(profile: Anime4KProfile) {
+        if (profile == Anime4KProfile.OFF) {
             engine.setPropertyString("glsl-shaders", "")
             _state.value = _state.value.copy(
-                anime4kEnabled = false,
-                anime4kMode = settings.mode,
-                anime4kQuality = settings.quality,
+                anime4kProfile = Anime4KProfile.OFF,
                 statusMessage = null,
             )
             return
         }
 
-        val shaderChain = anime4kShaderProvider.shaderChain(settings)
+        val shaderChain = anime4kShaderProvider.shaderChain(profile)
         if (shaderChain.isBlank()) {
             engine.setPropertyString("glsl-shaders", "")
             _state.value = _state.value.copy(
-                anime4kEnabled = false,
-                anime4kMode = settings.mode,
-                anime4kQuality = settings.quality,
+                anime4kProfile = Anime4KProfile.OFF,
                 statusMessage = "Anime4K 着色器加载失败",
             )
             return
@@ -791,9 +750,7 @@ class MpvController(
 
         engine.setPropertyString("glsl-shaders", shaderChain)
         _state.value = _state.value.copy(
-            anime4kEnabled = true,
-            anime4kMode = settings.mode,
-            anime4kQuality = settings.quality,
+            anime4kProfile = profile,
             statusMessage = null,
         )
     }

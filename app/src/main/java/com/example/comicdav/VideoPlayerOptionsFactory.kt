@@ -14,7 +14,5 @@ internal fun AppSettings.toVideoPlayerOptions(): VideoPlayerOptions =
         playerOrientationMode = videoPlayerOrientationMode,
         proxyDebugInfoEnabled = videoPlayerProxyDebugInfoEnabled,
         videoBackgroundMode = videoBackgroundMode,
-        anime4kEnabled = anime4kEnabled,
-        anime4kMode = anime4kMode,
-        anime4kQuality = anime4kQuality,
+        anime4kProfile = anime4kProfile,
     )

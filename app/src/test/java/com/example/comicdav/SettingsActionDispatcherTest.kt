@@ -1,8 +1,7 @@
 package com.example.comicdav
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
@@ -59,9 +58,7 @@ class SettingsActionDispatcherTest {
             SettingsAction.SetVideoPlayerProxyDebugInfoEnabled(true),
             SettingsAction.SetVideoOutputMode(VideoOutputMode.GPU_NEXT),
             SettingsAction.SetGpuApiMode(GpuApiMode.VULKAN),
-            SettingsAction.SetAnime4KEnabled(true),
-            SettingsAction.SetAnime4KMode(Anime4KMode.C_PLUS),
-            SettingsAction.SetAnime4KQuality(Anime4KQuality.HIGH),
+            SettingsAction.SetAnime4KProfile(Anime4KProfile.EXTREME),
             SettingsAction.SetVideoDecoderMode(VideoDecoderMode.SOFTWARE),
             SettingsAction.SetMpvProfileMode(MpvProfileMode.HIGH_QUALITY),
             SettingsAction.SetVideoControlsAutoHideMillis(10_000),
@@ -104,9 +101,7 @@ class SettingsActionDispatcherTest {
         assertTrue(settings.videoPlayerProxyDebugInfoEnabled)
         assertEquals(VideoOutputMode.GPU_NEXT, settings.videoOutputMode)
         assertEquals(GpuApiMode.VULKAN, settings.gpuApiMode)
-        assertTrue(settings.anime4kEnabled)
-        assertEquals(Anime4KMode.C_PLUS, settings.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, settings.anime4kQuality)
+        assertEquals(Anime4KProfile.EXTREME, settings.anime4kProfile)
         assertEquals(VideoDecoderMode.SOFTWARE, settings.videoDecoderMode)
         assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
         assertEquals(10_000, settings.videoControlsAutoHideMillis)

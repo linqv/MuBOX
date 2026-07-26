@@ -262,12 +262,8 @@ internal fun dispatchSettingsAction(
             scope.launch { appSettingsStore.updateVideoOutputMode(action.value) }
         is SettingsAction.SetGpuApiMode ->
             scope.launch { appSettingsStore.updateGpuApiMode(action.value) }
-        is SettingsAction.SetAnime4KEnabled ->
-            scope.launch { appSettingsStore.updateAnime4KEnabled(action.value) }
-        is SettingsAction.SetAnime4KMode ->
-            scope.launch { appSettingsStore.updateAnime4KMode(action.value) }
-        is SettingsAction.SetAnime4KQuality ->
-            scope.launch { appSettingsStore.updateAnime4KQuality(action.value) }
+        is SettingsAction.SetAnime4KProfile ->
+            scope.launch { appSettingsStore.updateAnime4KProfile(action.value) }
         is SettingsAction.SetVideoDecoderMode ->
             scope.launch { appSettingsStore.updateVideoDecoderMode(action.value) }
         is SettingsAction.SetMpvProfileMode ->

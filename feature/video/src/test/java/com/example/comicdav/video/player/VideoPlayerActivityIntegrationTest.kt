@@ -1,8 +1,6 @@
 package com.example.comicdav.video.player
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
@@ -240,11 +238,7 @@ class VideoPlayerActivityIntegrationTest {
     @Test
     fun anime4KStartupCompatibilityKeepsGpuNextWithAutoGpuApi() {
         val compatibility = anime4kStartupCompatibility(
-            settings = Anime4KSettings(
-                enabled = true,
-                mode = Anime4KMode.A,
-                quality = Anime4KQuality.FAST,
-            ),
+            profile = Anime4KProfile.EFFICIENCY,
             requestedVideoOutputMode = VideoOutputMode.GPU_NEXT,
             gpuApiMode = GpuApiMode.AUTO,
         )

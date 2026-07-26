@@ -1,7 +1,6 @@
 package com.example.comicdav.video.player
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -60,26 +59,16 @@ class PlayerOptionPanelUiTest {
     @Test
     fun scalePanelOnlyContainsPerPlaybackVisualControls() {
         assertEquals(
-            listOf("画面", "Anime4K", "预设", "质量"),
+            listOf("画面", "Anime4K"),
             scaleModeControlGroupLabels(),
         )
     }
 
     @Test
-    fun anime4KControlsExposeEnablePresetAndQualityOptions() {
+    fun anime4KControlsExposeThreeProfiles() {
         assertEquals(
-            listOf("关" to false, "开" to true),
-            anime4kEnabledControlOptions(),
-        )
-        assertEquals(
-            listOf("A", "B", "C", "A+", "B+", "C+"),
-            Anime4KMode.entries
-                .filterNot { it == Anime4KMode.OFF }
-                .map(::anime4kModeControlLabel),
-        )
-        assertEquals(
-            listOf("Fast", "Balanced", "High"),
-            Anime4KQuality.entries.map(::anime4kQualityControlLabel),
+            listOf("关闭", "效率", "极致"),
+            Anime4KProfile.entries.map(::anime4kProfileControlLabel),
         )
     }
 

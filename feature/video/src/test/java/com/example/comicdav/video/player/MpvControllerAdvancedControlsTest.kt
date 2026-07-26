@@ -1,8 +1,6 @@
 package com.example.comicdav.video.player
 
-import com.example.comicdav.core.model.settings.Anime4KMode
-import com.example.comicdav.core.model.settings.Anime4KQuality
-import com.example.comicdav.core.model.settings.Anime4KSettings
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
@@ -17,146 +15,73 @@ import kotlin.system.measureTimeMillis
 
 class MpvControllerAdvancedControlsTest {
     @Test
-    fun constructorInitializesAnime4KSettingsAndStatus() {
+    fun constructorInitializesAnime4KProfileAndStatus() {
         val controller = MpvController(
             engine = FakeMpvEngine(),
             anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
-            initialAnime4KSettings = Anime4KSettings(
-                enabled = true,
-                mode = Anime4KMode.B_PLUS,
-                quality = Anime4KQuality.HIGH,
-            ),
+            initialAnime4KProfile = Anime4KProfile.EXTREME,
             initialAnime4KStatusMessage = "startup status",
         )
 
         val state = controller.state.value
-        assertTrue(state.anime4kEnabled)
-        assertEquals(Anime4KMode.B_PLUS, state.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
+        assertEquals(Anime4KProfile.EXTREME, state.anime4kProfile)
         assertEquals("startup status", state.statusMessage)
     }
 
     @Test
-    fun enablingAnime4KOnCompatibleRendererWritesShaderChainAndUpdatesState() {
+    fun selectingEfficiencyOnCompatibleRendererWritesShaderChainAndUpdatesState() {
         val engine = FakeMpvEngine()
         val controller = MpvController(
             engine = engine,
             anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
         )
 
-        controller.setAnime4KEnabled(true)
+        controller.setAnime4KProfile(Anime4KProfile.EFFICIENCY)
 
         val state = controller.state.value
         assertEquals(listOf("chain-a"), engine.stringPropertyHistory("glsl-shaders"))
-        assertTrue(state.anime4kEnabled)
-        assertEquals(Anime4KMode.A, state.anime4kMode)
-        assertEquals(Anime4KQuality.FAST, state.anime4kQuality)
+        assertEquals(Anime4KProfile.EFFICIENCY, state.anime4kProfile)
         assertEquals(null, state.statusMessage)
     }
 
     @Test
-    fun disablingAnime4KClearsShadersAndKeepsSelectedModeAndQuality() {
+    fun selectingOffClearsShaders() {
         val engine = FakeMpvEngine()
         val controller = MpvController(
             engine = engine,
             anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
-            initialAnime4KSettings = Anime4KSettings(
-                enabled = true,
-                mode = Anime4KMode.C_PLUS,
-                quality = Anime4KQuality.BALANCED,
-            ),
+            initialAnime4KProfile = Anime4KProfile.EXTREME,
         )
 
-        controller.setAnime4KEnabled(false)
+        controller.setAnime4KProfile(Anime4KProfile.OFF)
 
         val state = controller.state.value
         assertEquals(listOf(""), engine.stringPropertyHistory("glsl-shaders"))
-        assertFalse(state.anime4kEnabled)
-        assertEquals(Anime4KMode.C_PLUS, state.anime4kMode)
-        assertEquals(Anime4KQuality.BALANCED, state.anime4kQuality)
+        assertEquals(Anime4KProfile.OFF, state.anime4kProfile)
         assertEquals(null, state.statusMessage)
     }
 
     @Test
-    fun changingAnime4KQualityWhileDisabledKeepsShadersCleared() {
-        val engine = FakeMpvEngine()
-        val controller = MpvController(
-            engine = engine,
-            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
-        )
-
-        controller.setAnime4KEnabled(true)
-        controller.setAnime4KEnabled(false)
-        controller.setAnime4KQuality(Anime4KQuality.HIGH)
-
-        val state = controller.state.value
-        assertEquals(listOf("chain-a", "", ""), engine.stringPropertyHistory("glsl-shaders"))
-        assertFalse(state.anime4kEnabled)
-        assertEquals(Anime4KMode.A, state.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
-        assertEquals(null, state.statusMessage)
-    }
-
-    @Test
-    fun changingAnime4KModeWhileDisabledKeepsShadersCleared() {
-        val engine = FakeMpvEngine()
-        val controller = MpvController(
-            engine = engine,
-            anime4kShaderProvider = FixedAnime4KShaderProvider("chain-a"),
-            initialAnime4KSettings = Anime4KSettings(
-                enabled = false,
-                mode = Anime4KMode.A,
-                quality = Anime4KQuality.BALANCED,
-            ),
-        )
-
-        controller.setAnime4KEnabled(true)
-        controller.setAnime4KEnabled(false)
-        controller.setAnime4KMode(Anime4KMode.C)
-
-        val state = controller.state.value
-        assertEquals(listOf("chain-a", "", ""), engine.stringPropertyHistory("glsl-shaders"))
-        assertEquals(emptyList<String>(), engine.optionHistory("vo"))
-        assertFalse(state.anime4kEnabled)
-        assertEquals(Anime4KMode.C, state.anime4kMode)
-        assertEquals(Anime4KQuality.BALANCED, state.anime4kQuality)
-        assertEquals(null, state.statusMessage)
-    }
-
-    @Test
-    fun switchingAnime4KModeAndQualityWritesOnlyShaderPropertyOnCompatibleRenderer() {
+    fun switchingAnime4KProfilesWritesOnlyShaderPropertyOnCompatibleRenderer() {
         val engine = FakeMpvEngine()
         val provider = RecordingAnime4KShaderProvider()
         val controller = MpvController(
             engine = engine,
             anime4kShaderProvider = provider,
-            initialAnime4KSettings = Anime4KSettings(
-                enabled = true,
-                mode = Anime4KMode.A,
-                quality = Anime4KQuality.FAST,
-            ),
+            initialAnime4KProfile = Anime4KProfile.EFFICIENCY,
         )
 
-        controller.setAnime4KMode(Anime4KMode.C)
-        controller.setAnime4KQuality(Anime4KQuality.HIGH)
+        controller.setAnime4KProfile(Anime4KProfile.EXTREME)
 
         val state = controller.state.value
         assertEquals(
-            listOf(
-                "chain-C-FAST",
-                "chain-C-HIGH",
-            ),
+            listOf("chain-EXTREME"),
             engine.stringPropertyHistory("glsl-shaders"),
         )
         assertEquals(emptyList<String>(), engine.optionHistory("vo"))
-        assertTrue(state.anime4kEnabled)
-        assertEquals(Anime4KMode.C, state.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
+        assertEquals(Anime4KProfile.EXTREME, state.anime4kProfile)
         assertEquals(
-            listOf(
-                Anime4KSettings(enabled = true, mode = Anime4KMode.C, quality = Anime4KQuality.FAST),
-                Anime4KSettings(enabled = true, mode = Anime4KMode.C, quality = Anime4KQuality.HIGH),
-            ),
+            listOf(Anime4KProfile.EXTREME),
             provider.requests,
         )
     }
@@ -174,13 +99,12 @@ class MpvControllerAdvancedControlsTest {
             decoderMode = VideoDecoderMode.AUTO,
         )
 
-        controller.setAnime4KEnabled(true)
+        controller.setAnime4KProfile(Anime4KProfile.EFFICIENCY)
 
         val state = controller.state.value
         assertEquals(listOf("chain-a"), engine.stringPropertyHistory("glsl-shaders"))
         assertEquals(emptyList<String>(), engine.optionHistory("vo"))
-        assertTrue(state.anime4kEnabled)
-        assertEquals(Anime4KMode.A, state.anime4kMode)
+        assertEquals(Anime4KProfile.EFFICIENCY, state.anime4kProfile)
         assertEquals(null, state.statusMessage)
     }
 
@@ -200,7 +124,7 @@ class MpvControllerAdvancedControlsTest {
     }
 
     @Test
-    fun anime4KModeAndQualityChangesStayEnabledOnGpuNextOpenGl() {
+    fun anime4KProfileChangesStayEnabledOnGpuNextOpenGl() {
         val engine = FakeMpvEngine()
         val controller = MpvController(
             engine = engine,
@@ -212,15 +136,12 @@ class MpvControllerAdvancedControlsTest {
             decoderMode = VideoDecoderMode.AUTO,
         )
 
-        controller.setAnime4KEnabled(true)
-        controller.setAnime4KMode(Anime4KMode.B)
-        controller.setAnime4KQuality(Anime4KQuality.HIGH)
+        controller.setAnime4KProfile(Anime4KProfile.EFFICIENCY)
+        controller.setAnime4KProfile(Anime4KProfile.EXTREME)
 
         val state = controller.state.value
-        assertEquals(listOf("chain-a", "chain-a", "chain-a"), engine.stringPropertyHistory("glsl-shaders"))
-        assertTrue(state.anime4kEnabled)
-        assertEquals(Anime4KMode.B, state.anime4kMode)
-        assertEquals(Anime4KQuality.HIGH, state.anime4kQuality)
+        assertEquals(listOf("chain-a", "chain-a"), engine.stringPropertyHistory("glsl-shaders"))
+        assertEquals(Anime4KProfile.EXTREME, state.anime4kProfile)
         assertEquals(null, state.statusMessage)
     }
 
@@ -232,13 +153,11 @@ class MpvControllerAdvancedControlsTest {
             anime4kShaderProvider = FixedAnime4KShaderProvider(""),
         )
 
-        controller.setAnime4KEnabled(true)
+        controller.setAnime4KProfile(Anime4KProfile.EFFICIENCY)
 
         val state = controller.state.value
         assertEquals(listOf(""), engine.stringPropertyHistory("glsl-shaders"))
-        assertFalse(state.anime4kEnabled)
-        assertEquals(Anime4KMode.A, state.anime4kMode)
-        assertEquals(Anime4KQuality.FAST, state.anime4kQuality)
+        assertEquals(Anime4KProfile.OFF, state.anime4kProfile)
         assertNotNull(state.statusMessage)
     }
 
@@ -534,15 +453,15 @@ class MpvControllerAdvancedControlsTest {
     private class FixedAnime4KShaderProvider(
         private val chain: String,
     ) : Anime4KShaderProvider {
-        override fun shaderChain(settings: Anime4KSettings): String = chain
+        override fun shaderChain(profile: Anime4KProfile): String = chain
     }
 
     private class RecordingAnime4KShaderProvider : Anime4KShaderProvider {
-        val requests = mutableListOf<Anime4KSettings>()
+        val requests = mutableListOf<Anime4KProfile>()
 
-        override fun shaderChain(settings: Anime4KSettings): String {
-            requests += settings
-            return "chain-${settings.mode.name}-${settings.quality.name}"
+        override fun shaderChain(profile: Anime4KProfile): String {
+            requests += profile
+            return "chain-${profile.name}"
         }
     }
 }

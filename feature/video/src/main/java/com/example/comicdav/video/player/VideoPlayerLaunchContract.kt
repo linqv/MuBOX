@@ -29,6 +29,8 @@ object VideoPlayerLaunchContract {
     const val EXTRA_PLAYER_ORIENTATION_MODE = "com.example.comicdav.video.extra.PLAYER_ORIENTATION_MODE"
     const val EXTRA_PROXY_DEBUG_INFO_ENABLED = "com.example.comicdav.video.extra.PROXY_DEBUG_INFO_ENABLED"
     const val EXTRA_VIDEO_BACKGROUND_MODE = "com.example.comicdav.video.extra.VIDEO_BACKGROUND_MODE"
+    const val EXTRA_ANIME4K_PROFILE = "com.example.comicdav.video.extra.ANIME4K_PROFILE"
+    // Read-only legacy extras kept for restoring intents created by older versions.
     const val EXTRA_ANIME4K_ENABLED = "com.example.comicdav.video.extra.ANIME4K_ENABLED"
     const val EXTRA_ANIME4K_MODE = "com.example.comicdav.video.extra.ANIME4K_MODE"
     const val EXTRA_ANIME4K_QUALITY = "com.example.comicdav.video.extra.ANIME4K_QUALITY"
