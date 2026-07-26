@@ -71,7 +71,10 @@ fun WebDavAccountScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                    vertical = 16.dp,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             val panelShape = RoundedCornerShape(MuBoxMetrics.RadiusXlDp)

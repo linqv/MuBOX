@@ -252,7 +252,7 @@ fun MuBoxPanelSection(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp)
+            .padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp)
             .muBoxGlassSurface(colors = colors, shape = shape),
     ) {
         Column(

@@ -400,7 +400,10 @@ private fun HomeRootContent(
                 text = libraryMessage,
                 isError = libraryMessageIsError,
                 onDismiss = onDismissLibraryMessage,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                    vertical = 4.dp,
+                ),
             )
         }
         if (videoLibraryMessage != null) {
@@ -408,7 +411,10 @@ private fun HomeRootContent(
                 text = videoLibraryMessage,
                 isError = videoLibraryMessageIsError,
                 onDismiss = onDismissVideoLibraryMessage,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                    vertical = 4.dp,
+                ),
             )
         }
 
@@ -852,44 +858,51 @@ internal fun HomeHistoryScreen(
 ) {
     val colors = rememberMuBoxColors()
     var pendingDelete by remember { mutableStateOf<WatchHistoryEntry?>(null) }
-    LazyColumn(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            MuBoxHeaderBar(
-                title = "观看历史",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                        )
-                    }
-                },
-            )
-        }
-        if (history.isEmpty()) {
-            item {
-                MuBoxEmptyState(
-                    icon = Icons.Filled.History,
-                    title = "暂无观看历史",
-                    body = "打开漫画或视频后，进度会自动显示在这里",
-                )
-            }
-        } else {
-            items(
-                items = history,
-                key = WatchHistoryEntry::mediaKey,
-            ) { entry ->
-                HistoryEntryRow(
-                    entry = entry,
-                    onOpen = { onOpenEntry(entry) },
-                    onDelete = { pendingDelete = entry },
-                )
+        MuBoxHeaderBar(
+            title = "观看历史",
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                    )
+                }
+            },
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = MuBoxMetrics.PageHorizontalPaddingDp,
+                end = MuBoxMetrics.PageHorizontalPaddingDp,
+                top = 16.dp,
+                bottom = 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (history.isEmpty()) {
+                item {
+                    MuBoxEmptyState(
+                        icon = Icons.Filled.History,
+                        title = "暂无观看历史",
+                        body = "打开漫画或视频后，进度会自动显示在这里",
+                    )
+                }
+            } else {
+                items(
+                    items = history,
+                    key = WatchHistoryEntry::mediaKey,
+                ) { entry ->
+                    HistoryEntryRow(
+                        entry = entry,
+                        onOpen = { onOpenEntry(entry) },
+                        onDelete = { pendingDelete = entry },
+                    )
+                }
             }
         }
     }

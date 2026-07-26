@@ -69,6 +69,7 @@ import com.example.comicdav.ui.MuBoxActionRow
 import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxEmptyState
+import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.MuBoxSwitchRow
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.rememberMuBoxColors
@@ -302,7 +303,10 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        MuBoxBoxedList(title = "通用", modifier = Modifier.padding(horizontal = 16.dp)) {
+        MuBoxBoxedList(
+            title = "通用",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             DropdownRow(
                 title = "配色方案",
                 selected = settings.colorPalette,
@@ -318,7 +322,10 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "内容设置", modifier = Modifier.padding(horizontal = 16.dp)) {
+        MuBoxBoxedList(
+            title = "内容设置",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             MuBoxActionRow(
                 title = "观看历史",
                 onClick = { currentPage = SettingsPage.HISTORY },
@@ -340,7 +347,10 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "观看历史设置", modifier = Modifier.padding(horizontal = 16.dp)) {
+        MuBoxBoxedList(
+            title = "观看历史设置",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             DropdownRow(
                 title = "保留时长",
                 selected = settings.historyRetentionDays,
@@ -363,7 +373,10 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "缓存", modifier = Modifier.padding(horizontal = 16.dp)) {
+        MuBoxBoxedList(
+            title = "缓存",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             CacheActionRow(
                 title = "缓存总占用",
                 subtitle = formatCacheSize(cacheAnalysis.totalBytes),
@@ -455,7 +468,10 @@ fun SettingsScreen(
             text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 30.dp, vertical = 8.dp),
+                .padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp + 14.dp,
+                    vertical = 8.dp,
+                ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -496,49 +512,56 @@ private fun HistorySettingsPage(
 ) {
     val colors = rememberMuBoxColors()
     var pendingDelete by remember { mutableStateOf<WatchHistoryEntry?>(null) }
-    LazyColumn(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            MuBoxHeaderBar(
-                title = "观看历史",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            )
-        }
-        if (history.isEmpty()) {
-            item {
-                MuBoxEmptyState(
-                    icon = Icons.Filled.History,
-                    title = "暂无观看历史",
-                    body = "打开漫画或视频后，进度会自动显示在这里",
-                )
-            }
-        } else {
-            item {
-                Text(
-                    text = "最近观看",
-                    modifier = Modifier.padding(start = 16.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.muted,
-                )
-            }
-            items(
-                items = history,
-                key = WatchHistoryEntry::mediaKey,
-            ) { entry ->
-                HistoryEntryRow(
-                    entry = entry,
-                    onOpen = { onOpenEntry(entry) },
-                    onDelete = { pendingDelete = entry },
-                )
+        MuBoxHeaderBar(
+            title = "观看历史",
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = MuBoxMetrics.PageHorizontalPaddingDp,
+                end = MuBoxMetrics.PageHorizontalPaddingDp,
+                top = 16.dp,
+                bottom = 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (history.isEmpty()) {
+                item {
+                    MuBoxEmptyState(
+                        icon = Icons.Filled.History,
+                        title = "暂无观看历史",
+                        body = "打开漫画或视频后，进度会自动显示在这里",
+                    )
+                }
+            } else {
+                item {
+                    Text(
+                        text = "最近观看",
+                        modifier = Modifier.padding(start = 16.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.muted,
+                    )
+                }
+                items(
+                    items = history,
+                    key = WatchHistoryEntry::mediaKey,
+                ) { entry ->
+                    HistoryEntryRow(
+                        entry = entry,
+                        onOpen = { onOpenEntry(entry) },
+                        onDelete = { pendingDelete = entry },
+                    )
+                }
             }
         }
     }
@@ -591,8 +614,7 @@ private fun ComicSettingsPage(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 0.dp),
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         MuBoxHeaderBar(
@@ -603,7 +625,10 @@ private fun ComicSettingsPage(
                 }
             },
         )
-        MuBoxBoxedList(title = "漫画设置") {
+        MuBoxBoxedList(
+            title = "漫画设置",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             ChoiceRow(
                 title = "阅读方向",
                 options = ReadingDirection.entries,
@@ -690,8 +715,7 @@ private fun VideoSettingsPage(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 0.dp),
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         MuBoxHeaderBar(
@@ -702,7 +726,10 @@ private fun VideoSettingsPage(
                 }
             },
         )
-        MuBoxBoxedList(title = "视频设置") {
+        MuBoxBoxedList(
+            title = "视频设置",
+            modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
+        ) {
             MuBoxSwitchRow(
                 title = "恢复播放位置",
                 checked = settings.videoResumeEnabled,

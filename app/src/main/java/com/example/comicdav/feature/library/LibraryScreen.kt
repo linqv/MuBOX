@@ -70,9 +70,7 @@ fun LibraryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .muBoxAppBackground(colors)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .muBoxAppBackground(colors),
     ) {
         MuBoxHeaderBar(
             title = ComicDavCopy.libraryTitle,
@@ -81,59 +79,70 @@ fun LibraryScreen(
                 TextButton(onClick = onOpenDirectories) { Text(ComicDavCopy.sourcesTitle) }
             },
         )
-        Text(
-            text = libraryCountLabel(uiState.items.size),
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.muted,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
-
-        if (uiState.message != null || uiState.error != null) {
-            com.example.comicdav.ui.MuBoxMessagePanel(
-                text = uiState.error ?: uiState.message.orEmpty(),
-                isError = uiState.error != null,
-                onDismiss = onDismissMessage,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                    vertical = 14.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = libraryCountLabel(uiState.items.size),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.muted,
+                modifier = Modifier.padding(horizontal = 8.dp),
             )
-        }
 
-        AnimatedContent(
-            targetState = uiState,
-            modifier = Modifier.weight(1f),
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "LibraryContent",
-        ) { state ->
-            when {
-                state.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
+            if (uiState.message != null || uiState.error != null) {
+                com.example.comicdav.ui.MuBoxMessagePanel(
+                    text = uiState.error ?: uiState.message.orEmpty(),
+                    isError = uiState.error != null,
+                    onDismiss = onDismissMessage,
+                )
+            }
+
+            AnimatedContent(
+                targetState = uiState,
+                modifier = Modifier.weight(1f),
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "LibraryContent",
+            ) { state ->
+                when {
+                    state.isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
-                }
 
-                state.items.isEmpty() -> {
-                    EmptyLibrary(
-                        onOpenDirectories = onOpenDirectories,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                    state.items.isEmpty() -> {
+                        EmptyLibrary(
+                            onOpenDirectories = onOpenDirectories,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
 
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 120.dp),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        items(state.items, key = { it.item.id }) { item ->
-                            LibraryCard(
-                                item = item,
-                                onClick = { onOpenItem(item) },
-                                onLongClick = { onSelectItem(item) },
-                                coversEnabled = coversEnabled,
-                                isSelected = selectedItemId == item.item.id,
-                            )
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 120.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(20.dp),
+                        ) {
+                            items(state.items, key = { it.item.id }) { item ->
+                                LibraryCard(
+                                    item = item,
+                                    onClick = { onOpenItem(item) },
+                                    onLongClick = { onSelectItem(item) },
+                                    coversEnabled = coversEnabled,
+                                    isSelected = selectedItemId == item.item.id,
+                                )
+                            }
                         }
                     }
                 }

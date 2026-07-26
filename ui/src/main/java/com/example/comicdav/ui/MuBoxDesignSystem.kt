@@ -390,6 +390,8 @@ fun Modifier.muBoxGradientBorder(
 }
 
 object MuBoxMetrics {
+    // 页面级容器保持紧凑边距；组件内部仍各自保留可读性所需的留白。
+    val PageHorizontalPaddingDp = 8.dp
     val MinTouchTargetDp = 48.dp
     val DenseRowCornerDp = 10.dp
     val PanelCornerDp = 12.dp

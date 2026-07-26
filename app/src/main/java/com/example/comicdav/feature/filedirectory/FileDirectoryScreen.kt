@@ -233,7 +233,7 @@ fun FileDirectoryScreen(
                 .weight(1f)
                 .then(if (isBrowsing) Modifier else Modifier.statusBarsPadding())
                 .padding(
-                    horizontal = if (isBrowsing) 16.dp else 0.dp,
+                    horizontal = if (isBrowsing) MuBoxMetrics.PageHorizontalPaddingDp else 0.dp,
                     vertical = if (isBrowsing) 12.dp else 4.dp,
                 ),
             verticalArrangement = Arrangement.spacedBy(if (isBrowsing) 12.dp else 8.dp),
@@ -243,7 +243,11 @@ fun FileDirectoryScreen(
                     text = uiState.error ?: uiState.message.orEmpty(),
                     isError = uiState.error != null,
                     onDismiss = onDismissMessage,
-                    modifier = if (isBrowsing) Modifier else Modifier.padding(horizontal = 16.dp),
+                    modifier = if (isBrowsing) {
+                        Modifier
+                    } else {
+                        Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp)
+                    },
                 )
             }
 
@@ -452,7 +456,7 @@ private fun SourcePanel(
     val shape = RoundedCornerShape(MuBoxMetrics.RadiusLDp)
     Surface(
         modifier = Modifier
-            .padding(horizontal = 10.dp)
+            .padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp)
             .fillMaxWidth()
             .muBoxGlassSurface(colors = colors, shape = shape),
         shape = shape,

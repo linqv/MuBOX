@@ -36,6 +36,7 @@ import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.MuBoxInlineMessage
+import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
@@ -73,7 +74,10 @@ fun DownloadsScreen(
                 text = actionMessage,
                 isError = false,
                 onDismiss = { dismissedMessage = actionMessage },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                    vertical = 4.dp,
+                ),
             )
         }
 
@@ -83,7 +87,10 @@ fun DownloadsScreen(
                 text = subtitleFor(comicDownloads, videoDownloads),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(
+                        horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                        vertical = 4.dp,
+                    ),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.muted,
             )
@@ -95,7 +102,12 @@ fun DownloadsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(
+                    start = MuBoxMetrics.PageHorizontalPaddingDp,
+                    end = MuBoxMetrics.PageHorizontalPaddingDp,
+                    top = 12.dp,
+                    bottom = 24.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (activeDownload != null) {

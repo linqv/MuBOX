@@ -159,6 +159,7 @@ class MuBoxDesignSystemTest {
 
     @Test
     fun metricsExposeFoundationSizingTokens() {
+        assertEquals(8.dp, MuBoxMetrics.PageHorizontalPaddingDp)
         assertEquals(48.dp, MuBoxMetrics.MinTouchTargetDp)
         assertEquals(10.dp, MuBoxMetrics.DenseRowCornerDp)
         assertEquals(16.dp, MuBoxMetrics.PlayerPanelCornerDp)
