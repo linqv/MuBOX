@@ -9,10 +9,18 @@ import com.example.comicdav.data.videolibrary.VideoLibraryCatalog
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import kotlinx.coroutines.launch
 
+data class ThumbnailArtworkRevisions(
+    val videos: Map<Long, Long> = emptyMap(),
+    val history: Map<String, Long> = emptyMap(),
+)
+
 data class VideoLibraryUiState(
     val items: List<VideoLibraryItemWithSources> = emptyList(),
     val isLoading: Boolean = true,
     val isExtractingThumbnails: Boolean = false,
+    val thumbnailArtworkRevisions: ThumbnailArtworkRevisions = ThumbnailArtworkRevisions(),
+    val thumbnailExtractionMessage: String? = null,
+    val thumbnailExtractionMessageIsError: Boolean = false,
     val error: String? = null,
     val message: String? = null,
 )
@@ -145,7 +153,55 @@ class VideoLibraryViewModel(
     }
 
     fun setThumbnailExtractionInProgress(inProgress: Boolean) {
-        uiState = uiState.copy(isExtractingThumbnails = inProgress)
+        uiState = uiState.copy(
+            isExtractingThumbnails = inProgress,
+            thumbnailExtractionMessage = if (inProgress) null else uiState.thumbnailExtractionMessage,
+            thumbnailExtractionMessageIsError =
+                if (inProgress) false else uiState.thumbnailExtractionMessageIsError,
+        )
+    }
+
+    fun onVideoThumbnailExtracted(videoLibraryItemId: Long, thumbnailPath: String) {
+        val revisions = uiState.thumbnailArtworkRevisions
+        uiState = uiState.copy(
+            items = uiState.items.map { item ->
+                if (item.item.id == videoLibraryItemId) {
+                    item.copy(item = item.item.copy(thumbnailPath = thumbnailPath))
+                } else {
+                    item
+                }
+            },
+            thumbnailArtworkRevisions = revisions.copy(
+                videos = revisions.videos + (
+                    videoLibraryItemId to ((revisions.videos[videoLibraryItemId] ?: 0L) + 1L)
+                    ),
+            ),
+        )
+    }
+
+    fun onHistoryThumbnailExtracted(mediaKey: String) {
+        val revisions = uiState.thumbnailArtworkRevisions
+        uiState = uiState.copy(
+            thumbnailArtworkRevisions = revisions.copy(
+                history = revisions.history + (
+                    mediaKey to ((revisions.history[mediaKey] ?: 0L) + 1L)
+                    ),
+            ),
+        )
+    }
+
+    fun showThumbnailExtractionResult(message: String, isError: Boolean = false) {
+        uiState = uiState.copy(
+            thumbnailExtractionMessage = message,
+            thumbnailExtractionMessageIsError = isError,
+        )
+    }
+
+    fun clearThumbnailExtractionMessage() {
+        uiState = uiState.copy(
+            thumbnailExtractionMessage = null,
+            thumbnailExtractionMessageIsError = false,
+        )
     }
 
     fun clearMessage() {

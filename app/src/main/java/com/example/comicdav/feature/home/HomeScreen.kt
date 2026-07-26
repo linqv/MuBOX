@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,9 +32,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +51,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.data.library.LibraryItemWithSources
@@ -276,6 +283,10 @@ internal fun HomeScreen(
     coversEnabled: Boolean,
     thumbnailsEnabled: Boolean,
     isExtractingThumbnails: Boolean,
+    videoThumbnailArtworkRevisions: Map<Long, Long>,
+    historyThumbnailArtworkRevisions: Map<String, Long>,
+    thumbnailExtractionMessage: String?,
+    thumbnailExtractionMessageIsError: Boolean,
     hasActiveSelection: Boolean,
     selectedLibraryItemId: Long?,
     selectedVideoLibraryItemId: Long?,
@@ -287,6 +298,7 @@ internal fun HomeScreen(
     onSelectVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
     onDismissLibraryMessage: () -> Unit,
     onDismissVideoLibraryMessage: () -> Unit,
+    onDismissThumbnailExtractionMessage: () -> Unit,
     onExtractThumbnails: () -> Unit,
     onOpenSources: () -> Unit,
     libraryPage: @Composable (onBack: () -> Unit, modifier: Modifier) -> Unit,
@@ -334,6 +346,10 @@ internal fun HomeScreen(
         coversEnabled = coversEnabled,
         thumbnailsEnabled = thumbnailsEnabled,
         isExtractingThumbnails = isExtractingThumbnails,
+        videoThumbnailArtworkRevisions = videoThumbnailArtworkRevisions,
+        historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
+        thumbnailExtractionMessage = thumbnailExtractionMessage,
+        thumbnailExtractionMessageIsError = thumbnailExtractionMessageIsError,
         selectedLibraryItemId = selectedLibraryItemId,
         selectedVideoLibraryItemId = selectedVideoLibraryItemId,
         onOpenHistoryEntry = onOpenHistoryEntry,
@@ -343,6 +359,7 @@ internal fun HomeScreen(
         onSelectVideoLibraryItem = onSelectVideoLibraryItem,
         onDismissLibraryMessage = onDismissLibraryMessage,
         onDismissVideoLibraryMessage = onDismissVideoLibraryMessage,
+        onDismissThumbnailExtractionMessage = onDismissThumbnailExtractionMessage,
         onExtractThumbnails = onExtractThumbnails,
         onOpenSources = onOpenSources,
         onOpenAllHistory = { subPageName = HomeSubPage.HISTORY.name },
@@ -364,6 +381,10 @@ private fun HomeRootContent(
     coversEnabled: Boolean,
     thumbnailsEnabled: Boolean,
     isExtractingThumbnails: Boolean,
+    videoThumbnailArtworkRevisions: Map<Long, Long>,
+    historyThumbnailArtworkRevisions: Map<String, Long>,
+    thumbnailExtractionMessage: String?,
+    thumbnailExtractionMessageIsError: Boolean,
     selectedLibraryItemId: Long?,
     selectedVideoLibraryItemId: Long?,
     onOpenHistoryEntry: (WatchHistoryEntry) -> Unit,
@@ -373,6 +394,7 @@ private fun HomeRootContent(
     onSelectVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
     onDismissLibraryMessage: () -> Unit,
     onDismissVideoLibraryMessage: () -> Unit,
+    onDismissThumbnailExtractionMessage: () -> Unit,
     onExtractThumbnails: () -> Unit,
     onOpenSources: () -> Unit,
     onOpenAllHistory: () -> Unit,
@@ -381,71 +403,107 @@ private fun HomeRootContent(
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
+    val thumbnailSnackbarHostState = remember { SnackbarHostState() }
     // rememberScrollState 内部使用 rememberSaveable，进程重建后保留首页滚动位置（§5.3）。
     val scrollState = rememberScrollState()
-    Column(
+
+    LaunchedEffect(thumbnailExtractionMessage) {
+        val message = thumbnailExtractionMessage ?: return@LaunchedEffect
+        thumbnailSnackbarHostState.showSnackbar(message)
+        onDismissThumbnailExtractionMessage()
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors)
-            .statusBarsPadding()
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .statusBarsPadding(),
     ) {
-        HomeTopBar(
-            isExtractingThumbnails = isExtractingThumbnails,
-            onExtractThumbnails = onExtractThumbnails,
-        )
-        if (libraryMessage != null) {
-            MuBoxInlineMessage(
-                text = libraryMessage,
-                isError = libraryMessageIsError,
-                onDismiss = onDismissLibraryMessage,
-                modifier = Modifier.padding(
-                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
-                    vertical = 4.dp,
-                ),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            HomeTopBar(
+                isExtractingThumbnails = isExtractingThumbnails,
+                onExtractThumbnails = onExtractThumbnails,
             )
-        }
-        if (videoLibraryMessage != null) {
-            MuBoxInlineMessage(
-                text = videoLibraryMessage,
-                isError = videoLibraryMessageIsError,
-                onDismiss = onDismissVideoLibraryMessage,
-                modifier = Modifier.padding(
-                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
-                    vertical = 4.dp,
-                ),
+            if (libraryMessage != null) {
+                MuBoxInlineMessage(
+                    text = libraryMessage,
+                    isError = libraryMessageIsError,
+                    onDismiss = onDismissLibraryMessage,
+                    modifier = Modifier.padding(
+                        horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                        vertical = 4.dp,
+                    ),
+                )
+            }
+            if (videoLibraryMessage != null) {
+                MuBoxInlineMessage(
+                    text = videoLibraryMessage,
+                    isError = videoLibraryMessageIsError,
+                    onDismiss = onDismissVideoLibraryMessage,
+                    modifier = Modifier.padding(
+                        horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                        vertical = 4.dp,
+                    ),
+                )
+            }
+
+            HomeHistorySection(
+                history = history,
+                libraryItems = libraryItems,
+                videoLibraryItems = videoLibraryItems,
+                coversEnabled = coversEnabled,
+                thumbnailsEnabled = thumbnailsEnabled,
+                historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
+                onOpenEntry = onOpenHistoryEntry,
+                onOpenAll = onOpenAllHistory,
+                onOpenSources = onOpenSources,
+            )
+            HomeLibrarySection(
+                items = libraryItems,
+                coversEnabled = coversEnabled,
+                selectedItemId = selectedLibraryItemId,
+                onOpenItem = onOpenLibraryItem,
+                onSelectItem = onSelectLibraryItem,
+                onOpenAll = onOpenFullLibrary,
+                onOpenSources = onOpenSources,
+            )
+            HomeVideoLibrarySection(
+                items = videoLibraryItems,
+                thumbnailsEnabled = thumbnailsEnabled,
+                videoThumbnailArtworkRevisions = videoThumbnailArtworkRevisions,
+                selectedItemId = selectedVideoLibraryItemId,
+                onOpenItem = onOpenVideoLibraryItem,
+                onSelectItem = onSelectVideoLibraryItem,
+                onOpenAll = onOpenFullVideoLibrary,
+                onOpenSources = onOpenSources,
             )
         }
 
-        HomeHistorySection(
-            history = history,
-            libraryItems = libraryItems,
-            videoLibraryItems = videoLibraryItems,
-            coversEnabled = coversEnabled,
-            thumbnailsEnabled = thumbnailsEnabled,
-            onOpenEntry = onOpenHistoryEntry,
-            onOpenAll = onOpenAllHistory,
-            onOpenSources = onOpenSources,
-        )
-        HomeLibrarySection(
-            items = libraryItems,
-            coversEnabled = coversEnabled,
-            selectedItemId = selectedLibraryItemId,
-            onOpenItem = onOpenLibraryItem,
-            onSelectItem = onSelectLibraryItem,
-            onOpenAll = onOpenFullLibrary,
-            onOpenSources = onOpenSources,
-        )
-        HomeVideoLibrarySection(
-            items = videoLibraryItems,
-            thumbnailsEnabled = thumbnailsEnabled,
-            selectedItemId = selectedVideoLibraryItemId,
-            onOpenItem = onOpenVideoLibraryItem,
-            onSelectItem = onSelectVideoLibraryItem,
-            onOpenAll = onOpenFullVideoLibrary,
-            onOpenSources = onOpenSources,
-        )
+        SnackbarHost(
+            hostState = thumbnailSnackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) { snackbarData ->
+            Snackbar(
+                snackbarData = snackbarData,
+                containerColor = if (thumbnailExtractionMessageIsError) {
+                    colors.errorSurface
+                } else {
+                    colors.panelHigh
+                },
+                contentColor = if (thumbnailExtractionMessageIsError) {
+                    colors.errorText
+                } else {
+                    colors.text
+                },
+            )
+        }
     }
 }
 
@@ -657,6 +715,7 @@ private fun HomeHistorySection(
     videoLibraryItems: List<VideoLibraryItemWithSources>,
     coversEnabled: Boolean,
     thumbnailsEnabled: Boolean,
+    historyThumbnailArtworkRevisions: Map<String, Long>,
     onOpenEntry: (WatchHistoryEntry) -> Unit,
     onOpenAll: () -> Unit,
     onOpenSources: () -> Unit,
@@ -682,6 +741,12 @@ private fun HomeHistorySection(
                     items = history.take(HomePreviewItemCount),
                     key = WatchHistoryEntry::mediaKey,
                 ) { entry ->
+                    val coverPath = resolvedHistoryArtworkPath(
+                        entry = entry,
+                        comics = libraryItems,
+                        videos = videoLibraryItems,
+                        cacheDir = cacheDir,
+                    )
                     MuBoxMediaPosterCard(
                         title = entry.displayTitle,
                         mediaKind = when (entry.mediaType) {
@@ -691,20 +756,15 @@ private fun HomeHistorySection(
                         onClick = { onOpenEntry(entry) },
                         modifier = Modifier.width(108.dp),
                         subtitle = homeHistoryProgressPercentLabel(entry),
-                        coverModel = resolvedHistoryArtworkPath(
-                            entry = entry,
-                            comics = libraryItems,
-                            videos = videoLibraryItems,
-                            cacheDir = cacheDir,
-                        )
-                            ?.takeIf {
-                                when (entry.mediaType) {
-                                    WatchMediaType.COMIC -> coversEnabled
-                                    WatchMediaType.VIDEO -> thumbnailsEnabled
-                                }
-                            }
-                            ?.let(::File)
-                            ?.takeIf(File::isFile),
+                        coverModel = rememberHomeArtworkModel(
+                            path = coverPath,
+                            enabled = when (entry.mediaType) {
+                                WatchMediaType.COMIC -> coversEnabled
+                                WatchMediaType.VIDEO -> thumbnailsEnabled
+                            },
+                            artworkRevision =
+                                historyThumbnailArtworkRevisions[entry.mediaKey] ?: 0L,
+                        ),
                         progress = entry.progressFraction,
                         layout = MuBoxPosterLayout.Recent,
                         coverAspectRatio = 0.75f,
@@ -771,6 +831,7 @@ private fun HomeLibrarySection(
 private fun HomeVideoLibrarySection(
     items: List<VideoLibraryItemWithSources>,
     thumbnailsEnabled: Boolean,
+    videoThumbnailArtworkRevisions: Map<Long, Long>,
     selectedItemId: Long?,
     onOpenItem: (VideoLibraryItemWithSources) -> Unit,
     onSelectItem: (VideoLibraryItemWithSources) -> Unit,
@@ -802,10 +863,12 @@ private fun HomeVideoLibrarySection(
                         mediaKind = MuBoxPosterKind.Video,
                         onClick = { onOpenItem(item) },
                         modifier = Modifier.width(96.dp),
-                        coverModel = item.item.thumbnailPath
-                            ?.takeIf { thumbnailsEnabled }
-                            ?.let(::File)
-                            ?.takeIf { it.isFile },
+                        coverModel = rememberHomeArtworkModel(
+                            path = item.item.thumbnailPath,
+                            enabled = thumbnailsEnabled,
+                            artworkRevision =
+                                videoThumbnailArtworkRevisions[item.item.id] ?: 0L,
+                        ),
                         selected = selectedItemId == item.item.id,
                         layout = MuBoxPosterLayout.Cover,
                         coverAspectRatio = 2f / 3f,
@@ -815,6 +878,31 @@ private fun HomeVideoLibrarySection(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun rememberHomeArtworkModel(
+    path: String?,
+    enabled: Boolean,
+    artworkRevision: Long,
+): Any? {
+    val context = LocalContext.current
+    return remember(context, path, enabled, artworkRevision) {
+        val file = path
+            ?.takeIf { enabled }
+            ?.let(::File)
+            ?.takeIf(File::isFile)
+            ?: return@remember null
+        if (artworkRevision == 0L) {
+            file
+        } else {
+            ImageRequest.Builder(context)
+                .data(file)
+                .memoryCacheKey("${file.absolutePath}#extraction-$artworkRevision")
+                .diskCachePolicy(CachePolicy.DISABLED)
+                .build()
         }
     }
 }

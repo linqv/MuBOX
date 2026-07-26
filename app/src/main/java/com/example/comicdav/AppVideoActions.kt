@@ -297,6 +297,10 @@ internal class AppVideoActions(
             }.fold(
                 onSuccess = { thumbnailPath ->
                     container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                    videoLibraryViewModel.onVideoThumbnailExtracted(
+                        videoLibraryItemId = item.item.id,
+                        thumbnailPath = thumbnailPath,
+                    )
                     callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }
                     videoLibraryViewModel.showMessage("已重新提取 ${item.item.displayName} 的缩略图")
                 },
@@ -314,7 +318,10 @@ internal class AppVideoActions(
         libraryItems: List<LibraryItemWithSources>,
     ) {
         if (!settings.videoLibraryThumbnailsEnabled && !settings.libraryCoversEnabled) {
-            videoLibraryViewModel.showError("请先在设置中开启封面或缩略图")
+            videoLibraryViewModel.showThumbnailExtractionResult(
+                message = "请先在设置中开启封面或缩略图",
+                isError = true,
+            )
             return
         }
         if (videoLibraryViewModel.uiState.isExtractingThumbnails) return
@@ -342,7 +349,7 @@ internal class AppVideoActions(
         }
         val targetCount = videoTargets.size + historyTargets.size
         if (targetCount == 0) {
-            videoLibraryViewModel.showMessage(
+            videoLibraryViewModel.showThumbnailExtractionResult(
                 if (videoLibraryItems.isEmpty() && history.isEmpty()) {
                     "没有可提取缩略图的媒体"
                 } else {
@@ -353,7 +360,6 @@ internal class AppVideoActions(
         }
 
         videoLibraryViewModel.setThumbnailExtractionInProgress(true)
-        videoLibraryViewModel.showMessage("正在提取 $targetCount 个缩略图")
         scope.launch {
             var succeeded = 0
             var failed = 0
@@ -362,6 +368,10 @@ internal class AppVideoActions(
                     try {
                         val thumbnailPath = extractVideoLibraryThumbnail(item)
                         container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                        videoLibraryViewModel.onVideoThumbnailExtracted(
+                            videoLibraryItemId = item.item.id,
+                            thumbnailPath = thumbnailPath,
+                        )
                         succeeded += 1
                     } catch (error: CancellationException) {
                         throw error
@@ -376,6 +386,7 @@ internal class AppVideoActions(
                 historyTargets.forEach { entry ->
                     try {
                         extractHistoryThumbnail(entry)
+                        videoLibraryViewModel.onHistoryThumbnailExtracted(entry.mediaKey)
                         succeeded += 1
                     } catch (error: CancellationException) {
                         throw error
@@ -393,11 +404,19 @@ internal class AppVideoActions(
 
             when {
                 failed == 0 ->
-                    videoLibraryViewModel.showMessage("已提取 $succeeded 个缩略图")
+                    videoLibraryViewModel.showThumbnailExtractionResult(
+                        "已提取 $succeeded 个缩略图",
+                    )
                 succeeded == 0 ->
-                    videoLibraryViewModel.showError("$failed 个缩略图提取失败")
+                    videoLibraryViewModel.showThumbnailExtractionResult(
+                        message = "$failed 个缩略图提取失败",
+                        isError = true,
+                    )
                 else ->
-                    videoLibraryViewModel.showError("已提取 $succeeded 个缩略图，$failed 个提取失败")
+                    videoLibraryViewModel.showThumbnailExtractionResult(
+                        message = "已提取 $succeeded 个缩略图，$failed 个提取失败",
+                        isError = true,
+                    )
             }
         }
     }

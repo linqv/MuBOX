@@ -335,6 +335,14 @@ internal fun ComicDavApp(container: AppContainer) {
                                         thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
                                         isExtractingThumbnails =
                                             videoLibraryUiState.isExtractingThumbnails,
+                                        videoThumbnailArtworkRevisions =
+                                            videoLibraryUiState.thumbnailArtworkRevisions.videos,
+                                        historyThumbnailArtworkRevisions =
+                                            videoLibraryUiState.thumbnailArtworkRevisions.history,
+                                        thumbnailExtractionMessage =
+                                            videoLibraryUiState.thumbnailExtractionMessage,
+                                        thumbnailExtractionMessageIsError =
+                                            videoLibraryUiState.thumbnailExtractionMessageIsError,
                                         hasActiveSelection = ui.hasActiveSelection,
                                         selectedLibraryItemId = ui.selectedLibraryItem?.item?.id,
                                         selectedVideoLibraryItemId = ui.selectedVideoLibraryItem?.item?.id,
@@ -346,6 +354,8 @@ internal fun ComicDavApp(container: AppContainer) {
                                         onSelectVideoLibraryItem = selectVideoLibraryItem,
                                         onDismissLibraryMessage = dismissLibraryMessage,
                                         onDismissVideoLibraryMessage = dismissVideoLibraryMessage,
+                                        onDismissThumbnailExtractionMessage =
+                                            videoLibraryViewModel::clearThumbnailExtractionMessage,
                                         onExtractThumbnails = {
                                             videoActions.extractMissingThumbnails(
                                                 videoLibraryItems = videoLibraryUiState.items,

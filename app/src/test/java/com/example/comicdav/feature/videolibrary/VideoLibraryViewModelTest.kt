@@ -69,11 +69,56 @@ class VideoLibraryViewModelTest {
     fun tracksBatchThumbnailExtractionState() {
         val viewModel = VideoLibraryViewModel(FakeVideoLibraryCatalog())
 
+        viewModel.showThumbnailExtractionResult("上一次提取完成")
         viewModel.setThumbnailExtractionInProgress(true)
         assertTrue(viewModel.uiState.isExtractingThumbnails)
+        assertNull(viewModel.uiState.thumbnailExtractionMessage)
 
         viewModel.setThumbnailExtractionInProgress(false)
         assertFalse(viewModel.uiState.isExtractingThumbnails)
+    }
+
+    @Test
+    fun publishesTransientThumbnailResultAndArtworkRevision() {
+        val viewModel = VideoLibraryViewModel(FakeVideoLibraryCatalog())
+
+        viewModel.onHistoryThumbnailExtracted("history-key")
+        viewModel.showThumbnailExtractionResult(message = "1 个缩略图提取失败", isError = true)
+
+        assertEquals(
+            1L,
+            viewModel.uiState.thumbnailArtworkRevisions.history["history-key"],
+        )
+        assertEquals("1 个缩略图提取失败", viewModel.uiState.thumbnailExtractionMessage)
+        assertTrue(viewModel.uiState.thumbnailExtractionMessageIsError)
+
+        viewModel.clearThumbnailExtractionMessage()
+
+        assertNull(viewModel.uiState.thumbnailExtractionMessage)
+        assertFalse(viewModel.uiState.thumbnailExtractionMessageIsError)
+    }
+
+    @Test
+    fun extractedVideoThumbnailUpdatesTheMatchingCardImmediately() = runTest(dispatcher) {
+        val catalog = FakeVideoLibraryCatalog()
+        val viewModel = VideoLibraryViewModel(catalog)
+        val first = videoLibraryItem(id = 1L, displayName = "第一部")
+        val second = videoLibraryItem(id = 2L, displayName = "第二部")
+
+        advanceUntilIdle()
+        catalog.emit(listOf(first, second))
+        advanceUntilIdle()
+        viewModel.onVideoThumbnailExtracted(
+            videoLibraryItemId = first.item.id,
+            thumbnailPath = "/cache/first.jpg",
+        )
+
+        assertEquals("/cache/first.jpg", viewModel.uiState.items[0].item.thumbnailPath)
+        assertNull(viewModel.uiState.items[1].item.thumbnailPath)
+        assertEquals(
+            1L,
+            viewModel.uiState.thumbnailArtworkRevisions.videos[first.item.id],
+        )
     }
 
     private fun videoLibraryItem(
