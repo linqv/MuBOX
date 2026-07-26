@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -29,13 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.data.DownloadRecord
 import com.example.comicdav.data.VideoDownloadRecord
 import com.example.comicdav.data.formatCacheSize
-import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxInlineMessage
+import com.example.comicdav.ui.muBoxAppBackground
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
 
@@ -58,22 +60,20 @@ fun DownloadsScreen(
 ) {
     val colors = rememberMuBoxColors()
     var sheetRecord by remember { mutableStateOf<SheetRecord?>(null) }
+    var dismissedMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background),
+            .muBoxAppBackground(colors)
+            .statusBarsPadding(),
     ) {
-        MuBoxHeaderBar(title = "下载")
-
-        if (!actionMessage.isNullOrBlank()) {
-            Text(
+        if (!actionMessage.isNullOrBlank() && actionMessage != dismissedMessage) {
+            MuBoxInlineMessage(
                 text = actionMessage,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.muted,
+                isError = false,
+                onDismiss = { dismissedMessage = actionMessage },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
 
@@ -202,11 +202,13 @@ private fun ActiveDownloadCard(
     } else {
         null
     }
+    val shape = RoundedCornerShape(16.dp)
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = shape,
         color = colors.raisedSurface,
-        border = BorderStroke(1.dp, colors.border),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .muBoxGradientBorder(colors = colors, shape = shape, highlighted = true),
     ) {
         Column(
             modifier = Modifier

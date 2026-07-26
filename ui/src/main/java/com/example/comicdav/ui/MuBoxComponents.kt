@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Subtitles
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -104,12 +103,21 @@ fun MuBoxMessagePanel(
     val colors = rememberMuBoxColors()
     val containerColor = if (isError) colors.errorSurface else colors.panelHigh
     val contentColor = if (isError) colors.errorText else colors.text
+    val shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (isError) {
+                    Modifier
+                } else {
+                    Modifier.muBoxGradientBorder(colors = colors, shape = shape)
+                },
+            ),
+        shape = shape,
         color = containerColor,
         contentColor = contentColor,
-        border = BorderStroke(1.dp, if (isError) colors.errorText.copy(alpha = 0.28f) else colors.border),
+        border = if (isError) BorderStroke(1.dp, colors.errorText.copy(alpha = 0.28f)) else null,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -178,15 +186,7 @@ fun MuBoxEmptyState(
             )
         }
         if (actionLabel != null && onAction != null) {
-            Button(
-                onClick = onAction,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.mediaAccent,
-                    contentColor = colors.onMediaAccent,
-                ),
-            ) {
-                Text(actionLabel)
-            }
+            MuBoxGradientButton(text = actionLabel, onClick = onAction)
         }
     }
 }
@@ -207,14 +207,18 @@ fun MuBoxDenseMediaRow(
     val colors = rememberMuBoxColors()
     val shape = RoundedCornerShape(MuBoxMetrics.DenseRowCornerDp)
     val containerColor = if (selected) colors.rowSelected else colors.row
-    val borderColor = if (selected) colors.selectedBorder else colors.border
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = MuBoxMetrics.MinTouchTargetDp)
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = shape,
+                highlighted = selected,
+                width = if (selected) 1.5.dp else 1.dp,
+            )
             .clip(shape)
             .background(containerColor)
-            .border(1.dp, borderColor, shape)
             .semantics { this.selected = selected }
             .combinedClickable(
                 role = Role.Button,
@@ -281,12 +285,14 @@ fun MuBoxSettingsGroup(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
+        modifier = modifier
+            .fillMaxWidth()
+            .muBoxGradientBorder(colors = colors, shape = shape),
+        shape = shape,
         color = colors.panel,
         contentColor = colors.text,
-        border = BorderStroke(1.dp, colors.border),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -388,6 +394,7 @@ fun MuBoxBoxedList(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp)
     Column(modifier = modifier.fillMaxWidth()) {
         if (title != null) {
             Text(
@@ -397,11 +404,10 @@ fun MuBoxBoxedList(
                 color = colors.muted,
             )
         }
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
-            color = colors.boxedList,
-            border = BorderStroke(MuBoxMetrics.SeparatorThicknessDp, colors.boxedListBorder),
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .muBoxGlassSurface(colors = colors, shape = shape),
         ) {
             Column(content = content)
         }

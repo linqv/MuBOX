@@ -10,6 +10,7 @@ data class ComicCacheAnalysis(
     val transientReaderPagesBytes: Long = 0,
     val libraryCoversBytes: Long = 0,
     val videoThumbnailsBytes: Long = 0,
+    val historyThumbnailsBytes: Long = 0,
     val videoSubtitlesBytes: Long = 0,
     val codeCacheBytes: Long = 0,
     val externalCacheBytes: Long = 0,
@@ -22,6 +23,7 @@ data class ComicCacheAnalysis(
             transientReaderPagesBytes +
             libraryCoversBytes +
             videoThumbnailsBytes +
+            historyThumbnailsBytes +
             videoSubtitlesBytes +
             codeCacheBytes +
             externalCacheBytes +
@@ -40,6 +42,7 @@ enum class ComicCacheCategory {
     TRANSIENT_READER_PAGES,
     LIBRARY_COVERS,
     VIDEO_THUMBNAILS,
+    HISTORY_THUMBNAILS,
     VIDEO_SUBTITLES,
     CODE_CACHE,
     EXTERNAL_CACHE,
@@ -61,6 +64,7 @@ fun analyzeComicCache(
         transientReaderPagesBytes = cacheDir.resolve("comicdav-pages-transient").directorySize(),
         libraryCoversBytes = cacheDir.resolve("library-covers").directorySize(),
         videoThumbnailsBytes = cacheDir.resolve("video-library-thumbnails").directorySize(),
+        historyThumbnailsBytes = cacheDir.resolve("history-thumbnails").directorySize(),
         videoSubtitlesBytes = cacheDir.resolve("video-subtitles").directorySize(),
         codeCacheBytes = codeCacheDir?.directorySize() ?: 0L,
         externalCacheBytes = distinctExternalCacheDirs.sumOf { it.directorySize() },
@@ -145,6 +149,7 @@ private fun ComicCacheCategory.targets(
             listOf(CacheTarget(cacheDir.resolve("comicdav-pages-transient")))
         ComicCacheCategory.LIBRARY_COVERS -> listOf(CacheTarget(cacheDir.resolve("library-covers")))
         ComicCacheCategory.VIDEO_THUMBNAILS -> listOf(CacheTarget(cacheDir.resolve("video-library-thumbnails")))
+        ComicCacheCategory.HISTORY_THUMBNAILS -> listOf(CacheTarget(cacheDir.resolve("history-thumbnails")))
         ComicCacheCategory.VIDEO_SUBTITLES -> listOf(CacheTarget(cacheDir.resolve("video-subtitles")))
         ComicCacheCategory.CODE_CACHE -> codeCacheDir
             ?.let { listOf(CacheTarget(root = it, preserveRoot = true)) }
@@ -167,6 +172,7 @@ private fun knownTopLevelCacheRoots(cacheDir: File): Set<File> =
         cacheDir.resolve("comicdav-pages-transient"),
         cacheDir.resolve("library-covers"),
         cacheDir.resolve("video-library-thumbnails"),
+        cacheDir.resolve("history-thumbnails"),
         cacheDir.resolve("video-subtitles"),
     )
 

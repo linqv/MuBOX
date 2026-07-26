@@ -38,6 +38,8 @@ import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.muBoxAppBackground
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
@@ -108,7 +110,7 @@ fun WebDavBrowserScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background),
+            .muBoxAppBackground(colors),
     ) {
         DirectoryListingTopBar(
             breadcrumbLabels = webDavBreadcrumbLabels(uiState.currentPath),
@@ -216,12 +218,14 @@ private fun WebDavTransferPanel(
     onCancelDownload: () -> Unit,
 ) {
     val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(MuBoxMetrics.BoxedListCornerDp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .muBoxGradientBorder(colors = colors, shape = shape),
+        shape = shape,
         color = colors.panel,
         contentColor = colors.text,
-        border = BorderStroke(1.dp, colors.border),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),

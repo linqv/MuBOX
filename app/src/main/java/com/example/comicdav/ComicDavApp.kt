@@ -3,7 +3,12 @@ package com.example.comicdav
 import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -17,11 +22,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.data.library.LibraryItemWithSources
+import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.feature.home.HomeScreen
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.downloads.DownloadsScreen
 import com.example.comicdav.feature.downloads.activeProgress
@@ -160,7 +172,7 @@ internal fun ComicDavApp(container: AppContainer) {
         onNavigateWebDavBack = webDavViewModel::handleBack,
         onCloseWebDav = sourceActions::closeWebDav,
         onNavigateFileDirectoryBack = { fileDirectoryViewModel.handleBack() },
-        onReturnToSources = ui::returnToSources,
+        onReturnToHome = ui::returnToHome,
     )
 
     LaunchedEffect(ui.selectedTab) {
@@ -170,7 +182,11 @@ internal fun ComicDavApp(container: AppContainer) {
     }
 
     ComicDavTheme(palette = appSettings.colorPalette) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        MuBoxSystemBarAppearance()
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+        ) {
             when {
                 ui.isDataFolderLoading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -211,9 +227,32 @@ internal fun ComicDavApp(container: AppContainer) {
                             )
                         },
                     ) {
+                        val openHistoryEntry: (WatchHistoryEntry) -> Unit = { entry ->
+                            when (entry.mediaType) {
+                                WatchMediaType.COMIC -> comicActions.openHistoryEntry(entry)
+                                WatchMediaType.VIDEO -> videoActions.openHistoryEntry(entry)
+                            }
+                        }
+                        val selectLibraryItem: (LibraryItemWithSources) -> Unit = { item ->
+                            ui.selection = AppSelection.LibraryItem(item)
+                        }
+                        val selectVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit = { item ->
+                            ui.selection = AppSelection.VideoLibraryItem(item)
+                        }
+                        val dismissLibraryMessage: () -> Unit = {
+                            ui.localOpenError = null
+                            libraryViewModel.clearMessage()
+                        }
+                        val dismissVideoLibraryMessage: () -> Unit = {
+                            videoLibraryViewModel.clearMessage()
+                        }
+                        val openSourcesTab: () -> Unit = {
+                            ui.selectTab(AppTab.SOURCES)
+                        }
                         ComicDavAppShell(
                             selectedTab = ui.selectedTab,
                             onTabSelected = ui::selectTab,
+                            downloadsActive = downloadProgress != null,
                             bottomBar = selectionBottomBar(
                                 selectedWebDavFile = ui.selectedWebDavFile,
                                 selectedDirectoryComic = ui.selectedDirectoryComic,
@@ -279,45 +318,84 @@ internal fun ComicDavApp(container: AppContainer) {
                                     onSelectionChange = { selection -> ui.selection = selection },
                                     modifier = contentModifier,
                                 )
-                                AppTab.LIBRARY -> {
-                                    LibraryTabContent(
-                                        libraryUiState = libraryUiState,
-                                        localOpenError = ui.localOpenError,
-                                        onOpenItem = comicActions::openLibraryItem,
-                                        onSelectItem = { item ->
-                                            ui.selection = AppSelection.LibraryItem(item)
-                                        },
-                                        onOpenDirectories = {
-                                            ui.localOpenError = null
-                                            ui.selectedTabName = AppTab.SOURCES.name
-                                        },
-                                        onDismissMessage = {
-                                            ui.localOpenError = null
-                                            libraryViewModel.clearMessage()
-                                        },
+                                AppTab.HOME -> {
+                                    HomeScreen(
+                                        history = watchHistory,
+                                        libraryItems = libraryUiState.items,
+                                        videoLibraryItems = videoLibraryUiState.items,
+                                        libraryMessage = libraryUiState.error
+                                            ?: libraryUiState.message
+                                            ?: ui.localOpenError,
+                                        libraryMessageIsError =
+                                            libraryUiState.error != null || ui.localOpenError != null,
+                                        videoLibraryMessage = videoLibraryUiState.error
+                                            ?: videoLibraryUiState.message,
+                                        videoLibraryMessageIsError = videoLibraryUiState.error != null,
                                         coversEnabled = appSettings.libraryCoversEnabled,
-                                        selectedItemId = ui.selectedLibraryItem?.item?.id,
-                                        modifier = contentModifier,
-                                    )
-                                }
-                                AppTab.VIDEO_LIBRARY -> {
-                                    VideoLibraryTabContent(
-                                        videoLibraryUiState = videoLibraryUiState,
-                                        localOpenError = ui.localOpenError,
-                                        onOpenItem = videoActions::openVideoLibraryItem,
-                                        onSelectItem = { item ->
-                                            ui.selection = AppSelection.VideoLibraryItem(item)
-                                        },
-                                        onOpenDirectories = {
-                                            ui.localOpenError = null
-                                            ui.selectedTabName = AppTab.SOURCES.name
-                                        },
-                                        onDismissMessage = {
-                                            ui.localOpenError = null
-                                            videoLibraryViewModel.clearMessage()
-                                        },
                                         thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
-                                        selectedItemId = ui.selectedVideoLibraryItem?.item?.id,
+                                        isExtractingThumbnails =
+                                            videoLibraryUiState.isExtractingThumbnails,
+                                        hasActiveSelection = ui.hasActiveSelection,
+                                        selectedLibraryItemId = ui.selectedLibraryItem?.item?.id,
+                                        selectedVideoLibraryItemId = ui.selectedVideoLibraryItem?.item?.id,
+                                        onOpenHistoryEntry = openHistoryEntry,
+                                        onDeleteHistoryEntry = cacheActions::deleteHistoryEntry,
+                                        onOpenLibraryItem = comicActions::openLibraryItem,
+                                        onSelectLibraryItem = selectLibraryItem,
+                                        onOpenVideoLibraryItem = videoActions::openVideoLibraryItem,
+                                        onSelectVideoLibraryItem = selectVideoLibraryItem,
+                                        onDismissLibraryMessage = dismissLibraryMessage,
+                                        onDismissVideoLibraryMessage = dismissVideoLibraryMessage,
+                                        onExtractThumbnails = {
+                                            videoActions.extractMissingThumbnails(
+                                                videoLibraryItems = videoLibraryUiState.items,
+                                                history = watchHistory,
+                                                libraryItems = libraryUiState.items,
+                                            )
+                                        },
+                                        onOpenSources = openSourcesTab,
+                                        libraryPage = { onBack, pageModifier ->
+                                            LibraryTabContent(
+                                                libraryUiState = libraryUiState,
+                                                localOpenError = ui.localOpenError,
+                                                onOpenItem = comicActions::openLibraryItem,
+                                                onSelectItem = selectLibraryItem,
+                                                onOpenDirectories = openSourcesTab,
+                                                onDismissMessage = dismissLibraryMessage,
+                                                coversEnabled = appSettings.libraryCoversEnabled,
+                                                selectedItemId = ui.selectedLibraryItem?.item?.id,
+                                                navigationIcon = {
+                                                    IconButton(onClick = onBack) {
+                                                        Icon(
+                                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                                            contentDescription = "返回",
+                                                        )
+                                                    }
+                                                },
+                                                modifier = pageModifier,
+                                            )
+                                        },
+                                        videoLibraryPage = { onBack, pageModifier ->
+                                            VideoLibraryTabContent(
+                                                videoLibraryUiState = videoLibraryUiState,
+                                                localOpenError = ui.localOpenError,
+                                                onOpenItem = videoActions::openVideoLibraryItem,
+                                                onSelectItem = selectVideoLibraryItem,
+                                                onOpenDirectories = openSourcesTab,
+                                                onDismissMessage = dismissVideoLibraryMessage,
+                                                thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
+                                                selectedItemId = ui.selectedVideoLibraryItem?.item?.id,
+                                                navigationIcon = {
+                                                    IconButton(onClick = onBack) {
+                                                        Icon(
+                                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                                            contentDescription = "返回",
+                                                        )
+                                                    }
+                                                },
+                                                modifier = pageModifier,
+                                            )
+                                        },
                                         modifier = contentModifier,
                                     )
                                 }
@@ -370,6 +448,21 @@ internal fun ComicDavApp(container: AppContainer) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MuBoxSystemBarAppearance() {
+    val view = LocalView.current
+    val activity = view.context as? Activity
+    val useLightIcons = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    SideEffect {
+        activity?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !useLightIcons
+                isAppearanceLightNavigationBars = !useLightIcons
             }
         }
     }

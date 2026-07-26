@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +25,18 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +59,10 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.MuBoxBottomNavigation
+import com.example.comicdav.ui.MuBoxGradientButton
+import com.example.comicdav.ui.MuBoxNavDestination
+import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
@@ -175,7 +185,7 @@ internal enum class AppBackTarget {
     CLOSE_READER,
     NAVIGATE_WEB_DAV,
     NAVIGATE_FILE_DIRECTORY,
-    RETURN_TO_SOURCES,
+    RETURN_TO_HOME,
     NONE,
 }
 
@@ -190,7 +200,7 @@ internal fun appBackTarget(
     isReaderOpen -> AppBackTarget.CLOSE_READER
     isWebDavOpen -> AppBackTarget.NAVIGATE_WEB_DAV
     selectedTab == AppTab.SOURCES && hasOpenFileDirectory -> AppBackTarget.NAVIGATE_FILE_DIRECTORY
-    selectedTab != AppTab.SOURCES -> AppBackTarget.RETURN_TO_SOURCES
+    selectedTab != AppTab.HOME -> AppBackTarget.RETURN_TO_HOME
     else -> AppBackTarget.NONE
 }
 
@@ -206,7 +216,7 @@ internal fun ComicDavBackHandler(
     onNavigateWebDavBack: () -> Boolean,
     onCloseWebDav: () -> Unit,
     onNavigateFileDirectoryBack: () -> Unit,
-    onReturnToSources: () -> Unit,
+    onReturnToHome: () -> Unit,
 ) {
     val target = appBackTarget(
         hasActiveSelection = hasActiveSelection,
@@ -225,7 +235,7 @@ internal fun ComicDavBackHandler(
                 }
             }
             AppBackTarget.NAVIGATE_FILE_DIRECTORY -> onNavigateFileDirectoryBack()
-            AppBackTarget.RETURN_TO_SOURCES -> onReturnToSources()
+            AppBackTarget.RETURN_TO_HOME -> onReturnToHome()
             AppBackTarget.NONE -> Unit
         }
     }
@@ -286,29 +296,42 @@ internal fun selectionNavigationBarContainerColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).panelHigh
 
 internal enum class AppTab {
+    HOME,
     SOURCES,
-    LIBRARY,
-    VIDEO_LIBRARY,
     DOWNLOADS,
     SETTINGS;
 
     val label: String
         get() = when (this) {
+            HOME -> ComicDavCopy.homeTab
             SOURCES -> ComicDavCopy.sourcesTab
-            LIBRARY -> ComicDavCopy.libraryTab
-            VIDEO_LIBRARY -> ComicDavCopy.videoLibraryTab
             DOWNLOADS -> ComicDavCopy.downloadsTab
             SETTINGS -> ComicDavCopy.settingsTab
         }
 
     val iconVector: ImageVector
         get() = when (this) {
-            SOURCES -> Icons.Filled.Folder
-            LIBRARY -> Icons.AutoMirrored.Filled.LibraryBooks
-            VIDEO_LIBRARY -> Icons.Filled.PlayArrow
-            DOWNLOADS -> Icons.Filled.Download
+            HOME -> Icons.Filled.Home
+            SOURCES -> Icons.Filled.Layers
+            DOWNLOADS -> Icons.Filled.FileDownload
             SETTINGS -> Icons.Filled.Settings
         }
+
+    val outlinedIconVector: ImageVector
+        get() = when (this) {
+            HOME -> Icons.Outlined.Home
+            SOURCES -> Icons.Outlined.Layers
+            DOWNLOADS -> Icons.Outlined.FileDownload
+            SETTINGS -> Icons.Outlined.Settings
+        }
+
+    val navDestination: MuBoxNavDestination
+        get() = MuBoxNavDestination(
+            key = name,
+            label = label,
+            iconOutlined = outlinedIconVector,
+            iconFilled = iconVector,
+        )
 }
 
 @Composable
@@ -316,13 +339,15 @@ internal fun ComicDavAppShell(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
+    downloadsActive: Boolean = false,
     bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
+    val shellColors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(appShellBackgroundColor(MaterialTheme.colorScheme)),
+            .muBoxAppBackground(shellColors),
     ) {
         Box(modifier = Modifier.weight(1f)) {
             content(Modifier.fillMaxSize())
@@ -330,43 +355,17 @@ internal fun ComicDavAppShell(
         if (bottomBar != null) {
             bottomBar()
         } else {
-            val muBoxColors = rememberMuBoxColors()
-            androidx.compose.material3.HorizontalDivider(
-                thickness = 0.5.dp,
-                color = muBoxColors.separator,
+            val destinations = AppTab.values().map(AppTab::navDestination)
+            MuBoxBottomNavigation(
+                destinations = destinations,
+                selected = selectedTab.name,
+                onSelect = { key ->
+                    AppTab.values().firstOrNull { it.name == key }?.let(onTabSelected)
+                },
+                badgeCount = { destination ->
+                    if (destination.key == AppTab.DOWNLOADS.name && downloadsActive) 1 else 0
+                },
             )
-            NavigationBar(
-                containerColor = appShellNavigationBarContainerColor(MaterialTheme.colorScheme),
-                tonalElevation = 0.dp,
-            ) {
-                AppTab.values().forEach { tab ->
-                    val isSelected = selectedTab == tab
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { onTabSelected(tab) },
-                        icon = {
-                            Icon(
-                                imageVector = tab.iconVector,
-                                contentDescription = tab.label,
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.label,
-                                maxLines = 1,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = muBoxColors.mediaAccent,
-                            selectedTextColor = muBoxColors.mediaAccent,
-                            indicatorColor = appShellNavigationBarIndicatorColor(MaterialTheme.colorScheme),
-                            unselectedIconColor = muBoxColors.muted,
-                            unselectedTextColor = muBoxColors.muted,
-                        ),
-                    )
-                }
-            }
         }
     }
 }
@@ -498,7 +497,7 @@ internal fun DataFolderGateScreen(
     val colors = com.example.comicdav.ui.rememberMuBoxColors()
     Column(
         modifier = modifier
-            .background(colors.background)
+            .muBoxAppBackground(colors)
             .padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -532,16 +531,11 @@ internal fun DataFolderGateScreen(
             color = colors.muted,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        Button(
+        MuBoxGradientButton(
+            text = ComicDavCopy.chooseFolder,
             onClick = onChooseFolder,
             modifier = Modifier.defaultMinSize(minWidth = 160.dp, minHeight = 52.dp),
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Text(
-                text = ComicDavCopy.chooseFolder,
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
+        )
     }
 }
 
@@ -596,6 +590,7 @@ internal fun com.example.comicdav.data.ComicCacheCategory.cacheLabel(): String =
         com.example.comicdav.data.ComicCacheCategory.TRANSIENT_READER_PAGES -> "临时页面缓存"
         com.example.comicdav.data.ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
         com.example.comicdav.data.ComicCacheCategory.VIDEO_THUMBNAILS -> "影视库缩略图缓存"
+        com.example.comicdav.data.ComicCacheCategory.HISTORY_THUMBNAILS -> "历史记录缩略图缓存"
         com.example.comicdav.data.ComicCacheCategory.VIDEO_SUBTITLES -> "视频字幕缓存"
         com.example.comicdav.data.ComicCacheCategory.CODE_CACHE -> "运行时代码缓存"
         com.example.comicdav.data.ComicCacheCategory.EXTERNAL_CACHE -> "外部缓存"

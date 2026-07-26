@@ -26,6 +26,7 @@ class VideoThumbnailExtractor(
     private val cacheDir: File,
     private val frameProvider: VideoThumbnailFrameProvider = AndroidVideoThumbnailFrameProvider(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val cacheSubdirectory: String = "video-library-thumbnails",
 ) {
     suspend fun extractFromContentUri(
         context: Context,
@@ -59,7 +60,7 @@ class VideoThumbnailExtractor(
     ): String? = withContext(ioDispatcher) {
         try {
             val frame = frameProvider.frameFor(source) ?: return@withContext null
-            val thumbnailDir = cacheDir.resolve("video-library-thumbnails")
+            val thumbnailDir = cacheDir.resolve(cacheSubdirectory)
             thumbnailDir.mkdirs()
             val finalFile = thumbnailDir.resolve(thumbnailFileNameForStableKey(stableKey))
             val tmpFile = thumbnailDir.resolve("${finalFile.name}.tmp")

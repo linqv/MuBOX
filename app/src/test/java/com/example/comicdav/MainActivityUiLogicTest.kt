@@ -22,9 +22,9 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun appTabsIncludeDownloadsBetweenVideoLibraryAndSettings() {
+    fun appTabsAreHomeSourcesDownloadsAndSettings() {
         assertEquals(
-            listOf("来源", "书架", "影视库", "下载", "设置"),
+            listOf("首页", "来源", "下载", "设置"),
             appTabLabels(),
         )
     }
@@ -137,10 +137,10 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun defaultThemeUsesAdwaitaDarkShellRoles() {
-        val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT)
+    fun muBoxDarkThemeUsesDeepNavyShellRoles() {
+        val colors = comicDavColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = false)
 
-        assertTrue("default background should be a dark shell", colors.background.luminance() < 0.10f)
+        assertTrue("dark background should be a deep navy shell", colors.background.luminance() < 0.10f)
         assertTrue("surface should layer above background", colors.surface.luminance() >= colors.background.luminance())
         assertTrue(
             "high surface containers should layer above low containers",
@@ -149,7 +149,7 @@ class MainActivityUiLogicTest {
         assertTrue("text on background should stay readable", colors.onBackground.luminance() > 0.70f)
         assertTrue("primary should read as a blue accent", colors.primary.blue > colors.primary.red)
         assertTrue("secondary should read as a purple accent", colors.secondary.blue > colors.secondary.green)
-        assertTrue("tertiary should read as an amber accent", colors.tertiary.red > colors.tertiary.blue)
+        assertTrue("tertiary should read as a green success accent", colors.tertiary.green > colors.tertiary.blue)
         assertTrue("error pair should have sufficient contrast", colors.error.luminance() != colors.onError.luminance())
         assertTrue(
             "error container pair should work on dark UI",
@@ -178,7 +178,7 @@ class MainActivityUiLogicTest {
 
     @Test
     fun appShellUsesMuBoxMediaSurfaceRoles() {
-        val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT)
+        val colors = comicDavColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = true)
         val muBoxColors = com.example.comicdav.ui.muBoxColorsFor(colors)
 
         assertEquals(muBoxColors.background, appShellBackgroundColor(colors))
@@ -315,7 +315,7 @@ class MainActivityUiLogicTest {
                 isReaderOpen = true,
                 isWebDavOpen = true,
                 hasOpenFileDirectory = true,
-                selectedTab = AppTab.LIBRARY,
+                selectedTab = AppTab.SETTINGS,
             ),
         )
         assertEquals(
@@ -325,7 +325,17 @@ class MainActivityUiLogicTest {
                 isReaderOpen = true,
                 isWebDavOpen = true,
                 hasOpenFileDirectory = true,
-                selectedTab = AppTab.LIBRARY,
+                selectedTab = AppTab.SETTINGS,
+            ),
+        )
+        assertEquals(
+            AppBackTarget.RETURN_TO_HOME,
+            appBackTarget(
+                hasActiveSelection = false,
+                isReaderOpen = false,
+                isWebDavOpen = false,
+                hasOpenFileDirectory = false,
+                selectedTab = AppTab.SOURCES,
             ),
         )
         assertEquals(
@@ -335,7 +345,7 @@ class MainActivityUiLogicTest {
                 isReaderOpen = false,
                 isWebDavOpen = false,
                 hasOpenFileDirectory = false,
-                selectedTab = AppTab.SOURCES,
+                selectedTab = AppTab.HOME,
             ),
         )
     }

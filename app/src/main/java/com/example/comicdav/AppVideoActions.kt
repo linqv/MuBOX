@@ -9,11 +9,16 @@ import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
+import com.example.comicdav.feature.home.historyEntriesNeedingThumbnails
+import com.example.comicdav.feature.home.historyThumbnailFile
+import com.example.comicdav.feature.home.historyThumbnailStableKey
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.core.remote.WebDavItem
+import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.model.media.LocalVideoOpenRequest
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
 import com.example.comicdav.core.model.media.WebDavSubtitleOpenRequest
@@ -28,6 +33,7 @@ import com.example.comicdav.video.player.webDavVideoEpisodeRequest
 import com.example.comicdav.video.proxy.VideoProxyManager
 import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -287,30 +293,7 @@ internal class AppVideoActions(
     fun refreshVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
         scope.launch {
             runCatching {
-                when (item.item.sourceType) {
-                    VideoSourceType.LOCAL -> {
-                        val source = item.localSource ?: error("缺少本地视频来源")
-                        extractLocalVideoThumbnail(
-                            uri = source.uri,
-                            size = source.size,
-                            lastModified = source.lastModified,
-                        ) ?: error("未能提取视频缩略图")
-                    }
-                    VideoSourceType.WEBDAV -> {
-                        val source = item.webDavSource ?: error("缺少 WebDAV 视频来源")
-                        extractWebDavVideoThumbnail(
-                            WebDavVideoOpenRequest(
-                                accountId = source.accountId,
-                                remotePath = source.remotePath,
-                                displayName = source.fileName,
-                                size = source.size,
-                                etag = source.etag,
-                                lastModified = source.lastModified,
-                                mimeType = mimeTypeForMediaFileName(source.fileName),
-                            ),
-                        ) ?: error("未能提取视频缩略图")
-                    }
-                }
+                extractVideoLibraryThumbnail(item)
             }.fold(
                 onSuccess = { thumbnailPath ->
                     container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
@@ -322,6 +305,100 @@ internal class AppVideoActions(
                     videoLibraryViewModel.showError(error.message ?: "重新提取缩略图失败")
                 },
             )
+        }
+    }
+
+    fun extractMissingThumbnails(
+        videoLibraryItems: List<VideoLibraryItemWithSources>,
+        history: List<WatchHistoryEntry>,
+        libraryItems: List<LibraryItemWithSources>,
+    ) {
+        if (!settings.videoLibraryThumbnailsEnabled && !settings.libraryCoversEnabled) {
+            videoLibraryViewModel.showError("请先在设置中开启封面或缩略图")
+            return
+        }
+        if (videoLibraryViewModel.uiState.isExtractingThumbnails) return
+
+        val videoTargets = if (settings.videoLibraryThumbnailsEnabled) {
+            videoLibraryItemsNeedingThumbnails(videoLibraryItems)
+        } else {
+            emptyList()
+        }
+        val scheduledVideoLocators = videoTargets.mapNotNullTo(mutableSetOf()) { item ->
+            item.localSource?.uri ?: item.webDavSource?.remotePath
+        }
+        val historyTargets = historyEntriesNeedingThumbnails(
+            history = history,
+            comics = libraryItems,
+            videos = videoLibraryItems,
+            cacheDir = context.cacheDir,
+        ).filter { entry ->
+            val typeEnabled = when (entry.mediaType) {
+                WatchMediaType.COMIC -> settings.libraryCoversEnabled
+                WatchMediaType.VIDEO -> settings.videoLibraryThumbnailsEnabled
+            }
+            typeEnabled &&
+                !(entry.mediaType == WatchMediaType.VIDEO && entry.sourceLocator in scheduledVideoLocators)
+        }
+        val targetCount = videoTargets.size + historyTargets.size
+        if (targetCount == 0) {
+            videoLibraryViewModel.showMessage(
+                if (videoLibraryItems.isEmpty() && history.isEmpty()) {
+                    "没有可提取缩略图的媒体"
+                } else {
+                    "缩略图已完整"
+                },
+            )
+            return
+        }
+
+        videoLibraryViewModel.setThumbnailExtractionInProgress(true)
+        videoLibraryViewModel.showMessage("正在提取 $targetCount 个缩略图")
+        scope.launch {
+            var succeeded = 0
+            var failed = 0
+            try {
+                videoTargets.forEach { item ->
+                    try {
+                        val thumbnailPath = extractVideoLibraryThumbnail(item)
+                        container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                        succeeded += 1
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        failed += 1
+                        ReaderDiagnosticLog.error(
+                            "batch_extract_video_thumbnail_failed id=${item.item.id}",
+                            error,
+                        )
+                    }
+                }
+                historyTargets.forEach { entry ->
+                    try {
+                        extractHistoryThumbnail(entry)
+                        succeeded += 1
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        failed += 1
+                        ReaderDiagnosticLog.error(
+                            "batch_extract_history_thumbnail_failed key=${entry.mediaKey}",
+                            error,
+                        )
+                    }
+                }
+            } finally {
+                videoLibraryViewModel.setThumbnailExtractionInProgress(false)
+            }
+
+            when {
+                failed == 0 ->
+                    videoLibraryViewModel.showMessage("已提取 $succeeded 个缩略图")
+                succeeded == 0 ->
+                    videoLibraryViewModel.showError("$failed 个缩略图提取失败")
+                else ->
+                    videoLibraryViewModel.showError("已提取 $succeeded 个缩略图，$failed 个提取失败")
+            }
         }
     }
 
@@ -454,6 +531,18 @@ internal class AppVideoActions(
         )
 
     private suspend fun extractWebDavVideoThumbnail(request: WebDavVideoOpenRequest): String? {
+        return extractWebDavVideoThumbnail(
+            request = request,
+            extractor = container.videoThumbnailExtractor,
+            stableKey = webDavVideoThumbnailStableKey(request),
+        )
+    }
+
+    private suspend fun extractWebDavVideoThumbnail(
+        request: WebDavVideoOpenRequest,
+        extractor: com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor,
+        stableKey: String,
+    ): String? {
         val clientFactory = webDavResolver.clientFactoryForPlayback(request.accountId)
             ?: error("缺少 WebDAV 账号，请重新连接后再提取缩略图")
         val session = VideoProxyManager.open(
@@ -462,13 +551,143 @@ internal class AppVideoActions(
             proxySettings = settings.toVideoProxySettings(),
         )
         return try {
-            container.videoThumbnailExtractor.extractFromUrl(
+            extractor.extractFromUrl(
                 url = session.url,
-                stableKey = "webdav:${request.accountId}:${request.remotePath}:${request.size ?: -1}:${request.etag.orEmpty()}:${request.lastModified ?: -1}",
+                stableKey = stableKey,
             )
         } finally {
             VideoProxyManager.close(session.streamIds)
         }
+    }
+
+    private fun webDavVideoThumbnailStableKey(request: WebDavVideoOpenRequest): String =
+        "webdav:${request.accountId}:${request.remotePath}:${request.size ?: -1}:" +
+            "${request.etag.orEmpty()}:${request.lastModified ?: -1}"
+
+    private suspend fun extractVideoLibraryThumbnail(item: VideoLibraryItemWithSources): String =
+        when (item.item.sourceType) {
+            VideoSourceType.LOCAL -> {
+                val source = item.localSource ?: error("缺少本地视频来源")
+                extractLocalVideoThumbnail(
+                    uri = source.uri,
+                    size = source.size,
+                    lastModified = source.lastModified,
+                ) ?: error("未能提取视频缩略图")
+            }
+            VideoSourceType.WEBDAV -> {
+                val source = item.webDavSource ?: error("缺少 WebDAV 视频来源")
+                extractWebDavVideoThumbnail(
+                    WebDavVideoOpenRequest(
+                        accountId = source.accountId,
+                        remotePath = source.remotePath,
+                        displayName = source.fileName,
+                        size = source.size,
+                        etag = source.etag,
+                        lastModified = source.lastModified,
+                        mimeType = mimeTypeForMediaFileName(source.fileName),
+                    ),
+                ) ?: error("未能提取视频缩略图")
+            }
+        }
+
+    private suspend fun extractHistoryThumbnail(entry: WatchHistoryEntry): String =
+        when (entry.mediaType) {
+            WatchMediaType.VIDEO -> extractHistoryVideoThumbnail(entry)
+            WatchMediaType.COMIC -> extractHistoryComicThumbnail(entry)
+        }
+
+    private suspend fun extractHistoryVideoThumbnail(entry: WatchHistoryEntry): String {
+        val stableKey = historyThumbnailStableKey(entry)
+        return when (entry.sourceType) {
+            WatchSourceType.LOCAL ->
+                container.historyThumbnailExtractor.extractFromContentUri(
+                    context = context,
+                    uri = Uri.parse(entry.sourceLocator),
+                    stableKey = stableKey,
+                ) ?: error("未能提取历史视频缩略图")
+            WatchSourceType.WEB_DAV -> {
+                val accountId = entry.accountId ?: error("历史记录缺少 WebDAV 账号")
+                extractWebDavVideoThumbnail(
+                    request = WebDavVideoOpenRequest(
+                        accountId = accountId,
+                        remotePath = entry.sourceLocator,
+                        displayName = entry.displayTitle,
+                        size = entry.size,
+                        etag = entry.etag,
+                        lastModified = entry.lastModified,
+                        mimeType = mimeTypeForMediaFileName(entry.displayTitle),
+                    ),
+                    extractor = container.historyThumbnailExtractor,
+                    stableKey = stableKey,
+                ) ?: error("未能提取历史视频缩略图")
+            }
+        }
+    }
+
+    private suspend fun extractHistoryComicThumbnail(entry: WatchHistoryEntry): String {
+        val target = historyThumbnailFile(context.cacheDir, entry)
+        return when (entry.sourceType) {
+            WatchSourceType.LOCAL -> withContext(Dispatchers.IO) {
+                val session = container.localComicOpener.open(
+                    uri = Uri.parse(entry.sourceLocator),
+                    fileName = entry.displayTitle,
+                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                )
+                val temporary = File(target.parentFile, "${target.name}.tmp")
+                try {
+                    check(session.pageCount > 0) { "历史漫画没有可用页面" }
+                    target.parentFile?.mkdirs()
+                    temporary.delete()
+                    val loaded = session.loadPageToFile(0, temporary)
+                    moveHistoryThumbnailIntoPlace(loaded, target)
+                } finally {
+                    runCatching { session.close() }
+                    temporary.delete()
+                }
+            }
+            WatchSourceType.WEB_DAV -> {
+                val accountId = entry.accountId ?: error("历史记录缺少 WebDAV 账号")
+                val client = webDavResolver.clientFor(accountId)
+                    ?: error("请先连接 $accountId，再提取历史漫画缩略图")
+                val coverPath = container.coverExtractor.extractFirstPageCover(
+                    client = client,
+                    accountId = accountId,
+                    remotePath = entry.sourceLocator,
+                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                    knownInfo = entry.size?.let { size ->
+                        RemoteFileInfo(
+                            path = entry.sourceLocator,
+                            size = size,
+                            etag = entry.etag,
+                            lastModified = entry.lastModified,
+                            supportsRange = true,
+                        )
+                    },
+                ) ?: error("未能提取历史漫画缩略图")
+                withContext(Dispatchers.IO) {
+                    val temporary = File(target.parentFile, "${target.name}.tmp")
+                    try {
+                        target.parentFile?.mkdirs()
+                        temporary.delete()
+                        File(coverPath).copyTo(temporary, overwrite = true)
+                        moveHistoryThumbnailIntoPlace(temporary, target)
+                    } finally {
+                        temporary.delete()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun moveHistoryThumbnailIntoPlace(source: File, target: File): String {
+        check(source.isFile && source.length() > 0L) { "提取的历史缩略图为空" }
+        target.parentFile?.mkdirs()
+        if (target.exists()) target.delete()
+        if (!source.renameTo(target)) {
+            source.copyTo(target, overwrite = true)
+            source.delete()
+        }
+        return target.absolutePath
     }
 
     private suspend fun localVideoLibrarySubtitles(
@@ -538,6 +757,15 @@ internal class AppVideoActions(
     private fun currentWebDavAccountId(): String =
         webDavViewModel.activeAccountId() ?: webDavViewModel.accountId()
 }
+
+internal fun videoLibraryItemsNeedingThumbnails(
+    items: List<VideoLibraryItemWithSources>,
+): List<VideoLibraryItemWithSources> =
+    items.filter { item ->
+        item.item.thumbnailPath
+            ?.let(::File)
+            ?.isFile != true
+    }
 
 private fun AppSettings.toVideoProxySettings(): VideoProxySettings =
     VideoProxySettings(

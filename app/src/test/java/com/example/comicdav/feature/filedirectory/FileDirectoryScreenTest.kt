@@ -37,7 +37,7 @@ class FileDirectoryScreenTest {
 
     @Test
     fun screenColorsUseThemePaletteRoles() {
-        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
+        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST, darkTheme = false)
         val colors = muBoxColorsFor(highContrast)
 
         assertEquals(highContrast.background, colors.background)
@@ -50,13 +50,16 @@ class FileDirectoryScreenTest {
     }
 
     @Test
-    fun sourceBadgeUsesAccessibleContrast() {
-        val colors = muBoxColorsFor(comicDavColorSchemeFor(AppColorPalette.DEFAULT))
+    fun sourceRowIconColorsUseAccessibleContrast() {
+        val lightColors = muBoxColorsFor(comicDavColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = false))
+        val darkColors = muBoxColorsFor(comicDavColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = true))
 
-        assertTrue(
-            "source badge contrast should meet AA for small text",
-            contrastRatio(colors.onAccentSoft, colors.accentSoft) >= 4.5f,
-        )
+        listOf(lightColors, darkColors).forEach { colors ->
+            assertTrue(
+                "source row icon contrast should meet AA for small text",
+                contrastRatio(colors.onAccentSoft, colors.accentSoft) >= 4.5f,
+            )
+        }
     }
 
     @Test
@@ -107,6 +110,56 @@ class FileDirectoryScreenTest {
         )
 
         assertEquals("/漫画/视频/", fileDirectorySourceSubtitle(source))
+    }
+
+    @Test
+    fun webDavSourceSubtitleFallsBackToBaseUrl() {
+        val source = FileDirectorySource(
+            displayName = "NAS",
+            sourceType = FileDirectorySourceType.WEBDAV,
+            webDavBaseUrl = "https://example.test/%E6%BC%AB%E7%94%BB",
+            addedAt = 1L,
+        )
+
+        assertEquals("https://example.test/漫画", fileDirectorySourceSubtitle(source))
+        assertEquals("WebDAV 目录", fileDirectorySourceSubtitle(source.copy(webDavBaseUrl = null)))
+    }
+
+    @Test
+    fun localSourceSubtitleSummarizesTreeUri() {
+        val source = FileDirectorySource(
+            displayName = "漫画",
+            sourceType = FileDirectorySourceType.LOCAL,
+            localTreeUri = "content://com.android.externalstorage.documents/tree/primary%3AComics",
+            addedAt = 1L,
+        )
+
+        assertEquals("primary:Comics", fileDirectorySourceSubtitle(source))
+        assertEquals("本地文件夹", fileDirectorySourceSubtitle(source.copy(localTreeUri = null)))
+    }
+
+    @Test
+    fun sourceGroupsStayIndependentWhenOneTypeIsEmpty() {
+        val local = localSource()
+        val webDav = FileDirectorySource(
+            id = 2L,
+            displayName = "NAS",
+            sourceType = FileDirectorySourceType.WEBDAV,
+            webDavPath = "/manga",
+            addedAt = 2L,
+        )
+
+        val mixed = groupFileDirectorySources(listOf(local, webDav))
+        assertEquals(listOf(local), mixed.local)
+        assertEquals(listOf(webDav), mixed.webDav)
+
+        val localOnly = groupFileDirectorySources(listOf(local))
+        assertEquals(listOf(local), localOnly.local)
+        assertTrue(localOnly.webDav.isEmpty())
+
+        val webDavOnly = groupFileDirectorySources(listOf(webDav))
+        assertTrue(webDavOnly.local.isEmpty())
+        assertEquals(listOf(webDav), webDavOnly.webDav)
     }
 
     @Test

@@ -80,7 +80,6 @@ internal fun FileDirectoryTabContent(
     selectedDirectoryVideo: FileDirectoryBrowserItem?,
     onAddLocalDirectory: () -> Unit,
     onOpenWebDav: () -> Unit,
-    onOpenLibrary: () -> Unit,
     onOpenSource: (FileDirectorySource) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
@@ -103,7 +102,6 @@ internal fun FileDirectoryTabContent(
         ),
         onAddLocalDirectory = onAddLocalDirectory,
         onOpenWebDav = onOpenWebDav,
-        onOpenLibrary = onOpenLibrary,
         onOpenSource = onOpenSource,
         onOpenDirectory = onOpenDirectory,
         onOpenComic = onOpenComic,
@@ -134,6 +132,7 @@ internal fun LibraryTabContent(
     onSelectItem: (LibraryItemWithSources) -> Unit,
     onOpenDirectories: () -> Unit,
     onDismissMessage: () -> Unit,
+    navigationIcon: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LibraryScreen(
@@ -144,6 +143,7 @@ internal fun LibraryTabContent(
         onDismissMessage = onDismissMessage,
         coversEnabled = coversEnabled,
         selectedItemId = selectedItemId,
+        navigationIcon = navigationIcon,
         modifier = modifier,
     )
 }
@@ -158,6 +158,7 @@ internal fun VideoLibraryTabContent(
     onSelectItem: (VideoLibraryItemWithSources) -> Unit,
     onOpenDirectories: () -> Unit,
     onDismissMessage: () -> Unit,
+    navigationIcon: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     VideoLibraryScreen(
@@ -168,6 +169,7 @@ internal fun VideoLibraryTabContent(
         onDismissMessage = onDismissMessage,
         thumbnailsEnabled = thumbnailsEnabled,
         selectedItemId = selectedItemId,
+        navigationIcon = navigationIcon,
         modifier = modifier,
     )
 }

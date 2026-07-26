@@ -11,16 +11,27 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.Folder
@@ -28,17 +39,20 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,7 +71,12 @@ import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxColors
-import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MuBoxInlineMessage
+import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.MuBoxSourceRow
+import com.example.comicdav.ui.muBoxAppBackground
+import com.example.comicdav.ui.muBoxGlassSurface
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
@@ -86,6 +106,11 @@ internal enum class SourceManagementAction {
     RemoveSource,
     DeleteLocalSourceWithFiles,
 }
+
+internal data class FileDirectorySourceGroups(
+    val local: List<FileDirectorySource>,
+    val webDav: List<FileDirectorySource>,
+)
 
 internal fun fileDirectoryEntryClickAction(entry: FileDirectoryBrowserItem): FileDirectoryEntryClickAction =
     when (entry.mediaKind) {
@@ -122,6 +147,13 @@ internal fun sourceManagementActions(source: FileDirectorySource): List<SourceMa
     }
 }
 
+// 本地与 WebDAV 分组互不影响，任一组为空时另一组照常渲染（§8.5）。
+internal fun groupFileDirectorySources(sources: List<FileDirectorySource>): FileDirectorySourceGroups =
+    FileDirectorySourceGroups(
+        local = sources.filter { it.sourceType == FileDirectorySourceType.LOCAL },
+        webDav = sources.filter { it.sourceType == FileDirectorySourceType.WEBDAV },
+    )
+
 internal fun fileDirectorySourceTitle(source: FileDirectorySource): String =
     if (source.sourceType == FileDirectorySourceType.WEBDAV) {
         decodeWebDavPathForDisplay(source.displayName)
@@ -131,12 +163,25 @@ internal fun fileDirectorySourceTitle(source: FileDirectorySource): String =
 
 internal fun fileDirectorySourceSubtitle(source: FileDirectorySource): String =
     when (source.sourceType) {
-        FileDirectorySourceType.LOCAL -> "本地文件夹"
+        FileDirectorySourceType.LOCAL -> fileDirectoryLocalPathSummary(source.localTreeUri)
         FileDirectorySourceType.WEBDAV -> source.webDavPath
             ?.takeIf { it.isNotBlank() }
             ?.let(::decodeWebDavPathForDisplay)
+            ?: source.webDavBaseUrl
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::decodeWebDavPathForDisplay)
             ?: "WebDAV 目录"
     }
+
+// SAF tree URI 只展示 tree 之后的文档路径并做百分号解码，不直接展示完整 content:// 授权 URI。
+internal fun fileDirectoryLocalPathSummary(treeUri: String?): String {
+    val decoded = treeUri
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::decodeWebDavPathForDisplay)
+        ?: return "本地文件夹"
+    val summary = decoded.substringAfter("/tree/", decoded).trim('/')
+    return summary.ifBlank { "本地文件夹" }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,7 +189,6 @@ fun FileDirectoryScreen(
     uiState: FileDirectoryUiState,
     onAddLocalDirectory: () -> Unit,
     onOpenWebDav: () -> Unit,
-    onOpenLibrary: () -> Unit,
     onOpenSource: (FileDirectorySource) -> Unit,
     onOpenDirectory: (FileDirectoryBrowserItem) -> Unit,
     onOpenComic: (FileDirectoryBrowserItem) -> Unit,
@@ -167,9 +211,10 @@ fun FileDirectoryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background),
+            .muBoxAppBackground(colors),
     ) {
         val isBrowsing = uiState.currentTitle != null
+        // 浏览态保留目录工具栏；根页不再显示应用内顶部标题，只补系统状态栏安全区。
         if (isBrowsing) {
             FileDirectoryBrowseHeader(
                 breadcrumbLabels = uiState.breadcrumbLabels.ifEmpty { listOfNotNull(uiState.currentTitle) },
@@ -186,54 +231,20 @@ fun FileDirectoryScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .then(if (isBrowsing) Modifier else Modifier.statusBarsPadding())
                 .padding(
-                    horizontal = 16.dp,
-                    vertical = if (isBrowsing) 12.dp else 14.dp,
+                    horizontal = if (isBrowsing) 16.dp else 0.dp,
+                    vertical = if (isBrowsing) 12.dp else 4.dp,
                 ),
-            verticalArrangement = Arrangement.spacedBy(if (isBrowsing) 12.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isBrowsing) 12.dp else 8.dp),
         ) {
-            if (!isBrowsing) {
-                FileDirectoryHomeHeader(
-                    onAddLocalDirectory = onAddLocalDirectory,
-                    onOpenWebDav = onOpenWebDav,
-                    onOpenLibrary = onOpenLibrary,
-                )
-            }
-
             if (uiState.message != null || uiState.error != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = if (uiState.error == null) {
-                        colors.panelHigh
-                    } else {
-                        colors.errorSurface
-                    },
-                    contentColor = if (uiState.error == null) colors.text else colors.errorText,
-                    border = BorderStroke(
-                        1.dp,
-                        if (uiState.error == null) colors.border else colors.errorText.copy(alpha = 0.35f),
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(start = 14.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = uiState.error ?: uiState.message.orEmpty(),
-                            modifier = Modifier.weight(1f),
-                            color = if (uiState.error == null) colors.text else colors.errorText,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        TextButton(onClick = onDismissMessage) {
-                            Text(
-                                text = "知道了",
-                                color = if (uiState.error == null) colors.mediaAccent else colors.errorText,
-                            )
-                        }
-                    }
-                }
+                MuBoxInlineMessage(
+                    text = uiState.error ?: uiState.message.orEmpty(),
+                    isError = uiState.error != null,
+                    onDismiss = onDismissMessage,
+                    modifier = if (isBrowsing) Modifier else Modifier.padding(horizontal = 16.dp),
+                )
             }
 
             AnimatedContent(
@@ -271,6 +282,8 @@ fun FileDirectoryScreen(
                 } else {
                     SourceList(
                         sources = uiState.sources,
+                        onAddLocalDirectory = onAddLocalDirectory,
+                        onOpenWebDav = onOpenWebDav,
                         onOpenSource = onOpenSource,
                         onDeleteSource = onDeleteSource,
                         onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
@@ -281,64 +294,6 @@ fun FileDirectoryScreen(
             }
         }
     }
-}
-
-@Composable
-private fun FileDirectoryHomeHeader(
-    onAddLocalDirectory: () -> Unit,
-    onOpenWebDav: () -> Unit,
-    onOpenLibrary: () -> Unit,
-) {
-    var isAddMenuOpen by remember { mutableStateOf(false) }
-    val colors = rememberMuBoxColors()
-
-    MuBoxHeaderBar(
-        title = ComicDavCopy.sourcesTitle,
-        actions = {
-            TextButton(
-                onClick = onOpenLibrary,
-                modifier = Modifier.defaultMinSize(minHeight = 44.dp),
-            ) {
-                Text(
-                    text = ComicDavCopy.libraryTitle,
-                    color = colors.mediaAccent,
-                )
-            }
-            Box {
-                IconButton(
-                    onClick = { isAddMenuOpen = true },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "添加",
-                        tint = colors.mediaAccent,
-                    )
-                }
-                DropdownMenu(
-                    expanded = isAddMenuOpen,
-                    onDismissRequest = { isAddMenuOpen = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("添加本地文件夹") },
-                        onClick = {
-                            isAddMenuOpen = false
-                            onAddLocalDirectory()
-                        },
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    )
-                    DropdownMenuItem(
-                        text = { Text("添加 WebDAV") },
-                        onClick = {
-                            isAddMenuOpen = false
-                            onOpenWebDav()
-                        },
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    )
-                }
-            }
-        },
-    )
 }
 
 @Composable
@@ -365,6 +320,8 @@ private fun FileDirectoryBrowseHeader(
 @Composable
 private fun SourceList(
     sources: List<FileDirectorySource>,
+    onAddLocalDirectory: () -> Unit,
+    onOpenWebDav: () -> Unit,
     onOpenSource: (FileDirectorySource) -> Unit,
     onDeleteSource: (FileDirectorySource) -> Unit,
     onDeleteLocalSourceWithFiles: (FileDirectorySource) -> Unit,
@@ -372,40 +329,16 @@ private fun SourceList(
     modifier: Modifier = Modifier,
 ) {
     var sourceBeingManaged by remember { mutableStateOf<FileDirectorySource?>(null) }
-    val colors = rememberMuBoxColors()
+    val groups = remember(sources) { groupFileDirectorySources(sources) }
 
-    if (sources.isEmpty()) {
-        Column(
-            modifier = modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            SectionTitle(text = ComicDavCopy.savedSources)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = colors.panel,
-                    contentColor = colors.muted,
-                    border = BorderStroke(1.dp, colors.border),
-                ) {
-                    Text(
-                        text = "还没有保存来源。添加本地文件夹或 WebDAV 目录开始浏览。",
-                        color = colors.muted,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                    )
-                }
-            }
-        }
-        return
-    }
     sourceBeingManaged?.let { source ->
-        SourceManagementDialog(
+        SourceManagementSheet(
             source = source,
             onDismiss = { sourceBeingManaged = null },
+            onOpen = {
+                sourceBeingManaged = null
+                onOpenSource(source)
+            },
             onDeleteSource = {
                 sourceBeingManaged = null
                 onDeleteSource(source)
@@ -420,185 +353,352 @@ private fun SourceList(
             },
         )
     }
+
     LazyColumn(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 16.dp),
     ) {
-        item {
-            SectionTitle(text = ComicDavCopy.savedSources)
+        item(key = "local-sources") {
+            LocalSourceSection(
+                sources = groups.local,
+                onAddLocalDirectory = onAddLocalDirectory,
+                onOpenSource = onOpenSource,
+                onManageSource = { sourceBeingManaged = it },
+            )
         }
-        items(sources, key = { it.id }) { source ->
-            DirectorySourceRow(
-                source = source,
-                onClick = { onOpenSource(source) },
-                onLongClick = { sourceBeingManaged = source },
-                isSelected = sourceBeingManaged == source,
+        item(key = "webdav-sources") {
+            WebDavSourceSection(
+                sources = groups.webDav,
+                onOpenWebDav = onOpenWebDav,
+                onOpenSource = onOpenSource,
+                onManageSource = { sourceBeingManaged = it },
             )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DirectorySourceRow(
-    source: FileDirectorySource,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    isSelected: Boolean,
+private fun LocalSourceSection(
+    sources: List<FileDirectorySource>,
+    onAddLocalDirectory: () -> Unit,
+    onOpenSource: (FileDirectorySource) -> Unit,
+    onManageSource: (FileDirectorySource) -> Unit,
 ) {
-    val isLocal = source.sourceType == FileDirectorySourceType.LOCAL
-    val colors = rememberMuBoxColors()
-    val iconColors = sourceIconColors(isLocal, colors)
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-                onLongClickLabel = "管理来源",
-            ),
-        shape = MaterialTheme.shapes.medium,
-        color = if (isSelected) colors.rowSelected else colors.row,
-        contentColor = colors.text,
-        border = BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) colors.selectedBorder else colors.border,
-        ),
-        tonalElevation = 0.dp,
+    SourcePanel(
+        title = "本地",
+        icon = Icons.Outlined.Folder,
+        summary = "共 ${sources.size} 个来源",
+        isEmpty = sources.isEmpty(),
+        emptyText = "还没有本地来源。添加本地文件夹开始浏览漫画和视频。",
+        actionLabel = ComicDavCopy.addLocalFolder,
+        onAction = onAddLocalDirectory,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = iconColors.container,
-                        shape = CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Folder,
-                    contentDescription = null,
-                    tint = iconColors.content,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = fileDirectorySourceTitle(source),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    SourceBadge(
-                        text = if (isLocal) "本地" else "WebDAV",
-                    )
-                }
-                Text(
-                    text = fileDirectorySourceSubtitle(source),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            TextButton(
-                onClick = onClick,
-                modifier = Modifier.defaultMinSize(minHeight = 40.dp),
-            ) {
-                Text(
-                    text = ComicDavCopy.open,
-                    color = colors.mediaAccent,
-                )
-            }
+        sources.forEach { source ->
+            MuBoxSourceRow(
+                icon = Icons.Outlined.Folder,
+                name = fileDirectorySourceTitle(source),
+                subtitle = fileDirectorySourceSubtitle(source),
+                onClick = { onOpenSource(source) },
+                onMoreClick = { onManageSource(source) },
+                moreContentDescription = "管理来源：${fileDirectorySourceTitle(source)}",
+            )
         }
     }
 }
 
 @Composable
-private fun SourceManagementDialog(
+private fun WebDavSourceSection(
+    sources: List<FileDirectorySource>,
+    onOpenWebDav: () -> Unit,
+    onOpenSource: (FileDirectorySource) -> Unit,
+    onManageSource: (FileDirectorySource) -> Unit,
+) {
+    SourcePanel(
+        title = "WebDAV",
+        icon = Icons.Outlined.Cloud,
+        summary = "共 ${sources.size} 个来源",
+        isEmpty = sources.isEmpty(),
+        emptyText = "还没有 WebDAV 来源。添加 WebDAV 目录开始浏览云端漫画和视频。",
+        actionLabel = "添加 WebDAV 来源",
+        onAction = onOpenWebDav,
+    ) {
+        sources.forEach { source ->
+            MuBoxSourceRow(
+                icon = Icons.Outlined.Cloud,
+                name = fileDirectorySourceTitle(source),
+                subtitle = fileDirectorySourceSubtitle(source),
+                onClick = { onOpenSource(source) },
+                onMoreClick = { onManageSource(source) },
+                moreContentDescription = "管理来源：${fileDirectorySourceTitle(source)}",
+            )
+        }
+    }
+}
+
+// 分组列表面板（§8.2/§8.3）：16dp 圆角 + 1dp 边框，底部全宽添加按钮始终存在，空态时行区域换成说明文字。
+@Composable
+private fun SourcePanel(
+    title: String,
+    icon: ImageVector,
+    summary: String,
+    isEmpty: Boolean,
+    emptyText: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    rows: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(MuBoxMetrics.RadiusLDp)
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 10.dp)
+            .fillMaxWidth()
+            .muBoxGlassSurface(colors = colors, shape = shape),
+        shape = shape,
+        color = Color.Transparent,
+        contentColor = colors.text,
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = colors.onAccentSoft,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.text,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.muted,
+                )
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = colors.muted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            if (isEmpty) {
+                Text(
+                    text = emptyText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.muted,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+            } else {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    content = rows,
+                )
+            }
+            OutlinedButton(
+                onClick = onAction,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp)
+                    .heightIn(min = MuBoxMetrics.MinTouchTargetDp),
+                shape = RoundedCornerShape(MuBoxMetrics.RadiusMDp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentText),
+                border = BorderStroke(1.dp, colors.border),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.size(6.dp))
+                Text(text = actionLabel, maxLines = 1)
+            }
+        }
+    }
+}
+
+// 来源管理面板（§8.4）：更多按钮打开，危险操作使用错误色并与普通操作空间分隔，执行前二次确认。
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SourceManagementSheet(
     source: FileDirectorySource,
     onDismiss: () -> Unit,
+    onOpen: () -> Unit,
     onDeleteSource: () -> Unit,
     onDeleteLocalSourceWithFiles: () -> Unit,
     onEditWebDavSource: () -> Unit,
 ) {
-    val actions = sourceManagementActions(source)
-    AlertDialog(
+    val colors = rememberMuBoxColors()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val isLocal = source.sourceType == FileDirectorySourceType.LOCAL
+    var pendingConfirm by remember { mutableStateOf<SourceManagementAction?>(null) }
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("管理来源") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = source.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = fileDirectorySourceTitle(source),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = fileDirectorySourceSubtitle(source),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            HorizontalDivider(color = colors.separator)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SourceSheetAction(
+                    icon = if (isLocal) Icons.Outlined.Folder else Icons.Outlined.Cloud,
+                    label = ComicDavCopy.open,
+                    tint = colors.text,
+                    onClick = onOpen,
                 )
-                actions.forEach { action ->
-                    when (action) {
-                        SourceManagementAction.EditWebDav -> {
-                            TextButton(
-                                onClick = onEditWebDavSource,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text("编辑 WebDAV")
-                            }
-                        }
-                        SourceManagementAction.DeleteSource -> {
-                            TextButton(
-                                onClick = onDeleteSource,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text("删除来源")
-                            }
-                        }
-                        SourceManagementAction.RemoveSource -> {
-                            TextButton(
-                                onClick = onDeleteSource,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text("仅移除来源")
-                            }
-                        }
-                        SourceManagementAction.DeleteLocalSourceWithFiles -> {
-                            TextButton(
-                                onClick = onDeleteLocalSourceWithFiles,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp),
-                            ) {
-                                Text("同时删除源文件")
-                            }
-                        }
-                    }
+                if (!isLocal) {
+                    SourceSheetAction(
+                        icon = Icons.Outlined.Edit,
+                        label = "编辑连接",
+                        tint = colors.text,
+                        onClick = onEditWebDavSource,
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-            ) {
-                Text("取消")
+            HorizontalDivider(color = colors.separator)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (isLocal) {
+                    SourceSheetAction(
+                        icon = Icons.Outlined.RemoveCircleOutline,
+                        label = "仅移除来源",
+                        tint = colors.errorText,
+                        onClick = { pendingConfirm = SourceManagementAction.RemoveSource },
+                    )
+                    SourceSheetAction(
+                        icon = Icons.Outlined.DeleteForever,
+                        label = "删除来源及本地文件",
+                        tint = colors.errorText,
+                        onClick = { pendingConfirm = SourceManagementAction.DeleteLocalSourceWithFiles },
+                    )
+                } else {
+                    SourceSheetAction(
+                        icon = Icons.Outlined.DeleteForever,
+                        label = "删除来源",
+                        tint = colors.errorText,
+                        onClick = { pendingConfirm = SourceManagementAction.DeleteSource },
+                    )
+                }
             }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    pendingConfirm?.let { action ->
+        SourceDeleteConfirmDialog(
+            action = action,
+            onConfirm = {
+                pendingConfirm = null
+                when (action) {
+                    SourceManagementAction.RemoveSource,
+                    SourceManagementAction.DeleteSource,
+                    -> onDeleteSource()
+                    SourceManagementAction.DeleteLocalSourceWithFiles -> onDeleteLocalSourceWithFiles()
+                    SourceManagementAction.EditWebDav -> Unit
+                }
+                onDismiss()
+            },
+            onDismiss = { pendingConfirm = null },
+        )
+    }
+}
+
+@Composable
+private fun SourceSheetAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = MuBoxMetrics.MinTouchTargetDp),
+    ) {
+        Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+            )
+        }
+        Spacer(modifier = Modifier.size(12.dp))
+        Text(text = label, color = tint)
+    }
+}
+
+@Composable
+private fun SourceDeleteConfirmDialog(
+    action: SourceManagementAction,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val title: String
+    val body: String
+    val confirmLabel: String
+    when (action) {
+        SourceManagementAction.RemoveSource -> {
+            title = "仅移除来源？"
+            body = "只会从来源列表中移除，不会删除本地文件夹中的文件。"
+            confirmLabel = "移除"
+        }
+        SourceManagementAction.DeleteLocalSourceWithFiles -> {
+            title = "删除来源及本地文件？"
+            body = "将删除该来源，并永久删除本地文件夹中的全部文件，无法恢复。"
+            confirmLabel = "删除"
+        }
+        else -> {
+            title = "删除来源？"
+            body = "只会删除已保存的来源记录，不会影响 WebDAV 服务器上的文件。"
+            confirmLabel = "删除"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = rememberMuBoxColors().errorText)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }
@@ -647,10 +747,17 @@ private fun FileDirectoryEntryRow(
     val clickAction = fileDirectoryEntryClickAction(entry)
     val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
     val colors = rememberMuBoxColors()
+    val shape = MaterialTheme.shapes.medium
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = shape,
+                highlighted = isSelected,
+                width = if (isSelected) 1.5.dp else 1.dp,
+            )
             .combinedClickable(
                 onClick = {
                     when (clickAction) {
@@ -670,17 +777,13 @@ private fun FileDirectoryEntryRow(
                 },
                 onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
             ),
-        shape = MaterialTheme.shapes.medium,
+        shape = shape,
         color = if (isSelected) {
             colors.rowSelected
         } else {
             colors.row
         },
         contentColor = colors.text,
-        border = BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) colors.selectedBorder else colors.border,
-        ),
         tonalElevation = 0.dp,
     ) {
         Row(
@@ -741,58 +844,6 @@ private fun EntryTypeIcon(mediaKind: MediaKind) {
         )
     }
 }
-
-@Composable
-private fun SectionTitle(text: String) {
-    val colors = rememberMuBoxColors()
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = colors.muted,
-        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-    )
-}
-
-@Composable
-private fun SourceBadge(text: String) {
-    val colors = rememberMuBoxColors()
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color = colors.accentSoft,
-        contentColor = colors.onAccentSoft,
-        border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.35f)),
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-private fun sourceIconColors(
-    isLocal: Boolean,
-    colors: MuBoxColors,
-): FileDirectoryIconColors =
-    if (isLocal) {
-        FileDirectoryIconColors(
-            container = colors.accentSoft,
-            content = colors.onAccentSoft,
-        )
-    } else {
-        FileDirectoryIconColors(
-            container = colors.panelHigh,
-            content = colors.comicAccent,
-        )
-    }
 
 private fun entryIconColors(
     mediaKind: MediaKind,

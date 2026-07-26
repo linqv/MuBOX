@@ -1,5 +1,6 @@
 package com.example.comicdav.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +15,72 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.comicdav.core.model.settings.AppColorPalette
+
+// MuBOX Light — soft blue-white media shell (UI redesign §11.1)
+private val MuBoxLightColors = lightColorScheme(
+    primary = Color(0xFF176BDE),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE8F1FF),
+    onPrimaryContainer = Color(0xFF0B3D91),
+    secondary = Color(0xFF7357E8),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFECE7FF),
+    onSecondaryContainer = Color(0xFF241059),
+    tertiary = Color(0xFF287A4B),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFD7F0E0),
+    onTertiaryContainer = Color(0xFF0C3B21),
+    background = Color(0xFFF5F7FB),
+    onBackground = Color(0xFF101828),
+    surface = Color.White,
+    onSurface = Color(0xFF101828),
+    surfaceVariant = Color(0xFFE4EAF4),
+    onSurfaceVariant = Color(0xFF5F6F86),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF8FAFD),
+    surfaceContainer = Color.White,
+    surfaceContainerHigh = Color(0xFFEEF3FA),
+    surfaceContainerHighest = Color(0xFFE6EDF7),
+    outline = Color(0xFFA8B7CB),
+    outlineVariant = Color(0xFFDCE4EF),
+    error = Color(0xFFB42318),
+    onError = Color.White,
+    errorContainer = Color(0xFFFEE4E2),
+    onErrorContainer = Color(0xFF7A271A),
+)
+
+// MuBOX Dark — deep navy media shell with blue-violet accent (UI redesign §11.2)
+private val MuBoxDarkColors = darkColorScheme(
+    primary = MuBoxDarkTokens.AccentPrimary,
+    onPrimary = MuBoxDarkTokens.BackgroundDeep,
+    primaryContainer = MuBoxDarkTokens.SurfaceActive,
+    onPrimaryContainer = MuBoxDarkTokens.TextPrimary,
+    secondary = MuBoxDarkTokens.AccentSecondary,
+    onSecondary = MuBoxDarkTokens.BackgroundDeep,
+    secondaryContainer = MuBoxDarkTokens.SurfaceSecondary,
+    onSecondaryContainer = MuBoxDarkTokens.TextPrimary,
+    tertiary = MuBoxDarkTokens.Success,
+    onTertiary = MuBoxDarkTokens.BackgroundDeep,
+    tertiaryContainer = MuBoxDarkTokens.SurfaceSecondary,
+    onTertiaryContainer = MuBoxDarkTokens.Success,
+    background = MuBoxDarkTokens.BackgroundPrimary,
+    onBackground = MuBoxDarkTokens.TextPrimary,
+    surface = MuBoxDarkTokens.SurfacePrimary,
+    onSurface = MuBoxDarkTokens.TextPrimary,
+    surfaceVariant = MuBoxDarkTokens.SurfaceSecondary,
+    onSurfaceVariant = MuBoxDarkTokens.TextSecondary,
+    surfaceContainerLowest = MuBoxDarkTokens.BackgroundDeep,
+    surfaceContainerLow = MuBoxDarkTokens.BackgroundElevated,
+    surfaceContainer = MuBoxDarkTokens.SurfacePrimary,
+    surfaceContainerHigh = MuBoxDarkTokens.SurfaceHover,
+    surfaceContainerHighest = MuBoxDarkTokens.SurfaceActive,
+    outline = MuBoxDarkTokens.BorderDefault,
+    outlineVariant = MuBoxDarkTokens.BorderSubtle,
+    error = MuBoxDarkTokens.Error,
+    onError = MuBoxDarkTokens.BackgroundDeep,
+    errorContainer = MuBoxDarkTokens.SurfaceActive,
+    onErrorContainer = MuBoxDarkTokens.Error,
+)
 
 // Adwaita Dark — neutral GNOME dark
 private val AdwaitaDarkColors = darkColorScheme(
@@ -316,9 +383,12 @@ private val ComicDavTypography = Typography(
     ),
 )
 
-fun comicDavColorSchemeFor(palette: AppColorPalette): ColorScheme =
+// DEFAULT 语义为“跟随系统”：darkTheme 决定使用 MuBOX 浅色或深色；显式 MuBOX/旧主题忽略 darkTheme。
+fun comicDavColorSchemeFor(palette: AppColorPalette, darkTheme: Boolean): ColorScheme =
     when (palette) {
-        AppColorPalette.DEFAULT -> AdwaitaDarkColors
+        AppColorPalette.DEFAULT -> if (darkTheme) MuBoxDarkColors else MuBoxLightColors
+        AppColorPalette.MU_BOX_LIGHT -> MuBoxLightColors
+        AppColorPalette.MU_BOX_DARK -> MuBoxDarkColors
         AppColorPalette.ADWAITA_LIGHT -> AdwaitaLightColors
         AppColorPalette.ADWAITA_BLUE_GRAY -> AdwaitaBlueGrayColors
         AppColorPalette.ADWAITA_PURPLE -> AdwaitaPurpleColors
@@ -335,7 +405,7 @@ fun ComicDavTheme(
     palette: AppColorPalette = AppColorPalette.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = comicDavColorSchemeFor(palette)
+    val colorScheme = comicDavColorSchemeFor(palette, darkTheme = isSystemInDarkTheme())
     MaterialTheme(
         colorScheme = colorScheme,
         typography = comicDavTypography(),

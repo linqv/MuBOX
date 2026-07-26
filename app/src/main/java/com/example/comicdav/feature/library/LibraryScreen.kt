@@ -5,9 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +48,8 @@ import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.muBoxAppBackground
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
@@ -63,18 +63,20 @@ fun LibraryScreen(
     onDismissMessage: () -> Unit,
     coversEnabled: Boolean = true,
     selectedItemId: Long? = null,
+    navigationIcon: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
+            .muBoxAppBackground(colors)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         MuBoxHeaderBar(
             title = ComicDavCopy.libraryTitle,
+            navigationIcon = navigationIcon,
             actions = {
                 TextButton(onClick = onOpenDirectories) { Text(ComicDavCopy.sourcesTitle) }
             },
@@ -206,19 +208,15 @@ private fun LibraryCard(
 ) {
     val colors = rememberMuBoxColors()
     val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
-    val borderModifier = if (isSelected) {
-        Modifier.border(
-            width = 2.dp,
-            color = colors.selectedBorder,
-            shape = cardShape,
-        )
-    } else {
-        Modifier
-    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .then(borderModifier)
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = cardShape,
+                highlighted = isSelected,
+                width = if (isSelected) 2.dp else 1.dp,
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -235,14 +233,15 @@ private fun LibraryCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(4.dp),
         ) {
+            val posterShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(libraryPosterKind())),
-                shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
+                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(libraryPosterKind()))
+                    .muBoxGradientBorder(colors = colors, shape = posterShape),
+                shape = posterShape,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
-                border = BorderStroke(1.dp, colors.border),
                 color = colors.raisedSurface,
             ) {
                 Box(

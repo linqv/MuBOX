@@ -14,7 +14,7 @@ import org.junit.Test
 class VideoLibraryScreenTest {
     @Test
     fun screenColorsUseThemePaletteRoles() {
-        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST)
+        val highContrast = comicDavColorSchemeFor(AppColorPalette.HIGH_CONTRAST, darkTheme = false)
         val colors = muBoxColorsFor(highContrast)
 
         assertEquals(highContrast.background, colors.background)

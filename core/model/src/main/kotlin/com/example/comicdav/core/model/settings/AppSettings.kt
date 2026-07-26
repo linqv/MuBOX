@@ -9,6 +9,8 @@ enum class ReadingDirection {
 
 enum class AppColorPalette {
     DEFAULT,
+    MU_BOX_LIGHT,
+    MU_BOX_DARK,
     ADWAITA_LIGHT,
     ADWAITA_BLUE_GRAY,
     ADWAITA_PURPLE,

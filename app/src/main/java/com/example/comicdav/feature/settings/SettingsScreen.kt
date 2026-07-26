@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,16 +21,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -62,17 +59,18 @@ import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.history.WatchHistoryEntry
-import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import com.example.comicdav.data.displayLabel
 import com.example.comicdav.data.ComicCacheAnalysis
 import com.example.comicdav.data.ComicCacheCategory
 import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.ui.HistoryEntryRow
 import com.example.comicdav.ui.MuBoxActionRow
 import com.example.comicdav.ui.MuBoxBoxedList
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxEmptyState
 import com.example.comicdav.ui.MuBoxSwitchRow
+import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.ui.settings.gpuApiModeLabel
 import com.example.comicdav.ui.settings.mpvProfileModeLabel
@@ -83,9 +81,6 @@ import com.example.comicdav.ui.settings.videoOutputModeLabel
 import com.example.comicdav.ui.settings.videoPlayerOrientationModeLabel
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private const val MinAutoPageSpeedSeconds = 3
 private const val MaxAutoPageSpeedSeconds = 60
@@ -298,17 +293,16 @@ fun SettingsScreen(
     }
 
     val colors = rememberMuBoxColors()
+    // 根页不再显示应用内顶部标题，内容从系统状态栏安全区后开始。
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 0.dp),
+            .muBoxAppBackground(colors)
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        MuBoxHeaderBar(title = "设置")
-
-        MuBoxBoxedList(title = "通用") {
+        MuBoxBoxedList(title = "通用", modifier = Modifier.padding(horizontal = 16.dp)) {
             DropdownRow(
                 title = "配色方案",
                 selected = settings.colorPalette,
@@ -324,7 +318,7 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "内容设置") {
+        MuBoxBoxedList(title = "内容设置", modifier = Modifier.padding(horizontal = 16.dp)) {
             MuBoxActionRow(
                 title = "观看历史",
                 onClick = { currentPage = SettingsPage.HISTORY },
@@ -346,7 +340,7 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "观看历史设置") {
+        MuBoxBoxedList(title = "观看历史设置", modifier = Modifier.padding(horizontal = 16.dp)) {
             DropdownRow(
                 title = "保留时长",
                 selected = settings.historyRetentionDays,
@@ -369,7 +363,7 @@ fun SettingsScreen(
             )
         }
 
-        MuBoxBoxedList(title = "缓存") {
+        MuBoxBoxedList(title = "缓存", modifier = Modifier.padding(horizontal = 16.dp)) {
             CacheActionRow(
                 title = "缓存总占用",
                 subtitle = formatCacheSize(cacheAnalysis.totalBytes),
@@ -427,6 +421,12 @@ fun SettingsScreen(
                 onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.VIDEO_THUMBNAILS)) },
             )
             CacheActionRow(
+                title = "历史记录缩略图缓存",
+                subtitle = formatCacheSize(cacheAnalysis.historyThumbnailsBytes),
+                enabled = cacheAnalysis.historyThumbnailsBytes > 0L,
+                onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.HISTORY_THUMBNAILS)) },
+            )
+            CacheActionRow(
                 title = "视频字幕缓存",
                 subtitle = formatCacheSize(cacheAnalysis.videoSubtitlesBytes),
                 enabled = cacheAnalysis.videoSubtitlesBytes > 0L,
@@ -455,7 +455,7 @@ fun SettingsScreen(
             text = cacheActionMessage ?: "清理缓存不会删除书架记录和设置",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 30.dp, vertical = 8.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -499,7 +499,7 @@ private fun HistorySettingsPage(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background),
+            .muBoxAppBackground(colors),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -566,97 +566,10 @@ private fun HistorySettingsPage(
     }
 }
 
-@Composable
-private fun HistoryEntryRow(
-    entry: WatchHistoryEntry,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen),
-        shape = MaterialTheme.shapes.large,
-        color = colors.boxedList,
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (entry.mediaType == WatchMediaType.COMIC) {
-                    Icons.Filled.Book
-                } else {
-                    Icons.Filled.Movie
-                },
-                contentDescription = null,
-                tint = colors.mediaAccent,
-                modifier = Modifier.size(28.dp),
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text(
-                    text = entry.displayTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "${historyProgressLabel(entry)} · ${formatHistoryTime(entry.lastWatchedAt)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                LinearProgressIndicator(
-                    progress = { entry.progressFraction },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = colors.mediaAccent,
-                    trackColor = colors.panelHigh,
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = "删除 ${entry.displayTitle} 的历史记录和关联缓存",
-                    tint = colors.errorText,
-                )
-            }
-        }
-    }
-}
-
 internal fun historyRetentionLabel(days: Int): String =
     if (days <= 0) "永久" else "$days 天"
 
 internal fun historyMaxRecordsLabel(maxRecords: Int): String = "$maxRecords 条"
-
-internal fun historyProgressLabel(entry: WatchHistoryEntry): String =
-    when (entry.mediaType) {
-        WatchMediaType.COMIC -> "第 ${entry.progress.coerceAtLeast(1L)} / ${entry.total.coerceAtLeast(1L)} 页"
-        WatchMediaType.VIDEO -> "${formatVideoHistoryDuration(entry.progress)} / ${formatVideoHistoryDuration(entry.total)}"
-    }
-
-private fun formatVideoHistoryDuration(millis: Long): String {
-    val totalSeconds = millis.coerceAtLeast(0L) / 1_000L
-    val hours = totalSeconds / 3_600L
-    val minutes = (totalSeconds % 3_600L) / 60L
-    val seconds = totalSeconds % 60L
-    return if (hours > 0L) {
-        "%d:%02d:%02d".format(Locale.US, hours, minutes, seconds)
-    } else {
-        "%02d:%02d".format(Locale.US, minutes, seconds)
-    }
-}
-
-private fun formatHistoryTime(timestamp: Long): String =
-    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(timestamp))
 
 @Composable
 private fun ComicSettingsPage(
@@ -677,7 +590,7 @@ private fun ComicSettingsPage(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
+            .muBoxAppBackground(colors)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 0.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -776,7 +689,7 @@ private fun VideoSettingsPage(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
+            .muBoxAppBackground(colors)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 0.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),

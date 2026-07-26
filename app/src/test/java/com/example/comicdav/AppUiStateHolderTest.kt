@@ -24,9 +24,9 @@ class AppUiStateHolderTest {
         ui.localOpenError = "open failed"
         ui.webDavActionMessage = "saved"
 
-        ui.selectTab(AppTab.LIBRARY)
+        ui.selectTab(AppTab.SETTINGS)
 
-        assertEquals(AppTab.LIBRARY, ui.selectedTab)
+        assertEquals(AppTab.SETTINGS, ui.selectedTab)
         assertEquals(AppSelection.None, ui.selection)
         assertNull(ui.localOpenError)
         assertNull(ui.webDavActionMessage)

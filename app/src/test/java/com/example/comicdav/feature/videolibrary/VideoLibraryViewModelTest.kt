@@ -65,6 +65,17 @@ class VideoLibraryViewModelTest {
         assertNull(viewModel.uiState.error)
     }
 
+    @Test
+    fun tracksBatchThumbnailExtractionState() {
+        val viewModel = VideoLibraryViewModel(FakeVideoLibraryCatalog())
+
+        viewModel.setThumbnailExtractionInProgress(true)
+        assertTrue(viewModel.uiState.isExtractingThumbnails)
+
+        viewModel.setThumbnailExtractionInProgress(false)
+        assertFalse(viewModel.uiState.isExtractingThumbnails)
+    }
+
     private fun videoLibraryItem(
         id: Long,
         displayName: String,

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 data class VideoLibraryUiState(
     val items: List<VideoLibraryItemWithSources> = emptyList(),
     val isLoading: Boolean = true,
+    val isExtractingThumbnails: Boolean = false,
     val error: String? = null,
     val message: String? = null,
 )
@@ -141,6 +142,10 @@ class VideoLibraryViewModel(
 
     fun showError(message: String) {
         uiState = uiState.copy(error = message, message = null)
+    }
+
+    fun setThumbnailExtractionInProgress(inProgress: Boolean) {
+        uiState = uiState.copy(isExtractingThumbnails = inProgress)
     }
 
     fun clearMessage() {

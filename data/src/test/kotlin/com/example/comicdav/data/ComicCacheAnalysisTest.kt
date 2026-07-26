@@ -23,6 +23,7 @@ class ComicCacheAnalysisTest {
         cacheDir.writeFile("comicdav-pages-transient/comic-a/page-1.img", 11)
         cacheDir.writeFile("library-covers/cover.img", 3)
         cacheDir.writeFile("video-library-thumbnails/video.jpg", 13)
+        cacheDir.writeFile("history-thumbnails/history.jpg", 15)
         cacheDir.writeFile("video-subtitles/subtitle.ass", 17)
         cacheDir.writeFile("image_cache/coil-entry", 19)
         codeCacheDir.writeFile("compiled/entry", 23)
@@ -36,11 +37,12 @@ class ComicCacheAnalysisTest {
         assertEquals(11L, analysis.transientReaderPagesBytes)
         assertEquals(3L, analysis.libraryCoversBytes)
         assertEquals(13L, analysis.videoThumbnailsBytes)
+        assertEquals(15L, analysis.historyThumbnailsBytes)
         assertEquals(17L, analysis.videoSubtitlesBytes)
         assertEquals(23L, analysis.codeCacheBytes)
         assertEquals(29L, analysis.externalCacheBytes)
         assertEquals(19L, analysis.otherBytes)
-        assertEquals(137L, analysis.totalBytes)
+        assertEquals(152L, analysis.totalBytes)
     }
 
     @Test

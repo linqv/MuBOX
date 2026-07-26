@@ -7,7 +7,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +49,8 @@ import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxMetrics
+import com.example.comicdav.ui.muBoxAppBackground
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
@@ -63,18 +64,20 @@ fun VideoLibraryScreen(
     onDismissMessage: () -> Unit,
     thumbnailsEnabled: Boolean = true,
     selectedItemId: Long? = null,
+    navigationIcon: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.background)
+            .muBoxAppBackground(colors)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         MuBoxHeaderBar(
             title = "影视库",
+            navigationIcon = navigationIcon,
             actions = {
                 TextButton(onClick = onOpenDirectories) { Text("来源") }
             },
@@ -204,23 +207,15 @@ private fun VideoLibraryCard(
 ) {
     val colors = rememberMuBoxColors()
     val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
-    val borderModifier = if (isSelected) {
-        Modifier.border(
-            width = 1.5.dp,
-            color = colors.mediaAccent,
-            shape = cardShape,
-        )
-    } else {
-        Modifier.border(
-            width = 1.dp,
-            color = colors.border.copy(alpha = 0.45f),
-            shape = cardShape,
-        )
-    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .then(borderModifier)
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = cardShape,
+                highlighted = isSelected,
+                width = if (isSelected) 1.5.dp else 1.dp,
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -238,11 +233,13 @@ private fun VideoLibraryCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(6.dp),
         ) {
+            val posterShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind())),
-                shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp),
+                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind()))
+                    .muBoxGradientBorder(colors = colors, shape = posterShape),
+                shape = posterShape,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 color = colors.raisedSurface,

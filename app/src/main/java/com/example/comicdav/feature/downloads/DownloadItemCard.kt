@@ -1,9 +1,7 @@
 package com.example.comicdav.feature.downloads
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.ui.MuBoxMediaTypeIcon
+import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
@@ -53,12 +52,17 @@ internal fun DownloadItemCard(
     val colors = rememberMuBoxColors()
     val shape = RoundedCornerShape(12.dp)
     val borderWidth = if (isSelected) 2.dp else 1.dp
-    val borderColor = if (isSelected) colors.selectedBorder else colors.border
     val containerColor = if (isSelected) colors.rowSelected else colors.boxedList
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = shape,
+                highlighted = isSelected,
+                width = borderWidth,
+            )
             .clip(shape)
             .combinedClickable(
                 onClick = onClick,
@@ -67,7 +71,6 @@ internal fun DownloadItemCard(
             ),
         shape = shape,
         color = containerColor,
-        border = BorderStroke(borderWidth, borderColor),
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -114,12 +117,13 @@ private fun LeadingThumbnail(
     coverUri: String?,
 ) {
     val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = Modifier
             .size(width = 80.dp, height = 108.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(colors.panel)
-            .border(1.dp, colors.border, RoundedCornerShape(10.dp)),
+            .muBoxGradientBorder(colors = colors, shape = shape)
+            .clip(shape)
+            .background(colors.panel),
         contentAlignment = Alignment.Center,
     ) {
         if (!coverUri.isNullOrBlank()) {

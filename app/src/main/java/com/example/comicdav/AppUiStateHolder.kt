@@ -44,7 +44,7 @@ internal class AppUiStateHolder(
     var isDataFolderLoading by isDataFolderLoadingState
 
     val selectedTab: AppTab
-        get() = runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.SOURCES)
+        get() = runCatching { AppTab.valueOf(selectedTabName) }.getOrDefault(AppTab.HOME)
 
     val selectedWebDavFile get() = selection.webDavFileOrNull
     val selectedDirectoryComic get() = selection.directoryComicOrNull
@@ -70,8 +70,8 @@ internal class AppUiStateHolder(
         clearSelection()
     }
 
-    fun returnToSources() {
-        selectTab(AppTab.SOURCES, clearTransientMessages = true)
+    fun returnToHome() {
+        selectTab(AppTab.HOME, clearTransientMessages = true)
     }
 
     fun onDataFolderSelected(uriText: String) {
@@ -91,7 +91,7 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
     val isWebDavOpenState = rememberSaveable { mutableStateOf(false) }
     val isAddingWebDavPathState = rememberSaveable { mutableStateOf(false) }
     val editingWebDavSourceIdState = rememberSaveable { mutableStateOf<Long?>(null) }
-    val selectedTabNameState = rememberSaveable { mutableStateOf(AppTab.SOURCES.name) }
+    val selectedTabNameState = rememberSaveable { mutableStateOf(AppTab.HOME.name) }
     val selectionState = remember { mutableStateOf<AppSelection>(AppSelection.None) }
     val localOpenErrorState = remember { mutableStateOf<String?>(null) }
     val webDavActionMessageState = remember { mutableStateOf<String?>(null) }

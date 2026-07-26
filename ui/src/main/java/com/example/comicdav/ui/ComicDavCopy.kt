@@ -1,6 +1,7 @@
 package com.example.comicdav.ui
 
 object ComicDavCopy {
+    const val homeTab = "首页"
     const val sourcesTab = "来源"
     const val libraryTab = "书架"
     const val videoLibraryTab = "影视库"

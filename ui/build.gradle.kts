@@ -36,6 +36,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
+    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
 
     testImplementation("junit:junit:4.13.2")
 }

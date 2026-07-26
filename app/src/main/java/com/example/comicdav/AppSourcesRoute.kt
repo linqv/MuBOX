@@ -146,7 +146,6 @@ private fun LocalSourcesRoute(
         selectedDirectoryVideo = state.selection.directoryVideoOrNull,
         onAddLocalDirectory = onChooseLocalDirectory,
         onOpenWebDav = sourceActions::startAddingWebDavSource,
-        onOpenLibrary = sourceActions::openLibrary,
         onOpenSource = sourceActions::openSource,
         onOpenDirectory = fileDirectoryViewModel::openLocalDirectory,
         onOpenComic = comicActions::openLocalDirectoryComic,

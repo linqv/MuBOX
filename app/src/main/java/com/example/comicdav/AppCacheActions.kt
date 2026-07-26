@@ -14,6 +14,7 @@ import com.example.comicdav.data.formatCacheSize
 import com.example.comicdav.feature.reader.clearReaderPageCacheForComic
 import com.example.comicdav.feature.reader.pruneReaderPageCache
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings
+import com.example.comicdav.feature.home.historyThumbnailFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -152,7 +153,10 @@ internal class AppCacheActions(
     }
 
     private fun deleteHistoryEntryCaches(entry: WatchHistoryEntry): Long {
-        if (entry.mediaType != WatchMediaType.COMIC) return 0L
+        val thumbnailFile = historyThumbnailFile(context.cacheDir, entry)
+        val thumbnailBytes = thumbnailFile.length().takeIf { thumbnailFile.isFile } ?: 0L
+        thumbnailFile.delete()
+        if (entry.mediaType != WatchMediaType.COMIC) return thumbnailBytes
         val readerPagesBytes = clearReaderPageCacheForComic(
             cacheDir = context.cacheDir,
             comicKey = entry.mediaKey,
@@ -162,7 +166,7 @@ internal class AppCacheActions(
         } else {
             0L
         }
-        return readerPagesBytes + remoteBytes
+        return thumbnailBytes + readerPagesBytes + remoteBytes
     }
 
     private suspend fun analyze(): ComicCacheAnalysis =

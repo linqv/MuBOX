@@ -70,11 +70,6 @@ internal class AppSourceActions(
         callbacks.setAddingWebDavPath(true)
     }
 
-    fun openLibrary() {
-        clearMessages()
-        callbacks.selectTab(AppTab.LIBRARY)
-    }
-
     fun openSource(source: FileDirectorySource) {
         when (source.sourceType) {
             FileDirectorySourceType.LOCAL -> {

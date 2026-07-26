@@ -77,6 +77,10 @@ internal class AppContainer(context: Context) {
         diagnostics = diagnostics,
     )
     val videoThumbnailExtractor = VideoThumbnailExtractor(cacheDir = context.cacheDir)
+    val historyThumbnailExtractor = VideoThumbnailExtractor(
+        cacheDir = context.cacheDir,
+        cacheSubdirectory = "history-thumbnails",
+    )
 
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)

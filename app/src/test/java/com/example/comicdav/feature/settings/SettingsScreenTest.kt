@@ -68,8 +68,14 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun defaultPaletteLabelMatchesAdwaitaTheme() {
-        assertEquals("Adwaita 深色（默认）", AppColorPalette.DEFAULT.settingsLabel())
+    fun defaultPaletteLabelMeansFollowSystem() {
+        assertEquals("跟随系统", AppColorPalette.DEFAULT.settingsLabel())
+    }
+
+    @Test
+    fun muBoxPaletteLabelsAreExplicit() {
+        assertEquals("MuBOX 浅色", AppColorPalette.MU_BOX_LIGHT.settingsLabel())
+        assertEquals("MuBOX 深色", AppColorPalette.MU_BOX_DARK.settingsLabel())
     }
 
     @Test
