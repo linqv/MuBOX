@@ -212,7 +212,11 @@ class WebDavViewModel(
             connectedCredentials = credentials
         }
         connectedAccountId = accountId()
-        loadPath(path = path, keepConnectedStatus = shouldReuseClient)
+        loadPath(
+            path = path,
+            keepConnectedStatus = shouldReuseClient,
+            replaceVisibleDirectory = true,
+        )
     }
 
     fun openDirectory(item: WebDavItem) {
@@ -221,7 +225,11 @@ class WebDavViewModel(
     }
 
     fun openPath(path: String) {
-        loadPath(path, keepConnectedStatus = true)
+        loadPath(
+            path = path,
+            keepConnectedStatus = true,
+            replaceVisibleDirectory = true,
+        )
     }
 
     fun refreshCurrentDirectory() {
@@ -270,6 +278,7 @@ class WebDavViewModel(
         path: String,
         keepConnectedStatus: Boolean = false,
         forceRefresh: Boolean = false,
+        replaceVisibleDirectory: Boolean = false,
     ) {
         directoryLoadJob?.cancel()
         cancelDirectoryPresentation()
@@ -288,6 +297,9 @@ class WebDavViewModel(
         } else {
             WEB_DAV_STATUS_CONNECTING
         }
+        if (replaceVisibleDirectory) {
+            currentDirectoryItems = emptyList()
+        }
         uiState = if (forceRefresh) {
             uiState.copy(
                 isLoading = false,
@@ -297,6 +309,8 @@ class WebDavViewModel(
             )
         } else {
             uiState.copy(
+                currentPath = if (replaceVisibleDirectory) path else uiState.currentPath,
+                items = if (replaceVisibleDirectory) emptyList() else uiState.items,
                 isLoading = true,
                 isRefreshing = false,
                 searchQuery = "",
@@ -366,7 +380,12 @@ class WebDavViewModel(
                         isRefreshing = false,
                     )
                 } else {
-                    uiState.copy(status = message, isLoading = false, isRefreshing = false)
+                    uiState.copy(
+                        status = message,
+                        message = message,
+                        isLoading = false,
+                        isRefreshing = false,
+                    )
                 }
             }
         }

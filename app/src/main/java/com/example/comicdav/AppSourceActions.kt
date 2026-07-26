@@ -156,15 +156,17 @@ internal class AppSourceActions(
         val expectedAccountId = source.webDavAccountId
         val path = source.webDavPath ?: "/"
         callbacks.setActionMessage(null)
-        callbacks.setWebDavOpen(true)
         callbacks.setAddingWebDavPath(false)
         callbacks.setEditingWebDavSourceId(null)
+
+        if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
+            clearMessages()
+            webDavViewModel.openPath(path)
+            callbacks.setWebDavOpen(true)
+            return
+        }
+
         scope.launch {
-            if (expectedAccountId != null && webDavViewModel.activeAccountId() == expectedAccountId) {
-                clearMessages()
-                webDavViewModel.openPath(path)
-                return@launch
-            }
             val savedAccount = expectedAccountId?.let { accountId ->
                 container.webDavAccountStore.loadAccount(accountId)
             }
@@ -187,6 +189,7 @@ internal class AppSourceActions(
                     ?: savedAccount?.password,
                 path = path,
             )
+            callbacks.setWebDavOpen(true)
         }
     }
 

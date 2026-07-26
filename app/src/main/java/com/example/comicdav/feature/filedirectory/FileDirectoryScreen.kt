@@ -1,13 +1,6 @@
 package com.example.comicdav.feature.filedirectory
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +25,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,23 +58,15 @@ import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.ui.ComicDavCopy
-import com.example.comicdav.ui.MuBoxColors
+import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxInlineMessage
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.MuBoxSourceRow
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGlassSurface
-import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.decodeWebDavPathForDisplay
-
-
-
-private data class FileDirectoryIconColors(
-    val container: Color,
-    val content: Color,
-)
 
 internal enum class FileDirectoryEntryClickAction {
     OpenDirectory,
@@ -251,13 +231,8 @@ fun FileDirectoryScreen(
                 )
             }
 
-            AnimatedContent(
-                targetState = isBrowsing,
-                modifier = Modifier.weight(1f),
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "FileDirectoryContent",
-            ) { browsing ->
-                if (browsing) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (isBrowsing) {
                     if (uiState.isLoading) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -736,7 +711,6 @@ private fun EntryList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileDirectoryEntryRow(
     entry: FileDirectoryBrowserItem,
@@ -750,133 +724,34 @@ private fun FileDirectoryEntryRow(
     val longPressActions = fileDirectoryEntryLongPressActions(entry)
     val clickAction = fileDirectoryEntryClickAction(entry)
     val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
-    val colors = rememberMuBoxColors()
-    val shape = MaterialTheme.shapes.medium
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .muBoxGradientBorder(
-                colors = colors,
-                shape = shape,
-                highlighted = isSelected,
-                width = if (isSelected) 1.5.dp else 1.dp,
-            )
-            .combinedClickable(
-                onClick = {
-                    when (clickAction) {
-                        FileDirectoryEntryClickAction.OpenDirectory -> onOpenDirectory()
-                        FileDirectoryEntryClickAction.OpenComic -> onOpenComic()
-                        FileDirectoryEntryClickAction.OpenVideo -> onOpenVideo()
-                        FileDirectoryEntryClickAction.NoAction -> Unit
-                    }
-                },
-                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
-                    {
-                        when (longPressActions.first()) {
-                            FileDirectoryEntryMenuAction.AddToLibrary -> onSelectComic()
-                            FileDirectoryEntryMenuAction.AddToVideoLibrary -> onSelectVideo()
-                        }
-                    }
-                },
-                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
-            ),
-        shape = shape,
-        color = if (isSelected) {
-            colors.rowSelected
-        } else {
-            colors.row
+    MuBoxDenseMediaRow(
+        title = entry.name,
+        mediaKind = entry.mediaKind,
+        subtitle = supportingLabel.ifBlank { null },
+        selected = isSelected,
+        onClick = {
+            when (clickAction) {
+                FileDirectoryEntryClickAction.OpenDirectory -> onOpenDirectory()
+                FileDirectoryEntryClickAction.OpenComic -> onOpenComic()
+                FileDirectoryEntryClickAction.OpenVideo -> onOpenVideo()
+                FileDirectoryEntryClickAction.NoAction -> Unit
+            }
         },
-        contentColor = colors.text,
-        tonalElevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            EntryTypeIcon(mediaKind = entry.mediaKind)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (supportingLabel.isNotBlank()) {
-                    Text(
-                        text = supportingLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
+            {
+                when (longPressActions.first()) {
+                    FileDirectoryEntryMenuAction.AddToLibrary -> onSelectComic()
+                    FileDirectoryEntryMenuAction.AddToVideoLibrary -> onSelectVideo()
                 }
             }
-        }
-    }
+        },
+        onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+    )
 }
 
 internal fun fileDirectoryEntrySupportingLabel(entry: FileDirectoryBrowserItem): String =
     if (entry.isDirectory) "" else entry.size?.let { "${it / 1024} KiB" } ?: "大小未知"
-
-@Composable
-private fun EntryTypeIcon(mediaKind: MediaKind) {
-    val screenColors = rememberMuBoxColors()
-    val colors = entryIconColors(mediaKind, screenColors)
-    val icon = when (mediaKind) {
-        MediaKind.Directory -> Icons.Rounded.Folder
-        MediaKind.Video -> Icons.Rounded.PlayCircle
-        MediaKind.Subtitle -> Icons.Rounded.Subtitles
-        else -> Icons.AutoMirrored.Rounded.MenuBook
-    }
-    val contentDescription = fileDirectoryEntryTypeContentDescription(mediaKind)
-
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .background(color = colors.container, shape = CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(24.dp),
-            tint = colors.content,
-        )
-    }
-}
-
-private fun entryIconColors(
-    mediaKind: MediaKind,
-    colors: MuBoxColors,
-): FileDirectoryIconColors =
-    when (mediaKind) {
-        MediaKind.Directory -> FileDirectoryIconColors(
-            container = colors.accentSoft,
-            content = colors.onAccentSoft,
-        )
-        MediaKind.Comic -> FileDirectoryIconColors(
-            container = colors.panelHigh,
-            content = colors.comicAccent,
-        )
-        MediaKind.Video -> FileDirectoryIconColors(
-            container = colors.accentSoft,
-            content = colors.onAccentSoft,
-        )
-        MediaKind.Subtitle -> FileDirectoryIconColors(
-            container = colors.panelHigh,
-            content = colors.mediaAccent,
-        )
-        MediaKind.Audio,
-        MediaKind.Unknown,
-        -> FileDirectoryIconColors(
-            container = colors.panelHigh,
-            content = colors.muted,
-        )
-    }
 
 internal fun fileDirectoryEntryTypeContentDescription(mediaKind: MediaKind): String =
     com.example.comicdav.ui.muBoxMediaKindLabel(mediaKind)

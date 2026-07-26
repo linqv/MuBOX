@@ -313,6 +313,58 @@ class WebDavViewModelTest {
     }
 
     @Test
+    fun connectingToSavedSourceImmediatelyClearsPreviouslyDisplayedDirectory() = runTest(dispatcher) {
+        val firstClient = FakeWebDavClient(
+            items = listOf(directoryItem("Old", "/Old/")),
+        )
+        val secondClient = BlockingDirectoryWebDavClient()
+        val viewModel = WebDavViewModel(
+            clientFactory = { _, username, _ ->
+                if (username == "first") firstClient else secondClient
+            },
+            directoryComputationDispatcher = dispatcher,
+        )
+
+        viewModel.connectToSavedSource(
+            baseUrl = "https://example.test/dav/",
+            username = "first",
+            password = "secret",
+            path = "/Old/",
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.connectToSavedSource(
+            baseUrl = "https://example.test/dav/",
+            username = "second",
+            password = "secret",
+            path = "/New/",
+        )
+
+        assertEquals("/New/", viewModel.uiState.currentPath)
+        assertTrue(viewModel.uiState.items.isEmpty())
+        assertTrue(viewModel.uiState.isLoading)
+        assertEquals(WEB_DAV_STATUS_CONNECTING, viewModel.uiState.status)
+    }
+
+    @Test
+    fun openingSavedPathImmediatelyClearsPreviouslyDisplayedDirectory() = runTest(dispatcher) {
+        val client = BlockingDirectoryWebDavClient()
+        val viewModel = testViewModel { _, _, _ -> client }
+        viewModel.updateBaseUrl("https://example.test/dav/")
+
+        viewModel.openPath("/Old/")
+        runCurrent()
+        client.complete("/Old/", listOf(directoryItem("Old", "/Old/Series/")))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.openPath("/New/")
+
+        assertEquals("/New/", viewModel.uiState.currentPath)
+        assertTrue(viewModel.uiState.items.isEmpty())
+        assertTrue(viewModel.uiState.isLoading)
+    }
+
+    @Test
     fun splitConnectionFieldsBuildWebDavBaseUrl() {
         val viewModel = testViewModel { _, _, _ -> FakeWebDavClient() }
 

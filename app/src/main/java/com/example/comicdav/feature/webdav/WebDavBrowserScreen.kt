@@ -1,16 +1,15 @@
 package com.example.comicdav.feature.webdav
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -125,13 +124,11 @@ fun WebDavBrowserScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(
-                    horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
-                    vertical = 12.dp,
-                ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp)
+                .padding(bottom = 12.dp),
         ) {
             if (shouldShowSaveDirectoryAction(showSaveDirectoryAction)) {
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -151,30 +148,36 @@ fun WebDavBrowserScreen(
                 }
             }
 
-            if (uiState.isLoading) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = colors.mediaAccent,
-                    trackColor = colors.playerProgressTrack,
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (uiState.isLoading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = colors.mediaAccent,
+                        trackColor = colors.playerProgressTrack,
+                    )
+                }
             }
 
-            PullToRefreshBox(
-                isRefreshing = uiState.isRefreshing,
-                onRefresh = onRefresh,
+            Box(
                 modifier = Modifier.weight(1f),
             ) {
-                AnimatedContent(
-                    targetState = uiState.items,
+                PullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
-                    label = "WebDavListContent",
-                ) { items ->
+                ) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(items) { item ->
+                        items(uiState.items) { item ->
                             val clickAction = webDavItemClickAction(item)
                             val longPressActions = webDavItemLongPressActions(item)
                             val supportingLabel = webDavItemSupportingLabel(item)
@@ -202,6 +205,7 @@ fun WebDavBrowserScreen(
 
             val panelMessage = uiState.message.ifBlank { actionMessage.orEmpty() }
             if (downloadProgress != null || !downloadError.isNullOrBlank() || panelMessage.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
                 WebDavTransferPanel(
                     message = panelMessage,
                     downloadProgress = downloadProgress,
