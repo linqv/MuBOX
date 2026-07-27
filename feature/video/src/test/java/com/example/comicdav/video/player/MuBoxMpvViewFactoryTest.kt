@@ -138,6 +138,32 @@ class MuBoxMpvViewFactoryTest {
     }
 
     @Test
+    fun automaticAnime4KPreparesRendererBeforeVideoParamsResolveItsChain() {
+        val api = RecordingMpvNativeApi()
+        MpvStartupOptionsApplier(
+            nativeApi = api,
+            setVideoOutput = {},
+            initializeAnime4K = {},
+            anime4KShaderChain = {
+                assertEquals(Anime4KProfile.AUTO, it)
+                ""
+            },
+            memoryBudget = testPlaybackMemoryBudget,
+        ).apply(
+            MpvViewStartupConfiguration(
+                videoOutputMode = VideoOutputMode.AUTO,
+                gpuApiMode = GpuApiMode.AUTO,
+                anime4kProfile = Anime4KProfile.AUTO,
+            ),
+        )
+
+        assertTrue(api.events.contains("option:opengl-pbo=yes"))
+        assertTrue(api.events.contains("option:opengl-early-flush=no"))
+        assertTrue(api.events.contains("option:vd-lavc-dr=yes"))
+        assertTrue(api.events.none { it.startsWith("option:glsl-shaders=") })
+    }
+
+    @Test
     fun shaderDiagnosticFilterKeepsShaderLogsAndRejectsUnrelatedWarnings() {
         assertTrue(isMpvShaderDiagnostic("vo/gpu-next", "GLSL shader compilation failed"))
         assertTrue(isMpvShaderDiagnostic("libplacebo", "hook warning"))

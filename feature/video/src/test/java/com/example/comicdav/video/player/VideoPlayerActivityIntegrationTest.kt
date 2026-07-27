@@ -203,6 +203,8 @@ class VideoPlayerActivityIntegrationTest {
         router.route("duration", 120.5)
         router.route("time-pos", 42.25)
         router.route("speed", 1.5)
+        router.route("container-fps", 23.976)
+        router.route("display-fps", 60.0)
         router.route("aid", 7L)
         router.route("sid", 0L)
         router.route("hwdec", "mediacodec-copy")
@@ -232,6 +234,7 @@ class VideoPlayerActivityIntegrationTest {
         assertEquals(2L, state.decoderDroppedFrames)
         assertEquals(3L, state.outputDroppedFrames)
         assertEquals(16.0 / 9.0, state.videoParams.aspectRatio ?: 0.0, 0.0)
+        assertEquals(23.976, state.videoParams.frameRate ?: 0.0, 0.0)
         assertEquals(1920, state.videoOutParams.width)
     }
 

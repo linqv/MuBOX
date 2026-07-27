@@ -78,10 +78,10 @@ class AppSettingsStoreTest {
     fun anime4kProfileCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("anime4k_updates.preferences_pb")
 
-        store.updateAnime4KProfile(Anime4KProfile.EXTREME)
+        store.updateAnime4KProfile(Anime4KProfile.AUTO)
 
         val settings = store.settings.first()
-        assertEquals(Anime4KProfile.EXTREME, settings.anime4kProfile)
+        assertEquals(Anime4KProfile.AUTO, settings.anime4kProfile)
     }
 
     @Test

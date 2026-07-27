@@ -1,5 +1,6 @@
 package com.example.comicdav.video.player
 
+import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +18,8 @@ class VideoPlayerStatisticsTest {
             currentVideoOutput = "gpu-next",
             currentGpuApi = "vulkan",
             currentGpuContext = "androidvk",
+            anime4kProfile = Anime4KProfile.AUTO,
+            anime4kPipeline = Anime4KPipeline.MODE_B_BALANCED,
             decoderDroppedFrames = 2,
             outputDroppedFrames = 3,
             videoParams = VideoParams(
@@ -55,8 +58,31 @@ class VideoPlayerStatisticsTest {
         assertEquals("movie.zh.ass", snapshot.media.subtitleSource)
         assertEquals("h264_mediacodec / mediacodec-copy", snapshot.runtime.decoder)
         assertEquals("gpu-next / androidvk", snapshot.runtime.renderer)
+        assertEquals("模式 B（平衡）", snapshot.runtime.anime4kChain)
         assertEquals(23.976, snapshot.runtime.estimatedFps)
         assertEquals(5L, snapshot.runtime.droppedFrames)
+        assertTrue(snapshot.debugLines().contains("anime4k-chain=模式 B（平衡）"))
+    }
+
+    @Test
+    fun anime4kChainLabelExplainsInactiveStates() {
+        assertEquals(
+            "关闭",
+            anime4kChainLabel(MpvPlayerState(anime4kProfile = Anime4KProfile.OFF)),
+        )
+        assertEquals(
+            "自动（等待视频参数）",
+            anime4kChainLabel(MpvPlayerState(anime4kProfile = Anime4KProfile.AUTO)),
+        )
+        assertEquals(
+            "自动（HDR 视频已跳过）",
+            anime4kChainLabel(
+                MpvPlayerState(
+                    anime4kProfile = Anime4KProfile.AUTO,
+                    statusMessage = "Anime4K 自动：HDR 视频已跳过",
+                ),
+            ),
+        )
     }
 
     @Test

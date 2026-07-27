@@ -75,15 +75,231 @@ class MpvControllerAdvancedControlsTest {
 
         val state = controller.state.value
         assertEquals(
-            listOf("chain-EXTREME"),
+            listOf("chain-MODE_C_A_HIGH"),
             engine.stringPropertyHistory("glsl-shaders"),
         )
         assertEquals(emptyList<String>(), engine.optionHistory("vo"))
         assertEquals(Anime4KProfile.EXTREME, state.anime4kProfile)
         assertEquals(
-            listOf(Anime4KProfile.EXTREME),
+            listOf(Anime4KPipeline.MODE_C_A_HIGH),
             provider.requests,
         )
+    }
+
+    @Test
+    fun selectingAutoWaitsForVideoParamsThenAppliesResolvedPipelineOnce() {
+        val engine = FakeMpvEngine()
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = provider,
+        )
+
+        controller.onContainerFrameRateChanged(24.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        val params = videoParamsNode(width = 1920, height = 1080)
+        controller.onVideoParamsChanged(params)
+        controller.onVideoParamsChanged(params)
+
+        assertEquals(
+            listOf("", "chain-MODE_A_BALANCED"),
+            engine.stringPropertyHistory("glsl-shaders"),
+        )
+        assertEquals(listOf(Anime4KPipeline.MODE_A_BALANCED), provider.requests)
+        assertEquals(Anime4KProfile.AUTO, controller.state.value.anime4kProfile)
+        assertEquals(Anime4KPipeline.MODE_A_BALANCED, controller.state.value.anime4kPipeline)
+    }
+
+    @Test
+    fun automaticPipelineDowngradesThenDisablesAfterOutputDrops() {
+        var nowMillis = 0L
+        val engine = FakeMpvEngine()
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = provider,
+            monotonicTimeMillis = { nowMillis },
+        )
+        controller.onContainerFrameRateChanged(24.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        controller.onVideoParamsChanged(videoParamsNode(width = 1280, height = 720))
+
+        nowMillis = 2_001L
+        controller.onOutputDroppedFramesChanged(0)
+        controller.onOutputDroppedFramesChanged(3)
+        assertEquals(Anime4KPipeline.MODE_B_FAST, controller.state.value.anime4kPipeline)
+        assertTrue(controller.state.value.statusMessage.orEmpty().contains("快速模式"))
+
+        nowMillis = 4_002L
+        controller.onOutputDroppedFramesChanged(3)
+        controller.onOutputDroppedFramesChanged(15)
+        assertEquals(Anime4KProfile.AUTO, controller.state.value.anime4kProfile)
+        assertEquals(null, controller.state.value.anime4kPipeline)
+        assertTrue(controller.state.value.statusMessage.orEmpty().contains("暂停增强"))
+        assertEquals(
+            listOf(
+                Anime4KPipeline.MODE_B_BALANCED,
+                Anime4KPipeline.MODE_B_FAST,
+            ),
+            provider.requests,
+        )
+    }
+
+    @Test
+    fun automaticPipelineIgnoresSparseOutputDropsOutsideTheWindow() {
+        var nowMillis = 0L
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = FakeMpvEngine(),
+            anime4kShaderProvider = provider,
+            monotonicTimeMillis = { nowMillis },
+        )
+        controller.onContainerFrameRateChanged(24.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        controller.onVideoParamsChanged(videoParamsNode(width = 1280, height = 720))
+
+        nowMillis = 2_001L
+        controller.onOutputDroppedFramesChanged(0)
+        repeat(3) { index ->
+            nowMillis += 6_000L
+            controller.onOutputDroppedFramesChanged((index + 1).toLong())
+        }
+
+        assertEquals(Anime4KPipeline.MODE_B_BALANCED, controller.state.value.anime4kPipeline)
+        assertEquals(listOf(Anime4KPipeline.MODE_B_BALANCED), provider.requests)
+    }
+
+    @Test
+    fun automaticPipelineKeepsAutoSelectedWhileSkippingHdr() {
+        val engine = FakeMpvEngine()
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = engine,
+            anime4kShaderProvider = provider,
+        )
+        controller.onContainerFrameRateChanged(24.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+
+        controller.onVideoParamsChanged(
+            videoParamsNode(width = 1920, height = 1080, gamma = "pq"),
+        )
+
+        assertEquals(Anime4KProfile.AUTO, controller.state.value.anime4kProfile)
+        assertEquals(null, controller.state.value.anime4kPipeline)
+        assertTrue(controller.state.value.statusMessage.orEmpty().contains("HDR"))
+        assertEquals(emptyList<Anime4KPipeline>(), provider.requests)
+    }
+
+    @Test
+    fun automaticSelectionUsesStandaloneContainerFrameRateProperty() {
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = FakeMpvEngine(),
+            anime4kShaderProvider = provider,
+        )
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+
+        controller.onVideoParamsChanged(
+            MPVNode.MapNode(
+                mapOf(
+                    "w" to MPVNode.IntNode(1920L),
+                    "h" to MPVNode.IntNode(1080L),
+                    "fps" to MPVNode.DoubleNode(24.0),
+                ),
+            ),
+        )
+        assertEquals(Anime4KPipeline.MODE_A_FAST, controller.state.value.anime4kPipeline)
+
+        controller.onContainerFrameRateChanged(24.0)
+
+        assertEquals(24.0, controller.state.value.videoParams.frameRate ?: 0.0, 0.0)
+        assertEquals(Anime4KPipeline.MODE_A_BALANCED, controller.state.value.anime4kPipeline)
+        assertEquals(
+            listOf(
+                Anime4KPipeline.MODE_A_FAST,
+                Anime4KPipeline.MODE_A_BALANCED,
+            ),
+            provider.requests,
+        )
+    }
+
+    @Test
+    fun automaticPipelineIgnoresDropsDuringNonNormalPlaybackSpeed() {
+        var nowMillis = 0L
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = FakeMpvEngine(),
+            anime4kShaderProvider = provider,
+            monotonicTimeMillis = { nowMillis },
+        )
+        controller.onContainerFrameRateChanged(60.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        controller.onVideoParamsChanged(videoParamsNode(width = 1920, height = 1080))
+
+        nowMillis = 2_001L
+        controller.onOutputDroppedFramesChanged(0)
+        controller.setPlaybackSpeed(2.0)
+        controller.onOutputDroppedFramesChanged(20)
+        controller.setPlaybackSpeed(1.0)
+
+        nowMillis = 4_002L
+        controller.onOutputDroppedFramesChanged(20)
+        controller.onOutputDroppedFramesChanged(31)
+
+        assertEquals(Anime4KPipeline.MODE_A_FAST, controller.state.value.anime4kPipeline)
+        assertEquals(listOf(Anime4KPipeline.MODE_A_FAST), provider.requests)
+    }
+
+    @Test
+    fun automaticPipelineIgnoresDropsWhenSourceRateExceedsDisplayRate() {
+        var nowMillis = 0L
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = FakeMpvEngine(),
+            anime4kShaderProvider = provider,
+            monotonicTimeMillis = { nowMillis },
+        )
+        controller.onContainerFrameRateChanged(60.0)
+        controller.onDisplayFrameRateChanged(30.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        controller.onVideoParamsChanged(videoParamsNode(width = 1920, height = 1080))
+
+        nowMillis = 2_001L
+        controller.onOutputDroppedFramesChanged(0)
+        controller.onOutputDroppedFramesChanged(20)
+
+        assertEquals(Anime4KPipeline.MODE_A_FAST, controller.state.value.anime4kPipeline)
+        assertEquals(listOf(Anime4KPipeline.MODE_A_FAST), provider.requests)
+    }
+
+    @Test
+    fun automaticPipelineResetsDropWindowAcrossPauseAndSeek() {
+        var nowMillis = 0L
+        val provider = RecordingAnime4KShaderProvider()
+        val controller = MpvController(
+            engine = FakeMpvEngine(),
+            anime4kShaderProvider = provider,
+            monotonicTimeMillis = { nowMillis },
+        )
+        controller.onContainerFrameRateChanged(24.0)
+        controller.setAnime4KProfile(Anime4KProfile.AUTO)
+        controller.onVideoParamsChanged(videoParamsNode(width = 1280, height = 720))
+
+        nowMillis = 2_001L
+        controller.onOutputDroppedFramesChanged(0)
+        controller.setPaused(true)
+        controller.onOutputDroppedFramesChanged(10)
+        controller.setPaused(false)
+        nowMillis = 4_002L
+        controller.onOutputDroppedFramesChanged(10)
+        controller.seekTo(30_000L)
+        controller.onOutputDroppedFramesChanged(20)
+        nowMillis = 6_003L
+        controller.onOutputDroppedFramesChanged(20)
+        controller.onOutputDroppedFramesChanged(22)
+
+        assertEquals(Anime4KPipeline.MODE_B_BALANCED, controller.state.value.anime4kPipeline)
+        assertEquals(listOf(Anime4KPipeline.MODE_B_BALANCED), provider.requests)
     }
 
     @Test
@@ -450,18 +666,31 @@ class MpvControllerAdvancedControlsTest {
             ),
         )
 
+    private fun videoParamsNode(
+        width: Int,
+        height: Int,
+        gamma: String? = null,
+    ): MPVNode {
+        val values = mutableMapOf<String, MPVNode>(
+            "w" to MPVNode.IntNode(width.toLong()),
+            "h" to MPVNode.IntNode(height.toLong()),
+        )
+        gamma?.let { values["gamma"] = MPVNode.StringNode(it) }
+        return MPVNode.MapNode(values)
+    }
+
     private class FixedAnime4KShaderProvider(
         private val chain: String,
     ) : Anime4KShaderProvider {
-        override fun shaderChain(profile: Anime4KProfile): String = chain
+        override fun shaderChain(pipeline: Anime4KPipeline): String = chain
     }
 
     private class RecordingAnime4KShaderProvider : Anime4KShaderProvider {
-        val requests = mutableListOf<Anime4KProfile>()
+        val requests = mutableListOf<Anime4KPipeline>()
 
-        override fun shaderChain(profile: Anime4KProfile): String {
-            requests += profile
-            return "chain-${profile.name}"
+        override fun shaderChain(pipeline: Anime4KPipeline): String {
+            requests += pipeline
+            return "chain-${pipeline.name}"
         }
     }
 }

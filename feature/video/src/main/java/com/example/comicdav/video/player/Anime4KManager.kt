@@ -11,6 +11,22 @@ data class Anime4KStartupCompatibility(
     val statusMessage: String? = null,
 )
 
+enum class Anime4KPipeline {
+    MODE_A_FAST,
+    MODE_A_BALANCED,
+    MODE_B_FAST,
+    MODE_B_BALANCED,
+    MODE_C_A_FAST,
+    MODE_C_A_BALANCED,
+    MODE_C_A_HIGH,
+}
+
+internal data class Anime4KAutoSelection(
+    val pipeline: Anime4KPipeline? = null,
+    val statusMessage: String? = null,
+    val waitingForVideoParams: Boolean = false,
+)
+
 @Suppress("UNUSED_PARAMETER")
 internal fun anime4kStartupCompatibility(
     profile: Anime4KProfile,
@@ -25,37 +41,128 @@ internal fun anime4kStartupCompatibility(
 internal val expectedAnime4KShaderAssetNames = listOf(
     "Anime4K_Clamp_Highlights.glsl",
     "Anime4K_Restore_CNN_S.glsl",
+    "Anime4K_Restore_CNN_M.glsl",
     "Anime4K_Restore_CNN_L.glsl",
+    "Anime4K_Restore_CNN_Soft_S.glsl",
+    "Anime4K_Restore_CNN_Soft_M.glsl",
     "Anime4K_Upscale_CNN_x2_S.glsl",
+    "Anime4K_Upscale_CNN_x2_M.glsl",
     "Anime4K_Upscale_CNN_x2_L.glsl",
+    "Anime4K_Upscale_Denoise_CNN_x2_S.glsl",
+    "Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
     "Anime4K_Upscale_Denoise_CNN_x2_L.glsl",
     "Anime4K_AutoDownscalePre_x2.glsl",
+    "Anime4K_AutoDownscalePre_x4.glsl",
 )
 
 internal fun anime4kShaderChain(
-    profile: Anime4KProfile,
+    pipeline: Anime4KPipeline,
     shaderDir: File,
 ): String {
-    val shaderFiles = anime4kShaderNames(profile).map { name -> File(shaderDir, name) }
-    if (shaderFiles.isEmpty()) return ""
+    val shaderFiles = anime4kShaderNames(pipeline).map { name -> File(shaderDir, name) }
     if (shaderFiles.any { file -> !file.isFile }) return ""
     return shaderFiles.joinToString(":") { file -> file.absolutePath }
 }
 
-internal fun anime4kShaderNames(profile: Anime4KProfile): List<String> =
+internal fun anime4kPipelineForProfile(profile: Anime4KProfile): Anime4KPipeline? =
     when (profile) {
-        Anime4KProfile.OFF -> emptyList()
-        Anime4KProfile.EFFICIENCY -> listOf(
+        Anime4KProfile.OFF,
+        Anime4KProfile.AUTO,
+        -> null
+        Anime4KProfile.EFFICIENCY -> Anime4KPipeline.MODE_A_FAST
+        Anime4KProfile.EXTREME -> Anime4KPipeline.MODE_C_A_HIGH
+    }
+
+internal fun selectAnime4KPipeline(
+    videoParams: VideoParams,
+    forceFast: Boolean = false,
+): Anime4KAutoSelection {
+    val width = videoParams.width
+    val height = videoParams.height
+    if (width == null || height == null || width <= 0 || height <= 0) {
+        return Anime4KAutoSelection(waitingForVideoParams = true)
+    }
+    if (videoParams.gamma.isHdrTransfer()) {
+        return Anime4KAutoSelection(statusMessage = "Anime4K 自动：HDR 视频已跳过")
+    }
+
+    // Resolution is a conservative proxy for the degradation classes described by Anime4K.
+    // Manual profiles remain available because dimensions alone cannot identify blur or ringing.
+    val sourceShortEdge = minOf(width, height)
+    if (sourceShortEdge > AUTO_ANIME4K_MAX_SOURCE_HEIGHT) {
+        return Anime4KAutoSelection(statusMessage = "Anime4K 自动：高分辨率视频无需增强")
+    }
+
+    val useFastPipeline =
+        forceFast ||
+            videoParams.frameRate == null ||
+            videoParams.frameRate > AUTO_ANIME4K_BALANCED_MAX_FPS
+    val pipeline = when {
+        sourceShortEdge >= AUTO_ANIME4K_MODE_A_MIN_HEIGHT ->
+            if (useFastPipeline) Anime4KPipeline.MODE_A_FAST else Anime4KPipeline.MODE_A_BALANCED
+        sourceShortEdge >= AUTO_ANIME4K_MODE_B_MIN_HEIGHT ->
+            if (useFastPipeline) Anime4KPipeline.MODE_B_FAST else Anime4KPipeline.MODE_B_BALANCED
+        else ->
+            if (useFastPipeline) Anime4KPipeline.MODE_C_A_FAST else Anime4KPipeline.MODE_C_A_BALANCED
+    }
+    return Anime4KAutoSelection(pipeline = pipeline)
+}
+
+internal fun anime4kShaderNames(pipeline: Anime4KPipeline): List<String> =
+    when (pipeline) {
+        Anime4KPipeline.MODE_A_FAST -> listOf(
             "Anime4K_Clamp_Highlights.glsl",
             "Anime4K_Restore_CNN_S.glsl",
-            "Anime4K_Upscale_CNN_x2_S.glsl",
+            "Anime4K_Upscale_CNN_x2_M.glsl",
             "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
             "Anime4K_Upscale_CNN_x2_S.glsl",
         )
-        Anime4KProfile.EXTREME -> listOf(
+        Anime4KPipeline.MODE_A_BALANCED -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Restore_CNN_M.glsl",
+            "Anime4K_Upscale_CNN_x2_M.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KPipeline.MODE_B_FAST -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Restore_CNN_Soft_S.glsl",
+            "Anime4K_Upscale_CNN_x2_M.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KPipeline.MODE_B_BALANCED -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Restore_CNN_Soft_M.glsl",
+            "Anime4K_Upscale_CNN_x2_M.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KPipeline.MODE_C_A_FAST -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Upscale_Denoise_CNN_x2_S.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
+            "Anime4K_Restore_CNN_S.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KPipeline.MODE_C_A_BALANCED -> listOf(
+            "Anime4K_Clamp_Highlights.glsl",
+            "Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
+            "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
+            "Anime4K_Restore_CNN_S.glsl",
+            "Anime4K_Upscale_CNN_x2_S.glsl",
+        )
+        Anime4KPipeline.MODE_C_A_HIGH -> listOf(
             "Anime4K_Clamp_Highlights.glsl",
             "Anime4K_Upscale_Denoise_CNN_x2_L.glsl",
             "Anime4K_AutoDownscalePre_x2.glsl",
+            "Anime4K_AutoDownscalePre_x4.glsl",
             "Anime4K_Restore_CNN_L.glsl",
             "Anime4K_Upscale_CNN_x2_L.glsl",
         )
@@ -82,11 +189,11 @@ internal fun staleAnime4KShaderFiles(
 internal fun anime4kShaderAssetPath(assetName: String): String = "shaders/$assetName"
 
 interface Anime4KShaderProvider {
-    fun shaderChain(profile: Anime4KProfile): String
+    fun shaderChain(pipeline: Anime4KPipeline): String
 }
 
 object EmptyAnime4KShaderProvider : Anime4KShaderProvider {
-    override fun shaderChain(profile: Anime4KProfile): String = ""
+    override fun shaderChain(pipeline: Anime4KPipeline): String = ""
 }
 
 class Anime4KManager(context: Context) : Anime4KShaderProvider {
@@ -109,9 +216,12 @@ class Anime4KManager(context: Context) : Anime4KShaderProvider {
         }.getOrDefault(false)
     }
 
-    override fun shaderChain(profile: Anime4KProfile): String {
+    fun shaderChain(profile: Anime4KProfile): String =
+        anime4kPipelineForProfile(profile)?.let(::shaderChain).orEmpty()
+
+    override fun shaderChain(pipeline: Anime4KPipeline): String {
         return anime4kShaderChain(
-            profile = profile,
+            pipeline = pipeline,
             shaderDir = shaderDir,
         )
     }
@@ -125,3 +235,29 @@ class Anime4KManager(context: Context) : Anime4KShaderProvider {
         destination.writeBytes(assetBytes)
     }
 }
+
+internal val Anime4KPipeline.isFastAutoPipeline: Boolean
+    get() = when (this) {
+        Anime4KPipeline.MODE_A_FAST,
+        Anime4KPipeline.MODE_B_FAST,
+        Anime4KPipeline.MODE_C_A_FAST,
+        -> true
+        else -> false
+    }
+
+internal val Anime4KPipeline.isBalancedAutoPipeline: Boolean
+    get() = when (this) {
+        Anime4KPipeline.MODE_A_BALANCED,
+        Anime4KPipeline.MODE_B_BALANCED,
+        Anime4KPipeline.MODE_C_A_BALANCED,
+        -> true
+        else -> false
+    }
+
+private fun String?.isHdrTransfer(): Boolean =
+    this?.lowercase() in setOf("pq", "hlg")
+
+private const val AUTO_ANIME4K_MAX_SOURCE_HEIGHT = 1_200
+private const val AUTO_ANIME4K_MODE_A_MIN_HEIGHT = 900
+private const val AUTO_ANIME4K_MODE_B_MIN_HEIGHT = 600
+private const val AUTO_ANIME4K_BALANCED_MAX_FPS = 30.5

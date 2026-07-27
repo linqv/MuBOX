@@ -39,6 +39,8 @@ internal class MpvPropertyEventRouter(
             "duration" -> controller.onDurationChanged(value)
             "time-pos" -> controller.onPositionChanged(value)
             "speed" -> controller.onSpeedChanged(value)
+            "container-fps" -> controller.onContainerFrameRateChanged(value)
+            "display-fps" -> controller.onDisplayFrameRateChanged(value)
             "volume" -> controller.onVolumeChanged(value)
             "audio-delay" -> controller.onAudioDelayChanged(value)
             "video-params/aspect" -> controller.onVideoAspectChanged(value)

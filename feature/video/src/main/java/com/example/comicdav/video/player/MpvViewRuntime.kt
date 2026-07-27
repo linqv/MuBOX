@@ -63,19 +63,20 @@ internal class MpvStartupOptionsApplier(
         nativeApi.setOptionString("msg-level", "all=warn")
 
         initializeAnime4K()
-        val shaderChain = if (configuration.anime4kProfile != Anime4KProfile.OFF) {
+        val anime4kRequested = configuration.anime4kProfile != Anime4KProfile.OFF
+        val shaderChain = if (anime4kRequested) {
             anime4KShaderChain(configuration.anime4kProfile)
         } else {
             ""
         }
-        if (shaderChain.isNotBlank()) {
-            if (configuration.videoOutputMode == VideoOutputMode.AUTO) {
-                if (configuration.gpuApiMode != GpuApiMode.VULKAN) {
-                    nativeApi.setOptionString("opengl-pbo", "yes")
-                    nativeApi.setOptionString("opengl-early-flush", "no")
-                }
-                nativeApi.setOptionString("vd-lavc-dr", "yes")
+        if (anime4kRequested && configuration.videoOutputMode == VideoOutputMode.AUTO) {
+            if (configuration.gpuApiMode != GpuApiMode.VULKAN) {
+                nativeApi.setOptionString("opengl-pbo", "yes")
+                nativeApi.setOptionString("opengl-early-flush", "no")
             }
+            nativeApi.setOptionString("vd-lavc-dr", "yes")
+        }
+        if (shaderChain.isNotBlank()) {
             nativeApi.setOptionString("glsl-shaders", shaderChain)
         }
         nativeApi.setPropertyBoolean("keep-open", true)
@@ -88,19 +89,23 @@ internal data class MpvObservedProperty(
     val format: Int,
 )
 
+// libmpv requires compound properties to be observed as MPV_FORMAT_NODE.
+// NODE_ARRAY and NODE_MAP describe the returned node's contents, not the requested format.
 internal val mpvObservedPlaybackProperties: List<MpvObservedProperty> = listOf(
     MpvObservedProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG),
     MpvObservedProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG),
-    MpvObservedProperty("track-list", MPVLib.MpvFormat.MPV_FORMAT_NODE_ARRAY),
+    MpvObservedProperty("track-list", MPVLib.MpvFormat.MPV_FORMAT_NODE),
     MpvObservedProperty("aid", MPVLib.MpvFormat.MPV_FORMAT_INT64),
     MpvObservedProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_INT64),
     MpvObservedProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
+    MpvObservedProperty("container-fps", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
+    MpvObservedProperty("display-fps", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("volume", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("audio-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
-    MpvObservedProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP),
-    MpvObservedProperty("video-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE_MAP),
+    MpvObservedProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE),
+    MpvObservedProperty("video-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE),
     MpvObservedProperty("video-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("video-out-params/aspect", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("hwdec", MPVLib.MpvFormat.MPV_FORMAT_STRING),

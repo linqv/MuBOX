@@ -28,6 +28,7 @@ enum class GpuApiMode {
 
 enum class Anime4KProfile {
     OFF,
+    AUTO,
     EFFICIENCY,
     EXTREME,
 }

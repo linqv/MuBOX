@@ -27,6 +27,7 @@ data class MpvPlayerState(
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
     val statusMessage: String? = null,
     val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
+    val anime4kPipeline: Anime4KPipeline? = null,
     val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
     val gestureState: VideoGestureState = VideoGestureState(),
     val audioTracks: List<MpvTrack> = emptyList(),
@@ -126,6 +127,8 @@ data class VideoParams(
     val frameRate: Double? = null,
     val rotationDegrees: Int? = null,
     val aspectRatio: Double? = null,
+    val primaries: String? = null,
+    val gamma: String? = null,
 )
 
 interface MpvEngine {
@@ -222,11 +225,13 @@ class MpvController(
     private val anime4kShaderProvider: Anime4KShaderProvider = EmptyAnime4KShaderProvider,
     initialAnime4KProfile: Anime4KProfile = Anime4KProfile.OFF,
     initialAnime4KStatusMessage: String? = null,
+    private val monotonicTimeMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private val _state = MutableStateFlow(
         MpvPlayerState(
             statusMessage = initialAnime4KStatusMessage,
             anime4kProfile = initialAnime4KProfile,
+            anime4kPipeline = anime4kPipelineForProfile(initialAnime4KProfile),
         ),
     )
     val state: StateFlow<MpvPlayerState> = _state.asStateFlow()
@@ -240,6 +245,13 @@ class MpvController(
     private var speedBeforeTemporary: Double? = null
     private var horizontalSwipeStartPositionMillis: Long? = null
     private var horizontalSwipeAccumulatedFraction: Double = 0.0
+    private var lastAutoVideoParams: VideoParams? = null
+    private var autoForceFast = false
+    private var autoDisabledByDrops = false
+    private var autoDropBaseline: Long? = null
+    private var autoDropWindowStartMillis: Long? = null
+    private var autoDropSuppressedUntilMillis: Long = 0L
+    private var displayFrameRate: Double? = null
 
     fun load(
         uri: String,
@@ -258,9 +270,19 @@ class MpvController(
             errorMessage = null,
             activeHwdec = null,
             activeVideoDecoder = null,
+            decoderDroppedFrames = null,
+            outputDroppedFrames = null,
             videoParams = VideoParams(),
             videoOutParams = VideoParams(),
         )
+        if (_state.value.anime4kProfile == Anime4KProfile.AUTO) {
+            resetAutoAnime4KResolution()
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kPipeline = null,
+                statusMessage = null,
+            )
+        }
         engine.setPropertyString("force-media-title", displayName)
         engine.loadFile(uri) {
             onFileLoaded()
@@ -285,7 +307,7 @@ class MpvController(
 
     fun setPaused(paused: Boolean) {
         if (!canWriteEngine()) return
-        _state.value = _state.value.copy(isPaused = paused)
+        updatePausedState(paused)
         engine.setPropertyBoolean("pause", paused)
     }
 
@@ -302,6 +324,7 @@ class MpvController(
         }
         _progress.value = _progress.value.copy(positionMillis = clampedPosition)
         _state.value = _state.value.copy(positionMillis = clampedPosition)
+        suppressAutomaticAnime4KDropEvaluation()
         engine.command("seek", (clampedPosition / 1000.0).toString(), "absolute")
     }
 
@@ -574,7 +597,26 @@ class MpvController(
     }
 
     fun onSpeedChanged(speed: Double) {
-        _state.value = _state.value.copy(playbackSpeed = speed.coerceAtLeast(MIN_PLAYBACK_SPEED))
+        val clampedSpeed = speed.coerceAtLeast(MIN_PLAYBACK_SPEED)
+        if (clampedSpeed == _state.value.playbackSpeed) return
+        _state.value = _state.value.copy(playbackSpeed = clampedSpeed)
+        suppressAutomaticAnime4KDropEvaluation()
+    }
+
+    fun onContainerFrameRateChanged(frameRate: Double) {
+        val validFrameRate = frameRate.validFrameRate()
+        if (validFrameRate == _state.value.videoParams.frameRate) return
+        _state.value = _state.value.copy(
+            videoParams = _state.value.videoParams.copy(frameRate = validFrameRate),
+        )
+        applyAutomaticAnime4KIfVideoParamsChanged()
+    }
+
+    fun onDisplayFrameRateChanged(frameRate: Double) {
+        val validFrameRate = frameRate.validFrameRate()
+        if (validFrameRate == displayFrameRate) return
+        displayFrameRate = validFrameRate
+        suppressAutomaticAnime4KDropEvaluation()
     }
 
     fun onAudioTrackChanged(trackId: Int?) {
@@ -618,14 +660,21 @@ class MpvController(
     }
 
     fun onOutputDroppedFramesChanged(value: Long) {
-        _state.value = _state.value.copy(outputDroppedFrames = value.coerceAtLeast(0L))
+        val droppedFrames = value.coerceAtLeast(0L)
+        val previousDroppedFrames = _state.value.outputDroppedFrames ?: 0L
+        _state.value = _state.value.copy(outputDroppedFrames = droppedFrames)
+        maybeDowngradeAutomaticAnime4K(
+            droppedFrames = droppedFrames,
+            previousDroppedFrames = previousDroppedFrames,
+        )
     }
 
     fun onVideoParamsChanged(params: MPVNode) {
         val parsedParams = parseVideoParams(params)
         _state.value = _state.value.let { state ->
-            state.copy(videoParams = parsedParams.withAspectFrom(state.videoParams))
+            state.copy(videoParams = parsedParams.withObservedValuesFrom(state.videoParams))
         }
+        applyAutomaticAnime4KIfVideoParamsChanged()
     }
 
     fun onVideoOutParamsChanged(params: MPVNode) {
@@ -652,11 +701,11 @@ class MpvController(
     }
 
     fun onPauseChanged(paused: Boolean) {
-        _state.value = _state.value.copy(isPaused = paused)
+        updatePausedState(paused)
     }
 
     fun markPaused(paused: Boolean) {
-        _state.value = _state.value.copy(isPaused = paused)
+        updatePausedState(paused)
     }
 
     fun onPlaybackEnded() {
@@ -724,25 +773,41 @@ class MpvController(
 
     private fun applyPlaybackSpeed(speed: Double) {
         val clampedSpeed = speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
+        val speedChanged = clampedSpeed != _state.value.playbackSpeed
         engine.setPropertyDouble("speed", clampedSpeed)
         _state.value = _state.value.copy(playbackSpeed = clampedSpeed)
+        if (speedChanged) {
+            suppressAutomaticAnime4KDropEvaluation()
+        }
     }
 
     private fun applyAnime4KProfile(profile: Anime4KProfile) {
         if (profile == Anime4KProfile.OFF) {
+            resetAutoAnime4KResolution()
             engine.setPropertyString("glsl-shaders", "")
             _state.value = _state.value.copy(
                 anime4kProfile = Anime4KProfile.OFF,
+                anime4kPipeline = null,
                 statusMessage = null,
             )
             return
         }
 
-        val shaderChain = anime4kShaderProvider.shaderChain(profile)
+        if (profile == Anime4KProfile.AUTO) {
+            resetAutoAnime4KResolution()
+            lastAutoVideoParams = _state.value.videoParams
+            applyAutomaticAnime4K()
+            return
+        }
+
+        resetAutoAnime4KResolution()
+        val pipeline = checkNotNull(anime4kPipelineForProfile(profile))
+        val shaderChain = anime4kShaderProvider.shaderChain(pipeline)
         if (shaderChain.isBlank()) {
             engine.setPropertyString("glsl-shaders", "")
             _state.value = _state.value.copy(
                 anime4kProfile = Anime4KProfile.OFF,
+                anime4kPipeline = null,
                 statusMessage = "Anime4K 着色器加载失败",
             )
             return
@@ -751,8 +816,156 @@ class MpvController(
         engine.setPropertyString("glsl-shaders", shaderChain)
         _state.value = _state.value.copy(
             anime4kProfile = profile,
+            anime4kPipeline = pipeline,
             statusMessage = null,
         )
+    }
+
+    private fun applyAutomaticAnime4K(statusOverride: String? = null) {
+        if (autoDisabledByDrops) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kProfile = Anime4KProfile.AUTO,
+                anime4kPipeline = null,
+                statusMessage = statusOverride ?: "Anime4K 自动：持续丢帧，已暂停增强",
+            )
+            autoDropBaseline = null
+            autoDropWindowStartMillis = null
+            autoDropSuppressedUntilMillis = 0L
+            return
+        }
+
+        val selection = selectAnime4KPipeline(
+            videoParams = _state.value.videoParams,
+            forceFast = autoForceFast,
+        )
+        val pipeline = selection.pipeline
+        if (pipeline == null) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kProfile = Anime4KProfile.AUTO,
+                anime4kPipeline = null,
+                statusMessage = selection.statusMessage,
+            )
+            autoDropBaseline = null
+            autoDropWindowStartMillis = null
+            autoDropSuppressedUntilMillis = 0L
+            return
+        }
+
+        val shaderChain = anime4kShaderProvider.shaderChain(pipeline)
+        if (shaderChain.isBlank()) {
+            engine.setPropertyString("glsl-shaders", "")
+            _state.value = _state.value.copy(
+                anime4kProfile = Anime4KProfile.AUTO,
+                anime4kPipeline = null,
+                statusMessage = "Anime4K 自动：着色器加载失败",
+            )
+            autoDropBaseline = null
+            autoDropWindowStartMillis = null
+            autoDropSuppressedUntilMillis = 0L
+            return
+        }
+
+        engine.setPropertyString("glsl-shaders", shaderChain)
+        _state.value = _state.value.copy(
+            anime4kProfile = Anime4KProfile.AUTO,
+            anime4kPipeline = pipeline,
+            statusMessage = statusOverride,
+        )
+        suppressAutomaticAnime4KDropEvaluation()
+    }
+
+    private fun maybeDowngradeAutomaticAnime4K(
+        droppedFrames: Long,
+        previousDroppedFrames: Long,
+    ) {
+        if (_state.value.anime4kProfile != Anime4KProfile.AUTO) return
+        val pipeline = _state.value.anime4kPipeline ?: return
+        val nowMillis = monotonicTimeMillis()
+        if (
+            _state.value.isPaused ||
+            !_state.value.playbackSpeed.isNormalPlaybackSpeed() ||
+            sourceFrameRateExceedsDisplayRate() ||
+            nowMillis < autoDropSuppressedUntilMillis
+        ) {
+            autoDropBaseline = droppedFrames
+            autoDropWindowStartMillis = null
+            return
+        }
+        autoDropSuppressedUntilMillis = 0L
+        val windowStartMillis = autoDropWindowStartMillis
+        if (windowStartMillis == null) {
+            autoDropBaseline = droppedFrames
+            autoDropWindowStartMillis = nowMillis
+            return
+        }
+        if (nowMillis - windowStartMillis > AUTO_ANIME4K_DROP_WINDOW_MILLIS) {
+            autoDropBaseline = previousDroppedFrames.coerceAtMost(droppedFrames)
+            autoDropWindowStartMillis = nowMillis
+        } else if (droppedFrames < (autoDropBaseline ?: 0L)) {
+            autoDropBaseline = droppedFrames
+            autoDropWindowStartMillis = nowMillis
+        }
+        val baseline = autoDropBaseline ?: droppedFrames
+        val droppedSinceApply = droppedFrames - baseline
+        when {
+            pipeline.isBalancedAutoPipeline &&
+                droppedSinceApply >= AUTO_ANIME4K_BALANCED_DROP_THRESHOLD -> {
+                autoForceFast = true
+                applyAutomaticAnime4K("Anime4K 自动：检测到丢帧，已降为快速模式")
+            }
+            pipeline.isFastAutoPipeline &&
+                droppedSinceApply >= AUTO_ANIME4K_FAST_DISABLE_DROP_THRESHOLD -> {
+                autoDisabledByDrops = true
+                applyAutomaticAnime4K()
+            }
+        }
+    }
+
+    private fun applyAutomaticAnime4KIfVideoParamsChanged() {
+        val currentParams = _state.value.videoParams
+        if (
+            _state.value.anime4kProfile != Anime4KProfile.AUTO ||
+            currentParams == lastAutoVideoParams
+        ) {
+            return
+        }
+        lastAutoVideoParams = currentParams
+        applyAutomaticAnime4K()
+    }
+
+    private fun updatePausedState(paused: Boolean) {
+        if (paused == _state.value.isPaused) return
+        _state.value = _state.value.copy(isPaused = paused)
+        suppressAutomaticAnime4KDropEvaluation()
+    }
+
+    private fun suppressAutomaticAnime4KDropEvaluation() {
+        if (_state.value.anime4kProfile != Anime4KProfile.AUTO) return
+        val nowMillis = monotonicTimeMillis()
+        autoDropBaseline = _state.value.outputDroppedFrames
+        autoDropWindowStartMillis = null
+        autoDropSuppressedUntilMillis = maxOf(
+            autoDropSuppressedUntilMillis,
+            nowMillis + AUTO_ANIME4K_DROP_SUPPRESSION_MILLIS,
+        )
+    }
+
+    private fun sourceFrameRateExceedsDisplayRate(): Boolean {
+        val sourceFrameRate = _state.value.videoParams.frameRate ?: return false
+        val currentDisplayFrameRate = displayFrameRate ?: return false
+        return sourceFrameRate * _state.value.playbackSpeed >
+            currentDisplayFrameRate * AUTO_ANIME4K_DISPLAY_RATE_TOLERANCE
+    }
+
+    private fun resetAutoAnime4KResolution() {
+        lastAutoVideoParams = null
+        autoForceFast = false
+        autoDisabledByDrops = false
+        autoDropBaseline = null
+        autoDropWindowStartMillis = null
+        autoDropSuppressedUntilMillis = 0L
     }
 
     private fun speedHudText(speed: Double): String {
@@ -816,9 +1029,16 @@ class MpvController(
             codec = node.nodeString("codec"),
             width = node.nodeInt("w")?.toInt() ?: node.nodeInt("dw")?.toInt(),
             height = node.nodeInt("h")?.toInt() ?: node.nodeInt("dh")?.toInt(),
-            frameRate = node.nodeDouble("fps"),
             rotationDegrees = node.nodeInt("rotate")?.toInt(),
             aspectRatio = node.nodeDouble("aspect")?.validAspectRatio(),
+            primaries = node.nodeString("primaries"),
+            gamma = node.nodeString("gamma"),
+        )
+
+    private fun VideoParams.withObservedValuesFrom(previous: VideoParams): VideoParams =
+        copy(
+            frameRate = frameRate ?: previous.frameRate,
+            aspectRatio = aspectRatio ?: previous.aspectRatio,
         )
 
     private fun VideoParams.withAspectFrom(previous: VideoParams): VideoParams =
@@ -826,6 +1046,12 @@ class MpvController(
 
     private fun Double.validAspectRatio(): Double? =
         takeIf { it > 0.0 && !it.isNaN() && !it.isInfinite() }
+
+    private fun Double.validFrameRate(): Double? =
+        takeIf { it > 0.0 && !it.isNaN() && !it.isInfinite() }
+
+    private fun Double.isNormalPlaybackSpeed(): Boolean =
+        abs(this - 1.0) < NORMAL_PLAYBACK_SPEED_EPSILON
 
     private fun MPVNode.nodeString(key: String): String? = this[key]?.asString()
 
@@ -877,5 +1103,11 @@ class MpvController(
         const val DOUBLE_TAP_SEEK_MILLIS = 10_000L
         const val MIN_VIDEO_ZOOM = -1.0f
         const val MAX_VIDEO_ZOOM = 2.0f
+        const val AUTO_ANIME4K_BALANCED_DROP_THRESHOLD = 3L
+        const val AUTO_ANIME4K_FAST_DISABLE_DROP_THRESHOLD = 12L
+        const val AUTO_ANIME4K_DROP_WINDOW_MILLIS = 5_000L
+        const val AUTO_ANIME4K_DROP_SUPPRESSION_MILLIS = 2_000L
+        const val AUTO_ANIME4K_DISPLAY_RATE_TOLERANCE = 1.02
+        const val NORMAL_PLAYBACK_SPEED_EPSILON = 0.001
     }
 }

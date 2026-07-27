@@ -883,6 +883,7 @@ private fun VideoProxyDiagnosticsMode.label(): String =
 private fun anime4kProfileLabel(profile: Anime4KProfile): String =
     when (profile) {
         Anime4KProfile.OFF -> "关闭"
+        Anime4KProfile.AUTO -> "自动"
         Anime4KProfile.EFFICIENCY -> "效率"
         Anime4KProfile.EXTREME -> "极致"
     }

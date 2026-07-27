@@ -65,9 +65,9 @@ class PlayerOptionPanelUiTest {
     }
 
     @Test
-    fun anime4KControlsExposeThreeProfiles() {
+    fun anime4KControlsExposeAutomaticAndManualProfiles() {
         assertEquals(
-            listOf("关闭", "效率", "极致"),
+            listOf("关闭", "自动", "效率", "极致"),
             Anime4KProfile.entries.map(::anime4kProfileControlLabel),
         )
     }

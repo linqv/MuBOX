@@ -1,5 +1,7 @@
 package com.example.comicdav.video.player
 
+import com.example.comicdav.core.model.settings.Anime4KProfile
+
 data class VideoPlayerStatisticsSnapshot(
     val media: MediaInfoSnapshot,
     val runtime: MpvRuntimeStatistics,
@@ -31,6 +33,7 @@ data class VideoPlayerStatisticsSnapshot(
         media.subtitleSource?.let { lines += "subtitle=$it" }
         lines += "decoder=${runtime.decoder ?: "unknown"}"
         lines += "renderer=${runtime.renderer ?: "unknown"}"
+        lines += "anime4k-chain=${runtime.anime4kChain}"
         runtime.droppedFrames?.let { lines += "dropped=$it" }
         runtime.avSyncSeconds?.let { lines += "av-sync=${it}s" }
         runtime.cacheUsedBytes?.let { lines += "cache=$it" }
@@ -80,6 +83,7 @@ fun buildVideoPlayerStatisticsSnapshot(
             ).takeIf { it.isNotEmpty() }?.sum(),
             avSyncSeconds = null,
             cacheUsedBytes = null,
+            anime4kChain = anime4kChainLabel(state),
         ),
         proxy = proxy,
     )
@@ -118,7 +122,36 @@ data class MpvRuntimeStatistics(
     val droppedFrames: Long?,
     val avSyncSeconds: Double?,
     val cacheUsedBytes: Long?,
+    val anime4kChain: String = "关闭",
 )
+
+internal fun anime4kChainLabel(state: MpvPlayerState): String {
+    state.anime4kPipeline?.let { return it.displayLabel }
+    return when (state.anime4kProfile) {
+        Anime4KProfile.OFF -> "关闭"
+        Anime4KProfile.AUTO -> {
+            val inactiveReason = state.statusMessage
+                ?.takeIf { it.startsWith(ANIME4K_AUTO_STATUS_PREFIX) }
+                ?.removePrefix(ANIME4K_AUTO_STATUS_PREFIX)
+                ?.takeIf { it.isNotBlank() }
+            inactiveReason?.let { "自动（$it）" } ?: "自动（等待视频参数）"
+        }
+        Anime4KProfile.EFFICIENCY,
+        Anime4KProfile.EXTREME,
+        -> "未启用"
+    }
+}
+
+private val Anime4KPipeline.displayLabel: String
+    get() = when (this) {
+        Anime4KPipeline.MODE_A_FAST -> "模式 A（快速）"
+        Anime4KPipeline.MODE_A_BALANCED -> "模式 A（平衡）"
+        Anime4KPipeline.MODE_B_FAST -> "模式 B（快速）"
+        Anime4KPipeline.MODE_B_BALANCED -> "模式 B（平衡）"
+        Anime4KPipeline.MODE_C_A_FAST -> "模式 C+A（快速）"
+        Anime4KPipeline.MODE_C_A_BALANCED -> "模式 C+A（平衡）"
+        Anime4KPipeline.MODE_C_A_HIGH -> "模式 C+A（高质量）"
+    }
 
 data class VideoProxyStatistics(
     val currentRange: String?,
@@ -148,6 +181,7 @@ data class VideoProxyStatistics(
 }
 
 private const val REDACTED_PATH = "<redacted-path>"
+private const val ANIME4K_AUTO_STATUS_PREFIX = "Anime4K 自动："
 
 private fun VideoParams.resolutionLabel(): String? {
     val w = width ?: return null
