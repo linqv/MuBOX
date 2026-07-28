@@ -35,6 +35,7 @@ internal fun AppSourcesRoute(
     downloadActions: AppDownloadActions,
     onChooseLocalDirectory: () -> Unit,
     onSelectionChange: (AppSelection) -> Unit,
+    gridVideoThumbnailsEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     if (!state.isWebDavOpen) {
@@ -46,6 +47,7 @@ internal fun AppSourcesRoute(
             videoActions = videoActions,
             onChooseLocalDirectory = onChooseLocalDirectory,
             onSelectionChange = onSelectionChange,
+            gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
             modifier = modifier,
         )
         return
@@ -106,6 +108,9 @@ internal fun AppSourcesRoute(
         onSearchQueryChange = webDavViewModel::updateSearchQuery,
         onSortFieldChange = webDavViewModel::updateSortField,
         onToggleSortDirection = webDavViewModel::toggleSortDirection,
+        onToggleViewMode = webDavViewModel::toggleViewMode,
+        gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
+        onRequestVideoThumbnail = videoActions::requestWebDavBrowserVideoThumbnail,
         onRefresh = webDavViewModel::refreshCurrentDirectory,
         selectedFile = state.selection.webDavFileOrNull,
         modifier = modifier,
@@ -121,6 +126,7 @@ private fun LocalSourcesRoute(
     videoActions: AppVideoActions,
     onChooseLocalDirectory: () -> Unit,
     onSelectionChange: (AppSelection) -> Unit,
+    gridVideoThumbnailsEnabled: Boolean,
     modifier: Modifier,
     webDavMessage: String? = null,
 ) {
@@ -142,6 +148,9 @@ private fun LocalSourcesRoute(
         onSearchQueryChange = fileDirectoryViewModel::updateSearchQuery,
         onSortFieldChange = fileDirectoryViewModel::updateSortField,
         onToggleSortDirection = fileDirectoryViewModel::toggleSortDirection,
+        onToggleViewMode = fileDirectoryViewModel::toggleViewMode,
+        gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
+        onRequestVideoThumbnail = videoActions::requestLocalBrowserVideoThumbnail,
         onRefresh = fileDirectoryViewModel::refreshCurrentDirectory,
         onDeleteSource = sourceActions::deleteSource,
         onDeleteLocalSourceWithFiles = sourceActions::deleteLocalSourceWithFiles,

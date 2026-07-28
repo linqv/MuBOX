@@ -4,6 +4,7 @@ import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,47 @@ class FileDirectoryViewModelTest {
 
         assertEquals(LocalDirectoryAdd("Comics", "content://tree/comics"), catalog.localAdds.single())
         assertEquals("已保存来源：Comics", viewModel.uiState.message)
+    }
+
+    @Test
+    fun gridModeAndExtractedVideoThumbnailAreKeptInBrowserState() = runTest(dispatcher) {
+        val viewModel = FileDirectoryViewModel(
+            FakeFileDirectoryCatalog(),
+            FakeLocalDirectoryReader(),
+        )
+        advanceUntilIdle()
+
+        viewModel.toggleViewMode()
+        viewModel.onVideoThumbnailExtracted(
+            uri = "content://videos/movie",
+            version = "local:content://videos/movie:20:30",
+            thumbnailPath = "/cache/movie.jpg",
+        )
+
+        assertEquals(DirectoryListingViewMode.GRID, viewModel.uiState.viewMode)
+        assertEquals(
+            "/cache/movie.jpg",
+            viewModel.uiState.videoThumbnails["content://videos/movie"]?.path,
+        )
+        assertEquals(
+            "local:content://videos/movie:20:30",
+            viewModel.uiState.videoThumbnails["content://videos/movie"]?.version,
+        )
+
+        viewModel.onVideoThumbnailExtracted(
+            uri = "content://videos/movie",
+            version = "local:content://videos/movie:20:30",
+            thumbnailPath = "/cache/movie.jpg",
+        )
+
+        assertEquals(
+            2L,
+            viewModel.uiState.videoThumbnails["content://videos/movie"]?.artworkRevision,
+        )
+
+        viewModel.closeLocalBrowser()
+
+        assertTrue(viewModel.uiState.videoThumbnails.isEmpty())
     }
 
     @Test

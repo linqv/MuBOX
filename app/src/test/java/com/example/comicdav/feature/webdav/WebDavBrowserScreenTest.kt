@@ -9,6 +9,7 @@ import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.webdav.webDavDisplayPathLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -53,6 +54,58 @@ class WebDavBrowserScreenTest {
         assertEquals(
             listOf(WebDavFileMenuAction.AddToVideoLibrary, WebDavFileMenuAction.DownloadToLocal),
             webDavItemLongPressActions(video),
+        )
+    }
+
+    @Test
+    fun videoThumbnailVersionChangesWithRemoteValidators() {
+        val video = WebDavItem(
+            name = "movie.mp4",
+            path = "/movie.mp4",
+            isDirectory = false,
+            size = 100L,
+            etag = "v1",
+            lastModified = 200L,
+        )
+
+        assertFalse(
+            webDavVideoThumbnailVersion(video) ==
+                webDavVideoThumbnailVersion(video.copy(size = 101L)),
+        )
+        assertFalse(
+            webDavVideoThumbnailVersion(video) ==
+                webDavVideoThumbnailVersion(video.copy(etag = "v2")),
+        )
+        assertFalse(
+            webDavVideoThumbnailVersion(video) ==
+                webDavVideoThumbnailVersion(video.copy(lastModified = 201L)),
+        )
+    }
+
+    @Test
+    fun remoteThumbnailWithoutValidatorsChangesVersionAfterDirectoryRefresh() {
+        val video = WebDavItem(
+            name = "movie.mp4",
+            path = "/movie.mp4",
+            isDirectory = false,
+            size = 100L,
+            etag = null,
+            lastModified = null,
+        )
+
+        assertNotEquals(
+            webDavBrowserVideoThumbnailVersion(video, requestRevision = 1L),
+            webDavBrowserVideoThumbnailVersion(video, requestRevision = 2L),
+        )
+        assertEquals(
+            webDavBrowserVideoThumbnailVersion(
+                video.copy(etag = "v1"),
+                requestRevision = 1L,
+            ),
+            webDavBrowserVideoThumbnailVersion(
+                video.copy(etag = "v1"),
+                requestRevision = 2L,
+            ),
         )
     }
 

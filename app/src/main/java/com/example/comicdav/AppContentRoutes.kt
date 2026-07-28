@@ -90,6 +90,9 @@ internal fun FileDirectoryTabContent(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onToggleViewMode: () -> Unit,
+    gridVideoThumbnailsEnabled: Boolean,
+    onRequestVideoThumbnail: suspend (FileDirectoryBrowserItem) -> Unit,
     onRefresh: () -> Unit,
     onDeleteSource: (FileDirectorySource) -> Unit,
     onDeleteLocalSourceWithFiles: (FileDirectorySource) -> Unit,
@@ -112,6 +115,9 @@ internal fun FileDirectoryTabContent(
         onSearchQueryChange = onSearchQueryChange,
         onSortFieldChange = onSortFieldChange,
         onToggleSortDirection = onToggleSortDirection,
+        onToggleViewMode = onToggleViewMode,
+        gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
+        onRequestVideoThumbnail = onRequestVideoThumbnail,
         onRefresh = onRefresh,
         onDeleteSource = onDeleteSource,
         onDeleteLocalSourceWithFiles = onDeleteLocalSourceWithFiles,
@@ -272,6 +278,8 @@ internal fun dispatchSettingsAction(
             scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(action.value) }
         is SettingsAction.SetVideoPlayerOrientationMode ->
             scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(action.value) }
+        is SettingsAction.SetGridVideoThumbnailsEnabled ->
+            scope.launch { appSettingsStore.updateGridVideoThumbnailsEnabled(action.value) }
         is SettingsAction.SetVideoLibraryThumbnailsEnabled ->
             scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(action.value) }
         is SettingsAction.SetHistoryRetentionDays ->

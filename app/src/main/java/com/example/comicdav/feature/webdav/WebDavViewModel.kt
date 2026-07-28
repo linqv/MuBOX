@@ -7,8 +7,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.feature.directorylisting.DirectorySortDirection
 import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail
 import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
 import com.example.comicdav.feature.directorylisting.opposite
+import com.example.comicdav.feature.directorylisting.putBoundedDirectoryVideoThumbnail
 import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavException
@@ -40,6 +43,9 @@ data class WebDavUiState(
     val searchQuery: String = "",
     val sortField: DirectorySortField = DirectorySortField.NAME,
     val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
+    val viewMode: DirectoryListingViewMode = DirectoryListingViewMode.LIST,
+    val videoThumbnails: Map<String, DirectoryVideoThumbnail> = emptyMap(),
+    val thumbnailRequestRevision: Long = 0L,
     val status: String = WEB_DAV_STATUS_NOT_CONNECTED,
     val message: String = "",
     val isLoading: Boolean = false,
@@ -139,7 +145,7 @@ class WebDavViewModel(
     }
 
     fun testConnection() {
-        uiState = uiState.withBuiltBaseUrl()
+        uiState = uiState.withBuiltBaseUrl().copy(videoThumbnails = emptyMap())
         val credentials = WebDavConnectionCredentials(
             baseUrl = uiState.baseUrl.trim(),
             username = if (uiState.anonymousAccess) "" else uiState.username,
@@ -154,6 +160,7 @@ class WebDavViewModel(
     }
 
     fun startNewConnection() {
+        val nextThumbnailRequestRevision = uiState.thumbnailRequestRevision + 1L
         directoryLoadGeneration += 1
         directoryLoadJob?.cancel()
         directoryLoadJob = null
@@ -164,7 +171,9 @@ class WebDavViewModel(
         currentDirectoryItems = emptyList()
         requestedDirectoryPath = "/"
         directoryCache.clear()
-        uiState = WebDavUiState()
+        uiState = WebDavUiState(
+            thumbnailRequestRevision = nextThumbnailRequestRevision,
+        )
     }
 
     fun editSavedConnection(
@@ -174,6 +183,7 @@ class WebDavViewModel(
         password: String?,
         path: String,
     ) {
+        val nextThumbnailRequestRevision = uiState.thumbnailRequestRevision + 1L
         directoryLoadGeneration += 1
         directoryLoadJob?.cancel()
         directoryLoadJob = null
@@ -190,6 +200,7 @@ class WebDavViewModel(
             password = password.orEmpty(),
             currentPath = path.ifBlank { "/" },
             anonymousAccess = username.isNullOrBlank() && password.isNullOrBlank(),
+            thumbnailRequestRevision = nextThumbnailRequestRevision,
         ).withBaseUrl(baseUrl)
     }
 
@@ -205,6 +216,7 @@ class WebDavViewModel(
             username = username.orEmpty(),
             password = password.orEmpty(),
             anonymousAccess = username.isNullOrBlank() && password.isNullOrBlank(),
+            videoThumbnails = if (shouldReuseClient) uiState.videoThumbnails else emptyMap(),
         )
         if (!shouldReuseClient) {
             directoryCache.clear()
@@ -255,6 +267,34 @@ class WebDavViewModel(
         val direction = uiState.sortDirection.opposite()
         uiState = uiState.copy(sortDirection = direction)
         scheduleVisibleItems()
+    }
+
+    fun toggleViewMode() {
+        uiState = uiState.copy(
+            viewMode = when (uiState.viewMode) {
+                DirectoryListingViewMode.LIST -> DirectoryListingViewMode.GRID
+                DirectoryListingViewMode.GRID -> DirectoryListingViewMode.LIST
+            },
+        )
+    }
+
+    fun onVideoThumbnailExtracted(
+        path: String,
+        version: String,
+        thumbnailPath: String,
+    ) {
+        val previousRevision = uiState.videoThumbnails[path]?.artworkRevision ?: 0L
+        uiState = uiState.copy(
+            videoThumbnails = putBoundedDirectoryVideoThumbnail(
+                thumbnails = uiState.videoThumbnails,
+                key = path,
+                thumbnail = DirectoryVideoThumbnail(
+                    version = version,
+                    path = thumbnailPath,
+                    artworkRevision = previousRevision + 1L,
+                ),
+            ),
+        )
     }
 
     fun playbackDirectoryItems(): List<WebDavItem> =
@@ -365,6 +405,7 @@ class WebDavViewModel(
                     status = WEB_DAV_STATUS_CONNECTED,
                     isLoading = false,
                     isRefreshing = false,
+                    thumbnailRequestRevision = uiState.thumbnailRequestRevision + 1,
                 )
             } catch (error: CancellationException) {
                 throw error

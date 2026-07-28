@@ -53,6 +53,7 @@ data class AppSettings(
     val videoControlsAutoHideMillis: Int = 5_000,
     val videoPlayerOrientationMode: VideoPlayerOrientationMode = VideoPlayerOrientationMode.VIDEO,
     val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
+    val gridVideoThumbnailsEnabled: Boolean = true,
     val videoLibraryThumbnailsEnabled: Boolean = true,
     val historyRetentionDays: Int = 90,
     val historyMaxRecords: Int = 200,

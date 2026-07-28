@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Cloud
@@ -42,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,10 +60,15 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail
 import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.rememberDirectoryVideoArtworkModel
+import com.example.comicdav.feature.directorylisting.shouldRequestDirectoryVideoThumbnail
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxInlineMessage
+import com.example.comicdav.ui.MuBoxMediaGridTile
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.MuBoxSourceRow
 import com.example.comicdav.ui.muBoxAppBackground
@@ -178,6 +187,9 @@ fun FileDirectoryScreen(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onToggleViewMode: () -> Unit,
+    gridVideoThumbnailsEnabled: Boolean,
+    onRequestVideoThumbnail: suspend (FileDirectoryBrowserItem) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     selectedComic: FileDirectoryBrowserItem? = null,
@@ -201,9 +213,11 @@ fun FileDirectoryScreen(
                 searchQuery = uiState.searchQuery,
                 sortField = uiState.sortField,
                 sortDirection = uiState.sortDirection,
+                viewMode = uiState.viewMode,
                 onSearchQueryChange = onSearchQueryChange,
                 onSortFieldChange = onSortFieldChange,
                 onToggleSortDirection = onToggleSortDirection,
+                onToggleViewMode = onToggleViewMode,
             )
         }
 
@@ -254,6 +268,11 @@ fun FileDirectoryScreen(
                                 onSelectComic = onSelectComic,
                                 onSelectVideo = onSelectVideo,
                                 selectedEntry = selectedVideo ?: selectedComic,
+                                viewMode = uiState.viewMode,
+                                gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
+                                videoThumbnails = uiState.videoThumbnails,
+                                thumbnailRequestRevision = uiState.thumbnailRequestRevision,
+                                onRequestVideoThumbnail = onRequestVideoThumbnail,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -281,18 +300,22 @@ private fun FileDirectoryBrowseHeader(
     searchQuery: String,
     sortField: DirectorySortField,
     sortDirection: com.example.comicdav.feature.directorylisting.DirectorySortDirection,
+    viewMode: DirectoryListingViewMode,
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onToggleViewMode: () -> Unit,
 ) {
     DirectoryListingTopBar(
         breadcrumbLabels = breadcrumbLabels,
         searchQuery = searchQuery,
         sortField = sortField,
         sortDirection = sortDirection,
+        viewMode = viewMode,
         onSearchQueryChange = onSearchQueryChange,
         onSortFieldChange = onSortFieldChange,
         onToggleSortDirection = onToggleSortDirection,
+        onToggleViewMode = onToggleViewMode,
     )
 }
 
@@ -691,24 +714,120 @@ private fun EntryList(
     onSelectComic: (FileDirectoryBrowserItem) -> Unit,
     onSelectVideo: (FileDirectoryBrowserItem) -> Unit,
     selectedEntry: FileDirectoryBrowserItem?,
+    viewMode: DirectoryListingViewMode,
+    gridVideoThumbnailsEnabled: Boolean,
+    videoThumbnails: Map<String, DirectoryVideoThumbnail>,
+    thumbnailRequestRevision: Long,
+    onRequestVideoThumbnail: suspend (FileDirectoryBrowserItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(entries, key = { it.uri }) { entry ->
-            FileDirectoryEntryRow(
-                entry = entry,
-                onOpenDirectory = { onOpenDirectory(entry) },
-                onOpenComic = { onOpenComic(entry) },
-                onOpenVideo = { onOpenVideo(entry) },
-                onSelectComic = { onSelectComic(entry) },
-                onSelectVideo = { onSelectVideo(entry) },
-                isSelected = selectedEntry?.uri == entry.uri,
-            )
+    when (viewMode) {
+        DirectoryListingViewMode.LIST -> LazyColumn(
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(entries, key = { it.uri }) { entry ->
+                FileDirectoryEntryRow(
+                    entry = entry,
+                    onOpenDirectory = { onOpenDirectory(entry) },
+                    onOpenComic = { onOpenComic(entry) },
+                    onOpenVideo = { onOpenVideo(entry) },
+                    onSelectComic = { onSelectComic(entry) },
+                    onSelectVideo = { onSelectVideo(entry) },
+                    isSelected = selectedEntry?.uri == entry.uri,
+                )
+            }
+        }
+        DirectoryListingViewMode.GRID -> LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 144.dp),
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 8.dp),
+        ) {
+            gridItems(entries, key = { it.uri }) { entry ->
+                val thumbnailVersion = fileDirectoryBrowserVideoThumbnailVersion(
+                    item = entry,
+                    requestRevision = thumbnailRequestRevision,
+                )
+                val thumbnail = videoThumbnails[entry.uri]
+                    .takeIf { gridVideoThumbnailsEnabled }
+                val artworkModel = rememberDirectoryVideoArtworkModel(
+                    thumbnail = thumbnail,
+                    expectedVersion = thumbnailVersion,
+                    validationRevision = thumbnailRequestRevision,
+                )
+                if (
+                    shouldRequestDirectoryVideoThumbnail(
+                        enabled = gridVideoThumbnailsEnabled,
+                        mediaKind = entry.mediaKind,
+                        hasArtwork = artworkModel != null,
+                    )
+                ) {
+                    LaunchedEffect(
+                        entry.uri,
+                        thumbnailVersion,
+                        thumbnailRequestRevision,
+                        gridVideoThumbnailsEnabled,
+                        thumbnail?.path,
+                        thumbnail?.artworkRevision,
+                    ) {
+                        onRequestVideoThumbnail(entry)
+                    }
+                }
+                FileDirectoryEntryGridTile(
+                    entry = entry,
+                    artworkModel = artworkModel,
+                    onOpenDirectory = { onOpenDirectory(entry) },
+                    onOpenComic = { onOpenComic(entry) },
+                    onOpenVideo = { onOpenVideo(entry) },
+                    onSelectComic = { onSelectComic(entry) },
+                    onSelectVideo = { onSelectVideo(entry) },
+                    isSelected = selectedEntry?.uri == entry.uri,
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun FileDirectoryEntryGridTile(
+    entry: FileDirectoryBrowserItem,
+    artworkModel: Any?,
+    onOpenDirectory: () -> Unit,
+    onOpenComic: () -> Unit,
+    onOpenVideo: () -> Unit,
+    onSelectComic: () -> Unit,
+    onSelectVideo: () -> Unit,
+    isSelected: Boolean,
+) {
+    val longPressActions = fileDirectoryEntryLongPressActions(entry)
+    val clickAction = fileDirectoryEntryClickAction(entry)
+    val supportingLabel = fileDirectoryEntrySupportingLabel(entry)
+    MuBoxMediaGridTile(
+        title = entry.name,
+        mediaKind = entry.mediaKind,
+        artworkModel = artworkModel,
+        subtitle = supportingLabel.ifBlank { null },
+        selected = isSelected,
+        onClick = {
+            when (clickAction) {
+                FileDirectoryEntryClickAction.OpenDirectory -> onOpenDirectory()
+                FileDirectoryEntryClickAction.OpenComic -> onOpenComic()
+                FileDirectoryEntryClickAction.OpenVideo -> onOpenVideo()
+                FileDirectoryEntryClickAction.NoAction -> Unit
+            }
+        },
+        onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let {
+            {
+                when (longPressActions.first()) {
+                    FileDirectoryEntryMenuAction.AddToLibrary -> onSelectComic()
+                    FileDirectoryEntryMenuAction.AddToVideoLibrary -> onSelectVideo()
+                }
+            }
+        },
+        onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+    )
 }
 
 @Composable

@@ -81,6 +81,7 @@ class AppSettingsStore(
                 .toEnumOrDefault(VideoPlayerOrientationMode.VIDEO),
             videoBackgroundMode = preferences[VIDEO_BACKGROUND_MODE]
                 .toEnumOrDefault(VideoBackgroundMode.NONE),
+            gridVideoThumbnailsEnabled = preferences[GRID_VIDEO_THUMBNAILS_ENABLED] ?: true,
             videoLibraryThumbnailsEnabled = preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] ?: true,
             historyRetentionDays = coerceHistoryRetentionDays(preferences[HISTORY_RETENTION_DAYS] ?: 90),
             historyMaxRecords = coerceHistoryMaxRecords(preferences[HISTORY_MAX_RECORDS] ?: 200),
@@ -248,6 +249,12 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateGridVideoThumbnailsEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[GRID_VIDEO_THUMBNAILS_ENABLED] = enabled
+        }
+    }
+
     suspend fun updateVideoBackgroundMode(mode: VideoBackgroundMode) {
         dataStore.edit { preferences ->
             preferences[VIDEO_BACKGROUND_MODE] = mode.name
@@ -298,6 +305,7 @@ class AppSettingsStore(
         val VIDEO_CONTROLS_AUTO_HIDE_MILLIS = intPreferencesKey("video_controls_auto_hide_millis")
         val VIDEO_PLAYER_ORIENTATION_MODE = stringPreferencesKey("video_player_orientation_mode")
         val VIDEO_BACKGROUND_MODE = stringPreferencesKey("video_background_mode")
+        val GRID_VIDEO_THUMBNAILS_ENABLED = booleanPreferencesKey("grid_video_thumbnails_enabled")
         val VIDEO_LIBRARY_THUMBNAILS_ENABLED = booleanPreferencesKey("video_library_thumbnails_enabled")
         val HISTORY_RETENTION_DAYS = intPreferencesKey("history_retention_days")
         val HISTORY_MAX_RECORDS = intPreferencesKey("history_max_records")

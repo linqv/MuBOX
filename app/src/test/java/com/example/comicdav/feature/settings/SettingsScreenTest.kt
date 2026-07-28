@@ -172,6 +172,7 @@ class SettingsScreenTest {
                 "MPV Profile",
                 "控制自动隐藏",
                 "播放器方向",
+                "网格视图视频缩略图",
                 "提取加入影视库的视频缩略图作为封面",
             ),
             videoRows,

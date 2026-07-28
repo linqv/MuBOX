@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -97,6 +98,52 @@ class FileDirectoryScreenTest {
         assertEquals(
             listOf(FileDirectoryEntryMenuAction.AddToVideoLibrary),
             fileDirectoryEntryLongPressActions(video),
+        )
+    }
+
+    @Test
+    fun videoThumbnailVersionChangesWhenLocalFileMetadataChanges() {
+        val video = FileDirectoryBrowserItem(
+            name = "movie.mp4",
+            uri = "content://video/movie.mp4",
+            isDirectory = false,
+            size = 100L,
+            lastModified = 200L,
+        )
+
+        assertFalse(
+            fileDirectoryVideoThumbnailVersion(video) ==
+                fileDirectoryVideoThumbnailVersion(video.copy(size = 101L)),
+        )
+        assertFalse(
+            fileDirectoryVideoThumbnailVersion(video) ==
+                fileDirectoryVideoThumbnailVersion(video.copy(lastModified = 201L)),
+        )
+    }
+
+    @Test
+    fun localThumbnailWithoutTimestampChangesVersionAfterDirectoryRefresh() {
+        val video = FileDirectoryBrowserItem(
+            name = "movie.mp4",
+            uri = "content://video/movie.mp4",
+            isDirectory = false,
+            size = 100L,
+            lastModified = null,
+        )
+
+        assertNotEquals(
+            fileDirectoryBrowserVideoThumbnailVersion(video, requestRevision = 1L),
+            fileDirectoryBrowserVideoThumbnailVersion(video, requestRevision = 2L),
+        )
+        assertEquals(
+            fileDirectoryBrowserVideoThumbnailVersion(
+                video.copy(lastModified = 200L),
+                requestRevision = 1L,
+            ),
+            fileDirectoryBrowserVideoThumbnailVersion(
+                video.copy(lastModified = 200L),
+                requestRevision = 2L,
+            ),
         )
     }
 
@@ -239,6 +286,7 @@ class FileDirectoryScreenTest {
         viewModel.openLocalSource(source)
         advanceUntilIdle()
         viewModel.updateSearchQuery("Alpha")
+        val initialThumbnailRequestRevision = viewModel.uiState.thumbnailRequestRevision
         reader.children = listOf(
             FileDirectoryBrowserItem("Alpha 2.cbz", "content://tree/comics/alpha-2", isDirectory = false),
             FileDirectoryBrowserItem("Beta.cbz", "content://tree/comics/beta", isDirectory = false),
@@ -253,6 +301,7 @@ class FileDirectoryScreenTest {
         assertFalse(viewModel.uiState.isRefreshing)
         assertEquals("Alpha", viewModel.uiState.searchQuery)
         assertEquals(listOf("Alpha 2.cbz"), viewModel.uiState.entries.map { it.name })
+        assertTrue(viewModel.uiState.thumbnailRequestRevision > initialThumbnailRequestRevision)
     }
 
     @Test

@@ -316,6 +316,7 @@ internal fun ComicDavApp(container: AppContainer) {
                                     downloadActions = downloadActions,
                                     onChooseLocalDirectory = activityLaunchers.chooseLocalDirectory,
                                     onSelectionChange = { selection -> ui.selection = selection },
+                                    gridVideoThumbnailsEnabled = appSettings.gridVideoThumbnailsEnabled,
                                     modifier = contentModifier,
                                 )
                                 AppTab.HOME -> {

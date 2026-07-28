@@ -16,11 +16,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -42,11 +44,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.ui.rememberMuBoxColors
+import java.io.File
 
 fun directorySortFieldLabel(sortField: DirectorySortField): String = when (sortField) {
     DirectorySortField.NAME -> "名称"
@@ -67,6 +74,90 @@ fun directorySortButtonDescription(
 fun compactDirectoryBreadcrumbLabels(labels: List<String>): List<String> =
     if (labels.size <= 2) labels else listOf("…") + labels.takeLast(2)
 
+enum class DirectoryListingViewMode {
+    LIST,
+    GRID,
+}
+
+data class DirectoryVideoThumbnail(
+    val version: String,
+    val path: String,
+    val artworkRevision: Long = 0L,
+)
+
+internal const val MAX_DIRECTORY_VIDEO_THUMBNAILS = 256
+
+internal fun putBoundedDirectoryVideoThumbnail(
+    thumbnails: Map<String, DirectoryVideoThumbnail>,
+    key: String,
+    thumbnail: DirectoryVideoThumbnail,
+    maxEntries: Int = MAX_DIRECTORY_VIDEO_THUMBNAILS,
+): Map<String, DirectoryVideoThumbnail> {
+    require(maxEntries > 0)
+    val updated = LinkedHashMap<String, DirectoryVideoThumbnail>(
+        minOf(thumbnails.size + 1, maxEntries),
+    )
+    thumbnails.forEach { (existingKey, existingThumbnail) ->
+        if (existingKey != key) {
+            updated[existingKey] = existingThumbnail
+        }
+    }
+    updated[key] = thumbnail
+    while (updated.size > maxEntries) {
+        val eldest = updated.entries.iterator()
+        eldest.next()
+        eldest.remove()
+    }
+    return updated
+}
+
+internal fun directoryVideoArtworkMemoryCacheKey(
+    file: File,
+    artworkRevision: Long,
+): String =
+    "${file.absolutePath}#directory-extraction-$artworkRevision:" +
+        "${file.length()}:${file.lastModified()}"
+
+internal fun shouldRequestDirectoryVideoThumbnail(
+    enabled: Boolean,
+    mediaKind: MediaKind,
+    hasArtwork: Boolean,
+): Boolean = enabled &&
+    mediaKind == MediaKind.Video &&
+    !hasArtwork
+
+@Composable
+fun rememberDirectoryVideoArtworkModel(
+    thumbnail: DirectoryVideoThumbnail?,
+    expectedVersion: String,
+    validationRevision: Long,
+): Any? {
+    val context = LocalContext.current
+    return remember(context, thumbnail, expectedVersion, validationRevision) {
+        val currentThumbnail = thumbnail
+            ?.takeIf { it.version == expectedVersion }
+            ?: return@remember null
+        val file = File(currentThumbnail.path)
+            .takeIf { it.isFile && it.length() > 0L }
+            ?: return@remember null
+        if (currentThumbnail.artworkRevision == 0L) {
+            file
+        } else {
+            ImageRequest.Builder(context)
+                .data(file)
+                .memoryCacheKey(directoryVideoArtworkMemoryCacheKey(file, currentThumbnail.artworkRevision))
+                .diskCachePolicy(CachePolicy.DISABLED)
+                .build()
+        }
+    }
+}
+
+fun directoryViewModeActionLabel(viewMode: DirectoryListingViewMode): String =
+    when (viewMode) {
+        DirectoryListingViewMode.LIST -> "切换为网格视图"
+        DirectoryListingViewMode.GRID -> "切换为列表视图"
+    }
+
 @Composable
 fun DirectoryListingTopBar(
     breadcrumbLabels: List<String>,
@@ -76,6 +167,8 @@ fun DirectoryListingTopBar(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    viewMode: DirectoryListingViewMode,
+    onToggleViewMode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
@@ -119,6 +212,20 @@ fun DirectoryListingTopBar(
                 focusRequester = focusRequester,
                 modifier = Modifier.weight(1f),
             )
+
+            IconButton(
+                onClick = onToggleViewMode,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = when (viewMode) {
+                        DirectoryListingViewMode.LIST -> Icons.Filled.GridView
+                        DirectoryListingViewMode.GRID -> Icons.AutoMirrored.Filled.ViewList
+                    },
+                    contentDescription = directoryViewModeActionLabel(viewMode),
+                    tint = colors.text,
+                )
+            }
 
             Box {
                 IconButton(

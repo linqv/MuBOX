@@ -123,6 +123,7 @@ sealed interface SettingsAction {
     data class SetMpvProfileMode(val value: MpvProfileMode) : SettingsAction
     data class SetVideoControlsAutoHideMillis(val value: Int) : SettingsAction
     data class SetVideoPlayerOrientationMode(val value: VideoPlayerOrientationMode) : SettingsAction
+    data class SetGridVideoThumbnailsEnabled(val value: Boolean) : SettingsAction
     data class SetVideoLibraryThumbnailsEnabled(val value: Boolean) : SettingsAction
     data class SetHistoryRetentionDays(val value: Int) : SettingsAction
     data class SetHistoryMaxRecords(val value: Int) : SettingsAction
@@ -201,6 +202,7 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "MPV Profile",
                 "控制自动隐藏",
                 "播放器方向",
+                "网格视图视频缩略图",
                 "提取加入影视库的视频缩略图作为封面",
             ),
         ),
@@ -264,6 +266,9 @@ fun SettingsScreen(
                 },
                 onVideoPlayerOrientationModeChange = {
                     onAction(SettingsAction.SetVideoPlayerOrientationMode(it))
+                },
+                onGridVideoThumbnailsEnabledChange = {
+                    onAction(SettingsAction.SetGridVideoThumbnailsEnabled(it))
                 },
                 onVideoLibraryThumbnailsEnabledChange = {
                     onAction(SettingsAction.SetVideoLibraryThumbnailsEnabled(it))
@@ -697,6 +702,7 @@ private fun VideoSettingsPage(
     onMpvProfileModeChange: (MpvProfileMode) -> Unit,
     onVideoControlsAutoHideMillisChange: (Int) -> Unit,
     onVideoPlayerOrientationModeChange: (VideoPlayerOrientationMode) -> Unit,
+    onGridVideoThumbnailsEnabledChange: (Boolean) -> Unit,
     onVideoLibraryThumbnailsEnabledChange: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -808,6 +814,12 @@ private fun VideoSettingsPage(
                 options = VideoPlayerOrientationMode.entries,
                 label = ::videoPlayerOrientationModeLabel,
                 onSelected = onVideoPlayerOrientationModeChange,
+            )
+            MuBoxSwitchRow(
+                title = "网格视图视频缩略图",
+                checked = settings.gridVideoThumbnailsEnabled,
+                onCheckedChange = onGridVideoThumbnailsEnabledChange,
+                subtitle = "在本地与 WebDAV 文件网格中自动生成并显示视频缩略图",
             )
             MuBoxSwitchRow(
                 title = "提取加入影视库的视频缩略图作为封面",

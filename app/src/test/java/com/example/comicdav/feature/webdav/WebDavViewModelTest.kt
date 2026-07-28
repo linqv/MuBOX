@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.MainDispatcherRule
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
@@ -54,6 +55,36 @@ class WebDavViewModelTest {
 
         assertEquals("已连接", viewModel.uiState.status)
         assertEquals(listOf("book.cbz", "book.zip", "Series"), viewModel.uiState.items.map { it.name })
+    }
+
+    @Test
+    fun gridModeAndExtractedVideoThumbnailAreKeptInBrowserState() = runTest(dispatcher) {
+        val viewModel = testViewModel { _, _, _ -> FakeWebDavClient() }
+
+        viewModel.toggleViewMode()
+        viewModel.onVideoThumbnailExtracted(
+            path = "/movie.mp4",
+            version = "webdav:/movie.mp4:20:etag:30",
+            thumbnailPath = "/cache/movie.jpg",
+        )
+
+        assertEquals(DirectoryListingViewMode.GRID, viewModel.uiState.viewMode)
+        assertEquals("/cache/movie.jpg", viewModel.uiState.videoThumbnails["/movie.mp4"]?.path)
+        assertEquals(
+            "webdav:/movie.mp4:20:etag:30",
+            viewModel.uiState.videoThumbnails["/movie.mp4"]?.version,
+        )
+
+        viewModel.onVideoThumbnailExtracted(
+            path = "/movie.mp4",
+            version = "webdav:/movie.mp4:20:etag:30",
+            thumbnailPath = "/cache/movie.jpg",
+        )
+
+        assertEquals(
+            2L,
+            viewModel.uiState.videoThumbnails["/movie.mp4"]?.artworkRevision,
+        )
     }
 
     @Test
@@ -540,12 +571,36 @@ class WebDavViewModelTest {
 
         viewModel.testConnection()
         dispatcher.scheduler.advanceUntilIdle()
+        val previousThumbnailRequestRevision = viewModel.uiState.thumbnailRequestRevision
 
         viewModel.startNewConnection()
 
         assertEquals(null, viewModel.activeClient())
         assertEquals(null, viewModel.activeAccountId())
-        assertEquals(WebDavUiState(), viewModel.uiState)
+        assertEquals(
+            WebDavUiState(
+                thumbnailRequestRevision = previousThumbnailRequestRevision + 1L,
+            ),
+            viewModel.uiState,
+        )
+    }
+
+    @Test
+    fun thumbnailRequestRevisionRemainsMonotonicAcrossReconnects() = runTest(dispatcher) {
+        val viewModel = testViewModel { _, _, _ -> FakeWebDavClient() }
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.testConnection()
+        dispatcher.scheduler.advanceUntilIdle()
+        val firstConnectionRevision = viewModel.uiState.thumbnailRequestRevision
+
+        viewModel.startNewConnection()
+        val resetRevision = viewModel.uiState.thumbnailRequestRevision
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.testConnection()
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(resetRevision > firstConnectionRevision)
+        assertTrue(viewModel.uiState.thumbnailRequestRevision > resetRevision)
     }
 
     @Test
@@ -599,6 +654,7 @@ class WebDavViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         viewModel.updateSearchQuery("Alpha")
         dispatcher.scheduler.advanceUntilIdle()
+        val initialThumbnailRequestRevision = viewModel.uiState.thumbnailRequestRevision
         client.items = listOf(
             directoryItem("Alpha 2", "/Alpha 2/"),
             directoryItem("Beta", "/Beta/"),
@@ -614,6 +670,7 @@ class WebDavViewModelTest {
         assertEquals("Alpha", viewModel.uiState.searchQuery)
         assertEquals(listOf("Alpha 2"), viewModel.uiState.items.map { it.name })
         assertEquals(listOf("/Comics/", "/Comics/"), client.listedPaths)
+        assertTrue(viewModel.uiState.thumbnailRequestRevision > initialThumbnailRequestRevision)
     }
 
     @Test

@@ -10,8 +10,11 @@ import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.feature.directorylisting.DirectorySortDirection
 import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail
 import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
 import com.example.comicdav.feature.directorylisting.opposite
+import com.example.comicdav.feature.directorylisting.putBoundedDirectoryVideoThumbnail
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.core.model.media.isBrowsableInSources
 import com.example.comicdav.core.model.media.mediaKindFor
@@ -29,12 +32,57 @@ interface LocalDirectoryReader {
 internal fun filterBrowsableLocalDirectoryItems(items: List<FileDirectoryBrowserItem>): List<FileDirectoryBrowserItem> =
     items.filter { it.mediaKind.isBrowsableInSources }
 
+internal fun fileDirectoryVideoThumbnailVersion(
+    uri: String,
+    size: Long?,
+    lastModified: Long?,
+): String = "local:$uri:${size ?: -1}:${lastModified ?: -1}"
+
+internal fun fileDirectoryVideoThumbnailVersion(item: FileDirectoryBrowserItem): String =
+    fileDirectoryVideoThumbnailVersion(
+        uri = item.uri,
+        size = item.size,
+        lastModified = item.lastModified,
+    )
+
+internal fun fileDirectoryBrowserVideoThumbnailVersion(
+    uri: String,
+    size: Long?,
+    lastModified: Long?,
+    requestRevision: Long,
+): String {
+    val version = fileDirectoryVideoThumbnailVersion(
+        uri = uri,
+        size = size,
+        lastModified = lastModified,
+    )
+    return if (lastModified != null && lastModified > 0L) {
+        version
+    } else {
+        "$version:directory-revision:$requestRevision"
+    }
+}
+
+internal fun fileDirectoryBrowserVideoThumbnailVersion(
+    item: FileDirectoryBrowserItem,
+    requestRevision: Long,
+): String =
+    fileDirectoryBrowserVideoThumbnailVersion(
+        uri = item.uri,
+        size = item.size,
+        lastModified = item.lastModified,
+        requestRevision = requestRevision,
+    )
+
 data class FileDirectoryUiState(
     val sources: List<FileDirectorySource> = emptyList(),
     val entries: List<FileDirectoryBrowserItem> = emptyList(),
     val searchQuery: String = "",
     val sortField: DirectorySortField = DirectorySortField.NAME,
     val sortDirection: DirectorySortDirection = DirectorySortDirection.ASCENDING,
+    val viewMode: DirectoryListingViewMode = DirectoryListingViewMode.LIST,
+    val videoThumbnails: Map<String, DirectoryVideoThumbnail> = emptyMap(),
+    val thumbnailRequestRevision: Long = 0L,
     val currentTitle: String? = null,
     val breadcrumbLabels: List<String> = emptyList(),
     val isLoading: Boolean = true,
@@ -146,6 +194,7 @@ class FileDirectoryViewModel(
         uiState = uiState.copy(
             entries = emptyList(),
             searchQuery = "",
+            videoThumbnails = emptyMap(),
             currentTitle = null,
             breadcrumbLabels = emptyList(),
             isLoading = false,
@@ -179,6 +228,34 @@ class FileDirectoryViewModel(
         uiState = uiState.copy(
             sortDirection = direction,
             entries = visibleEntries(sortDirection = direction),
+        )
+    }
+
+    fun toggleViewMode() {
+        uiState = uiState.copy(
+            viewMode = when (uiState.viewMode) {
+                DirectoryListingViewMode.LIST -> DirectoryListingViewMode.GRID
+                DirectoryListingViewMode.GRID -> DirectoryListingViewMode.LIST
+            },
+        )
+    }
+
+    fun onVideoThumbnailExtracted(
+        uri: String,
+        version: String,
+        thumbnailPath: String,
+    ) {
+        val previousRevision = uiState.videoThumbnails[uri]?.artworkRevision ?: 0L
+        uiState = uiState.copy(
+            videoThumbnails = putBoundedDirectoryVideoThumbnail(
+                thumbnails = uiState.videoThumbnails,
+                key = uri,
+                thumbnail = DirectoryVideoThumbnail(
+                    version = version,
+                    path = thumbnailPath,
+                    artworkRevision = previousRevision + 1L,
+                ),
+            ),
         )
     }
 
@@ -274,6 +351,7 @@ class FileDirectoryViewModel(
                     breadcrumbLabels = breadcrumbLabels,
                     isLoading = false,
                     isRefreshing = false,
+                    thumbnailRequestRevision = uiState.thumbnailRequestRevision + 1,
                 )
             } catch (error: CancellationException) {
                 throw error

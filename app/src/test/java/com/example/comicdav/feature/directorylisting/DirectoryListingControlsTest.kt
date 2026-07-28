@@ -1,9 +1,30 @@
 package com.example.comicdav.feature.directorylisting
 
+import com.example.comicdav.core.model.media.MediaKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class DirectoryListingControlsTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun viewModeButtonDescribesTheModeItWillOpen() {
+        assertEquals(
+            "切换为网格视图",
+            directoryViewModeActionLabel(DirectoryListingViewMode.LIST),
+        )
+        assertEquals(
+            "切换为列表视图",
+            directoryViewModeActionLabel(DirectoryListingViewMode.GRID),
+        )
+    }
+
     @Test
     fun sortFieldsHaveClearChineseLabels() {
         assertEquals("名称", directorySortFieldLabel(DirectorySortField.NAME))
@@ -40,6 +61,93 @@ class DirectoryListingControlsTest {
             listOf("…", "系列", "第一卷"),
             compactDirectoryBreadcrumbLabels(listOf("webdav", "漫画", "系列", "第一卷")),
         )
+    }
+
+    @Test
+    fun gridThumbnailRequestsRespectTheGlobalSwitchAndArtworkState() {
+        assertFalse(
+            shouldRequestDirectoryVideoThumbnail(
+                enabled = false,
+                mediaKind = MediaKind.Video,
+                hasArtwork = false,
+            ),
+        )
+        assertFalse(
+            shouldRequestDirectoryVideoThumbnail(
+                enabled = true,
+                mediaKind = MediaKind.Directory,
+                hasArtwork = false,
+            ),
+        )
+        assertFalse(
+            shouldRequestDirectoryVideoThumbnail(
+                enabled = true,
+                mediaKind = MediaKind.Video,
+                hasArtwork = true,
+            ),
+        )
+        assertTrue(
+            shouldRequestDirectoryVideoThumbnail(
+                enabled = true,
+                mediaKind = MediaKind.Video,
+                hasArtwork = false,
+            ),
+        )
+    }
+
+    @Test
+    fun artworkMemoryCacheKeyChangesWhenTheCachedFileIsReplaced() {
+        val thumbnail = temporaryFolder.newFile("movie.jpg").apply {
+            writeText("old")
+            setLastModified(1_000L)
+        }
+        val firstKey = directoryVideoArtworkMemoryCacheKey(
+            file = thumbnail,
+            artworkRevision = 1L,
+        )
+
+        thumbnail.writeText("new thumbnail")
+        thumbnail.setLastModified(2_000L)
+        val secondKey = directoryVideoArtworkMemoryCacheKey(
+            file = thumbnail,
+            artworkRevision = 1L,
+        )
+
+        assertNotEquals(firstKey, secondKey)
+    }
+
+    @Test
+    fun thumbnailStateEvictsTheLeastRecentlyUpdatedEntryAtItsLimit() {
+        val first = DirectoryVideoThumbnail("v1", "/cache/first.jpg")
+        val second = DirectoryVideoThumbnail("v2", "/cache/second.jpg")
+        val third = DirectoryVideoThumbnail("v3", "/cache/third.jpg")
+        var thumbnails = putBoundedDirectoryVideoThumbnail(
+            thumbnails = emptyMap(),
+            key = "first",
+            thumbnail = first,
+            maxEntries = 2,
+        )
+        thumbnails = putBoundedDirectoryVideoThumbnail(
+            thumbnails = thumbnails,
+            key = "second",
+            thumbnail = second,
+            maxEntries = 2,
+        )
+        thumbnails = putBoundedDirectoryVideoThumbnail(
+            thumbnails = thumbnails,
+            key = "first",
+            thumbnail = first.copy(artworkRevision = 1L),
+            maxEntries = 2,
+        )
+        thumbnails = putBoundedDirectoryVideoThumbnail(
+            thumbnails = thumbnails,
+            key = "third",
+            thumbnail = third,
+            maxEntries = 2,
+        )
+
+        assertEquals(listOf("first", "third"), thumbnails.keys.toList())
+        assertEquals(1L, thumbnails["first"]?.artworkRevision)
     }
 
     @Test

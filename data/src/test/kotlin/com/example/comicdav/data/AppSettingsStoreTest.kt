@@ -33,6 +33,7 @@ class AppSettingsStoreTest {
         assertEquals(VideoProxyDiagnosticsMode.OFF, settings.videoProxyDiagnosticsMode)
         assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
         assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
+        assertTrue(settings.gridVideoThumbnailsEnabled)
         assertEquals(90, settings.historyRetentionDays)
         assertEquals(200, settings.historyMaxRecords)
     }
@@ -116,6 +117,15 @@ class AppSettingsStoreTest {
         store.updateVideoLibraryThumbnailsEnabled(false)
 
         assertFalse(store.settings.first().videoLibraryThumbnailsEnabled)
+    }
+
+    @Test
+    fun gridVideoThumbnailsEnabledCanBeUpdatedAndReadBack() = runTest {
+        val store = createStore("grid_video_thumbnail_update.preferences_pb")
+
+        store.updateGridVideoThumbnailsEnabled(false)
+
+        assertFalse(store.settings.first().gridVideoThumbnailsEnabled)
     }
 
     @Test

@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
@@ -26,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,9 +37,13 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.feature.directorylisting.rememberDirectoryVideoArtworkModel
+import com.example.comicdav.feature.directorylisting.shouldRequestDirectoryVideoThumbnail
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
+import com.example.comicdav.ui.MuBoxMediaGridTile
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
@@ -101,6 +109,9 @@ fun WebDavBrowserScreen(
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,
     onToggleSortDirection: () -> Unit,
+    onToggleViewMode: () -> Unit,
+    gridVideoThumbnailsEnabled: Boolean,
+    onRequestVideoThumbnail: suspend (WebDavItem) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     selectedFile: WebDavItem? = null,
@@ -116,9 +127,11 @@ fun WebDavBrowserScreen(
             searchQuery = uiState.searchQuery,
             sortField = uiState.sortField,
             sortDirection = uiState.sortDirection,
+            viewMode = uiState.viewMode,
             onSearchQueryChange = onSearchQueryChange,
             onSortFieldChange = onSortFieldChange,
             onToggleSortDirection = onToggleSortDirection,
+            onToggleViewMode = onToggleViewMode,
         )
 
         Column(
@@ -173,31 +186,65 @@ fun WebDavBrowserScreen(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(uiState.items) { item ->
-                            val clickAction = webDavItemClickAction(item)
-                            val longPressActions = webDavItemLongPressActions(item)
-                            val supportingLabel = webDavItemSupportingLabel(item)
-                            val isSelected = selectedFile?.path == item.path
-                            MuBoxDenseMediaRow(
-                                title = item.name,
-                                mediaKind = item.mediaKind,
-                                onClick = {
-                                    when (clickAction) {
-                                        WebDavItemClickAction.OpenDirectory -> onItemClick(item)
-                                        WebDavItemClickAction.OpenComic -> onItemClick(item)
-                                        WebDavItemClickAction.OpenVideo -> onItemClick(item)
-                                        WebDavItemClickAction.NoAction -> Unit
+                    when (uiState.viewMode) {
+                        DirectoryListingViewMode.LIST -> LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(uiState.items, key = { it.path }) { item ->
+                                WebDavItemRow(
+                                    item = item,
+                                    isSelected = selectedFile?.path == item.path,
+                                    onItemClick = { onItemClick(item) },
+                                    onSelectFile = { onSelectFile(item) },
+                                )
+                            }
+                        }
+                        DirectoryListingViewMode.GRID -> LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 144.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+                        ) {
+                            gridItems(uiState.items, key = { it.path }) { item ->
+                                val thumbnailVersion = webDavBrowserVideoThumbnailVersion(
+                                    item = item,
+                                    requestRevision = uiState.thumbnailRequestRevision,
+                                )
+                                val thumbnail = uiState.videoThumbnails[item.path]
+                                    .takeIf { gridVideoThumbnailsEnabled }
+                                val artworkModel = rememberDirectoryVideoArtworkModel(
+                                    thumbnail = thumbnail,
+                                    expectedVersion = thumbnailVersion,
+                                    validationRevision = uiState.thumbnailRequestRevision,
+                                )
+                                if (
+                                    shouldRequestDirectoryVideoThumbnail(
+                                        enabled = gridVideoThumbnailsEnabled,
+                                        mediaKind = item.mediaKind,
+                                        hasArtwork = artworkModel != null,
+                                    )
+                                ) {
+                                    LaunchedEffect(
+                                        item.path,
+                                        thumbnailVersion,
+                                        uiState.thumbnailRequestRevision,
+                                        gridVideoThumbnailsEnabled,
+                                        thumbnail?.path,
+                                        thumbnail?.artworkRevision,
+                                    ) {
+                                        onRequestVideoThumbnail(item)
                                     }
-                                },
-                                subtitle = supportingLabel.ifBlank { null },
-                                selected = isSelected,
-                                onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile(item) } },
-                                onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
-                            )
+                                }
+                                WebDavItemGridTile(
+                                    item = item,
+                                    artworkModel = artworkModel,
+                                    isSelected = selectedFile?.path == item.path,
+                                    onItemClick = { onItemClick(item) },
+                                    onSelectFile = { onSelectFile(item) },
+                                )
+                            }
                         }
                     }
                 }
@@ -215,6 +262,66 @@ fun WebDavBrowserScreen(
             }
         }
     }
+}
+
+@Composable
+private fun WebDavItemRow(
+    item: WebDavItem,
+    isSelected: Boolean,
+    onItemClick: () -> Unit,
+    onSelectFile: () -> Unit,
+) {
+    val clickAction = webDavItemClickAction(item)
+    val longPressActions = webDavItemLongPressActions(item)
+    val supportingLabel = webDavItemSupportingLabel(item)
+    MuBoxDenseMediaRow(
+        title = item.name,
+        mediaKind = item.mediaKind,
+        onClick = {
+            when (clickAction) {
+                WebDavItemClickAction.OpenDirectory,
+                WebDavItemClickAction.OpenComic,
+                WebDavItemClickAction.OpenVideo,
+                -> onItemClick()
+                WebDavItemClickAction.NoAction -> Unit
+            }
+        },
+        subtitle = supportingLabel.ifBlank { null },
+        selected = isSelected,
+        onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile() } },
+        onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+    )
+}
+
+@Composable
+private fun WebDavItemGridTile(
+    item: WebDavItem,
+    artworkModel: Any?,
+    isSelected: Boolean,
+    onItemClick: () -> Unit,
+    onSelectFile: () -> Unit,
+) {
+    val clickAction = webDavItemClickAction(item)
+    val longPressActions = webDavItemLongPressActions(item)
+    val supportingLabel = webDavItemSupportingLabel(item)
+    MuBoxMediaGridTile(
+        title = item.name,
+        mediaKind = item.mediaKind,
+        artworkModel = artworkModel,
+        subtitle = supportingLabel.ifBlank { null },
+        selected = isSelected,
+        onClick = {
+            when (clickAction) {
+                WebDavItemClickAction.OpenDirectory,
+                WebDavItemClickAction.OpenComic,
+                WebDavItemClickAction.OpenVideo,
+                -> onItemClick()
+                WebDavItemClickAction.NoAction -> Unit
+            }
+        },
+        onLongClick = longPressActions.takeIf { it.isNotEmpty() }?.let { { onSelectFile() } },
+        onLongClickLabel = if (longPressActions.isEmpty()) null else "文件操作",
+    )
 }
 
 @Composable

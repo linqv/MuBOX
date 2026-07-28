@@ -7,9 +7,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,7 +45,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.example.comicdav.core.model.media.MediaKind
 
 @Composable
@@ -253,6 +257,90 @@ fun MuBoxDenseMediaRow(
             }
         }
         trailing()
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun MuBoxMediaGridTile(
+    title: String,
+    mediaKind: MediaKind,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    artworkModel: Any? = null,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
+) {
+    val colors = rememberMuBoxColors()
+    val shape = RoundedCornerShape(MuBoxMetrics.RadiusMDp)
+    val containerColor = if (selected) colors.rowSelected else colors.row
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .muBoxGradientBorder(
+                colors = colors,
+                shape = shape,
+                highlighted = selected,
+                width = if (selected) 1.5.dp else 1.dp,
+            )
+            .clip(shape)
+            .background(containerColor)
+            .semantics { this.selected = selected }
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 10f)
+                .background(colors.panelHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (mediaKind == MediaKind.Video) {
+                // A missing or unreadable video cover intentionally leaves the artwork area
+                // empty. The file browser must not replace it with generic artwork.
+                if (artworkModel != null) {
+                    AsyncImage(
+                        model = artworkModel,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            } else {
+                MuBoxMediaTypeIcon(mediaKind = mediaKind)
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

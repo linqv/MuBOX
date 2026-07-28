@@ -63,6 +63,7 @@ class SettingsActionDispatcherTest {
             SettingsAction.SetMpvProfileMode(MpvProfileMode.HIGH_QUALITY),
             SettingsAction.SetVideoControlsAutoHideMillis(10_000),
             SettingsAction.SetVideoPlayerOrientationMode(VideoPlayerOrientationMode.LANDSCAPE),
+            SettingsAction.SetGridVideoThumbnailsEnabled(false),
             SettingsAction.SetVideoLibraryThumbnailsEnabled(false),
             SettingsAction.SetHistoryRetentionDays(180),
             SettingsAction.SetHistoryMaxRecords(500),
@@ -106,6 +107,7 @@ class SettingsActionDispatcherTest {
         assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
         assertEquals(10_000, settings.videoControlsAutoHideMillis)
         assertEquals(VideoPlayerOrientationMode.LANDSCAPE, settings.videoPlayerOrientationMode)
+        assertFalse(settings.gridVideoThumbnailsEnabled)
         assertFalse(settings.videoLibraryThumbnailsEnabled)
         assertEquals(180, settings.historyRetentionDays)
         assertEquals(500, settings.historyMaxRecords)
