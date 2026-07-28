@@ -180,7 +180,7 @@ internal fun homeVideoLibrarySubtitle(item: VideoLibraryItemWithSources): String
         VideoSourceType.WEBDAV -> item.webDavSource?.remotePath?.let(::decodeWebDavPathForDisplay) ?: "WebDAV"
     }
 
-internal fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
+fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
     listOf(
         "history",
         entry.mediaType.name,
@@ -192,7 +192,7 @@ internal fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
         entry.lastModified?.toString().orEmpty(),
     ).joinToString(separator = "\u001F")
 
-internal fun historyThumbnailFile(
+fun historyThumbnailFile(
     cacheDir: File,
     entry: WatchHistoryEntry,
 ): File {
@@ -244,7 +244,7 @@ internal fun resolvedHistoryArtworkPath(
             ?.absolutePath
 }
 
-internal fun historyEntriesNeedingThumbnails(
+fun historyEntriesNeedingThumbnails(
     history: List<WatchHistoryEntry>,
     comics: List<LibraryItemWithSources>,
     videos: List<VideoLibraryItemWithSources>,
@@ -272,7 +272,7 @@ internal fun homeHistoryCoverPath(
     resolvedHistoryArtworkPath(entry, comics, videos)
 
 @Composable
-internal fun HomeScreen(
+fun HomeScreen(
     history: List<WatchHistoryEntry>,
     libraryItems: List<LibraryItemWithSources>,
     videoLibraryItems: List<VideoLibraryItemWithSources>,

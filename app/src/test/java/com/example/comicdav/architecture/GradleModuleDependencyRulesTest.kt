@@ -98,6 +98,7 @@ class GradleModuleDependencyRulesTest {
                 ":ui",
                 ":feature:directory-listing",
                 ":feature:file-directory",
+                ":feature:home",
                 ":feature:library",
                 ":feature:reader",
                 ":feature:video",
@@ -118,6 +119,7 @@ class GradleModuleDependencyRulesTest {
                 ":feature:directory-listing",
                 ":ui",
             ),
+            ":feature:home" to setOf(":core:model", ":ui"),
             ":feature:library" to setOf(":core:model", ":ui"),
             ":feature:reader" to setOf(
                 ":core:model",

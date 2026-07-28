@@ -192,6 +192,7 @@ dependencies {
     implementation(project(":data"))
     implementation(project(":feature:directory-listing"))
     implementation(project(":feature:file-directory"))
+    implementation(project(":feature:home"))
     implementation(project(":feature:library"))
     implementation(project(":feature:reader"))
     implementation(project(":feature:video"))
