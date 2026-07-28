@@ -275,18 +275,9 @@ fun MuBoxMediaGridTile(
 ) {
     val colors = rememberMuBoxColors()
     val shape = RoundedCornerShape(MuBoxMetrics.RadiusMDp)
-    val containerColor = if (selected) colors.rowSelected else colors.row
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .muBoxGradientBorder(
-                colors = colors,
-                shape = shape,
-                highlighted = selected,
-                width = if (selected) 1.5.dp else 1.dp,
-            )
-            .clip(shape)
-            .background(containerColor)
             .semantics { this.selected = selected }
             .combinedClickable(
                 role = Role.Button,
@@ -294,11 +285,25 @@ fun MuBoxMediaGridTile(
                 onLongClick = onLongClick,
                 onLongClickLabel = onLongClickLabel,
             ),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(16f / 10f)
+                .aspectRatio(
+                    if (mediaKind == MediaKind.Video) {
+                        muBoxPosterAspectRatio(MuBoxPosterKind.Video)
+                    } else {
+                        16f / 10f
+                    },
+                )
+                .muBoxGradientBorder(
+                    colors = colors,
+                    shape = shape,
+                    highlighted = selected,
+                    width = if (selected) 1.5.dp else 1.dp,
+                )
+                .clip(shape)
                 .background(colors.panelHigh),
             contentAlignment = Alignment.Center,
         ) {
@@ -310,18 +315,18 @@ fun MuBoxMediaGridTile(
                         model = artworkModel,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                     )
                 }
             } else {
                 MuBoxMediaTypeIcon(mediaKind = mediaKind)
             }
         }
+        // The bordered card ends with the artwork; the filename is a separate label below it.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 4.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(

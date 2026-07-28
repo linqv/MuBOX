@@ -42,6 +42,7 @@ import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.feature.directorylisting.rememberDirectoryVideoArtworkModel
 import com.example.comicdav.feature.directorylisting.shouldRequestDirectoryVideoThumbnail
 import com.example.comicdav.ui.ComicDavCopy
+import com.example.comicdav.ui.MU_BOX_MEDIA_GRID_COLUMN_COUNT
 import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxMediaGridTile
 import com.example.comicdav.ui.MuBoxMetrics
@@ -201,7 +202,7 @@ fun WebDavBrowserScreen(
                             }
                         }
                         DirectoryListingViewMode.GRID -> LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 144.dp),
+                            columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
                             modifier = Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -303,12 +304,10 @@ private fun WebDavItemGridTile(
 ) {
     val clickAction = webDavItemClickAction(item)
     val longPressActions = webDavItemLongPressActions(item)
-    val supportingLabel = webDavItemSupportingLabel(item)
     MuBoxMediaGridTile(
         title = item.name,
         mediaKind = item.mediaKind,
         artworkModel = artworkModel,
-        subtitle = supportingLabel.ifBlank { null },
         selected = isSelected,
         onClick = {
             when (clickAction) {

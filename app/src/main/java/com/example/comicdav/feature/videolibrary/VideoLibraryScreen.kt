@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -37,8 +36,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +45,7 @@ import coil3.compose.AsyncImage
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.ui.MuBoxHeaderBar
+import com.example.comicdav.ui.MU_BOX_MEDIA_GRID_COLUMN_COUNT
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
@@ -130,7 +128,7 @@ fun VideoLibraryScreen(
 
                     else -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 160.dp),
+                            columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
                             modifier = Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -216,141 +214,59 @@ private fun VideoLibraryCard(
 ) {
     val colors = rememberMuBoxColors()
     val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .muBoxGradientBorder(
-                colors = colors,
-                shape = cardShape,
-                highlighted = isSelected,
-                width = if (isSelected) 1.5.dp else 1.dp,
-            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
                 onLongClickLabel = "影视库操作",
             ),
-        shape = cardShape,
-        color = if (isSelected) {
-            colors.mediaAccent.copy(alpha = 0.14f)
-        } else {
-            colors.panel.copy(alpha = 0.92f)
-        },
-        shadowElevation = 0.dp,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(6.dp),
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind()))
+                .muBoxGradientBorder(
+                    colors = colors,
+                    shape = cardShape,
+                    highlighted = isSelected,
+                    width = if (isSelected) 1.5.dp else 1.dp,
+                ),
+            shape = cardShape,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            color = colors.raisedSurface,
         ) {
-            val posterShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
-            Surface(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(com.example.comicdav.ui.muBoxPosterAspectRatio(videoLibraryPosterKind()))
-                    .muBoxGradientBorder(colors = colors, shape = posterShape),
-                shape = posterShape,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                color = colors.raisedSurface,
+                    .fillMaxSize()
+                    .background(colors.raisedSurface),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.raisedSurface),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val thumbnailFile = item.item.thumbnailPath
-                        ?.takeIf { thumbnailsEnabled }
-                        ?.let(::File)
-                        ?.takeIf { it.isFile }
-                    if (thumbnailFile != null) {
-                        AsyncImage(
-                            model = thumbnailFile,
-                            contentDescription = item.item.displayName,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Black.copy(alpha = 0.4f),
-                                            Color.Transparent,
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.3f),
-                                        ),
-                                    ),
-                                ),
-                        )
-                    } else {
-                        FallbackVideoTitle(item.item.displayName)
-                    }
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp),
+                val thumbnailFile = item.item.thumbnailPath
+                    ?.takeIf { thumbnailsEnabled }
+                    ?.let(::File)
+                    ?.takeIf { it.isFile }
+                if (thumbnailFile != null) {
+                    AsyncImage(
+                        model = thumbnailFile,
+                        contentDescription = item.item.displayName,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
                     )
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(8.dp),
-                        shape = RoundedCornerShape(7.dp),
-                        color = Color.Black.copy(alpha = 0.62f),
-                        border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.28f)),
-                    ) {
-                        Text(
-                            text = videoSourceLabel(item.item.sourceType),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.mediaAccent,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        )
-                    }
                 }
             }
-            Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                Text(
-                    text = item.item.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.text,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = videoSourceMeta(item),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
-    }
-}
-
-@Composable
-private fun FallbackVideoTitle(title: String) {
-    val colors = rememberMuBoxColors()
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.raisedSurface)
-            .padding(14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
+            text = item.item.displayName,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             color = colors.text,
-            fontWeight = FontWeight.Bold,
-            maxLines = 4,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
     }
 }

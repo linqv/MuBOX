@@ -427,10 +427,12 @@ enum class MuBoxPosterKind {
     Video,
 }
 
+const val MU_BOX_MEDIA_GRID_COLUMN_COUNT = 3
+
 fun muBoxPosterAspectRatio(kind: MuBoxPosterKind): Float =
     when (kind) {
         MuBoxPosterKind.Comic -> 0.72f
-        MuBoxPosterKind.Video -> 16f / 9f
+        MuBoxPosterKind.Video -> 3f / 4f
     }
 
 fun muBoxMediaKindLabel(mediaKind: MediaKind): String =

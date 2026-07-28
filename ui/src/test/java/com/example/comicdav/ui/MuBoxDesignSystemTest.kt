@@ -154,7 +154,12 @@ class MuBoxDesignSystemTest {
     @Test
     fun posterAspectRatiosSeparateComicAndVideoSurfaces() {
         assertEquals(0.72f, muBoxPosterAspectRatio(MuBoxPosterKind.Comic), 0.0001f)
-        assertEquals(16f / 9f, muBoxPosterAspectRatio(MuBoxPosterKind.Video), 0.0001f)
+        assertEquals(3f / 4f, muBoxPosterAspectRatio(MuBoxPosterKind.Video), 0.0001f)
+    }
+
+    @Test
+    fun mediaGridUsesThreeColumns() {
+        assertEquals(3, MU_BOX_MEDIA_GRID_COLUMN_COUNT)
     }
 
     @Test
