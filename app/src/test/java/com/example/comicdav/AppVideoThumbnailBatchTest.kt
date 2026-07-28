@@ -3,9 +3,9 @@ package com.example.comicdav
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
-import com.example.comicdav.data.videolibrary.VideoLibraryItem
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItem
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import com.example.comicdav.feature.home.historyEntriesNeedingThumbnails
 import com.example.comicdav.feature.home.historyThumbnailFile
 import java.io.File

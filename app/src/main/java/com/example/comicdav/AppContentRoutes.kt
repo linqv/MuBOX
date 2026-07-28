@@ -7,9 +7,9 @@ import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.core.model.cache.ComicCacheAnalysis
 import com.example.comicdav.core.model.cache.ComicCacheCategory
-import com.example.comicdav.data.filedirectory.FileDirectorySource
-import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.source.FileDirectorySource
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
 import com.example.comicdav.feature.filedirectory.FileDirectoryUiState

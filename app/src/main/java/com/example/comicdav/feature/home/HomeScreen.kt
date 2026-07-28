@@ -55,10 +55,10 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
-import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.library.SourceType
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.library.SourceType
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.HistoryEntryRow
 import com.example.comicdav.ui.MuBoxEmptyState

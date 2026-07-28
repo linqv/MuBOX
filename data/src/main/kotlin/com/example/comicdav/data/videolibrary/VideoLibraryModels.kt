@@ -1,47 +1,9 @@
 package com.example.comicdav.data.videolibrary
 
-enum class VideoSourceType {
-    LOCAL,
-    WEBDAV,
-}
-
-/** A video-library entry exposed outside the persistence layer. */
-data class VideoLibraryItem(
-    val id: Long = 0L,
-    val title: String,
-    val displayName: String,
-    val sourceType: VideoSourceType,
-    val thumbnailPath: String? = null,
-    val addedAt: Long,
-    val lastOpenedAt: Long? = null,
-)
-
-/** Local video source metadata exposed by the video catalog. */
-data class LocalVideoSource(
-    val videoLibraryItemId: Long,
-    val uri: String,
-    val fileName: String,
-    val size: Long? = null,
-    val lastModified: Long? = null,
-)
-
-/** WebDAV video source metadata exposed by the video catalog. */
-data class WebDavVideoSource(
-    val videoLibraryItemId: Long,
-    val accountId: String,
-    val remotePath: String,
-    val fileName: String,
-    val size: Long? = null,
-    val etag: String? = null,
-    val lastModified: Long? = null,
-)
-
-/** Aggregate returned by [VideoLibraryCatalog], intentionally free of Room annotations. */
-data class VideoLibraryItemWithSources(
-    val item: VideoLibraryItem,
-    val localSource: LocalVideoSource?,
-    val webDavSource: WebDavVideoSource?,
-)
+import com.example.comicdav.core.model.videolibrary.LocalVideoSource
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItem
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.WebDavVideoSource
 
 internal fun VideoLibraryItemRelation.toDomain(): VideoLibraryItemWithSources {
     return VideoLibraryItemWithSources(

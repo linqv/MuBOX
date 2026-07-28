@@ -1,36 +1,11 @@
 package com.example.comicdav.data.library
 
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.library.SourceType
 import com.example.comicdav.core.model.media.localComicTitleFromFileName
+import com.example.comicdav.core.ports.LibraryCatalog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-
-interface LibraryCatalog {
-    fun observeLibrary(): Flow<List<LibraryItemWithSources>>
-
-    suspend fun addLocalComic(
-        uri: String,
-        fileName: String,
-        size: Long? = null,
-        lastModified: Long? = null,
-    ): Long
-
-    suspend fun addWebDavComic(
-        accountId: String,
-        remotePath: String,
-        fileName: String,
-        size: Long? = null,
-        etag: String? = null,
-        lastModified: Long? = null,
-        cacheKey: String? = null,
-        coverPath: String? = null,
-    ): Long
-
-    suspend fun markOpened(libraryItemId: Long)
-
-    suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?)
-
-    suspend fun removeComic(libraryItemId: Long)
-}
 
 class LibraryRepository internal constructor(
     private val dao: LibraryDao,

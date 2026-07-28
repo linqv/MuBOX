@@ -4,9 +4,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.core.model.settings.AppColorPalette
-import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySource
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.ports.FileDirectoryCatalog
+import com.example.comicdav.core.model.source.FileDirectorySource
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.core.model.media.MediaKind

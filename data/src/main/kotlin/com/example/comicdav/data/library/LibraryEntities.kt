@@ -7,6 +7,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import androidx.room.TypeConverter
+import com.example.comicdav.core.model.library.OfflineState
+import com.example.comicdav.core.model.library.SourceType
 
 @Entity(tableName = "library_items")
 internal data class LibraryItemEntity(

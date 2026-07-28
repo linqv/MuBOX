@@ -4,8 +4,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.comicdav.data.database.AppDatabase
 import com.example.comicdav.data.library.LibraryRepository
-import com.example.comicdav.data.library.OfflineState
-import com.example.comicdav.data.library.SourceType
+import com.example.comicdav.core.model.library.OfflineState
+import com.example.comicdav.core.model.library.SourceType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After

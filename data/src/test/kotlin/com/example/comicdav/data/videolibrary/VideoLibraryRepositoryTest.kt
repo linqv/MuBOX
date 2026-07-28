@@ -1,5 +1,8 @@
 package com.example.comicdav.data.videolibrary
 
+import com.example.comicdav.core.model.videolibrary.LocalVideoSource
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItem
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -39,8 +42,9 @@ class VideoLibraryRepositoryTest {
         assertEquals(VideoLibraryItem::class, result.item::class)
         assertEquals(7L, result.item.id)
         assertEquals("/thumbnails/movie.jpg", result.item.thumbnailPath)
-        assertEquals(LocalVideoSource::class, result.localSource!!::class)
-        assertEquals("content://video/7", result.localSource.uri)
+        val localSource = checkNotNull(result.localSource)
+        assertEquals(LocalVideoSource::class, localSource::class)
+        assertEquals("content://video/7", localSource.uri)
     }
 
     @Test

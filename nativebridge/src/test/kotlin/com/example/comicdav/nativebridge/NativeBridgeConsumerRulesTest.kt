@@ -1,0 +1,29 @@
+package com.example.comicdav.nativebridge
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class NativeBridgeConsumerRulesTest {
+    @Test
+    fun modulePublishesJniKeepRulesToConsumers() {
+        val buildScript = File(repositoryRoot, "nativebridge/build.gradle.kts").readText()
+        val consumerRules = File(repositoryRoot, "nativebridge/consumer-rules.pro").readText()
+        val appRules = File(repositoryRoot, "app/proguard-rules.pro").readText()
+
+        assertTrue(buildScript.contains("consumerProguardFiles(\"consumer-rules.pro\")"))
+        assertTrue(consumerRules.contains("com.example.comicdav.nativebridge.ComicNative"))
+        assertTrue(consumerRules.contains("native <methods>;"))
+        assertTrue(consumerRules.contains("-keepnames class com.example.comicdav.nativebridge.RangeProviderRegistry"))
+        assertTrue(consumerRules.contains("public static byte[] readRange(long, long, long);"))
+        assertTrue(consumerRules.contains("public static byte[] readCachedRange(long, long, long);"))
+        assertFalse(appRules.contains("com.example.comicdav.nativebridge"))
+    }
+
+    private val repositoryRoot: File by lazy {
+        generateSequence(File(".").absoluteFile.normalize()) { directory -> directory.parentFile }
+            .firstOrNull { directory -> File(directory, "settings.gradle.kts").isFile }
+            ?: error("Could not locate repository root from ${File(".").absolutePath}")
+    }
+}

@@ -57,8 +57,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.data.filedirectory.FileDirectorySource
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.model.source.FileDirectorySource
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
 import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail

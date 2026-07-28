@@ -2,8 +2,8 @@ package com.example.comicdav
 
 import android.content.Context
 import android.net.Uri
-import com.example.comicdav.data.filedirectory.FileDirectorySource
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.model.source.FileDirectorySource
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import kotlinx.coroutines.CoroutineScope

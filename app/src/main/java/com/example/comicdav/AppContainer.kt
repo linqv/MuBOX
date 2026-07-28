@@ -12,15 +12,15 @@ import com.example.comicdav.data.VideoDownloadStore
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.database.createAppPersistence
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
-import com.example.comicdav.feature.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.feature.reader.LocalComicOpener
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.infrastructure.diagnostics.AndroidLogcatDiagnosticSink
+import com.example.comicdav.infrastructure.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.nativebridge.ComicEngine
-import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
 import com.example.comicdav.network.WebDavClientProvider
 import com.example.comicdav.network.WebDavCredentialsSnapshot
+import com.example.comicdav.network.createWebDavClient as newWebDavClient
 import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.security.CredentialCipher
 import com.example.comicdav.video.player.VideoPlaybackStateStore
@@ -111,11 +111,11 @@ internal class AppContainer(context: Context) {
     )
 
     fun createWebDavClient(baseUrl: String, username: String?, password: String?) =
-        OkHttpWebDavClient(
+        newWebDavClient(
             baseUrl = baseUrl,
-            username = username?.takeIf(String::isNotBlank),
-            password = password?.takeIf(String::isNotBlank),
-            diagnostics = com.example.comicdav.network.WebDavNetworkDiagnostics(diagnostics),
+            username = username,
+            password = password,
+            diagnostics = diagnostics,
         )
 
     fun openLocalComicSession(path: String) = ComicEngine(diagnostics = diagnostics).openLocal(path)

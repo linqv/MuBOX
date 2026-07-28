@@ -1,35 +1,10 @@
 package com.example.comicdav.data.videolibrary
 
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
+import com.example.comicdav.core.ports.VideoLibraryCatalog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-
-interface VideoLibraryCatalog {
-    fun observeVideoLibrary(): Flow<List<VideoLibraryItemWithSources>>
-
-    suspend fun addLocalVideo(
-        uri: String,
-        fileName: String,
-        size: Long? = null,
-        lastModified: Long? = null,
-        thumbnailPath: String? = null,
-    ): Long
-
-    suspend fun addWebDavVideo(
-        accountId: String,
-        remotePath: String,
-        fileName: String,
-        size: Long? = null,
-        etag: String? = null,
-        lastModified: Long? = null,
-        thumbnailPath: String? = null,
-    ): Long
-
-    suspend fun markOpened(videoLibraryItemId: Long)
-
-    suspend fun updateThumbnailPath(videoLibraryItemId: Long, thumbnailPath: String?)
-
-    suspend fun removeVideo(videoLibraryItemId: Long)
-}
 
 class VideoLibraryRepository internal constructor(
     private val dao: VideoLibraryDao,

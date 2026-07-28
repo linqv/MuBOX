@@ -39,14 +39,14 @@ class PackageDependencyRulesTest {
     }
 
     @Test
-    fun physicalFeatureModulesDoNotImportAdapterImplementations() {
+    fun logicalFeaturePackagesDoNotImportAdapterImplementations() {
         val violations = dependencies.filter { dependency ->
-            dependency.sourcePath.modulePath() in FEATURE_MODULE_PATHS &&
+            dependency.sourcePackage.featureName() != null &&
                 dependency.targetPackage.packageArea() in ADAPTER_PACKAGE_AREAS
         }
 
         assertDebtLedgerMatches(
-            rule = "physical feature module -> data/network/nativebridge adapter",
+            rule = "logical feature package -> data/network/nativebridge adapter",
             violations = violations,
             expectedDebt = FEATURE_TO_ADAPTER_DEBT,
         )
@@ -411,12 +411,6 @@ class PackageDependencyRulesTest {
 
         val SOURCE_EXTENSIONS = setOf("kt", "java")
         val LOWER_LAYER_MODULE_PATHS = setOf("data", "webdav", "nativebridge")
-                val FEATURE_MODULE_PATHS = setOf(
-                    "feature/reader",
-                    "feature/video",
-                    "feature/downloads",
-                    "feature/settings",
-                )
         val ADAPTER_PACKAGE_AREAS = setOf("data", "network", "nativebridge", "security")
         val APP_ROOT_RESTRICTED_AREAS = setOf("feature", "data", "video")
 

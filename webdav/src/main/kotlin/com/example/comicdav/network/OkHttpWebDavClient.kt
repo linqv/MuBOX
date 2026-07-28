@@ -33,7 +33,7 @@ import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class OkHttpWebDavClient(
+internal class OkHttpWebDavClient(
     private val baseUrl: String,
     private val username: String?,
     private val password: String?,

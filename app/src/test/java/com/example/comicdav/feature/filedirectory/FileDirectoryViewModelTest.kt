@@ -1,9 +1,9 @@
 package com.example.comicdav.feature.filedirectory
 
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySource
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.ports.FileDirectoryCatalog
+import com.example.comicdav.core.model.source.FileDirectorySource
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

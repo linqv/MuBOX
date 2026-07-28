@@ -3,7 +3,7 @@ package com.example.comicdav.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.data.database.createAppDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest

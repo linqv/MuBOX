@@ -1,9 +1,9 @@
 package com.example.comicdav.feature.videolibrary
 
-import com.example.comicdav.data.videolibrary.VideoLibraryCatalog
-import com.example.comicdav.data.videolibrary.VideoLibraryItem
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.core.ports.VideoLibraryCatalog
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItem
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

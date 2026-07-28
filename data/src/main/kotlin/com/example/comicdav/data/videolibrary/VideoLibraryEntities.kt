@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 import androidx.room.TypeConverter
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 
 @Entity(tableName = "video_library_items")
 internal data class VideoLibraryItemEntity(

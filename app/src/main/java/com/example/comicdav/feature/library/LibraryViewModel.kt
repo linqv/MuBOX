@@ -5,8 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.comicdav.data.library.LibraryCatalog
-import com.example.comicdav.data.library.LibraryItemWithSources
+import com.example.comicdav.core.ports.LibraryCatalog
+import com.example.comicdav.core.model.library.LibraryItemWithSources
 import kotlinx.coroutines.launch
 
 data class LibraryUiState(

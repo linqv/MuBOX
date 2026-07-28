@@ -42,7 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MU_BOX_MEDIA_GRID_COLUMN_COUNT
 import com.example.comicdav.ui.MuBoxMetrics

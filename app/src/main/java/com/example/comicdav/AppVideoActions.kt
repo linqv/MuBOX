@@ -9,9 +9,9 @@ import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.core.model.transfer.VideoDownloadRecord
-import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoSourceType
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import com.example.comicdav.feature.directorylisting.MAX_DIRECTORY_VIDEO_THUMBNAILS
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.fileDirectoryBrowserVideoThumbnailVersion

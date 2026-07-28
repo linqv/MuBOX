@@ -18,7 +18,7 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 
-enum class WebDavOperation {
+internal enum class WebDavOperation {
     PROPFIND,
     HEAD,
     RANGE_GET,
@@ -26,7 +26,7 @@ enum class WebDavOperation {
     DOWNLOAD,
 }
 
-class WebDavRequestTag(
+internal class WebDavRequestTag(
     val operation: WebDavOperation,
     val path: String,
     val rangeHeader: String?,
@@ -46,7 +46,7 @@ class WebDavRequestTag(
     }
 }
 
-class WebDavNetworkDiagnostics(
+internal class WebDavNetworkDiagnostics(
     private val diagnostics: Diagnostics = NoopDiagnostics,
     private val logDetail: ((() -> String) -> Unit) = { event ->
         diagnostics.detail(DiagnosticCategory.WEBDAV_NETWORK, event)

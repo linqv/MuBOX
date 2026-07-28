@@ -5,8 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.comicdav.data.videolibrary.VideoLibraryCatalog
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.ports.VideoLibraryCatalog
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import kotlinx.coroutines.launch
 
 data class ThumbnailArtworkRevisions(

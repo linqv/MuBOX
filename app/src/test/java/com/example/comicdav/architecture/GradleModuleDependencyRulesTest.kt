@@ -119,7 +119,7 @@ class GradleModuleDependencyRulesTest {
 
         val approvedTestGraph: Map<String, Set<String>> = approvedGraph.keys.associateWith { module ->
             when (module) {
-                ":webdav" -> sortedSetOf(":nativebridge")
+                ":nativebridge" -> sortedSetOf(":webdav")
                 else -> emptySet()
             }
         }

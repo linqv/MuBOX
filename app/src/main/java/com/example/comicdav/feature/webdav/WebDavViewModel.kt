@@ -12,7 +12,6 @@ import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail
 import com.example.comicdav.feature.directorylisting.filterAndSortDirectoryEntries
 import com.example.comicdav.feature.directorylisting.opposite
 import com.example.comicdav.feature.directorylisting.putBoundedDirectoryVideoThumbnail
-import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavException
 import com.example.comicdav.core.remote.WebDavItem
@@ -73,13 +72,7 @@ internal fun webDavConnectionFailureMessage(error: Throwable): String = when (er
 }
 
 class WebDavViewModel(
-    private val clientFactory: WebDavClientFactory = { baseUrl, username, password ->
-        OkHttpWebDavClient(
-            baseUrl = baseUrl,
-            username = username?.takeIf { it.isNotBlank() },
-            password = password?.takeIf { it.isNotBlank() },
-        )
-    },
+    private val clientFactory: WebDavClientFactory,
     private val directoryComputationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     var uiState by mutableStateOf(WebDavUiState())

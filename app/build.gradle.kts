@@ -1,89 +1,14 @@
 import org.gradle.api.GradleException
 import org.gradle.api.DefaultTask
-import org.gradle.api.file.ConfigurableFileCollection
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.CacheableTask
-import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFile
-import org.gradle.api.tasks.InputFiles
-import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.OutputFile
-import org.gradle.api.tasks.PathSensitivity
-import org.gradle.api.tasks.PathSensitive
-import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
-import org.gradle.process.ExecOperations
 import java.util.Properties
-import javax.inject.Inject
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-}
-
-data class RustAndroidTarget(
-    val abi: String,
-    val triple: String,
-    val linkerName: String,
-    val linkerEnv: String,
-)
-
-@CacheableTask
-abstract class CompileRustAndroidLibrary @Inject constructor(
-    private val execOperations: ExecOperations,
-) : DefaultTask() {
-    @get:Input
-    abstract val targetTriple: Property<String>
-
-    @get:Input
-    abstract val linkerEnvironment: Property<String>
-
-    @get:Input
-    abstract val cargoArguments: ListProperty<String>
-
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val rustInputs: ConfigurableFileCollection
-
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.NONE)
-    abstract val linker: RegularFileProperty
-
-    @get:Internal
-    abstract val crateDirectory: DirectoryProperty
-
-    @get:Internal
-    abstract val cargoProfileDirectory: Property<String>
-
-    @get:OutputFile
-    abstract val outputLibrary: RegularFileProperty
-
-    @TaskAction
-    fun compile() {
-        val crateDir = crateDirectory.get().asFile
-        val linkerFile = linker.get().asFile
-        execOperations.exec {
-            workingDir = crateDir
-            environment(linkerEnvironment.get(), linkerFile.absolutePath)
-            commandLine(
-                listOf("cargo", "build", "--locked", "--target", targetTriple.get()) + cargoArguments.get(),
-            )
-        }
-
-        val sourceLibrary = crateDir.resolve(
-            "target/${targetTriple.get()}/${cargoProfileDirectory.get()}/libcomic_core.so",
-        )
-        if (!sourceLibrary.isFile) {
-            throw GradleException("Rust output not found at $sourceLibrary")
-        }
-        val output = outputLibrary.get().asFile
-        output.parentFile.mkdirs()
-        sourceLibrary.copyTo(output, overwrite = true)
-    }
 }
 
 abstract class CheckReleaseSigning : DefaultTask() {
@@ -110,12 +35,9 @@ abstract class CheckReleaseSigning : DefaultTask() {
     }
 }
 
-val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
-val generatedRustReleaseJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/release")
 val compileAndroidSdk = 36
 val minAndroidSdk = 26
 val targetAndroidSdk = 36
-val androidNdkVersion = "28.0.13004108"
 val supportedTargetAbis = setOf("arm64-v8a", "x86_64")
 val targetAbiAliases = mapOf(
     "arm64_v8a" to "arm64-v8a",
@@ -177,7 +99,6 @@ val hasReleaseSigning = releaseSigningMissing.isEmpty()
 android {
     namespace = "org.mubox.reader"
     compileSdk = compileAndroidSdk
-    ndkVersion = androidNdkVersion
 
     defaultConfig {
         applicationId = "org.mubox.reader"
@@ -194,15 +115,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    sourceSets {
-        getByName("debug") {
-            jniLibs.directories.add(generatedRustJniLibs.get().asFile.absolutePath)
-        }
-        getByName("release") {
-            jniLibs.directories.add(generatedRustReleaseJniLibs.get().asFile.absolutePath)
-        }
     }
 
     packaging {
@@ -253,100 +165,6 @@ android {
     }
 }
 
-tasks.register<Exec>("buildRustDebug") {
-    workingDir = file("../comic-core")
-    commandLine("cargo", "build")
-}
-
-enum class RustCargoProfile(
-    val targetDirName: String,
-    val cargoArgs: List<String>,
-    val taskName: String,
-) {
-    Debug("debug", emptyList(), "Debug"),
-    Release("release", listOf("--release"), "Release"),
-}
-
-val rustAndroidTargets = listOf(
-    RustAndroidTarget(
-        abi = "arm64-v8a",
-        triple = "aarch64-linux-android",
-        linkerName = "aarch64-linux-android${minAndroidSdk}-clang",
-        linkerEnv = "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER",
-    ),
-    RustAndroidTarget(
-        abi = "x86_64",
-        triple = "x86_64-linux-android",
-        linkerName = "x86_64-linux-android${minAndroidSdk}-clang",
-        linkerEnv = "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER",
-    ),
-)
-val rustAndroidIntermediate = layout.buildDirectory.dir("intermediates/rustAndroid")
-
-fun registerRustAndroidVariant(
-    outputRoot: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
-    cargoProfile: RustCargoProfile,
-) {
-    val selectedTargets = rustAndroidTargets.filter { targetAbi == null || it.abi == targetAbi }
-    val compileTasks = selectedTargets.associateWith { target ->
-        val abiTaskName = target.abi
-            .split('-', '_')
-            .joinToString("") { part -> part.replaceFirstChar(Char::uppercaseChar) }
-        tasks.register<CompileRustAndroidLibrary>(
-            "compileRustAndroid${cargoProfile.taskName}$abiTaskName",
-        ) {
-            targetTriple.set(target.triple)
-            linkerEnvironment.set(target.linkerEnv)
-            cargoArguments.set(cargoProfile.cargoArgs)
-            cargoProfileDirectory.set(cargoProfile.targetDirName)
-            crateDirectory.set(layout.projectDirectory.dir("../comic-core"))
-            rustInputs.from(
-                fileTree("../comic-core") {
-                    include("Cargo.toml", "Cargo.lock", "src/**/*.rs")
-                },
-            )
-            linker.set(
-                file(
-                    "${androidSdkDir()}/ndk/$androidNdkVersion/toolchains/llvm/prebuilt/" +
-                        "linux-x86_64/bin/${target.linkerName}",
-                ),
-            )
-            outputLibrary.set(
-                rustAndroidIntermediate.map { root ->
-                    root.file("${cargoProfile.targetDirName}/${target.abi}/libcomic_core.so")
-                },
-            )
-        }
-    }
-    tasks.register<Sync>("buildRustAndroid${cargoProfile.taskName}") {
-        compileTasks.forEach { (target, compileTask) ->
-            dependsOn(compileTask)
-            from(compileTask.flatMap(CompileRustAndroidLibrary::outputLibrary)) {
-                into(target.abi)
-            }
-        }
-        into(outputRoot)
-    }
-}
-
-registerRustAndroidVariant(
-    outputRoot = generatedRustJniLibs,
-    cargoProfile = RustCargoProfile.Debug,
-)
-
-registerRustAndroidVariant(
-    outputRoot = generatedRustReleaseJniLibs,
-    cargoProfile = RustCargoProfile.Release,
-)
-
-tasks.matching { it.name == "mergeDebugJniLibFolders" }.configureEach {
-    dependsOn("buildRustAndroidDebug")
-}
-
-tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
-    dependsOn("buildRustAndroidRelease")
-}
-
 tasks.register<CheckReleaseSigning>("checkReleaseSigning") {
     missingEntries.set(releaseSigningMissing.sorted())
     releaseStorePath.set(
@@ -365,18 +183,6 @@ tasks.matching {
     dependsOn("checkReleaseSigning")
 }
 
-fun androidSdkDir(): File {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.isFile) {
-        val properties = Properties()
-        localPropertiesFile.inputStream().use(properties::load)
-        properties.getProperty("sdk.dir")?.let { return file(it) }
-    }
-    System.getenv("ANDROID_HOME")?.let { return file(it) }
-    System.getenv("ANDROID_SDK_ROOT")?.let { return file(it) }
-    throw GradleException("Android SDK directory not configured")
-}
-
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:diagnostics"))
@@ -393,7 +199,6 @@ dependencies {
     implementation(composeBom)
     androidTestImplementation(composeBom)
     val okhttpBom = platform("com.squareup.okhttp3:okhttp-bom:5.3.2")
-    implementation(okhttpBom)
     testImplementation(okhttpBom)
 
     implementation("androidx.activity:activity-compose:1.13.0")
@@ -405,7 +210,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
-    implementation("com.squareup.okhttp3:okhttp")
     implementation(files("libs/fitz-1.27.1.aar"))
     implementation(files("libs/mpv-android-lib-v0.0.1.aar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")

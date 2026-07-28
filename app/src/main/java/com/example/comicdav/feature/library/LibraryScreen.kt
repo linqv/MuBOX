@@ -43,8 +43,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.library.SourceType
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.library.SourceType
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxMetrics

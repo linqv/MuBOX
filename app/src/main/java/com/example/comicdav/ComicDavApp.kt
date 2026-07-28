@@ -31,8 +31,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
-import com.example.comicdav.data.library.LibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.home.HomeScreen
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.downloads.DownloadsScreen

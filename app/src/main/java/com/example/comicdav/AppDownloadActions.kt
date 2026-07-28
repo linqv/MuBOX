@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.example.comicdav.core.model.transfer.DownloadRecord
 import com.example.comicdav.core.model.transfer.VideoDownloadRecord
-import com.example.comicdav.data.library.LibraryItemWithSources
+import com.example.comicdav.core.model.library.LibraryItemWithSources
 import com.example.comicdav.core.model.transfer.ComicDownloadRequest
 import com.example.comicdav.core.model.transfer.DownloadMediaType
 import com.example.comicdav.core.model.transfer.DownloadOrigin

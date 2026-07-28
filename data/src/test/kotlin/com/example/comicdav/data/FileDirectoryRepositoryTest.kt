@@ -9,7 +9,7 @@ import com.example.comicdav.data.database.AppDatabase
 import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.filedirectory.FileDirectorySourceEntity
-import com.example.comicdav.data.filedirectory.FileDirectorySourceType
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.security.CredentialCipher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope

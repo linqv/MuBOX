@@ -1,9 +1,9 @@
 package com.example.comicdav
 
 import com.example.comicdav.data.SavedWebDavAccount
-import com.example.comicdav.network.OkHttpWebDavClient
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavClientFactory
+import com.example.comicdav.network.createWebDavClient
 
 internal data class ActiveWebDavConnection(
     val activeAccountId: String?,
@@ -55,7 +55,7 @@ internal class AppWebDavResolver(
         val username = active.username
         val password = active.password
         return WebDavClientFactory {
-            OkHttpWebDavClient(
+            createWebDavClient(
                 baseUrl = baseUrl,
                 username = username,
                 password = password,

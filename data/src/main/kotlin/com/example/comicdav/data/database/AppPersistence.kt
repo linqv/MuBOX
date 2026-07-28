@@ -2,14 +2,14 @@ package com.example.comicdav.data.database
 
 import android.content.Context
 import com.example.comicdav.data.WebDavAccountStore
-import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
+import com.example.comicdav.core.ports.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.history.WatchHistoryRepository
 import com.example.comicdav.core.ports.WatchHistoryGateway
-import com.example.comicdav.data.library.LibraryCatalog
+import com.example.comicdav.core.ports.LibraryCatalog
 import com.example.comicdav.data.library.LibraryRepository
-import com.example.comicdav.data.videolibrary.VideoLibraryCatalog
+import com.example.comicdav.core.ports.VideoLibraryCatalog
 import com.example.comicdav.data.videolibrary.VideoLibraryRepository
 import com.example.comicdav.security.CredentialCipher
 

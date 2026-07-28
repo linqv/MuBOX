@@ -1,4 +1,4 @@
-package com.example.comicdav.feature.library
+package com.example.comicdav.infrastructure.library
 
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.PlannedRemoteRange

@@ -6,8 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.core.model.media.MediaEntry
-import com.example.comicdav.data.filedirectory.FileDirectoryCatalog
-import com.example.comicdav.data.filedirectory.FileDirectorySource
+import com.example.comicdav.core.ports.FileDirectoryCatalog
+import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.feature.directorylisting.DirectorySortDirection
 import com.example.comicdav.feature.directorylisting.DirectorySortField
 import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode

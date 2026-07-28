@@ -3,6 +3,7 @@ package com.example.comicdav.data.filedirectory
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
+import com.example.comicdav.core.model.source.FileDirectorySourceType
 
 @Entity(tableName = "file_directory_sources")
 internal data class FileDirectorySourceEntity(

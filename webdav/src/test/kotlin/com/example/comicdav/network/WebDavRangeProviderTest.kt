@@ -3,7 +3,6 @@ package com.example.comicdav.network
 import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
 import com.example.comicdav.core.diagnostics.DiagnosticSink
 import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
-import com.example.comicdav.nativebridge.RangeProviderRegistry
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -456,47 +455,6 @@ class WebDavRangeProviderTest {
     }
 
     @Test
-    fun unregisterCancelsInFlightPrefetchRequest() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val readStarted = CountDownLatch(1)
-        val cancellationRegistered = CountDownLatch(1)
-        val cancellationCalled = CountDownLatch(1)
-        val client = CancellableBlockingWebDavClient(
-            bytes = bytes,
-            readStarted = readStarted,
-            cancellationRegistered = cancellationRegistered,
-            cancellationCalled = cancellationCalled,
-        )
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
-        val fileId = com.example.comicdav.nativebridge.RangeProviderRegistry.register(provider)
-        val prefetchThread = Thread {
-            runCatching {
-                com.example.comicdav.nativebridge.RangeProviderRegistry.prefetchRange(
-                    fileId,
-                    start = 40,
-                    endInclusive = 79,
-                )
-            }
-        }
-
-        prefetchThread.start()
-        assertTrue(readStarted.await(1, TimeUnit.SECONDS))
-        assertTrue(cancellationRegistered.await(1, TimeUnit.SECONDS))
-
-        com.example.comicdav.nativebridge.RangeProviderRegistry.unregister(fileId)
-
-        assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
-        prefetchThread.join(1_000)
-        assertFalse(prefetchThread.isAlive)
-        assertEquals(listOf(40L to 79L), client.rangeCalls)
-    }
-
-    @Test
     fun concurrentReadRangesJoinTheFirstCoveringFetch() {
         val bytes = ByteArray(128) { it.toByte() }
         val release = CompletableDeferred<Unit>()
@@ -742,34 +700,6 @@ class WebDavRangeProviderTest {
         } finally {
             provider.close()
             readThread.join(1_000)
-        }
-    }
-
-    @Test
-    fun registryExposesCacheOnlyRangeRead() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val provider = WebDavRangeProvider(
-            client = RecordingWebDavClient(bytes),
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            logDiagnostic = {},
-        )
-        val fileId = RangeProviderRegistry.register(provider)
-
-        try {
-            assertFalse(RangeProviderRegistry.isRangeCached(fileId, start = 40, endInclusive = 49))
-            assertNull(RangeProviderRegistry.readCachedRange(fileId, start = 40, endInclusive = 49))
-
-            assertTrue(RangeProviderRegistry.prefetchRange(fileId, start = 40, endInclusive = 49))
-
-            assertTrue(RangeProviderRegistry.isRangeCached(fileId, start = 40, endInclusive = 49))
-            assertArrayEquals(
-                bytes.sliceArray(40..49),
-                RangeProviderRegistry.readCachedRange(fileId, start = 40, endInclusive = 49),
-            )
-        } finally {
-            RangeProviderRegistry.unregister(fileId)
         }
     }
 
