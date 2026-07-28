@@ -25,6 +25,35 @@ class PackageDependencyRulesTest {
     }
 
     @Test
+    fun logicalFeaturesMatchTheirApprovedPhysicalModules() {
+        val misplacedSources = sourceFiles.mapNotNull { sourceFile ->
+            val featureName = sourceFile.packageName.featureName()
+            val modulePath = sourceFile.relativePath.modulePath()
+            val expectedModulePath = featureName?.let(APPROVED_FEATURE_MODULE_PATHS::get)
+            when {
+                featureName != null && expectedModulePath == null ->
+                    "${sourceFile.relativePath}: unapproved logical feature '$featureName'"
+                expectedModulePath != null && modulePath != expectedModulePath ->
+                    "${sourceFile.relativePath}: feature '$featureName' belongs in $expectedModulePath"
+                modulePath in APPROVED_FEATURE_MODULE_PATHS.values &&
+                    featureName != APPROVED_FEATURE_MODULE_PATHS.entries
+                        .first { (_, path) -> path == modulePath }
+                        .key ->
+                    "${sourceFile.relativePath}: package does not match physical feature module $modulePath"
+                else -> null
+            }
+        }
+
+        assertTrue(
+            buildString {
+                appendLine("Logical feature packages must live in their approved physical modules.")
+                misplacedSources.forEach { violation -> appendLine("  - $violation") }
+            },
+            misplacedSources.isEmpty(),
+        )
+    }
+
+    @Test
     fun dataNetworkAndNativeBridgeFeatureDependenciesMatchDebtLedger() {
         val violations = dependencies.filter { dependency ->
             dependency.sourcePath.modulePath() in LOWER_LAYER_MODULE_PATHS &&
@@ -423,6 +452,19 @@ class PackageDependencyRulesTest {
         val CROSS_FEATURE_DEBT: Set<DependencyKey> = emptySet()
         val FEATURE_TO_ADAPTER_DEBT: Set<DependencyKey> = emptySet()
         val APP_ROOT_DEBT: Set<DependencyKey> = emptySet()
+
+        val APPROVED_FEATURE_MODULE_PATHS = mapOf(
+            "directorylisting" to "feature/directory-listing",
+            "filedirectory" to "feature/file-directory",
+            "home" to "feature/home",
+            "library" to "feature/library",
+            "reader" to "feature/reader",
+            "video" to "feature/video",
+            "downloads" to "feature/downloads",
+            "settings" to "feature/settings",
+            "videolibrary" to "feature/video-library",
+            "webdav" to "feature/webdav",
+        )
 
         val ARCHITECTURE_MODULE_PATHS = listOf(
             "app",
