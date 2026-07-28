@@ -267,7 +267,6 @@ fun MuBoxMediaGridTile(
     mediaKind: MediaKind,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
     artworkModel: Any? = null,
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
@@ -323,29 +322,16 @@ fun MuBoxMediaGridTile(
             }
         }
         // The bordered card ends with the artwork; the filename is a separate label below it.
-        Column(
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = colors.text,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.text,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        )
     }
 }
 

@@ -43,14 +43,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
-import com.example.comicdav.data.videolibrary.VideoSourceType
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MU_BOX_MEDIA_GRID_COLUMN_COUNT
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import java.io.File
 
 @Composable
@@ -277,17 +275,3 @@ internal fun videoLibraryCountLabel(count: Int): String {
 
 internal fun videoLibraryPosterKind(): com.example.comicdav.ui.MuBoxPosterKind =
     com.example.comicdav.ui.MuBoxPosterKind.Video
-
-internal fun videoSourceLabel(sourceType: VideoSourceType): String {
-    return when (sourceType) {
-        VideoSourceType.LOCAL -> "本地"
-        VideoSourceType.WEBDAV -> "WebDAV"
-    }
-}
-
-internal fun videoSourceMeta(item: VideoLibraryItemWithSources): String {
-    return when (item.item.sourceType) {
-        VideoSourceType.LOCAL -> item.localSource?.fileName ?: "本地视频"
-        VideoSourceType.WEBDAV -> item.webDavSource?.remotePath?.let(::decodeWebDavPathForDisplay) ?: "WebDAV"
-    }
-}
