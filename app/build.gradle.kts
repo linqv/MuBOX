@@ -386,6 +386,8 @@ dependencies {
     implementation(project(":data"))
     implementation(project(":feature:reader"))
     implementation(project(":feature:video"))
+    implementation(project(":feature:downloads"))
+    implementation(project(":feature:settings"))
 
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     implementation(composeBom)

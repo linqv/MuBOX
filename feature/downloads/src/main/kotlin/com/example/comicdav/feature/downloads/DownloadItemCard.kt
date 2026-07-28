@@ -25,12 +25,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.core.model.format.formatCacheSize
 import com.example.comicdav.ui.MuBoxMediaTypeIcon
 import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

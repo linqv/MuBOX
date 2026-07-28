@@ -1,53 +1,9 @@
 package com.example.comicdav.data
 
+import com.example.comicdav.core.model.cache.CacheClearResult
+import com.example.comicdav.core.model.cache.ComicCacheAnalysis
+import com.example.comicdav.core.model.cache.ComicCacheCategory
 import java.io.File
-import java.util.Locale
-
-data class ComicCacheAnalysis(
-    val remoteDownloadsBytes: Long = 0,
-    val remoteIndexBytes: Long = 0,
-    val readerPagesBytes: Long = 0,
-    val transientReaderPagesBytes: Long = 0,
-    val libraryCoversBytes: Long = 0,
-    val videoThumbnailsBytes: Long = 0,
-    val historyThumbnailsBytes: Long = 0,
-    val videoSubtitlesBytes: Long = 0,
-    val codeCacheBytes: Long = 0,
-    val externalCacheBytes: Long = 0,
-    val otherBytes: Long = 0,
-) {
-    val totalBytes: Long
-        get() = remoteDownloadsBytes +
-            remoteIndexBytes +
-            readerPagesBytes +
-            transientReaderPagesBytes +
-            libraryCoversBytes +
-            videoThumbnailsBytes +
-            historyThumbnailsBytes +
-            videoSubtitlesBytes +
-            codeCacheBytes +
-            externalCacheBytes +
-            otherBytes
-}
-
-data class CacheClearResult(
-    val filesDeleted: Int,
-    val bytesDeleted: Long,
-)
-
-enum class ComicCacheCategory {
-    REMOTE_DOWNLOADS,
-    REMOTE_INDEX,
-    READER_PAGES,
-    TRANSIENT_READER_PAGES,
-    LIBRARY_COVERS,
-    VIDEO_THUMBNAILS,
-    HISTORY_THUMBNAILS,
-    VIDEO_SUBTITLES,
-    CODE_CACHE,
-    EXTERNAL_CACHE,
-    OTHER,
-}
 
 fun analyzeComicCache(
     cacheDir: File,
@@ -107,22 +63,6 @@ private fun clearCacheTargets(targets: List<CacheTarget>): CacheClearResult {
         )
     }
     return CacheClearResult(filesDeleted = filesDeleted, bytesDeleted = bytesDeleted)
-}
-
-fun formatCacheSize(bytes: Long): String {
-    if (bytes <= 0L) return "0 B"
-    val units = listOf("B", "KB", "MB", "GB")
-    var unitIndex = 0
-    var value = bytes.toDouble()
-    while (value >= 1024.0 && unitIndex < units.lastIndex) {
-        value /= 1024.0
-        unitIndex += 1
-    }
-    return if (unitIndex == 0) {
-        "${bytes} B"
-    } else {
-        String.format(Locale.US, "%.1f %s", value, units[unitIndex])
-    }
 }
 
 private data class CacheTarget(

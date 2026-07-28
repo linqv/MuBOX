@@ -52,8 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.core.model.transfer.DownloadRecord
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
@@ -582,19 +582,19 @@ internal fun shouldShowWebDavAccountForm(
 ): Boolean =
     webDavStatus != com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED && (isAddingWebDavPath || editingWebDavSourceId != null)
 
-internal fun com.example.comicdav.data.ComicCacheCategory.cacheLabel(): String =
+internal fun com.example.comicdav.core.model.cache.ComicCacheCategory.cacheLabel(): String =
     when (this) {
-        com.example.comicdav.data.ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"
-        com.example.comicdav.data.ComicCacheCategory.REMOTE_INDEX -> "WebDAV 索引缓存"
-        com.example.comicdav.data.ComicCacheCategory.READER_PAGES -> "页面图片缓存"
-        com.example.comicdav.data.ComicCacheCategory.TRANSIENT_READER_PAGES -> "临时页面缓存"
-        com.example.comicdav.data.ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
-        com.example.comicdav.data.ComicCacheCategory.VIDEO_THUMBNAILS -> "影视库缩略图缓存"
-        com.example.comicdav.data.ComicCacheCategory.HISTORY_THUMBNAILS -> "历史记录缩略图缓存"
-        com.example.comicdav.data.ComicCacheCategory.VIDEO_SUBTITLES -> "视频字幕缓存"
-        com.example.comicdav.data.ComicCacheCategory.CODE_CACHE -> "运行时代码缓存"
-        com.example.comicdav.data.ComicCacheCategory.EXTERNAL_CACHE -> "外部缓存"
-        com.example.comicdav.data.ComicCacheCategory.OTHER -> "其他缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.REMOTE_INDEX -> "WebDAV 索引缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.READER_PAGES -> "页面图片缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.TRANSIENT_READER_PAGES -> "临时页面缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.LIBRARY_COVERS -> "书架封面缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.VIDEO_THUMBNAILS -> "影视库缩略图缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.HISTORY_THUMBNAILS -> "历史记录缩略图缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.VIDEO_SUBTITLES -> "视频字幕缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.CODE_CACHE -> "运行时代码缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.EXTERNAL_CACHE -> "外部缓存"
+        com.example.comicdav.core.model.cache.ComicCacheCategory.OTHER -> "其他缓存"
     }
 
 internal fun effectiveAvifImagesEnabled(

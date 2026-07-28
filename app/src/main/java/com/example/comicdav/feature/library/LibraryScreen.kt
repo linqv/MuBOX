@@ -51,7 +51,7 @@ import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.io.File
 
 @Composable

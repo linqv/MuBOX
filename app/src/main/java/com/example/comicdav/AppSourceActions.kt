@@ -5,7 +5,7 @@ import android.net.Uri
 import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.filedirectory.FileDirectorySourceType
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

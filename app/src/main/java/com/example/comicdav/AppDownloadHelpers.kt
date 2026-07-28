@@ -6,7 +6,7 @@ import android.provider.DocumentsContract
 import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.io.FileNotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

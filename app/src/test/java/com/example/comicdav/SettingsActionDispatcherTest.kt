@@ -14,7 +14,7 @@ import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.data.AppSettingsStore
-import com.example.comicdav.data.ComicCacheCategory
+import com.example.comicdav.core.model.cache.ComicCacheCategory
 import com.example.comicdav.feature.settings.SettingsAction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first

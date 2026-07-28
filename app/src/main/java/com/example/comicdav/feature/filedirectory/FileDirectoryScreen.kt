@@ -76,7 +76,7 @@ import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGlassSurface
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 
 internal enum class FileDirectoryEntryClickAction {
     OpenDirectory,

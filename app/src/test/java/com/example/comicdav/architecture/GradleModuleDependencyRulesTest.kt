@@ -98,6 +98,8 @@ class GradleModuleDependencyRulesTest {
                 ":ui",
                 ":feature:reader",
                 ":feature:video",
+                ":feature:downloads",
+                ":feature:settings",
             ),
             ":core:model" to emptySet(),
             ":core:diagnostics" to emptySet(),
@@ -111,6 +113,8 @@ class GradleModuleDependencyRulesTest {
                 ":ui",
             ),
             ":feature:video" to setOf(":core:model", ":ui"),
+            ":feature:downloads" to setOf(":core:model", ":ui"),
+            ":feature:settings" to setOf(":core:model", ":ui"),
         ).mapValues { (_, dependencies) -> dependencies.toSortedSet() }
 
         val approvedTestGraph: Map<String, Set<String>> = approvedGraph.keys.associateWith { module ->

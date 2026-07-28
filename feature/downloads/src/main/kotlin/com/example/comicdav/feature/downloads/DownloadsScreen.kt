@@ -32,9 +32,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.comicdav.core.model.transfer.TransferProgress
-import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.VideoDownloadRecord
-import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.core.model.transfer.DownloadRecord
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
+import com.example.comicdav.core.model.format.formatCacheSize
 import com.example.comicdav.ui.MuBoxInlineMessage
 import com.example.comicdav.ui.MuBoxMetrics
 import com.example.comicdav.ui.muBoxAppBackground

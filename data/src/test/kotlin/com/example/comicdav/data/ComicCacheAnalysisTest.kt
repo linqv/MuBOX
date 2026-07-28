@@ -1,5 +1,6 @@
 package com.example.comicdav.data
 
+import com.example.comicdav.core.model.cache.ComicCacheCategory
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -102,14 +103,6 @@ class ComicCacheAnalysisTest {
         assertTrue(known.exists())
         assertFalse(other.exists())
         assertFalse(rootFile.exists())
-    }
-
-    @Test
-    fun formatsCacheSizesForSettingsUi() {
-        assertEquals("0 B", formatCacheSize(0))
-        assertEquals("512 B", formatCacheSize(512))
-        assertEquals("1.5 MB", formatCacheSize(1_572_864))
-        assertEquals("2.0 GB", formatCacheSize(2_147_483_648))
     }
 
     private fun File.writeFile(relativePath: String, size: Int): File {

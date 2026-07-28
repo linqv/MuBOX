@@ -1,7 +1,7 @@
 package com.example.comicdav
 
 import androidx.compose.runtime.mutableStateOf
-import com.example.comicdav.data.ComicCacheAnalysis
+import com.example.comicdav.core.model.cache.ComicCacheAnalysis
 import com.example.comicdav.core.remote.WebDavItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

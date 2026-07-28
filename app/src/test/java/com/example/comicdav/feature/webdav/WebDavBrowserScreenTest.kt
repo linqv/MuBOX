@@ -6,7 +6,7 @@ import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.core.model.media.MediaKind
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

@@ -4,23 +4,16 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
+import com.example.comicdav.core.ports.VideoDownloadGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-
-data class VideoDownloadRecord(
-    val fileName: String,
-    val accountId: String,
-    val remotePath: String,
-    val localUri: String,
-    val sizeBytes: Long,
-    val downloadedAtMillis: Long,
-)
 
 class VideoDownloadStore(
     private val dataStore: DataStore<Preferences>,
     private val maxRecords: Int = DEFAULT_MAX_RECORDS,
-) {
-    val records: Flow<List<VideoDownloadRecord>> = dataStore.data.map { preferences ->
+) : VideoDownloadGateway {
+    override val records: Flow<List<VideoDownloadRecord>> = dataStore.data.map { preferences ->
         preferences[VIDEO_DOWNLOAD_RECORDS]
             .orEmpty()
             .lineSequence()
@@ -28,7 +21,7 @@ class VideoDownloadStore(
             .toList()
     }
 
-    suspend fun addRecord(record: VideoDownloadRecord) {
+    override suspend fun addRecord(record: VideoDownloadRecord) {
         dataStore.edit { preferences ->
             val existing = preferences[VIDEO_DOWNLOAD_RECORDS]
                 .orEmpty()
@@ -42,7 +35,7 @@ class VideoDownloadStore(
         }
     }
 
-    suspend fun removeRecord(record: VideoDownloadRecord) {
+    override suspend fun removeRecord(record: VideoDownloadRecord) {
         dataStore.edit { preferences ->
             preferences[VIDEO_DOWNLOAD_RECORDS] = preferences[VIDEO_DOWNLOAD_RECORDS]
                 .orEmpty()

@@ -411,7 +411,12 @@ class PackageDependencyRulesTest {
 
         val SOURCE_EXTENSIONS = setOf("kt", "java")
         val LOWER_LAYER_MODULE_PATHS = setOf("data", "webdav", "nativebridge")
-        val FEATURE_MODULE_PATHS = setOf("feature/reader", "feature/video")
+                val FEATURE_MODULE_PATHS = setOf(
+                    "feature/reader",
+                    "feature/video",
+                    "feature/downloads",
+                    "feature/settings",
+                )
         val ADAPTER_PACKAGE_AREAS = setOf("data", "network", "nativebridge", "security")
         val APP_ROOT_RESTRICTED_AREAS = setOf("feature", "data", "video")
 
@@ -435,6 +440,8 @@ class PackageDependencyRulesTest {
             "ui",
             "feature/reader",
             "feature/video",
+            "feature/downloads",
+            "feature/settings",
         )
 
         val REQUIRED_PHYSICAL_MODULE_PATHS = setOf(
@@ -447,6 +454,8 @@ class PackageDependencyRulesTest {
             "ui",
             "feature/reader",
             "feature/video",
+            "feature/downloads",
+            "feature/settings",
         )
 
         fun dependencyKey(relativePath: String, reference: String): DependencyKey =

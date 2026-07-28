@@ -5,8 +5,8 @@ import androidx.compose.ui.Modifier
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.data.AppSettingsStore
-import com.example.comicdav.data.ComicCacheAnalysis
-import com.example.comicdav.data.ComicCacheCategory
+import com.example.comicdav.core.model.cache.ComicCacheAnalysis
+import com.example.comicdav.core.model.cache.ComicCacheCategory
 import com.example.comicdav.data.filedirectory.FileDirectorySource
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources

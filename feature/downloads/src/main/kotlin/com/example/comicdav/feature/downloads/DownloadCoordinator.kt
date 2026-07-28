@@ -12,9 +12,9 @@ import com.example.comicdav.core.model.transfer.DownloadOrigin
 import com.example.comicdav.core.model.transfer.DownloadTask
 import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.core.model.transfer.VideoDownloadRequest
-import com.example.comicdav.data.DownloadRecordStore
-import com.example.comicdav.data.VideoDownloadRecord
-import com.example.comicdav.data.VideoDownloadStore
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
+import com.example.comicdav.core.ports.DownloadRecordGateway
+import com.example.comicdav.core.ports.VideoDownloadGateway
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
 import java.io.Closeable
@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-internal sealed interface DownloadState {
+sealed interface DownloadState {
     data object Idle : DownloadState
 
     data class Running(
@@ -53,7 +53,7 @@ internal sealed interface DownloadState {
     ) : DownloadState
 }
 
-internal val DownloadState.activeProgress: TransferProgress?
+val DownloadState.activeProgress: TransferProgress?
     get() = (this as? DownloadState.Running)?.progress
 
 /**
@@ -61,7 +61,7 @@ internal val DownloadState.activeProgress: TransferProgress?
  * progress survive Activity recreation while the actual backend only retains application-scoped
  * dependencies.
  */
-internal class DownloadCoordinator(
+class DownloadCoordinator(
     private val backend: DownloadBackend,
     private val reportFailure: (String, Throwable) -> Unit = { _, _ -> },
     private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
@@ -246,7 +246,7 @@ internal class DownloadCoordinator(
         totalBytes = totalBytes,
     )
 
-    internal class Factory(
+    class Factory(
         private val backend: DownloadBackend,
         private val reportFailure: (String, Throwable) -> Unit = { _, _ -> },
     ) : ViewModelProvider.Factory {
@@ -258,7 +258,7 @@ internal class DownloadCoordinator(
     }
 }
 
-internal class DownloadCancellation {
+class DownloadCancellation {
     private val lock = Any()
     private val closeables = mutableListOf<Closeable>()
     private var acceptingRegistrations = true
@@ -296,7 +296,7 @@ internal class DownloadCancellation {
     }
 }
 
-internal interface DownloadBackend {
+interface DownloadBackend {
     suspend fun downloadComic(
         request: ComicDownloadRequest,
         client: WebDavClient,
@@ -312,10 +312,10 @@ internal interface DownloadBackend {
     )
 }
 
-internal class AndroidDownloadBackend(
+class AndroidDownloadBackend(
     context: Context,
-    private val downloadRecordStore: DownloadRecordStore,
-    private val videoDownloadStore: VideoDownloadStore,
+    private val downloadRecordStore: DownloadRecordGateway,
+    private val videoDownloadStore: VideoDownloadGateway,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : DownloadBackend {
     private val applicationContext = context.applicationContext

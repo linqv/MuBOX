@@ -42,12 +42,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.VideoDownloadRecord
-import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.core.model.transfer.DownloadRecord
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
+import com.example.comicdav.core.model.format.formatCacheSize
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

@@ -5,12 +5,12 @@ import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.data.ComicCacheKey
-import com.example.comicdav.data.ComicCacheAnalysis
-import com.example.comicdav.data.ComicCacheCategory
+import com.example.comicdav.core.model.cache.ComicCacheAnalysis
+import com.example.comicdav.core.model.cache.ComicCacheCategory
 import com.example.comicdav.data.analyzeComicCache
 import com.example.comicdav.data.clearComicCache
 import com.example.comicdav.data.clearComicCacheCategory
-import com.example.comicdav.data.formatCacheSize
+import com.example.comicdav.core.model.format.formatCacheSize
 import com.example.comicdav.feature.reader.clearReaderPageCacheForComic
 import com.example.comicdav.feature.reader.pruneReaderPageCache
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings

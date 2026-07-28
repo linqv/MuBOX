@@ -24,19 +24,6 @@ import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMill
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-fun AppColorPalette.displayLabel(): String = when (this) {
-    AppColorPalette.DEFAULT -> "跟随系统"
-    AppColorPalette.MU_BOX_LIGHT -> "MuBOX 浅色"
-    AppColorPalette.MU_BOX_DARK -> "MuBOX 深色"
-    AppColorPalette.ADWAITA_LIGHT -> "Adwaita 浅色"
-    AppColorPalette.ADWAITA_BLUE_GRAY -> "Adwaita 蓝灰"
-    AppColorPalette.ADWAITA_PURPLE -> "Adwaita 紫色"
-    AppColorPalette.CINEMA_DARK -> "影院深色（旧）"
-    AppColorPalette.SEPIA -> "纸张护眼"
-    AppColorPalette.NIGHT -> "夜间深色"
-    AppColorPalette.HIGH_CONTRAST -> "高对比"
-}
-
 class AppSettingsStore(
     private val dataStore: DataStore<Preferences>,
 ) {

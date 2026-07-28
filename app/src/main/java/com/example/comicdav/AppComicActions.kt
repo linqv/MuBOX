@@ -8,7 +8,7 @@ import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.ReaderLoggingMode
-import com.example.comicdav.data.DownloadRecord
+import com.example.comicdav.core.model.transfer.DownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.library.SourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem

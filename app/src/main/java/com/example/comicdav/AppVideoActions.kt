@@ -8,7 +8,7 @@ import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.VideoProxySettings
-import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import com.example.comicdav.data.library.LibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.data.videolibrary.VideoSourceType

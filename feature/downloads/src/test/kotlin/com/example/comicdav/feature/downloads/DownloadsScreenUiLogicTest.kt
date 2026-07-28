@@ -1,7 +1,7 @@
 package com.example.comicdav.feature.downloads
 
-import com.example.comicdav.data.DownloadRecord
-import com.example.comicdav.data.VideoDownloadRecord
+import com.example.comicdav.core.model.transfer.DownloadRecord
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import com.example.comicdav.core.model.media.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Test

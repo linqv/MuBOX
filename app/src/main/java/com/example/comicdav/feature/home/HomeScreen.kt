@@ -72,7 +72,7 @@ import com.example.comicdav.ui.MuBoxPosterLayout
 import com.example.comicdav.ui.MuBoxSection
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.rememberMuBoxColors
-import com.example.comicdav.webdav.decodeWebDavPathForDisplay
+import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.io.File
 import java.security.MessageDigest
 import kotlin.math.roundToInt

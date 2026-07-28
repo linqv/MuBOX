@@ -1,6 +1,7 @@
 package com.example.comicdav.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest

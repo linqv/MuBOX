@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
-import com.example.comicdav.data.DownloadRecord
+import com.example.comicdav.core.model.transfer.DownloadRecord
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
 import java.io.Closeable
@@ -18,7 +18,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-internal class DownloadProgressThrottler(
+class DownloadProgressThrottler(
     private val minIntervalMillis: Long = 250L,
     private val minByteDelta: Long = 512L * 1024L,
 ) {
@@ -73,7 +73,7 @@ internal fun sanitizeDownloadedVideoFileName(fileName: String): String {
     return sanitized.ifBlank { "video-download" }
 }
 
-internal fun localDownloadFileNameForRemoteFile(
+fun localDownloadFileNameForRemoteFile(
     accountId: String,
     remotePath: String,
     fileName: String,

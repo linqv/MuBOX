@@ -1,10 +1,10 @@
-package com.example.comicdav.webdav
+package com.example.comicdav.ui
 
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-internal fun decodeWebDavPathForDisplay(path: String): String {
+fun decodeWebDavPathForDisplay(path: String): String {
     if (!path.contains('%')) return path
 
     val output = StringBuilder(path.length)
