@@ -2,6 +2,7 @@ package com.example.comicdav.feature.videolibrary
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import java.io.File
@@ -112,12 +113,18 @@ private class AndroidVideoThumbnailFrameProvider : VideoThumbnailFrameProvider {
                     }
                 }
             }
-            return retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            return retriever.embeddedCoverArt()
+                ?: retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.frameAtTime
         } finally {
             retriever.release()
         }
     }
+}
+
+private fun MediaMetadataRetriever.embeddedCoverArt(): Bitmap? {
+    val picture = runCatching { embeddedPicture }.getOrNull() ?: return null
+    return runCatching { BitmapFactory.decodeByteArray(picture, 0, picture.size) }.getOrNull()
 }
 
 internal fun thumbnailFileNameForStableKey(stableKey: String): String {
