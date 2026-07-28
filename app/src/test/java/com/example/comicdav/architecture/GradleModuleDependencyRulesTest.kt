@@ -96,10 +96,15 @@ class GradleModuleDependencyRulesTest {
                 ":webdav",
                 ":data",
                 ":ui",
+                ":feature:directory-listing",
+                ":feature:file-directory",
+                ":feature:library",
                 ":feature:reader",
                 ":feature:video",
                 ":feature:downloads",
                 ":feature:settings",
+                ":feature:video-library",
+                ":feature:webdav",
             ),
             ":core:model" to emptySet(),
             ":core:diagnostics" to emptySet(),
@@ -107,6 +112,13 @@ class GradleModuleDependencyRulesTest {
             ":webdav" to setOf(":core:model", ":core:diagnostics"),
             ":data" to setOf(":core:model"),
             ":ui" to setOf(":core:model"),
+            ":feature:directory-listing" to setOf(":core:model", ":ui"),
+            ":feature:file-directory" to setOf(
+                ":core:model",
+                ":feature:directory-listing",
+                ":ui",
+            ),
+            ":feature:library" to setOf(":core:model", ":ui"),
             ":feature:reader" to setOf(
                 ":core:model",
                 ":core:diagnostics",
@@ -115,6 +127,12 @@ class GradleModuleDependencyRulesTest {
             ":feature:video" to setOf(":core:model", ":ui"),
             ":feature:downloads" to setOf(":core:model", ":ui"),
             ":feature:settings" to setOf(":core:model", ":ui"),
+            ":feature:video-library" to setOf(":core:model", ":ui"),
+            ":feature:webdav" to setOf(
+                ":core:model",
+                ":feature:directory-listing",
+                ":ui",
+            ),
         ).mapValues { (_, dependencies) -> dependencies.toSortedSet() }
 
         val approvedTestGraph: Map<String, Set<String>> = approvedGraph.keys.associateWith { module ->

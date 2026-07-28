@@ -575,13 +575,6 @@ internal fun parentDocumentUriForLocalVideo(videoUri: android.net.Uri): android.
     }.getOrNull()
 }
 
-internal fun shouldShowWebDavAccountForm(
-    isAddingWebDavPath: Boolean,
-    editingWebDavSourceId: Long?,
-    webDavStatus: String,
-): Boolean =
-    webDavStatus != com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED && (isAddingWebDavPath || editingWebDavSourceId != null)
-
 internal fun com.example.comicdav.core.model.cache.ComicCacheCategory.cacheLabel(): String =
     when (this) {
         com.example.comicdav.core.model.cache.ComicCacheCategory.REMOTE_DOWNLOADS -> "远程整本缓存"

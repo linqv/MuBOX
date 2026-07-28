@@ -432,10 +432,15 @@ class PackageDependencyRulesTest {
             "webdav",
             "data",
             "ui",
+            "feature/directory-listing",
+            "feature/file-directory",
+            "feature/library",
             "feature/reader",
             "feature/video",
             "feature/downloads",
             "feature/settings",
+            "feature/video-library",
+            "feature/webdav",
         )
 
         val REQUIRED_PHYSICAL_MODULE_PATHS = setOf(
@@ -446,10 +451,15 @@ class PackageDependencyRulesTest {
             "webdav",
             "data",
             "ui",
+            "feature/directory-listing",
+            "feature/file-directory",
+            "feature/library",
             "feature/reader",
             "feature/video",
             "feature/downloads",
             "feature/settings",
+            "feature/video-library",
+            "feature/webdav",
         )
 
         fun dependencyKey(relativePath: String, reference: String): DependencyKey =
