@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,8 +21,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -49,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -64,52 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlin.math.roundToInt
-
-@Composable
-fun MuBoxHeaderIconButton(
-    imageVector: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    visualShape: Shape = CircleShape,
-) {
-    val colors = rememberMuBoxColors()
-    if (!colors.isMuBoxDark) {
-        IconButton(
-            onClick = onClick,
-            modifier = modifier.size(MuBoxMetrics.MinTouchTargetDp),
-        ) {
-            Icon(
-                imageVector = imageVector,
-                contentDescription = contentDescription,
-                tint = colors.text,
-            )
-        }
-        return
-    }
-    Box(
-        modifier = modifier
-            .size(MuBoxMetrics.MinTouchTargetDp)
-            .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(visualShape)
-                .background(colors.backgroundElevated)
-                .border(1.dp, colors.selectedBorder.copy(alpha = 0.62f), visualShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = imageVector,
-                contentDescription = contentDescription,
-                tint = colors.text,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
-}
 
 @Composable
 fun MuBoxGradientButton(
@@ -162,37 +112,6 @@ fun MuBoxGradientButton(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
-    }
-}
-
-// 顶层页面大标题（§6.2），actions 内的图标按钮需自行保证 48dp 触控区（Material 3 IconButton 默认满足）。
-@Composable
-fun MuBoxLargeHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    actions: @Composable RowScope.() -> Unit = {},
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = 64.dp)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.headlineMedium,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Medium,
-            color = colors.text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        actions()
     }
 }
 

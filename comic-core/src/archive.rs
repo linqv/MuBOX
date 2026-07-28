@@ -436,10 +436,6 @@ fn solid_cache_parent_for_output(output_path: &Path) -> Option<&Path> {
         .or_else(|| output_path.parent())
 }
 
-pub fn open_tar(reader: &impl RangeReader) -> Result<TarIndex> {
-    open_tar_with_options(reader, ImageFormatOptions::default())
-}
-
 pub fn open_tar_with_options(
     reader: &impl RangeReader,
     options: ImageFormatOptions,

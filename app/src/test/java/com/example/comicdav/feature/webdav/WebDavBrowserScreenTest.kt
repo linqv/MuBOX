@@ -6,7 +6,7 @@ import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.core.model.media.MediaKind
-import com.example.comicdav.webdav.webDavDisplayPathLabel
+import com.example.comicdav.webdav.decodeWebDavPathForDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -112,16 +112,16 @@ class WebDavBrowserScreenTest {
     @Test
     fun displayPathDecodesUtf8PercentEncodedPath() {
         assertEquals(
-            "路径 /漫画/视频/",
-            webDavDisplayPathLabel("/%E6%BC%AB%E7%94%BB/%E8%A7%86%E9%A2%91/"),
+            "/漫画/视频/",
+            decodeWebDavPathForDisplay("/%E6%BC%AB%E7%94%BB/%E8%A7%86%E9%A2%91/"),
         )
     }
 
     @Test
     fun displayPathLeavesInvalidEscapesUsable() {
         assertEquals(
-            "路径 /bad%ZZ/",
-            webDavDisplayPathLabel("/bad%ZZ/"),
+            "/bad%ZZ/",
+            decodeWebDavPathForDisplay("/bad%ZZ/"),
         )
     }
 

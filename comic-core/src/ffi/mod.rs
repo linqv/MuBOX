@@ -1,9 +1,7 @@
-mod c_api;
 mod jni;
 
 use std::cell::RefCell;
 use std::ffi::CString;
-use std::os::raw::c_char;
 
 use crate::session_registry::PlannedRangeDto;
 
@@ -64,10 +62,6 @@ pub(super) fn set_last_error(error: impl std::fmt::Display) {
 
 pub(super) fn last_error_message_string() -> String {
     LAST_ERROR.with(|cell| cell.borrow().to_str().unwrap_or_default().to_owned())
-}
-
-pub(super) fn last_error_message_ptr() -> *const c_char {
-    LAST_ERROR.with(|cell| cell.borrow().as_ptr())
 }
 
 #[cfg(test)]

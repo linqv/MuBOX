@@ -44,6 +44,3 @@ internal fun decodeWebDavPathForDisplay(path: String): String {
     if (!flushBytes()) return path
     return output.toString()
 }
-
-internal fun webDavDisplayPathLabel(path: String): String =
-    "路径 ${decodeWebDavPathForDisplay(path)}"
