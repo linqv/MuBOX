@@ -14,7 +14,7 @@ import com.example.comicdav.core.model.format.formatCacheSize
 import com.example.comicdav.feature.reader.clearReaderPageCacheForComic
 import com.example.comicdav.feature.reader.pruneReaderPageCache
 import com.example.comicdav.feature.settings.pageCacheLimitBytesForSettings
-import com.example.comicdav.feature.home.historyThumbnailFile
+import com.example.comicdav.core.model.history.historyThumbnailFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first

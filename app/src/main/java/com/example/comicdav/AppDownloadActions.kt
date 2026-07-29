@@ -172,6 +172,7 @@ internal class AppDownloadActions(
                 context = context,
                 uri = Uri.parse(uriText),
                 diagnosticName = "delete_comic_download_file",
+                diagnostics = container.diagnostics,
             )
             if (shouldRemoveRecord) {
                 container.downloadRecordStore.removeRecord(record)
@@ -189,6 +190,7 @@ internal class AppDownloadActions(
                 context = context,
                 uri = Uri.parse(record.localUri),
                 diagnosticName = "delete_video_download_file",
+                diagnostics = container.diagnostics,
             )
             if (shouldRemoveRecord) {
                 container.videoDownloadStore.removeRecord(record)

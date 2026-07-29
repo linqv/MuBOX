@@ -55,12 +55,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-
-    compileOnly(files(rootProject.file("app/libs/fitz-1.27.1.aar")))
+    implementation("com.artifex.mupdf:fitz:1.27.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.15.1")
-    testImplementation(files(rootProject.file("app/libs/fitz-1.27.1.aar")))
 }

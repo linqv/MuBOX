@@ -139,8 +139,11 @@ srt, ass, ssa, vtt, sub
 
 需要从 mpvEx 参考/复制的关键点：
 
-- `app/libs/mpv-android-lib-v0.0.1.aar`
-- Gradle 中 `implementation(files("libs/mpv-android-lib-v0.0.1.aar"))`
+- AAR 以本地 Maven 坐标 `is.xyz.mpv:mpv-android-lib:0.0.1` 保存在
+  `third_party/android/is/xyz/mpv/mpv-android-lib/0.0.1/`
+- `feature:video` 通过
+  `implementation("is.xyz.mpv:mpv-android-lib:0.0.1")` 持有依赖；`app`
+  不直接引用 AAR 文件
 - `packaging { jniLibs { useLegacyPackaging = true } }`
 - R8 keep：`-keep,allowoptimization class is.xyz.mpv.** { public protected *; }`
 - `Utils.copyAssets(context)` 必须在 `BaseMPVView.initialize()` 前执行。

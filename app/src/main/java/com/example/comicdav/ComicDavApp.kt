@@ -34,7 +34,6 @@ import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.library.LibraryItemWithSources
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.home.HomeScreen
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.downloads.DownloadsScreen
 import com.example.comicdav.feature.downloads.activeProgress
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
@@ -124,9 +123,9 @@ internal fun ComicDavApp(container: AppContainer) {
     )
 
     LaunchedEffect(appSettings.readerLoggingMode) {
-        ReaderDiagnosticLog.setMode(appSettings.readerLoggingMode)
+        container.diagnostics.setVerbosity(appSettings.readerLoggingMode.toDiagnosticVerbosity())
         if (!appSettings.loggingEnabled) {
-            ReaderDiagnosticLog.clearSink()
+            container.diagnostics.clearAdditionalSink()
         }
     }
 

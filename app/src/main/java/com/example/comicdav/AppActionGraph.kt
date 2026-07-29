@@ -49,6 +49,7 @@ internal fun rememberAppActionGraph(
         context = context,
         scope = scope,
         dataFolderStore = container.dataFolderStore,
+        diagnostics = container.diagnostics,
         loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
         onDataFolderSelected = ui::onDataFolderSelected,
         onLogFolderSelected = { uriText -> ui.logFolderUriText = uriText },
@@ -97,6 +98,7 @@ internal fun rememberAppActionGraph(
             scope = scope,
             settings = settings,
             appSettingsStore = container.appSettingsStore,
+            diagnostics = container.diagnostics,
             activityLaunchers = launchers,
             viewModels = viewModels,
             callbacks = AppReaderActionCallbacks(

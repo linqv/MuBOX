@@ -10,6 +10,14 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven {
+            name = "vendoredAndroid"
+            url = uri(rootDir.resolve("third_party/android"))
+            metadataSources {
+                mavenPom()
+                artifact()
+            }
+        }
         maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
         google()
         mavenCentral()

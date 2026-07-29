@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.feature.reader.installReaderImageLoader
 
 class MainActivity : ComponentActivity() {
@@ -14,9 +14,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        installReaderImageLoader(applicationContext)
-        installReaderCrashLogger()
         val appContainer = (application as ComicDavApplication).appContainer
+        installReaderImageLoader(applicationContext)
+        installReaderCrashLogger(appContainer.diagnostics)
         setContent { ComicDavApp(appContainer) }
     }
 
@@ -30,11 +30,11 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun installReaderCrashLogger() {
+    private fun installReaderCrashLogger(diagnostics: Diagnostics) {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         previousCrashHandler = previous
         val handler = Thread.UncaughtExceptionHandler { thread, throwable ->
-            ReaderDiagnosticLog.errorBlocking("uncaught thread=${thread.name}", throwable)
+            diagnostics.errorBlocking("uncaught thread=${thread.name}", throwable)
             previous?.uncaughtException(thread, throwable)
         }
         readerCrashHandler = handler

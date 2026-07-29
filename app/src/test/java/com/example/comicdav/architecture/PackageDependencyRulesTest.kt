@@ -13,6 +13,40 @@ class PackageDependencyRulesTest {
     }
 
     @Test
+    fun readerDiagnosticBridgeIsOnlyUsedAtTheCompositionRoot() {
+        val outsideReaderFeature = dependencies.filter { dependency ->
+            dependency.reference == "$FEATURE_PACKAGE.reader.ReaderDiagnosticLog" &&
+                dependency.sourcePackage.featureName() != "reader"
+        }
+
+        assertEquals(
+            "Application code should inject core Diagnostics instead of using the reader-owned global bridge.",
+            setOf("app/src/main/java/com/example/comicdav/AppContainer.kt"),
+            outsideReaderFeature.map(DependencyReference::sourcePath).toSet(),
+        )
+    }
+
+    @Test
+    fun videoActionFacadeDoesNotOwnPlaybackOrExtractionInfrastructure() {
+        val facade = sourceFiles.single { sourceFile ->
+            sourceFile.relativePath == "app/src/main/java/com/example/comicdav/AppVideoActions.kt"
+        }
+        val forbiddenReferences = setOf(
+            "VideoPlayerActivity",
+            "VideoProxyManager",
+            "startWebDavVideoPlayback",
+            "extractFromContentUri",
+            "extractFromUrl",
+        ).filter(facade.source::contains)
+
+        assertTrue(
+            "AppVideoActions must remain an orchestration facade; move infrastructure to its collaborators: " +
+                forbiddenReferences.joinToString(),
+            forbiddenReferences.isEmpty(),
+        )
+    }
+
+    @Test
     fun sourceScanIncludesEveryPhysicalArchitectureModule() {
         val scannedPaths = sourceFiles.map(SourceFile::relativePath)
 

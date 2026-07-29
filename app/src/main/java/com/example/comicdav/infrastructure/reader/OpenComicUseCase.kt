@@ -2,6 +2,7 @@ package com.example.comicdav.infrastructure.reader
 
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
 import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.media.readerImageFormatCacheKey
 import com.example.comicdav.core.ports.ReadingProgressGateway
 import com.example.comicdav.core.ports.RemoteRangeComicSessionFactory
@@ -10,7 +11,6 @@ import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.data.ComicCacheKey
 import com.example.comicdav.data.ComicDownloadCache
 import com.example.comicdav.feature.reader.OpenComicResult
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.nativebridge.RangeProviderRegistry
 import com.example.comicdav.network.WebDavRangeProvider
@@ -23,7 +23,7 @@ class OpenComicUseCase(
     private val accountId: String,
     private val cache: ComicDownloadCache,
     private val progressStore: ReadingProgressGateway,
-    private val diagnostics: Diagnostics = ReaderDiagnosticLog,
+    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val openRemoteSession: RemoteRangeComicSessionFactory = {
             fileId,
             size,

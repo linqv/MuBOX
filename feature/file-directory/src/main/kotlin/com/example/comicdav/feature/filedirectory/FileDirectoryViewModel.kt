@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.comicdav.core.model.media.MediaEntry
+import com.example.comicdav.core.model.media.fileDirectoryBrowserVideoThumbnailVersion
 import com.example.comicdav.core.ports.FileDirectoryCatalog
 import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.feature.directorylisting.DirectorySortDirection
@@ -31,48 +32,6 @@ interface LocalDirectoryReader {
 
 internal fun filterBrowsableLocalDirectoryItems(items: List<FileDirectoryBrowserItem>): List<FileDirectoryBrowserItem> =
     items.filter { it.mediaKind.isBrowsableInSources }
-
-fun fileDirectoryVideoThumbnailVersion(
-    uri: String,
-    size: Long?,
-    lastModified: Long?,
-): String = "local:$uri:${size ?: -1}:${lastModified ?: -1}"
-
-fun fileDirectoryVideoThumbnailVersion(item: FileDirectoryBrowserItem): String =
-    fileDirectoryVideoThumbnailVersion(
-        uri = item.uri,
-        size = item.size,
-        lastModified = item.lastModified,
-    )
-
-fun fileDirectoryBrowserVideoThumbnailVersion(
-    uri: String,
-    size: Long?,
-    lastModified: Long?,
-    requestRevision: Long,
-): String {
-    val version = fileDirectoryVideoThumbnailVersion(
-        uri = uri,
-        size = size,
-        lastModified = lastModified,
-    )
-    return if (lastModified != null && lastModified > 0L) {
-        version
-    } else {
-        "$version:directory-revision:$requestRevision"
-    }
-}
-
-fun fileDirectoryBrowserVideoThumbnailVersion(
-    item: FileDirectoryBrowserItem,
-    requestRevision: Long,
-): String =
-    fileDirectoryBrowserVideoThumbnailVersion(
-        uri = item.uri,
-        size = item.size,
-        lastModified = item.lastModified,
-        requestRevision = requestRevision,
-    )
 
 data class FileDirectoryUiState(
     val sources: List<FileDirectorySource> = emptyList(),

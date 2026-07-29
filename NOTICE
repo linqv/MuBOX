@@ -20,7 +20,7 @@ The following third-party components are included in or linked by MuBOX binary
 releases. Each component retains its own copyright and license.
 
 --------------------------------------------------------------------------------
-1. MuPDF / fitz (app/libs/fitz-1.27.1.aar)
+1. MuPDF / fitz (third_party/android/com/artifex/mupdf/fitz/1.27.1/fitz-1.27.1.aar)
 --------------------------------------------------------------------------------
 Copyright (C) 2006-2024 Artifex Software, Inc.
 License: GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
@@ -45,7 +45,7 @@ License v2.1 or later (LGPL-2.1-or-later). Source code for libmpv is available
 at https://github.com/mpv-player/mpv.
 
 --------------------------------------------------------------------------------
-3. mpv-android-lib (app/libs/mpv-android-lib-v0.0.1.aar)
+3. mpv-android-lib (third_party/android/is/xyz/mpv/mpv-android-lib/0.0.1/mpv-android-lib-0.0.1.aar)
 --------------------------------------------------------------------------------
 License: MIT
 Source:  https://github.com/mpvExProject/mpvEx

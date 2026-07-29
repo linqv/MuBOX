@@ -2,7 +2,9 @@ package com.example.comicdav
 
 import android.content.Context
 import android.net.Uri
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.feature.reader.createReaderLogFile
 import com.example.comicdav.feature.reader.runReaderLogIo
 import java.util.concurrent.atomic.AtomicLong
@@ -31,11 +33,12 @@ internal fun startReaderLogFile(
     context: Context,
     folderUriText: String?,
     scope: CoroutineScope,
+    diagnostics: ConfigurableDiagnostics,
     loggingEnabled: Boolean = true,
 ) {
     val startGeneration = readerLogStartGeneration.incrementAndGet()
     if (!loggingEnabled) {
-        ReaderDiagnosticLog.clearSink()
+        diagnostics.clearAdditionalSink()
         return
     }
     if (folderUriText.isNullOrBlank()) return
@@ -47,13 +50,19 @@ internal fun startReaderLogFile(
         }.fold(
             onSuccess = { logFile ->
                 if (readerLogStartGeneration.get() != startGeneration) return@fold
-                ReaderDiagnosticLog.setSink(logFile.sink)
-                ReaderDiagnosticLog.event("log_file_created fileName=${logFile.fileName} uri=${logFile.uri}")
+                diagnostics.setAdditionalSink(logFile.sink)
+                diagnostics.event("log_file_created fileName=${logFile.fileName} uri=${logFile.uri}")
             },
             onFailure = { error ->
                 if (readerLogStartGeneration.get() != startGeneration) return@fold
-                ReaderDiagnosticLog.error("log_file_create_failed folderUri=$folderUriText", error)
+                diagnostics.error("log_file_create_failed folderUri=$folderUriText", error)
             },
         )
     }
+}
+
+internal fun ReaderLoggingMode.toDiagnosticVerbosity(): DiagnosticVerbosity = when (this) {
+    ReaderLoggingMode.OFF -> DiagnosticVerbosity.OFF
+    ReaderLoggingMode.SUMMARY -> DiagnosticVerbosity.SUMMARY
+    ReaderLoggingMode.DETAIL -> DiagnosticVerbosity.DETAIL
 }

@@ -1,7 +1,8 @@
 package com.example.comicdav.infrastructure.reader
 
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
 import com.example.comicdav.core.diagnostics.DiagnosticSink
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.ReadingProgressGateway
 import com.example.comicdav.core.remote.RemoteFileInfo
@@ -9,14 +10,12 @@ import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavException
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.data.ComicDownloadCache
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.nativebridge.RangeProviderRegistry
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -27,12 +26,6 @@ import org.junit.rules.TemporaryFolder
 class OpenComicUseCaseRangeTest {
     @get:Rule
     val temp = TemporaryFolder()
-
-    @After
-    fun tearDown() {
-        ReaderDiagnosticLog.clearSink()
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
-    }
 
     @Test
     fun rangeCapableRemoteOpensNativeRemoteSessionWithoutDownloadingWholeFile() = runTest {
@@ -139,12 +132,15 @@ class OpenComicUseCaseRangeTest {
             bytes = byteArrayOf(1, 2, 3, 4),
         )
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        )
         val useCase = OpenComicUseCase(
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
+            diagnostics = diagnostics,
             openRemoteSession = { _, _, _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
         )
 

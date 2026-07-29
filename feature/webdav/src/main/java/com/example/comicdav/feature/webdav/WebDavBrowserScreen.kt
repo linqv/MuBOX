@@ -50,6 +50,7 @@ import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.muBoxGradientBorder
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.core.model.media.MediaKind
+import com.example.comicdav.core.model.media.webDavBrowserVideoThumbnailVersion
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
 
 internal fun webDavBreadcrumbLabels(path: String): List<String> =

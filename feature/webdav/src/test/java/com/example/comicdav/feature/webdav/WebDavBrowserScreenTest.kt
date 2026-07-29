@@ -1,6 +1,8 @@
 package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.model.media.webDavBrowserVideoThumbnailVersion
+import com.example.comicdav.core.model.media.webDavVideoThumbnailVersion
 import com.example.comicdav.core.remote.WebDavException
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor

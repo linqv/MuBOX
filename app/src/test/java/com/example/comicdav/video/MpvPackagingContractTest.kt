@@ -8,15 +8,24 @@ import org.junit.Test
 class MpvPackagingContractTest {
     @Test
     fun mpvAarIsBundledAndReferencedByGradle() {
+        val repositoryRoot = repositoryRoot()
         assertTrue(
-            "The mpv Android AAR must be bundled in app/libs",
-            File("libs/mpv-android-lib-v0.0.1.aar").isFile ||
-                File("app/libs/mpv-android-lib-v0.0.1.aar").isFile,
+            "The mpv Android AAR must exist in the vendored Maven repository",
+            repositoryRoot.resolve(
+                "third_party/android/is/xyz/mpv/mpv-android-lib/0.0.1/" +
+                    "mpv-android-lib-0.0.1.aar",
+            ).isFile,
         )
 
-        val buildScript = appBuildGradleFile().readText()
+        val featureBuildScript = repositoryRoot.resolve("feature/video/build.gradle.kts").readText()
         assertTrue(
-            buildScript.contains("""implementation(files("libs/mpv-android-lib-v0.0.1.aar"))"""),
+            featureBuildScript.contains(
+                """implementation("is.xyz.mpv:mpv-android-lib:0.0.1")""",
+            ),
+        )
+        assertTrue(
+            "The app module must not own feature-specific AAR files",
+            !appBuildGradleFile().readText().contains(".aar"),
         )
     }
 
@@ -49,6 +58,10 @@ class MpvPackagingContractTest {
             File("build.gradle.kts"),
             File("app/build.gradle.kts"),
         ).first { it.isFile && it.readText().contains("com.android.application") }
+
+    private fun repositoryRoot(): File =
+        generateSequence(File(".").canonicalFile, File::getParentFile)
+            .first { it.resolve("settings.gradle.kts").isFile }
 
     private fun proguardRulesFile(): File =
         listOf(

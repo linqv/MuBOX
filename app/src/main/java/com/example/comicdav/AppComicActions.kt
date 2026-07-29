@@ -13,7 +13,6 @@ import com.example.comicdav.core.model.library.LibraryItemWithSources
 import com.example.comicdav.core.model.library.SourceType
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.infrastructure.reader.OpenComicUseCase
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.localComicCacheKey
 import com.example.comicdav.core.model.media.readerImageFormatCacheKey
 import com.example.comicdav.core.remote.RemoteFileInfo
@@ -134,7 +133,7 @@ internal class AppComicActions(
                     fileDirectoryViewModel.showMessage("已将 ${item.name} 加入书架")
                 },
                 onFailure = { error ->
-                    ReaderDiagnosticLog.error("favorite_local_directory_comic_failed uri=${item.uri}", error)
+                    container.diagnostics.error("favorite_local_directory_comic_failed uri=${item.uri}", error)
                     fileDirectoryViewModel.showError(error.message ?: "加入书架失败")
                 },
             )
@@ -163,7 +162,7 @@ internal class AppComicActions(
                             knownInfo = item.toKnownRemoteFileInfo(),
                         )
                     }.onFailure { error ->
-                        ReaderDiagnosticLog.error("extract_webdav_cover_failed path=${item.path}", error)
+                        container.diagnostics.error("extract_webdav_cover_failed path=${item.path}", error)
                     }.getOrNull()
                 } else {
                     null
@@ -188,7 +187,7 @@ internal class AppComicActions(
                 onFailure = { error ->
                     val message = error.message ?: "添加 WebDAV 漫画失败"
                     callbacks.setError(message)
-                    ReaderDiagnosticLog.error("add_webdav_library_failed path=${item.path}", error)
+                    container.diagnostics.error("add_webdav_library_failed path=${item.path}", error)
                     libraryViewModel.showError(message)
                     fileDirectoryViewModel.showError(message)
                 },
@@ -244,7 +243,7 @@ internal class AppComicActions(
                     libraryViewModel.showMessage("已重新获取 ${item.item.displayName} 的封面")
                 },
                 onFailure = { error ->
-                    ReaderDiagnosticLog.error("refresh_library_cover_failed id=${item.item.id}", error)
+                    container.diagnostics.error("refresh_library_cover_failed id=${item.item.id}", error)
                     libraryViewModel.showError(error.message ?: "重新获取封面失败")
                 },
             )
@@ -294,9 +293,10 @@ internal class AppComicActions(
             context = context,
             folderUriText = logFolderUri,
             scope = scope,
+            diagnostics = container.diagnostics,
             loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
         )
-        ReaderDiagnosticLog.event("open_remote_start path=$remotePath size=${size ?: -1}")
+        container.diagnostics.event("open_remote_start path=$remotePath size=${size ?: -1}")
         val avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled)
         readerViewModel.openRemote(
             cacheDir = context.cacheDir,
@@ -410,6 +410,7 @@ internal class AppComicActions(
             context = context,
             folderUriText = logFolderUri,
             scope = scope,
+            diagnostics = container.diagnostics,
             loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
         )
         val avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled)
@@ -422,7 +423,7 @@ internal class AppComicActions(
                 onSuccess = { session ->
                     callbacks.setError(null)
                     onOpened()
-                    ReaderDiagnosticLog.event("$readyEvent fileName=$fileName")
+                    container.diagnostics.event("$readyEvent fileName=$fileName")
                     readerViewModel.openExistingSession(
                         openedSession = session,
                         cacheDir = context.cacheDir,
@@ -441,7 +442,7 @@ internal class AppComicActions(
                     callbacks.setReaderOpen(true)
                 },
                 onFailure = { error ->
-                    ReaderDiagnosticLog.error(failureEvent, error)
+                    container.diagnostics.error(failureEvent, error)
                     onFailure(error)
                 },
             )

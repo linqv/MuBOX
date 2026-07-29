@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.core.model.source.FileDirectorySourceType
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,7 +54,7 @@ internal class AppSourceActions(
                     fileDirectoryViewModel.showMessage("已删除来源和源文件")
                 },
                 onFailure = { error ->
-                    ReaderDiagnosticLog.error("delete_local_source_files_failed uri=$treeUriText", error)
+                    container.diagnostics.error("delete_local_source_files_failed uri=$treeUriText", error)
                     fileDirectoryViewModel.showError(error.message ?: "删除源文件失败")
                 },
             )

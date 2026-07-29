@@ -3,8 +3,8 @@ package com.example.comicdav
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.model.transfer.TransferProgress
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.feature.reader.ReaderLoadingProgress
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
 import java.io.FileNotFoundException
@@ -30,7 +30,11 @@ internal fun shouldRemoveVideoDownloadRecordAfterDelete(
 internal fun downloadLocalUriTextOrNull(localUri: String?): String? =
     localUri?.trim()?.takeIf { it.isNotBlank() }
 
-internal fun downloadDocumentStillResolvable(context: Context, uri: Uri): Boolean =
+internal fun downloadDocumentStillResolvable(
+    context: Context,
+    uri: Uri,
+    diagnostics: Diagnostics,
+): Boolean =
     runCatching {
         val stream = context.contentResolver.openInputStream(uri)
         stream?.use { }
@@ -39,18 +43,23 @@ internal fun downloadDocumentStillResolvable(context: Context, uri: Uri): Boolea
         if (error.causedByFileNotFound()) {
             false
         } else {
-            ReaderDiagnosticLog.error("resolve_video_download_file_failed uri=$uri", error)
+            diagnostics.error("resolve_video_download_file_failed uri=$uri", error)
             true
         }
     }
 
-internal fun videoDownloadDocumentStillResolvable(context: Context, uri: Uri): Boolean =
-    downloadDocumentStillResolvable(context, uri)
+internal fun videoDownloadDocumentStillResolvable(
+    context: Context,
+    uri: Uri,
+    diagnostics: Diagnostics,
+): Boolean =
+    downloadDocumentStillResolvable(context, uri, diagnostics)
 
 internal suspend fun deleteDownloadDocumentAndShouldRemoveRecord(
     context: Context,
     uri: Uri,
     diagnosticName: String,
+    diagnostics: Diagnostics,
 ): Boolean = withContext(Dispatchers.IO) {
     var documentStillResolvable = true
     val documentDeleteSucceeded = runCatching {
@@ -58,13 +67,13 @@ internal suspend fun deleteDownloadDocumentAndShouldRemoveRecord(
     }.fold(
         onSuccess = { deleted ->
             if (!deleted) {
-                documentStillResolvable = downloadDocumentStillResolvable(context, uri)
-                ReaderDiagnosticLog.event("${diagnosticName}_returned_false uri=$uri resolvable=$documentStillResolvable")
+                documentStillResolvable = downloadDocumentStillResolvable(context, uri, diagnostics)
+                diagnostics.event("${diagnosticName}_returned_false uri=$uri resolvable=$documentStillResolvable")
             }
             deleted
         },
         onFailure = { error ->
-            ReaderDiagnosticLog.error("${diagnosticName}_failed uri=$uri", error)
+            diagnostics.error("${diagnosticName}_failed uri=$uri", error)
             documentStillResolvable = !error.causedByFileNotFound()
             false
         },
