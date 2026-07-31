@@ -95,43 +95,6 @@ private enum class SettingsPage {
     HISTORY,
 }
 
-sealed interface SettingsAction {
-    data class SetReadingDirection(val value: ReadingDirection) : SettingsAction
-    data class SetReaderLoggingMode(val value: ReaderLoggingMode) : SettingsAction
-    data class SetColorPalette(val value: AppColorPalette) : SettingsAction
-    data class SetAvifImagesEnabled(val value: Boolean) : SettingsAction
-    data class SetAutoPageEnabled(val value: Boolean) : SettingsAction
-    data class SetAutoPageSpeedMillis(val value: Int) : SettingsAction
-    data class SetScreenRotationLockEnabled(val value: Boolean) : SettingsAction
-    data class SetVolumeKeysTurnPagesEnabled(val value: Boolean) : SettingsAction
-    data class SetReaderPinchZoomEnabled(val value: Boolean) : SettingsAction
-    data class SetPageImageCacheEnabled(val value: Boolean) : SettingsAction
-    data class SetDiskCacheLimitMb(val value: Int) : SettingsAction
-    data class SetWebDavPrefetchPageCount(val value: Int) : SettingsAction
-    data class SetLibraryCoversEnabled(val value: Boolean) : SettingsAction
-    data class SetVideoResumeEnabled(val value: Boolean) : SettingsAction
-    data class SetVideoBackgroundMode(val value: VideoBackgroundMode) : SettingsAction
-    data class SetVideoSeekOptimizationEnabled(val value: Boolean) : SettingsAction
-    data class SetVideoForwardPrefetchMode(val value: VideoForwardPrefetchMode) : SettingsAction
-    data class SetVideoProxyDiagnosticsMode(val value: VideoProxyDiagnosticsMode) : SettingsAction
-    data class SetVideoPlayerProxyDebugInfoEnabled(val value: Boolean) : SettingsAction
-    data class SetVideoOutputMode(val value: VideoOutputMode) : SettingsAction
-    data class SetGpuApiMode(val value: GpuApiMode) : SettingsAction
-    data class SetAnime4KProfile(val value: Anime4KProfile) : SettingsAction
-    data class SetVideoDecoderMode(val value: VideoDecoderMode) : SettingsAction
-    data class SetMpvProfileMode(val value: MpvProfileMode) : SettingsAction
-    data class SetVideoControlsAutoHideMillis(val value: Int) : SettingsAction
-    data class SetVideoPlayerOrientationMode(val value: VideoPlayerOrientationMode) : SettingsAction
-    data class SetGridVideoThumbnailsEnabled(val value: Boolean) : SettingsAction
-    data class SetVideoLibraryThumbnailsEnabled(val value: Boolean) : SettingsAction
-    data class SetHistoryRetentionDays(val value: Int) : SettingsAction
-    data class SetHistoryMaxRecords(val value: Int) : SettingsAction
-    data class DeleteHistoryEntry(val entry: WatchHistoryEntry) : SettingsAction
-    data object ClearHistory : SettingsAction
-    data class ClearCacheCategory(val category: ComicCacheCategory) : SettingsAction
-    data object ClearAllCache : SettingsAction
-}
-
 internal data class SettingsGroupLayout(
     val title: String,
     val rows: List<String>,
@@ -228,15 +191,33 @@ fun SettingsScreen(
         SettingsPage.COMIC -> {
             ComicSettingsPage(
                 settings = settings,
-                onReadingDirectionChange = { onAction(SettingsAction.SetReadingDirection(it)) },
-                onReaderLoggingModeChange = { onAction(SettingsAction.SetReaderLoggingMode(it)) },
-                onAutoPageEnabledChange = { onAction(SettingsAction.SetAutoPageEnabled(it)) },
-                onAutoPageSpeedChange = { onAction(SettingsAction.SetAutoPageSpeedMillis(it)) },
-                onVolumeKeysTurnPagesChange = { onAction(SettingsAction.SetVolumeKeysTurnPagesEnabled(it)) },
-                onReaderPinchZoomEnabledChange = { onAction(SettingsAction.SetReaderPinchZoomEnabled(it)) },
-                onWebDavPrefetchPageCountChange = { onAction(SettingsAction.SetWebDavPrefetchPageCount(it)) },
-                onAvifImagesEnabledChange = { onAction(SettingsAction.SetAvifImagesEnabled(it)) },
-                onLibraryCoversEnabledChange = { onAction(SettingsAction.SetLibraryCoversEnabled(it)) },
+                onReadingDirectionChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(readingDirection = it) })
+                },
+                onReaderLoggingModeChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(readerLoggingMode = it) })
+                },
+                onAutoPageEnabledChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(autoPageEnabled = it) })
+                },
+                onAutoPageSpeedChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(autoPageSpeedMillis = it) })
+                },
+                onVolumeKeysTurnPagesChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(volumeKeysTurnPagesEnabled = it) })
+                },
+                onReaderPinchZoomEnabledChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(readerPinchZoomEnabled = it) })
+                },
+                onWebDavPrefetchPageCountChange = {
+                    onAction(SettingsAction.UpdateStorage { current -> current.copy(webDavPrefetchPageCount = it) })
+                },
+                onAvifImagesEnabledChange = {
+                    onAction(SettingsAction.UpdateReader { current -> current.copy(avifImagesEnabled = it) })
+                },
+                onLibraryCoversEnabledChange = {
+                    onAction(SettingsAction.UpdateAppearance { current -> current.copy(libraryCoversEnabled = it) })
+                },
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
             )
@@ -245,32 +226,58 @@ fun SettingsScreen(
         SettingsPage.VIDEO -> {
             VideoSettingsPage(
                 settings = settings,
-                onVideoResumeEnabledChange = { onAction(SettingsAction.SetVideoResumeEnabled(it)) },
-                onVideoBackgroundModeChange = { onAction(SettingsAction.SetVideoBackgroundMode(it)) },
+                onVideoResumeEnabledChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoResumeEnabled = it) })
+                },
+                onVideoBackgroundModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoBackgroundMode = it) })
+                },
                 onVideoSeekOptimizationEnabledChange = {
-                    onAction(SettingsAction.SetVideoSeekOptimizationEnabled(it))
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoSeekOptimizationEnabled = it) })
                 },
-                onVideoForwardPrefetchModeChange = { onAction(SettingsAction.SetVideoForwardPrefetchMode(it)) },
-                onVideoProxyDiagnosticsModeChange = { onAction(SettingsAction.SetVideoProxyDiagnosticsMode(it)) },
+                onVideoForwardPrefetchModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoForwardPrefetchMode = it) })
+                },
+                onVideoProxyDiagnosticsModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoProxyDiagnosticsMode = it) })
+                },
                 onVideoPlayerProxyDebugInfoEnabledChange = {
-                    onAction(SettingsAction.SetVideoPlayerProxyDebugInfoEnabled(it))
+                    onAction(
+                        SettingsAction.UpdateVideo { current ->
+                            current.copy(videoPlayerProxyDebugInfoEnabled = it)
+                        },
+                    )
                 },
-                onVideoOutputModeChange = { onAction(SettingsAction.SetVideoOutputMode(it)) },
-                onGpuApiModeChange = { onAction(SettingsAction.SetGpuApiMode(it)) },
-                onAnime4KProfileChange = { onAction(SettingsAction.SetAnime4KProfile(it)) },
-                onVideoDecoderModeChange = { onAction(SettingsAction.SetVideoDecoderMode(it)) },
-                onMpvProfileModeChange = { onAction(SettingsAction.SetMpvProfileMode(it)) },
+                onVideoOutputModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoOutputMode = it) })
+                },
+                onGpuApiModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(gpuApiMode = it) })
+                },
+                onAnime4KProfileChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(anime4kProfile = it) })
+                },
+                onVideoDecoderModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoDecoderMode = it) })
+                },
+                onMpvProfileModeChange = {
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(mpvProfileMode = it) })
+                },
                 onVideoControlsAutoHideMillisChange = {
-                    onAction(SettingsAction.SetVideoControlsAutoHideMillis(it))
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoControlsAutoHideMillis = it) })
                 },
                 onVideoPlayerOrientationModeChange = {
-                    onAction(SettingsAction.SetVideoPlayerOrientationMode(it))
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoPlayerOrientationMode = it) })
                 },
                 onGridVideoThumbnailsEnabledChange = {
-                    onAction(SettingsAction.SetGridVideoThumbnailsEnabled(it))
+                    onAction(SettingsAction.UpdateVideo { current -> current.copy(gridVideoThumbnailsEnabled = it) })
                 },
                 onVideoLibraryThumbnailsEnabledChange = {
-                    onAction(SettingsAction.SetVideoLibraryThumbnailsEnabled(it))
+                    onAction(
+                        SettingsAction.UpdateVideo { current ->
+                            current.copy(videoLibraryThumbnailsEnabled = it)
+                        },
+                    )
                 },
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
@@ -306,15 +313,23 @@ fun SettingsScreen(
         ) {
             DropdownRow(
                 title = "配色方案",
-                selected = settings.colorPalette,
+                selected = settings.appearance.colorPalette,
                 options = AppColorPalette.entries,
                 label = AppColorPalette::settingsLabel,
-                onSelected = { onAction(SettingsAction.SetColorPalette(it)) },
+                onSelected = {
+                    onAction(SettingsAction.UpdateAppearance { current -> current.copy(colorPalette = it) })
+                },
             )
             MuBoxSwitchRow(
                 title = "屏幕旋转锁定",
-                checked = settings.screenRotationLockEnabled,
-                onCheckedChange = { onAction(SettingsAction.SetScreenRotationLockEnabled(it)) },
+                checked = settings.appearance.screenRotationLockEnabled,
+                onCheckedChange = {
+                    onAction(
+                        SettingsAction.UpdateAppearance { current ->
+                            current.copy(screenRotationLockEnabled = it)
+                        },
+                    )
+                },
                 subtitle = "锁定当前屏幕方向",
             )
         }
@@ -350,17 +365,21 @@ fun SettingsScreen(
         ) {
             DropdownRow(
                 title = "保留时长",
-                selected = settings.historyRetentionDays,
+                selected = settings.history.historyRetentionDays,
                 options = SupportedHistoryRetentionDays,
                 label = ::historyRetentionLabel,
-                onSelected = { onAction(SettingsAction.SetHistoryRetentionDays(it)) },
+                onSelected = {
+                    onAction(SettingsAction.UpdateHistory { current -> current.copy(historyRetentionDays = it) })
+                },
             )
             DropdownRow(
                 title = "最大保留记录",
-                selected = settings.historyMaxRecords,
+                selected = settings.history.historyMaxRecords,
                 options = SupportedHistoryMaxRecords,
                 label = ::historyMaxRecordsLabel,
-                onSelected = { onAction(SettingsAction.SetHistoryMaxRecords(it)) },
+                onSelected = {
+                    onAction(SettingsAction.UpdateHistory { current -> current.copy(historyMaxRecords = it) })
+                },
             )
             CacheActionRow(
                 title = "清空观看历史",
@@ -394,14 +413,18 @@ fun SettingsScreen(
             )
             MuBoxSwitchRow(
                 title = "页面图片缓存",
-                checked = settings.pageImageCacheEnabled,
-                onCheckedChange = { onAction(SettingsAction.SetPageImageCacheEnabled(it)) },
+                checked = settings.storage.pageImageCacheEnabled,
+                onCheckedChange = {
+                    onAction(SettingsAction.UpdateStorage { current -> current.copy(pageImageCacheEnabled = it) })
+                },
                 subtitle = "关闭后不复用页面文件",
             )
-            if (settings.pageImageCacheEnabled) {
+            if (settings.storage.pageImageCacheEnabled) {
                 DiskCacheLimitRow(
-                    limitMb = settings.diskCacheLimitMb,
-                    onLimitChange = { onAction(SettingsAction.SetDiskCacheLimitMb(it)) },
+                    limitMb = settings.storage.diskCacheLimitMb,
+                    onLimitChange = {
+                        onAction(SettingsAction.UpdateStorage { current -> current.copy(diskCacheLimitMb = it) })
+                    },
                 )
             }
             CacheActionRow(
@@ -629,25 +652,25 @@ private fun ComicSettingsPage(
             ChoiceRow(
                 title = "阅读方向",
                 options = ReadingDirection.entries,
-                selected = settings.readingDirection,
+                selected = settings.reader.readingDirection,
                 label = ReadingDirection::label,
                 onSelected = onReadingDirectionChange,
             )
             MuBoxSwitchRow(
                 title = "音量键翻页",
-                checked = settings.volumeKeysTurnPagesEnabled,
+                checked = settings.reader.volumeKeysTurnPagesEnabled,
                 onCheckedChange = onVolumeKeysTurnPagesChange,
                 subtitle = "使用音量键向前或向后翻页",
             )
             MuBoxSwitchRow(
                 title = "双指缩放",
-                checked = settings.readerPinchZoomEnabled,
+                checked = settings.reader.readerPinchZoomEnabled,
                 onCheckedChange = onReaderPinchZoomEnabledChange,
                 subtitle = "用双指放大全屏阅读画面，并拖动查看细节",
             )
             DropdownRow(
                 title = "WebDAV 预取页数",
-                selected = settings.webDavPrefetchPageCount,
+                selected = settings.storage.webDavPrefetchPageCount,
                 options = SupportedWebDavPrefetchPageCounts,
                 label = ::webDavPrefetchPageCountLabel,
                 onSelected = onWebDavPrefetchPageCountChange,
@@ -655,30 +678,30 @@ private fun ComicSettingsPage(
             ChoiceRow(
                 title = "诊断日志",
                 options = ReaderLoggingMode.entries,
-                selected = settings.readerLoggingMode,
+                selected = settings.reader.readerLoggingMode,
                 label = ReaderLoggingMode::label,
                 onSelected = onReaderLoggingModeChange,
             )
             MuBoxSwitchRow(
                 title = "AVIF 图片",
-                checked = settings.avifImagesEnabled,
+                checked = settings.reader.avifImagesEnabled,
                 onCheckedChange = onAvifImagesEnabledChange,
                 subtitle = "需要 Android 14+；旧系统会忽略这个开关",
             )
             MuBoxSwitchRow(
                 title = "书架封面",
-                checked = settings.libraryCoversEnabled,
+                checked = settings.appearance.libraryCoversEnabled,
                 onCheckedChange = onLibraryCoversEnabledChange,
                 subtitle = "从 WebDAV 漫画提取首图并显示在书架",
             )
             MuBoxSwitchRow(
                 title = "启用自动翻页",
-                checked = settings.autoPageEnabled,
+                checked = settings.reader.autoPageEnabled,
                 onCheckedChange = onAutoPageEnabledChange,
                 subtitle = "按固定间隔前进到下一页",
             )
             AutoPageSpeedRow(
-                speedMillis = settings.autoPageSpeedMillis,
+                speedMillis = settings.reader.autoPageSpeedMillis,
                 onSpeedChange = onAutoPageSpeedChange,
             )
         }
@@ -728,101 +751,101 @@ private fun VideoSettingsPage(
         ) {
             MuBoxSwitchRow(
                 title = "恢复播放位置",
-                checked = settings.videoResumeEnabled,
+                checked = settings.video.videoResumeEnabled,
                 onCheckedChange = onVideoResumeEnabledChange,
                 subtitle = "再次打开同一视频时从上次退出位置继续",
             )
             ChoiceRow(
                 title = "后台行为",
                 options = VideoBackgroundMode.entries,
-                selected = settings.videoBackgroundMode,
+                selected = settings.video.videoBackgroundMode,
                 label = ::videoBackgroundModeLabel,
                 onSelected = onVideoBackgroundModeChange,
             )
             MuBoxSwitchRow(
                 title = "WebDAV 视频 seek 优化",
-                checked = settings.videoSeekOptimizationEnabled,
+                checked = settings.video.videoSeekOptimizationEnabled,
                 onCheckedChange = onVideoSeekOptimizationEnabledChange,
                 subtitle = "缓存小段视频并合并重复 seek 请求",
             )
             DropdownRow(
                 title = "向前预读",
-                selected = settings.videoForwardPrefetchMode,
+                selected = settings.video.videoForwardPrefetchMode,
                 options = VideoForwardPrefetchMode.entries,
                 label = VideoForwardPrefetchMode::label,
                 onSelected = onVideoForwardPrefetchModeChange,
             )
             DropdownRow(
                 title = "视频代理诊断日志",
-                selected = settings.videoProxyDiagnosticsMode,
+                selected = settings.video.videoProxyDiagnosticsMode,
                 options = VideoProxyDiagnosticsMode.entries,
                 label = VideoProxyDiagnosticsMode::label,
                 onSelected = onVideoProxyDiagnosticsModeChange,
             )
             MuBoxSwitchRow(
                 title = "播放信息显示代理/Range 调试信息",
-                checked = settings.videoPlayerProxyDebugInfoEnabled,
+                checked = settings.video.videoPlayerProxyDebugInfoEnabled,
                 onCheckedChange = onVideoPlayerProxyDebugInfoEnabledChange,
                 subtitle = "在播放器信息面板显示 WebDAV 代理、Range 和预读状态",
             )
             DropdownRow(
                 title = "视频输出 (VO)",
-                selected = settings.videoOutputMode,
+                selected = settings.video.videoOutputMode,
                 options = VideoOutputMode.entries,
                 label = ::videoOutputModeLabel,
                 onSelected = onVideoOutputModeChange,
             )
             DropdownRow(
                 title = "GPU API",
-                selected = settings.gpuApiMode,
+                selected = settings.video.gpuApiMode,
                 options = GpuApiMode.entries,
                 label = ::gpuApiModeLabel,
                 onSelected = onGpuApiModeChange,
             )
             DropdownRow(
                 title = "Anime4K",
-                selected = settings.anime4kProfile,
+                selected = settings.video.anime4kProfile,
                 options = Anime4KProfile.entries,
                 label = ::anime4kProfileLabel,
                 onSelected = onAnime4KProfileChange,
             )
             DropdownRow(
                 title = "默认解码器",
-                selected = settings.videoDecoderMode,
+                selected = settings.video.videoDecoderMode,
                 options = VideoDecoderMode.entries,
                 label = ::videoDecoderModeLabel,
                 onSelected = onVideoDecoderModeChange,
             )
             DropdownRow(
                 title = "MPV Profile",
-                selected = settings.mpvProfileMode,
+                selected = settings.video.mpvProfileMode,
                 options = MpvProfileMode.entries,
                 label = ::mpvProfileModeLabel,
                 onSelected = onMpvProfileModeChange,
             )
             DropdownRow(
                 title = "控制自动隐藏",
-                selected = settings.videoControlsAutoHideMillis,
+                selected = settings.video.videoControlsAutoHideMillis,
                 options = playerControlAutoHideOptionsMillis(),
                 label = ::playerControlAutoHideLabel,
                 onSelected = onVideoControlsAutoHideMillisChange,
             )
             DropdownRow(
                 title = "播放器方向",
-                selected = settings.videoPlayerOrientationMode,
+                selected = settings.video.videoPlayerOrientationMode,
                 options = VideoPlayerOrientationMode.entries,
                 label = ::videoPlayerOrientationModeLabel,
                 onSelected = onVideoPlayerOrientationModeChange,
             )
             MuBoxSwitchRow(
                 title = "网格视图视频缩略图",
-                checked = settings.gridVideoThumbnailsEnabled,
+                checked = settings.video.gridVideoThumbnailsEnabled,
                 onCheckedChange = onGridVideoThumbnailsEnabledChange,
                 subtitle = "在本地与 WebDAV 文件网格中自动生成并显示视频缩略图",
             )
             MuBoxSwitchRow(
                 title = "提取加入影视库的视频缩略图作为封面",
-                checked = settings.videoLibraryThumbnailsEnabled,
+                checked = settings.video.videoLibraryThumbnailsEnabled,
                 onCheckedChange = onVideoLibraryThumbnailsEnabledChange,
                 subtitle = "收藏视频时自动提取一帧作为影视库封面",
             )

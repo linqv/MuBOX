@@ -29,7 +29,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation(project(":feature:directory-listing"))
+    implementation(project(":ui:directory-listing"))
     implementation(project(":ui"))
 
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")

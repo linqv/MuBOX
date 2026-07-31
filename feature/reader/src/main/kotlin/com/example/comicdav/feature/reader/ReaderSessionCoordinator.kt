@@ -1,5 +1,7 @@
 package com.example.comicdav.feature.reader
 
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.ports.ComicReaderSession
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,6 +40,7 @@ internal interface ReaderSessionGenerationGate {
  */
 internal class ReaderSessionCoordinator(
     ioDispatcher: CoroutineDispatcher,
+    private val diagnosticLog: Diagnostics = NoopDiagnostics,
     private val clearTransientPages: (cacheDir: File, readerKey: String) -> Unit =
         ReaderPageCache::clearTransientPages,
 ) : ReaderSessionGenerationGate {
@@ -120,7 +123,7 @@ internal class ReaderSessionCoordinator(
     ) {
         val closingSession = session
         val closingDescriptor = descriptor
-        ReaderDiagnosticLog.event(
+        diagnosticLog.event(
             "close_current_session generation=$activeGeneration hasSession=${closingSession != null}",
         )
         beforeRemoteCancellation(closingSession)

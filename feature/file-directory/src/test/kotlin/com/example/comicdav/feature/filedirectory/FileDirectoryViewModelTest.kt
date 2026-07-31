@@ -4,7 +4,7 @@ import com.example.comicdav.MainDispatcherRule
 import com.example.comicdav.core.ports.FileDirectoryCatalog
 import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.core.model.source.FileDirectorySourceType
-import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow

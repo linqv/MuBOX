@@ -70,6 +70,36 @@ object VideoPlayerLaunchContract {
     fun webDavIntent(
         context: Context,
         request: WebDavVideoOpenRequest,
+        options: VideoPlayerOptions = VideoPlayerOptions(),
+        episodeQueue: VideoEpisodeQueue? = null,
+    ): Intent =
+        Intent(context, VideoPlayerActivity::class.java)
+            .putExtra(EXTRA_SOURCE, SOURCE_WEB_DAV)
+            .putExtra(EXTRA_REMOTE_PATH, request.remotePath)
+            .putExtra(EXTRA_DISPLAY_NAME, request.displayName)
+            .putExtra(EXTRA_SIZE, request.size ?: -1L)
+            .putExtra(EXTRA_LAST_MODIFIED, request.lastModified ?: -1L)
+            .putExtra(EXTRA_ACCOUNT_ID, request.accountId)
+            .putExtra(EXTRA_ETAG, request.etag)
+            .putExtra(
+                EXTRA_PLAYBACK_KEY,
+                webDavVideoPlaybackKey(
+                    accountId = request.accountId,
+                    remotePath = request.remotePath,
+                    size = request.size,
+                    etag = request.etag,
+                    lastModified = request.lastModified,
+                ),
+            )
+            .putVideoPlayerOptions(options)
+            .putEpisodeQueueExtra(
+                context,
+                episodeQueue ?: VideoEpisodeQueue(listOf(VideoEpisode.webDav(request))),
+            )
+
+    fun webDavIntent(
+        context: Context,
+        request: WebDavVideoOpenRequest,
         uri: String,
         subtitleUrls: List<String>,
         streamIds: List<String>,

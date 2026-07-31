@@ -3,10 +3,6 @@ package com.example.comicdav.video.proxy
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
 import com.example.comicdav.core.remote.WebDavClientFactory
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -14,11 +10,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebDavVideoPlaybackStarterTest {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val manager = VideoProxyManager()
 
     @After
     fun tearDown() {
-        scope.cancel()
+        manager.close()
     }
 
     @Test
@@ -30,6 +26,7 @@ class WebDavVideoPlaybackStarterTest {
             startWebDavVideoPlayback(
                 request = request(),
                 clientFactory = clientFactory(),
+                proxyManager = manager,
                 openProxy = { _, _, _ -> session },
                 closeProxy = { closedStreamIds += it },
                 startPlayback = { error("activity launch failed") },
@@ -48,6 +45,7 @@ class WebDavVideoPlaybackStarterTest {
         startWebDavVideoPlayback(
             request = request(),
             clientFactory = clientFactory(),
+            proxyManager = manager,
             openProxy = { _, _, _ -> session },
             closeProxy = { closedStreamIds += it },
             startPlayback = {},
@@ -68,6 +66,7 @@ class WebDavVideoPlaybackStarterTest {
             startWebDavVideoPlayback(
                 request = request(),
                 clientFactory = clientFactory(),
+                proxyManager = manager,
                 openProxy = { _, _, _ -> session },
                 closeProxy = { closedStreamIds += it },
                 startPlayback = { error("activity launch failed") },
@@ -88,6 +87,7 @@ class WebDavVideoPlaybackStarterTest {
             request = request(),
             clientFactory = clientFactory(),
             proxySettings = proxySettings,
+            proxyManager = manager,
             openProxy = { _, _, settings ->
                 capturedSettings = settings
                 session
@@ -100,7 +100,6 @@ class WebDavVideoPlaybackStarterTest {
 
     private fun proxySession(streamId: String): ProxySession =
         ProxySession(
-            proxy = MuBoxVideoProxy(clientProvider = { null }, coroutineScope = scope),
             streamId = streamId,
             url = "http://127.0.0.1:1/stream/$streamId",
         )

@@ -52,6 +52,7 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
                     recordHistory = { entry ->
                         container.watchHistoryRepository.upsert(entry)
                     },
+                    diagnosticLog = container.diagnostics,
                 )
             },
         ),

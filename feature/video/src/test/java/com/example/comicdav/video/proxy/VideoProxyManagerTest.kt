@@ -25,16 +25,18 @@ import org.junit.Test
 
 class VideoProxyManagerTest {
     private lateinit var server: MockWebServer
+    private lateinit var manager: VideoProxyManager
 
     @Before
     fun setUp() {
+        manager = VideoProxyManager()
         server = MockWebServer()
         server.start()
     }
 
     @After
     fun tearDown() {
-        VideoProxyManager.shutdown()
+        manager.close()
         server.shutdown()
     }
 
@@ -42,7 +44,7 @@ class VideoProxyManagerTest {
     fun openUsesProvidedAccountSnapshotWithoutWaitingForPersistedStore() = runTest {
         server.enqueueRange("abc", total = 3)
 
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request(size = 3),
             clientFactory = clientFactory(),
         )
@@ -66,7 +68,7 @@ class VideoProxyManagerTest {
                 .setBody("abc"),
         )
 
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request(size = 3),
             clientFactory = clientFactory(),
         )
@@ -77,7 +79,7 @@ class VideoProxyManagerTest {
         val remoteRequest = server.takeRequest()
         assertEquals("GET", remoteRequest.method)
         assertEquals(null, remoteRequest.getHeader("Range"))
-        VideoProxyManager.close(session.streamId)
+        manager.close(session.streamId)
     }
 
     @Test
@@ -85,7 +87,7 @@ class VideoProxyManagerTest {
         server.enqueueRange("012", total = 10)
         server.enqueueRange("123", total = 10, start = 1)
 
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request(size = 10),
             clientFactory = clientFactory(),
             proxySettings = VideoProxySettings.DEFAULT.copy(seekOptimizationEnabled = false),
@@ -96,7 +98,7 @@ class VideoProxyManagerTest {
         assertEquals("bytes=0-2", server.takeRequest().getHeader("Range"))
         assertEquals("bytes=1-3", server.takeRequest().getHeader("Range"))
 
-        VideoProxyManager.close(session.streamId)
+        manager.close(session.streamId)
     }
 
     @Test
@@ -104,25 +106,36 @@ class VideoProxyManagerTest {
         server.enqueueRange("a", total = 1)
         server.enqueueRange("b", total = 1)
 
-        val first = VideoProxyManager.open(request = request(size = 1), clientFactory = clientFactory())
+        val first = manager.open(request = request(size = 1), clientFactory = clientFactory())
         assertArrayEquals("a".toByteArray(), httpRequest(first.url, range = "bytes=0-0").body)
-        VideoProxyManager.close(first.streamId)
+        manager.close(first.streamId)
 
-        val second = VideoProxyManager.open(request = request(size = 1), clientFactory = clientFactory())
+        val second = manager.open(request = request(size = 1), clientFactory = clientFactory())
         assertArrayEquals("b".toByteArray(), httpRequest(second.url, range = "bytes=0-0").body)
-        VideoProxyManager.close(second.streamId)
+        manager.close(second.streamId)
+    }
+
+    @Test
+    fun closingManagerIsTerminalForItsScopedLifecycle() = runTest {
+        manager.close()
+
+        val error = runCatching {
+            manager.open(request = request(size = 1), clientFactory = clientFactory())
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
     }
 
     @Test
     fun closingUnknownStreamDoesNotShutdownActiveProxy() = runTest {
         server.enqueueRange("a", total = 1)
 
-        val session = VideoProxyManager.open(request = request(size = 1), clientFactory = clientFactory())
-        VideoProxyManager.close("missing-stream")
+        val session = manager.open(request = request(size = 1), clientFactory = clientFactory())
+        manager.close("missing-stream")
         try {
             assertArrayEquals("a".toByteArray(), httpRequest(session.url, range = "bytes=0-0").body)
         } finally {
-            VideoProxyManager.close(session.streamId)
+            manager.close(session.streamId)
         }
     }
 
@@ -136,14 +149,14 @@ class VideoProxyManagerTest {
             firstServer.enqueueRange("a", total = 1)
             secondServer.enqueueRange("b", total = 1)
 
-            val first = VideoProxyManager.open(
+            val first = manager.open(
                 request = request(size = 1, accountId = "account-1"),
                 clientFactory = clientFactory(
                     baseUrl = firstServer.url("/dav/").toString(),
                     password = "first-pass",
                 ),
             )
-            val second = VideoProxyManager.open(
+            val second = manager.open(
                 request = request(size = 1, accountId = "account-1"),
                 clientFactory = clientFactory(
                     baseUrl = secondServer.url("/dav/").toString(),
@@ -151,13 +164,14 @@ class VideoProxyManagerTest {
                 ),
             )
 
+            assertEquals(URL(first.url).port, URL(second.url).port)
             assertArrayEquals("a".toByteArray(), httpRequest(first.url, range = "bytes=0-0").body)
+            manager.close(first.streamId)
             assertArrayEquals("b".toByteArray(), httpRequest(second.url, range = "bytes=0-0").body)
             assertEquals(basicCredentials("user", "first-pass"), firstServer.takeRequest().getHeader("Authorization"))
             assertEquals(basicCredentials("user", "second-pass"), secondServer.takeRequest().getHeader("Authorization"))
 
-            VideoProxyManager.close(first.streamId)
-            VideoProxyManager.close(second.streamId)
+            manager.close(second.streamId)
         } finally {
             firstServer.shutdown()
             secondServer.shutdown()
@@ -169,7 +183,7 @@ class VideoProxyManagerTest {
         server.enqueueRange("vid", total = 3)
         server.enqueueRange("sub!", total = 4)
 
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request(
                 size = 3,
                 subtitles = listOf(
@@ -198,14 +212,14 @@ class VideoProxyManagerTest {
         assertEquals("/dav/movie.zh.srt", subtitleRequest.path?.substringBefore('?'))
         assertEquals(basicCredentials("user", "pass"), subtitleRequest.getHeader("Authorization"))
 
-        session.streamIds.forEach(VideoProxyManager::close)
+        session.streamIds.forEach(manager::close)
     }
 
     @Test
     fun closeSessionClosesMainAndSubtitleStreams() = runTest {
         server.enqueueRange("vid", total = 3)
         server.enqueueRange("sub!", total = 4)
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request(
                 size = 3,
                 subtitles = listOf(
@@ -222,7 +236,7 @@ class VideoProxyManagerTest {
             clientFactory = clientFactory(),
         )
 
-        VideoProxyManager.close(session)
+        manager.close(session)
 
         assertTrue(runCatching { httpRequest(session.url, range = "bytes=0-2") }.isFailure)
         assertTrue(runCatching { httpRequest(session.subtitleUrls.single(), range = "bytes=0-3") }.isFailure)

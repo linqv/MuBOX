@@ -1,9 +1,10 @@
 package com.example.comicdav.feature.reader.mupdf
 
+import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.media.LocalDocumentFormat
 import com.example.comicdav.core.ports.ComicReaderSession
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.CancellationException
@@ -13,8 +14,9 @@ class MuPdfReaderSession(
     private val format: LocalDocumentFormat,
     private val maxPixels: Int = defaultMuPdfRenderMaxPixels(format),
     private val jpegQuality: Int = defaultMuPdfRenderJpegQuality(format),
+    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val logDiagnostic: (() -> String) -> Unit = { event ->
-        ReaderDiagnosticLog.detail(DiagnosticCategory.PAGE_LOAD, event)
+        diagnostics.detail(DiagnosticCategory.PAGE_LOAD, event)
     },
     private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ComicReaderSession {

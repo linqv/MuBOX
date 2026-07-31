@@ -4,19 +4,21 @@ import com.example.comicdav.core.model.media.WebDavSubtitleOpenRequest
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
 import com.example.comicdav.core.remote.WebDavClientFactory
 import com.example.comicdav.core.model.settings.VideoProxySettings
+import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
-object VideoProxyManager {
+/**
+ * Owns one aggregate proxy/cache lifecycle. A manager may be shared by playback and thumbnail
+ * consumers so all active streams stay under one memory-cache budget.
+ */
+class VideoProxyManager : Closeable {
     private val lifecycleLock = Any()
-    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeStreams = 0
-    @Volatile
-    private var scope = newScope()
-    @Volatile
+    private var closed = false
+    private var scope: CoroutineScope? = null
     private var proxy: MuBoxVideoProxy? = null
 
     suspend fun open(
@@ -47,7 +49,6 @@ object VideoProxyManager {
                 reserveAdditionalStreams(streamIds.size - 1)
             }
             return ProxySession(
-                proxy = sessionProxy,
                 streamId = streamIds.first(),
                 url = url,
                 subtitleUrls = subtitleUrls,
@@ -82,8 +83,10 @@ object VideoProxyManager {
             proxy?.statistics(streamId)
         }
 
-    fun shutdown() {
+    override fun close() {
         synchronized(lifecycleLock) {
+            if (closed) return
+            closed = true
             shutdownLocked()
         }
     }
@@ -92,9 +95,10 @@ object VideoProxyManager {
 
     private fun reserveProxyStream(): MuBoxVideoProxy =
         synchronized(lifecycleLock) {
+            check(!closed) { "Video proxy manager is closed" }
             activeStreams += 1
             proxy ?: MuBoxVideoProxy(
-                coroutineScope = scope,
+                coroutineScope = scope ?: newScope().also { scope = it },
             ).also { proxy = it }
         }
 
@@ -119,13 +123,8 @@ object VideoProxyManager {
         closingProxy?.close()
         proxy = null
         activeStreams = 0
-        scope.cancel()
-        scope = newScope()
-        if (closingProxy != null) {
-            cleanupScope.launch {
-                closingProxy.awaitClosed()
-            }
-        }
+        scope?.cancel()
+        scope = null
     }
 
     private fun WebDavSubtitleOpenRequest.asStreamRequest(accountId: String): WebDavVideoOpenRequest =
@@ -141,7 +140,6 @@ object VideoProxyManager {
 }
 
 data class ProxySession(
-    val proxy: MuBoxVideoProxy,
     val streamId: String,
     val url: String,
     val subtitleUrls: List<String> = emptyList(),

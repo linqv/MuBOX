@@ -1,8 +1,8 @@
 package com.example.comicdav.feature.reader.mupdf
 
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
 import com.example.comicdav.core.model.media.LocalDocumentFormat
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.core.diagnostics.DiagnosticSink
 import java.io.File
 import java.util.concurrent.CancellationException
@@ -129,19 +129,20 @@ class MuPdfReaderSessionTest {
     fun summaryModeSuppressesRenderDiagnostics() {
         val output = File(temp.root, "page-0.jpg")
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
-        try {
-            val document = FakeMuPdfDocument(pageCount = 2)
-            val session = MuPdfReaderSession(document, LocalDocumentFormat.Pdf)
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        )
+        val document = FakeMuPdfDocument(pageCount = 2)
+        val session = MuPdfReaderSession(
+            document = document,
+            format = LocalDocumentFormat.Pdf,
+            diagnostics = diagnostics,
+        )
 
-            session.loadPageToFile(0, output)
+        session.loadPageToFile(0, output)
 
-            assertTrue(sink.lines.none { it.contains("mupdf_render_done") })
-        } finally {
-            ReaderDiagnosticLog.clearSink()
-            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
-        }
+        assertTrue(sink.lines.none { it.contains("mupdf_render_done") })
     }
 
     @Test

@@ -60,12 +60,12 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.core.model.media.fileDirectoryBrowserVideoThumbnailVersion
-import com.example.comicdav.feature.directorylisting.DirectoryListingTopBar
-import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
-import com.example.comicdav.feature.directorylisting.DirectoryVideoThumbnail
-import com.example.comicdav.feature.directorylisting.DirectorySortField
-import com.example.comicdav.feature.directorylisting.rememberDirectoryVideoArtworkModel
-import com.example.comicdav.feature.directorylisting.shouldRequestDirectoryVideoThumbnail
+import com.example.comicdav.ui.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.ui.directorylisting.DirectoryVideoThumbnail
+import com.example.comicdav.ui.directorylisting.DirectorySortField
+import com.example.comicdav.ui.directorylisting.rememberDirectoryVideoArtworkModel
+import com.example.comicdav.ui.directorylisting.shouldRequestDirectoryVideoThumbnail
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxDenseMediaRow
 import com.example.comicdav.ui.MuBoxInlineMessage
@@ -301,7 +301,7 @@ private fun FileDirectoryBrowseHeader(
     breadcrumbLabels: List<String>,
     searchQuery: String,
     sortField: DirectorySortField,
-    sortDirection: com.example.comicdav.feature.directorylisting.DirectorySortDirection,
+    sortDirection: com.example.comicdav.ui.directorylisting.DirectorySortDirection,
     viewMode: DirectoryListingViewMode,
     onSearchQueryChange: (String) -> Unit,
     onSortFieldChange: (DirectorySortField) -> Unit,

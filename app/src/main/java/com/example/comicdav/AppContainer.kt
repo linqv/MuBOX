@@ -13,7 +13,6 @@ import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.database.createAppPersistence
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.reader.LocalComicOpener
-import com.example.comicdav.feature.reader.ReaderDiagnosticLog
 import com.example.comicdav.infrastructure.diagnostics.AndroidLogcatDiagnosticSink
 import com.example.comicdav.infrastructure.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.nativebridge.ComicEngine
@@ -24,6 +23,7 @@ import com.example.comicdav.network.createWebDavClient as newWebDavClient
 import com.example.comicdav.security.AndroidKeystoreCredentialCipher
 import com.example.comicdav.security.CredentialCipher
 import com.example.comicdav.video.player.VideoPlaybackStateStore
+import com.example.comicdav.video.proxy.VideoProxyManager
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -40,10 +40,6 @@ internal val Context.videoPlaybackStateDataStore by preferencesDataStore(name = 
 
 internal class AppContainer(context: Context) {
     val diagnostics = ConfigurableDiagnostics(defaultSink = AndroidLogcatDiagnosticSink())
-
-    init {
-        ReaderDiagnosticLog.attach(diagnostics)
-    }
 
     val credentialCipher: CredentialCipher = AndroidKeystoreCredentialCipher()
 
@@ -91,6 +87,7 @@ internal class AppContainer(context: Context) {
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
     val videoPlaybackStateStore = VideoPlaybackStateStore(context.videoPlaybackStateDataStore)
+    val videoProxyManager = VideoProxyManager()
     val webDavClientProvider = WebDavClientProvider(
         loadCredentials = { accountId ->
             webDavAccountStore.loadAccount(accountId)?.let { account ->
@@ -103,11 +100,15 @@ internal class AppContainer(context: Context) {
         },
         diagnostics = diagnostics,
     )
+    val webDavPlaybackClientFactories = AppWebDavPlaybackClientFactories(
+        loadSavedFactory = webDavClientProvider::clientFactoryFor,
+    )
     val videoPlayerDependencies = AppVideoPlayerDependencies(
         settingsStore = appSettingsStore,
-        clientProvider = webDavClientProvider,
+        webDavClientFactories = webDavPlaybackClientFactories,
         historyRepository = watchHistoryRepository,
         legacyPlaybackStateStore = videoPlaybackStateStore,
+        proxyManager = videoProxyManager,
     )
 
     fun createWebDavClient(baseUrl: String, username: String?, password: String?) =

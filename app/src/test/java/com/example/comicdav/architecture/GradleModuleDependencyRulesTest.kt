@@ -96,7 +96,7 @@ class GradleModuleDependencyRulesTest {
                 ":webdav",
                 ":data",
                 ":ui",
-                ":feature:directory-listing",
+                ":ui:directory-listing",
                 ":feature:file-directory",
                 ":feature:home",
                 ":feature:library",
@@ -113,10 +113,10 @@ class GradleModuleDependencyRulesTest {
             ":webdav" to setOf(":core:model", ":core:diagnostics"),
             ":data" to setOf(":core:model"),
             ":ui" to setOf(":core:model"),
-            ":feature:directory-listing" to setOf(":core:model", ":ui"),
+            ":ui:directory-listing" to setOf(":core:model", ":ui"),
             ":feature:file-directory" to setOf(
                 ":core:model",
-                ":feature:directory-listing",
+                ":ui:directory-listing",
                 ":ui",
             ),
             ":feature:home" to setOf(":core:model", ":ui"),
@@ -132,7 +132,7 @@ class GradleModuleDependencyRulesTest {
             ":feature:video-library" to setOf(":core:model", ":ui"),
             ":feature:webdav" to setOf(
                 ":core:model",
-                ":feature:directory-listing",
+                ":ui:directory-listing",
                 ":ui",
             ),
         ).mapValues { (_, dependencies) -> dependencies.toSortedSet() }

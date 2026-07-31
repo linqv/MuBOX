@@ -1,9 +1,10 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
 import com.example.comicdav.core.diagnostics.DiagnosticSink
+import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
 import com.example.comicdav.CollectingReaderLogSink
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import kotlin.coroutines.ContinuationInterceptor
@@ -147,18 +148,15 @@ class ReaderDiagnosticLogTest {
     @Test
     fun summaryModeWritesSummaryButSkipsDetailBuilders() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        )
         var detailBuilt = false
-        try {
-            ReaderDiagnosticLog.summary(DiagnosticCategory.SESSION) { "reader_open pageCount=2" }
-            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) {
-                detailBuilt = true
-                "pager current=1"
-            }
-        } finally {
-            ReaderDiagnosticLog.clearSink()
-            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        diagnostics.summary(DiagnosticCategory.SESSION) { "reader_open pageCount=2" }
+        diagnostics.detail(DiagnosticCategory.UI) {
+            detailBuilt = true
+            "pager current=1"
         }
 
         assertTrue(sink.lines.single().contains("level=summary category=SESSION reader_open pageCount=2"))
@@ -168,16 +166,38 @@ class ReaderDiagnosticLogTest {
     @Test
     fun detailModeWritesDetailEvents() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.DETAIL)
-        try {
-            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) { "pager current=1" }
-        } finally {
-            ReaderDiagnosticLog.clearSink()
-            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
-        }
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.DETAIL,
+        )
+        diagnostics.detail(DiagnosticCategory.UI) { "pager current=1" }
 
         assertTrue(sink.lines.single().contains("level=detail category=UI pager current=1"))
+    }
+
+    @Test
+    fun diagnosticInstancesDoNotShareSinkOrVerbosity() {
+        val summarySink = CollectingReaderLogSink()
+        val detailSink = CollectingReaderLogSink()
+        val summaryDiagnostics = ConfigurableDiagnostics(
+            defaultSink = summarySink,
+            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        )
+        val detailDiagnostics = ConfigurableDiagnostics(
+            defaultSink = detailSink,
+            initialVerbosity = DiagnosticVerbosity.DETAIL,
+        )
+
+        summaryDiagnostics.detail(DiagnosticCategory.UI) { "summary-instance-detail" }
+        summaryDiagnostics.summary(DiagnosticCategory.SESSION) { "summary-instance-event" }
+        detailDiagnostics.detail(DiagnosticCategory.UI) { "detail-instance-event" }
+
+        assertEquals(1, summarySink.lines.size)
+        assertTrue(summarySink.lines.single().contains("summary-instance-event"))
+        assertEquals(1, detailSink.lines.size)
+        assertTrue(detailSink.lines.single().contains("detail-instance-event"))
+        assertFalse(summarySink.lines.any { it.contains("detail-instance-event") })
+        assertFalse(detailSink.lines.any { it.contains("summary-instance-event") })
     }
 
     @Test
@@ -207,22 +227,19 @@ class ReaderDiagnosticLogTest {
     @Test
     fun offModeDoesNotInvokeSummaryOrDetailBuilders() {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.OFF)
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.OFF,
+        )
         var summaryBuilt = false
         var detailBuilt = false
-        try {
-            ReaderDiagnosticLog.summary(DiagnosticCategory.SESSION) {
-                summaryBuilt = true
-                "summary"
-            }
-            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) {
-                detailBuilt = true
-                "detail"
-            }
-        } finally {
-            ReaderDiagnosticLog.clearSink()
-            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        diagnostics.summary(DiagnosticCategory.SESSION) {
+            summaryBuilt = true
+            "summary"
+        }
+        diagnostics.detail(DiagnosticCategory.UI) {
+            detailBuilt = true
+            "detail"
         }
 
         assertFalse(summaryBuilt)

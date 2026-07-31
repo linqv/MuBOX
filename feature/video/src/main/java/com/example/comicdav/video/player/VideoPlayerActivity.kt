@@ -76,6 +76,9 @@ class VideoPlayerActivity : ComponentActivity() {
     private var isActivityInForeground = false
     private var historyAutoSaveJob: kotlinx.coroutines.Job? = null
     private lateinit var currentHistoryMetadata: WatchHistoryMetadata
+    private val videoProxyManager by lazy(LazyThreadSafetyMode.NONE) {
+        playerDependencies.videoProxyManager()
+    }
     private var playerMediaContext by mutableStateOf(
         VideoPlayerMediaContext(displayName = "视频", source = SOURCE_LOCAL, remotePath = null),
     )
@@ -86,7 +89,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private val episodeCoordinator by lazy(LazyThreadSafetyMode.NONE) {
         VideoEpisodeCoordinator(
             dependencies = playerDependencies,
-            proxyGateway = VideoProxyManagerGateway,
+            proxyGateway = VideoProxyManagerGateway(videoProxyManager),
         )
     }
     private val systemBarsHandler = Handler(Looper.getMainLooper())
@@ -155,13 +158,13 @@ class VideoPlayerActivity : ComponentActivity() {
                 durationMillis = durationMillis,
             )
         }
-        if (launchUri.isNullOrBlank() && restoredEpisode == null) {
+        if (launchUri.isNullOrBlank() && restoredEpisode == null && !launchArguments.isWebDav) {
             finish()
             return
         }
-        if (restoredEpisode == null && launchArguments.isWebDav) {
+        if (restoredEpisode == null && launchArguments.isWebDav && !launchUri.isNullOrBlank()) {
             webDavStreamIds = episodeCoordinator.initialWebDavStreamIds(
-                uri = requireNotNull(launchUri),
+                uri = launchUri,
                 explicitStreamIds = launchArguments.webDavStreamIds,
             )
         }
@@ -348,8 +351,8 @@ class VideoPlayerActivity : ComponentActivity() {
 
         isEpisodeSwitching = true
         sessionCoordinator.launchLoad {
-            var preparedRestoredEpisode: PreparedVideoEpisode? = null
-            var adoptedRestoredEpisode = false
+            var preparedProxyEpisode: PreparedVideoEpisode? = null
+            var adoptedProxyEpisode = false
             try {
                 if (!sessionCoordinator.prepare()) return@launchLoad
                 controller.setStartupRendererState(
@@ -364,11 +367,20 @@ class VideoPlayerActivity : ComponentActivity() {
                 if (restoredEpisode != null) {
                     val episode = restoredEpisode.episode
                     val prepared = episodeCoordinator.prepare(episode)
-                    preparedRestoredEpisode = prepared
+                    preparedProxyEpisode = prepared
                     playbackUri = prepared.uri
                     playbackDisplayName = episode.displayName
                     playbackSubtitles = prepared.subtitles
                     playbackIsWebDav = episode.source == VideoEpisodeSource.WEB_DAV
+                } else if (launchArguments.isWebDav && launchUri.isNullOrBlank()) {
+                    val episode = episodeQueue?.currentEpisode
+                        ?: error("缺少 WebDAV 播放请求")
+                    val prepared = episodeCoordinator.prepare(episode)
+                    preparedProxyEpisode = prepared
+                    playbackUri = prepared.uri
+                    playbackDisplayName = episode.displayName
+                    playbackSubtitles = prepared.subtitles
+                    playbackIsWebDav = true
                 } else {
                     playbackUri = requireNotNull(launchUri)
                     playbackDisplayName = launchArguments.displayName
@@ -389,9 +401,9 @@ class VideoPlayerActivity : ComponentActivity() {
                     isWebDav = playbackIsWebDav,
                 )
                 if (loaded) {
-                    preparedRestoredEpisode?.let { prepared ->
+                    preparedProxyEpisode?.let { prepared ->
                         webDavStreamIds = prepared.webDavStreamIds
-                        adoptedRestoredEpisode = true
+                        adoptedProxyEpisode = true
                     }
                     playbackPersistenceCoordinator.startAutoSave()
                     startHistoryAutoSave()
@@ -401,8 +413,8 @@ class VideoPlayerActivity : ComponentActivity() {
             } catch (error: Throwable) {
                 controller.onError(error.message ?: "视频播放器初始化失败")
             } finally {
-                if (!adoptedRestoredEpisode) {
-                    preparedRestoredEpisode?.webDavStreamIds?.let(episodeCoordinator::close)
+                if (!adoptedProxyEpisode) {
+                    preparedProxyEpisode?.webDavStreamIds?.let(episodeCoordinator::close)
                 }
                 isEpisodeSwitching = false
             }
@@ -697,6 +709,19 @@ class VideoPlayerActivity : ComponentActivity() {
             episodeQueue: VideoEpisodeQueue? = null,
         ): Intent =
             VideoPlayerLaunchContract.localIntent(
+                context = context,
+                request = request,
+                options = options,
+                episodeQueue = episodeQueue,
+            )
+
+        fun webDavIntent(
+            context: Context,
+            request: WebDavVideoOpenRequest,
+            options: VideoPlayerOptions = VideoPlayerOptions(),
+            episodeQueue: VideoEpisodeQueue? = null,
+        ): Intent =
+            VideoPlayerLaunchContract.webDavIntent(
                 context = context,
                 request = request,
                 options = options,

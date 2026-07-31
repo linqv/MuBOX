@@ -1,6 +1,8 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.PlannedRemoteRange
 import java.io.File
@@ -30,6 +32,7 @@ internal class ReaderPrefetchCoordinator(
     sessionCoordinator: ReaderSessionCoordinator,
     pageLoadCoordinator: ReaderPageLoadCoordinator,
     diagnostics: ReaderDiagnosticsTracker,
+    diagnosticLog: Diagnostics = NoopDiagnostics,
     pageFiles: () -> Map<Int, File>,
     onPageFilesLoaded: (Map<Int, File>) -> Unit,
 ) {
@@ -38,6 +41,7 @@ internal class ReaderPrefetchCoordinator(
         sessionCoordinator = sessionCoordinator,
         pageLoadCoordinator = pageLoadCoordinator,
         diagnostics = diagnostics,
+        diagnosticLog = diagnosticLog,
         pageFiles = pageFiles,
         onPageFilesLoaded = onPageFilesLoaded,
     )
@@ -45,6 +49,7 @@ internal class ReaderPrefetchCoordinator(
         scope = scope,
         ioDispatcher = ioDispatcher,
         sessionCoordinator = sessionCoordinator,
+        diagnosticLog = diagnosticLog,
     )
 
     fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
@@ -82,6 +87,7 @@ private class ReaderPagePrefetchCoordinator(
     private val sessionCoordinator: ReaderSessionCoordinator,
     private val pageLoadCoordinator: ReaderPageLoadCoordinator,
     private val diagnostics: ReaderDiagnosticsTracker,
+    private val diagnosticLog: Diagnostics,
     private val pageFiles: () -> Map<Int, File>,
     private val onPageFilesLoaded: (Map<Int, File>) -> Unit,
 ) {
@@ -94,7 +100,7 @@ private class ReaderPagePrefetchCoordinator(
         val forwardPrefetchPages = activeSession.forwardPrefetchPageCount.coerceAtLeast(0)
         val backwardPrefetchPages = activeSession.backwardPrefetchPageCount.coerceAtLeast(0)
         if (forwardPrefetchPages == 0 && backwardPrefetchPages == 0) {
-            ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+            diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                 "prefetch_skipped reason=session_disabled page=$pageIndex"
             }
             return
@@ -129,7 +135,7 @@ private class ReaderPagePrefetchCoordinator(
 
         val prefetchGeneration = opening.generation
         diagnostics.markPrefetchPlanned(missingNeighbors)
-        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
             "prefetch_start current=$pageIndex pages=$missingNeighbors generation=$prefetchGeneration"
         }
         missingNeighbors.forEachIndexed { order, page ->
@@ -138,7 +144,7 @@ private class ReaderPagePrefetchCoordinator(
                     delay(PREFETCH_START_DELAY_MS + order * PREFETCH_STAGGER_MS)
                     currentCoroutineContext().ensureActive()
                     diagnostics.markPrefetchStarted(page)
-                    ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) { "prefetch_page_start page=$page" }
+                    diagnosticLog.detail(DiagnosticCategory.PREFETCH) { "prefetch_page_start page=$page" }
                     val files = pageLoadCoordinator.loadPages(
                         session = activeSession,
                         context = opening.pageLoadContext(),
@@ -149,7 +155,7 @@ private class ReaderPagePrefetchCoordinator(
                     if (sessionCoordinator.isCurrent(prefetchGeneration)) {
                         onPageFilesLoaded(files)
                         diagnostics.markPrefetchCompleted(page)
-                        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+                        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                             "prefetch_loaded page=$page files=${files.keys.sorted()}"
                         }
                     }
@@ -162,7 +168,7 @@ private class ReaderPagePrefetchCoordinator(
                         pages = missingNeighbors.drop(order + 1),
                         selectedPage = pageIndex,
                     )
-                    ReaderDiagnosticLog.error("prefetch_failed page=$page", error)
+                    diagnosticLog.error("prefetch_failed page=$page", error)
                 } finally {
                     val currentJob = currentCoroutineContext()[Job]
                     if (currentJob != null && jobs[page] === currentJob) {
@@ -205,7 +211,7 @@ private class ReaderPagePrefetchCoordinator(
         val cancelledPages = activePages.subtract(retentionWindow)
 
         if (retainedPages.isNotEmpty() && (reason.startsWith("select_page") || reason == "continuous_visible")) {
-            ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+            diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                 "prefetch_retained reason=$reason page=$selectedPage pages=${retainedPages.sorted()}"
             }
         }
@@ -225,7 +231,7 @@ private class ReaderPagePrefetchCoordinator(
         activePages.forEach { page ->
             jobs.remove(page)?.cancel(CancellationException("prefetch $reason"))
         }
-        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
             "prefetch_cancelled reason=$reason page=$selectedPage pages=${activePages.sorted()}"
         }
     }
@@ -235,6 +241,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
     private val sessionCoordinator: ReaderSessionCoordinator,
+    private val diagnosticLog: Diagnostics,
 ) {
     private val lock = Any()
     private val jobs = mutableMapOf<PlannedRangeKey, PlannedRangePrefetch>()
@@ -257,12 +264,12 @@ private class ReaderPlannedRangePrefetchCoordinator(
                             if (!sessionCoordinator.isCurrent(expectedGeneration)) {
                                 return@withSessionLock emptyList<PlannedRemoteRange>()
                             }
-                            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) {
+                            diagnosticLog.detail(DiagnosticCategory.UI) {
                                 "update_viewport_start page=$pageIndex generation=$expectedGeneration"
                             }
                             session.updateViewport(pageIndex, NETWORK_WIFI)
                             val ranges = session.plannedRanges(pageIndex, NETWORK_WIFI)
-                            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) {
+                            diagnosticLog.detail(DiagnosticCategory.UI) {
                                 "update_viewport_done page=$pageIndex generation=$expectedGeneration " +
                                     "plannedRangeCount=${ranges.size} " +
                                     "plannedBytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}"
@@ -275,7 +282,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
                     }
                 }.onFailure { error ->
                     if (sessionCoordinator.isCurrent(expectedGeneration) && error !is CancellationException) {
-                        ReaderDiagnosticLog.error("update_viewport_failed page=$pageIndex", error)
+                        diagnosticLog.error("update_viewport_failed page=$pageIndex", error)
                     }
                 }
             }
@@ -295,7 +302,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
                     activeSession.plannedRanges(pageIndex, NETWORK_WIFI)
                 }
                 if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                    ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+                    diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                         "demand_planned_range_plan page=$pageIndex source=$source " +
                             "count=${ranges.size} bytes=${ranges.sumOf { it.endInclusive - it.start + 1 }}"
                     }
@@ -303,7 +310,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
                 }
             }.onFailure { error ->
                 if (sessionCoordinator.isCurrent(expectedGeneration) && error !is CancellationException) {
-                    ReaderDiagnosticLog.error("demand_planned_range_failed page=$pageIndex source=$source", error)
+                    diagnosticLog.error("demand_planned_range_failed page=$pageIndex source=$source", error)
                 }
             }
         }
@@ -336,7 +343,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
         if (prefetchRanges.isEmpty()) return
 
         val plannedBytes = prefetchRanges.sumOf { it.endInclusive - it.start + 1 }
-        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
             "planned_range_prefetch_plan count=${prefetchRanges.size} bytes=$plannedBytes " +
                 "skippedCount=${budgetedPrefetch.skippedCount} skippedBytes=${budgetedPrefetch.skippedBytes} " +
                 "generation=$expectedGeneration"
@@ -347,14 +354,14 @@ private class ReaderPlannedRangePrefetchCoordinator(
             val job = rangeScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     if (!sessionCoordinator.isCurrent(expectedGeneration)) return@launch
-                    ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+                    diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                         "planned_range_prefetch_start start=${range.start} end=${range.endInclusive} " +
                             "pages=${range.pages} priority=${range.priority}"
                     }
                     val stored = prefetchWithLimits(session, range, protectedRanges)
                     if (sessionCoordinator.isCurrent(expectedGeneration)) {
                         markCompleted(range)
-                        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+                        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
                             "planned_range_prefetch_done start=${range.start} end=${range.endInclusive} " +
                                 "pages=${range.pages} priority=${range.priority} stored=$stored"
                         }
@@ -364,7 +371,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
                 } catch (error: Throwable) {
                     if (error.isExpectedReaderCancellation()) return@launch
                     if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                        ReaderDiagnosticLog.error(
+                        diagnosticLog.error(
                             "planned_range_prefetch_failed start=${range.start} end=${range.endInclusive}",
                             error,
                         )
@@ -520,7 +527,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
                 jobs.remove(key)
             }?.job?.cancel(CancellationException("planned range $reason"))
         }
-        ReaderDiagnosticLog.detail(DiagnosticCategory.PREFETCH) {
+        diagnosticLog.detail(DiagnosticCategory.PREFETCH) {
             "planned_range_prefetch_cancelled reason=$reason count=${cancelled.size}"
         }
     }

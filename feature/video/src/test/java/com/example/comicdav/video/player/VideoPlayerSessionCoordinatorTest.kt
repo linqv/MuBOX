@@ -33,7 +33,10 @@ class VideoPlayerSessionCoordinatorTest {
         assertTrue(
             coordinator.cleanup(
                 onBeforeMpvCleanup = { cleanupOrder += "before" },
-                onAfterMpvCleanup = { cleanupOrder += "after" },
+                onAfterMpvCleanup = {
+                    assertEquals(1, engine.destroyCalls)
+                    cleanupOrder += "after"
+                },
             ),
         )
 

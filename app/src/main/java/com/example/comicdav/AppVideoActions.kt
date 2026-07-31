@@ -11,7 +11,7 @@ import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import com.example.comicdav.core.model.library.LibraryItemWithSources
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.core.model.videolibrary.VideoSourceType
-import com.example.comicdav.feature.directorylisting.MAX_DIRECTORY_VIDEO_THUMBNAILS
+import com.example.comicdav.ui.directorylisting.MAX_DIRECTORY_VIDEO_THUMBNAILS
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.webdav.mediaKind
 import com.example.comicdav.core.remote.WebDavItem
@@ -38,34 +38,36 @@ internal class AppVideoActions(
     private val context: Context,
     private val scope: CoroutineScope,
     private val settings: AppSettings,
-    private val container: AppContainer,
-    private val viewModels: AppViewModels,
+    private val services: AppVideoMediaServices,
+    presenters: AppVideoPresenters,
     private val webDavResolver: AppWebDavResolver,
     private val callbacks: AppVideoActionCallbacks,
 ) {
-    private val webDavViewModel = viewModels.webDav
-    private val fileDirectoryViewModel = viewModels.fileDirectory
-    private val videoLibraryViewModel = viewModels.videoLibrary
+    private val webDavViewModel = presenters.webDav
+    private val fileDirectoryViewModel = presenters.fileDirectory
+    private val videoLibraryViewModel = presenters.videoLibrary
     private val playbackActions = AppVideoPlaybackActions(
         context = context,
         scope = scope,
         settings = settings,
-        localDirectoryReader = container.localDirectoryReader,
-        diagnostics = container.diagnostics,
+        localDirectoryReader = services.localDirectoryReader,
+        diagnostics = services.diagnostics,
         fileDirectoryViewModel = fileDirectoryViewModel,
         webDavViewModel = webDavViewModel,
         videoLibraryViewModel = videoLibraryViewModel,
         webDavResolver = webDavResolver,
+        rememberWebDavClientFactory = services.webDavPlaybackClientFactories::remember,
         callbacks = callbacks,
     )
     private val thumbnailLoader = AppVideoThumbnailLoader(
         context = context,
         settings = settings,
-        videoThumbnailExtractor = container.videoThumbnailExtractor,
-        historyThumbnailExtractor = container.historyThumbnailExtractor,
-        localComicOpener = container.localComicOpener,
-        coverExtractor = container.coverExtractor,
+        videoThumbnailExtractor = services.videoThumbnailExtractor,
+        historyThumbnailExtractor = services.historyThumbnailExtractor,
+        localComicOpener = services.localComicOpener,
+        coverExtractor = services.coverExtractor,
         webDavResolver = webDavResolver,
+        videoProxyManager = services.videoProxyManager,
     )
     private val failedBrowserThumbnailRequestRevisions =
         object : LinkedHashMap<String, Long>(MAX_DIRECTORY_VIDEO_THUMBNAILS, 0.75f, true) {
@@ -98,7 +100,7 @@ internal class AppVideoActions(
                 uri = item.uri,
                 size = item.size,
                 lastModified = item.lastModified,
-                extractor = container.browserVideoThumbnailExtractor,
+                extractor = services.browserVideoThumbnailExtractor,
                 stableKey = stableKey,
             )
         }
@@ -139,7 +141,7 @@ internal class AppVideoActions(
         val thumbnailPath = browserThumbnailRequests.request(stableKey) {
             thumbnailLoader.extractWebDav(
                 request = request,
-                extractor = container.browserVideoThumbnailExtractor,
+                extractor = services.browserVideoThumbnailExtractor,
                 stableKey = stableKey,
             )
         }
@@ -171,18 +173,12 @@ internal class AppVideoActions(
                             lastModified = item.lastModified,
                         )
                     }.onFailure { error ->
-                        container.diagnostics.error("extract_local_video_thumbnail_failed uri=${item.uri}", error)
+                        services.diagnostics.error("extract_local_video_thumbnail_failed uri=${item.uri}", error)
                     }.getOrNull()
                 } else {
                     null
                 }
-                container.videoLibraryRepository.addLocalVideo(
-                    uri = item.uri,
-                    fileName = item.name,
-                    size = item.size,
-                    lastModified = item.lastModified,
-                    thumbnailPath = thumbnailPath,
-                )
+                services.library.addLocal(item, thumbnailPath)
             }.fold(
                 onSuccess = {
                     callbacks.clearSelectionIf { it is AppSelection.DirectoryVideo }
@@ -190,7 +186,7 @@ internal class AppVideoActions(
                     fileDirectoryViewModel.showMessage("已将 ${item.name} 加入影视库")
                 },
                 onFailure = { error ->
-                    container.diagnostics.error("favorite_local_directory_video_failed uri=${item.uri}", error)
+                    services.diagnostics.error("favorite_local_directory_video_failed uri=${item.uri}", error)
                     videoLibraryViewModel.showError(error.message ?: "加入影视库失败")
                     fileDirectoryViewModel.showError(error.message ?: "加入影视库失败")
                 },
@@ -214,20 +210,12 @@ internal class AppVideoActions(
                     runCatching {
                         thumbnailLoader.extractWebDav(request)
                     }.onFailure { error ->
-                        container.diagnostics.error("extract_webdav_video_thumbnail_failed path=${item.path}", error)
+                        services.diagnostics.error("extract_webdav_video_thumbnail_failed path=${item.path}", error)
                     }.getOrNull()
                 } else {
                     null
                 }
-                container.videoLibraryRepository.addWebDavVideo(
-                    accountId = accountId,
-                    remotePath = item.path,
-                    fileName = item.name,
-                    size = item.size,
-                    etag = item.etag,
-                    lastModified = item.lastModified,
-                    thumbnailPath = thumbnailPath,
-                )
+                services.library.addWebDav(accountId, item, thumbnailPath)
             }.fold(
                 onSuccess = {
                     callbacks.clearSelectionIf { it is AppSelection.WebDavFile }
@@ -237,7 +225,7 @@ internal class AppVideoActions(
                 },
                 onFailure = { error ->
                     callbacks.setError(error.message ?: "添加 WebDAV 视频失败")
-                    container.diagnostics.error("add_webdav_video_library_failed path=${item.path}", error)
+                    services.diagnostics.error("add_webdav_video_library_failed path=${item.path}", error)
                     videoLibraryViewModel.showError(error.message ?: "添加 WebDAV 视频失败")
                     fileDirectoryViewModel.showError(error.message ?: "添加 WebDAV 视频失败")
                 },
@@ -259,7 +247,7 @@ internal class AppVideoActions(
                         File(path).takeIf { it.isFile }?.delete()
                     }
                 }
-                container.videoLibraryRepository.removeVideo(item.item.id)
+                services.library.remove(item)
             }.fold(
                 onSuccess = {
                     callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }
@@ -278,7 +266,7 @@ internal class AppVideoActions(
                 thumbnailLoader.extractVideoLibrary(item, forceRefresh = true)
             }.fold(
                 onSuccess = { thumbnailPath ->
-                    container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                    services.library.updateThumbnail(item, thumbnailPath)
                     videoLibraryViewModel.onVideoThumbnailExtracted(
                         videoLibraryItemId = item.item.id,
                         thumbnailPath = thumbnailPath,
@@ -291,7 +279,7 @@ internal class AppVideoActions(
                     videoLibraryViewModel.showMessage("已重新提取 ${item.item.displayName} 的缩略图")
                 },
                 onFailure = { error ->
-                    container.diagnostics.error("refresh_video_thumbnail_failed id=${item.item.id}", error)
+                    services.diagnostics.error("refresh_video_thumbnail_failed id=${item.item.id}", error)
                     videoLibraryViewModel.showError(error.message ?: "重新提取缩略图失败")
                 },
             )
@@ -353,7 +341,7 @@ internal class AppVideoActions(
                 videoTargets.forEach { item ->
                     try {
                         val thumbnailPath = thumbnailLoader.extractVideoLibrary(item)
-                        container.videoLibraryRepository.updateThumbnailPath(item.item.id, thumbnailPath)
+                        services.library.updateThumbnail(item, thumbnailPath)
                         videoLibraryViewModel.onVideoThumbnailExtracted(
                             videoLibraryItemId = item.item.id,
                             thumbnailPath = thumbnailPath,
@@ -363,7 +351,7 @@ internal class AppVideoActions(
                         throw error
                     } catch (error: Throwable) {
                         failed += 1
-                        container.diagnostics.error(
+                        services.diagnostics.error(
                             "batch_extract_video_thumbnail_failed id=${item.item.id}",
                             error,
                         )
@@ -378,7 +366,7 @@ internal class AppVideoActions(
                         throw error
                     } catch (error: Throwable) {
                         failed += 1
-                        container.diagnostics.error(
+                        services.diagnostics.error(
                             "batch_extract_history_thumbnail_failed key=${entry.mediaKey}",
                             error,
                         )
@@ -415,7 +403,7 @@ internal class AppVideoActions(
                         File(path).takeIf { it.isFile }?.delete()
                     }
                 }
-                container.videoLibraryRepository.updateThumbnailPath(item.item.id, null)
+                services.library.updateThumbnail(item, null)
             }.fold(
                 onSuccess = {
                     callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }

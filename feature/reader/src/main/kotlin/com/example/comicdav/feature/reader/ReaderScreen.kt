@@ -1,6 +1,8 @@
 package com.example.comicdav.feature.reader
 
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.background
@@ -100,6 +102,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @Composable
 fun ReaderScreen(
     uiState: ReaderUiState,
+    diagnostics: Diagnostics = NoopDiagnostics,
     onPageChanged: (Int) -> Unit,
     onPageDemanded: (Int, String) -> Unit,
     onImageLoadStarted: (Int) -> Unit,
@@ -222,7 +225,7 @@ fun ReaderScreen(
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
                         runCatching { focusRequester.requestFocus() }
-                        ReaderDiagnosticLog.event("reader_volume_key_turn_pages_enabled")
+                        diagnostics.event("reader_volume_key_turn_pages_enabled")
                     }
                 }
                 LaunchedEffect(pagerState, isContinuousVertical) {
@@ -235,7 +238,7 @@ fun ReaderScreen(
                     }
                         .reportableReaderPageChanges()
                         .collect { page ->
-                            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) { "pager_report_page page=$page" }
+                            diagnostics.detail(DiagnosticCategory.UI) { "pager_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }
@@ -254,7 +257,7 @@ fun ReaderScreen(
                         }
                         .distinctUntilChanged()
                         .collect { snapshot ->
-                            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) { formatPagerSnapshot(snapshot) }
+                            diagnostics.detail(DiagnosticCategory.UI) { formatPagerSnapshot(snapshot) }
                             reportablePagerDemandPages(snapshot).forEach { demand ->
                                 onPageDemanded(demand.page, demand.source)
                             }
@@ -272,7 +275,7 @@ fun ReaderScreen(
                         .distinctUntilChanged()
                         .collect { page ->
                             if (page == null) return@collect
-                            ReaderDiagnosticLog.detail(DiagnosticCategory.UI) { "continuous_scroll_report_page page=$page" }
+                            diagnostics.detail(DiagnosticCategory.UI) { "continuous_scroll_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }

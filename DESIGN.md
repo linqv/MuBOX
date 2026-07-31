@@ -1,5 +1,9 @@
 # MuBOX 视频播放集成设计
 
+> 文档状态：本文最初用于规划视频播放的第一版集成。下文“目标”“核心决策”“分阶段实施”
+> 和“明确不做”保留立项时的范围与决策背景，不等同于当前功能清单；当前模块归属和构建
+> 事实以“当前实现状态”及 Gradle 配置为准。
+
 ## 目标
 
 以 `webcomic` 的 WebDAV、来源浏览、账号保存和 Room 数据结构为基础，以 `mpvEx` 的 libmpv 播放器、播放器生命周期、本地/网络播放经验为参考，重建一套 MuBOX 自己的内置视频播放能力。
@@ -21,16 +25,16 @@
 - 后续如果要追平 mpvEx 功能，按阶段逐个移植。
 
 
-## 当前代码现实
+## 立项时的代码现实（历史）
 
-### MuBOX/webcomic 已有能力
+### MuBOX/webcomic 当时已有能力
 
 - `OkHttpWebDavClient` 已支持 `PROPFIND`、`HEAD`、`readRange()`，并有路径编码/挂载路径处理。
 - `WebDavRangeProvider` 已有漫画远程 Range 缓存和 in-flight 合并经验。
-- `WebDavViewModel` 当前只显示目录、`.cbz`、`.zip`，需要改成统一媒体类型识别。
-- `AndroidLocalDirectoryReader` 当前只显示漫画格式，需要扩展到视频。
-- `MainActivity` 当前把 WebDAV 文件点击路由到漫画阅读器，需要加视频路由。
-- Room 数据库已有 library/source 模型，播放历史应独立新增，不混用漫画阅读进度。
+- `WebDavViewModel` 当时只显示目录、`.cbz`、`.zip`，尚未接入统一媒体类型识别。
+- `AndroidLocalDirectoryReader` 当时只显示漫画格式，尚未扩展到视频。
+- `MainActivity` 当时把 WebDAV 文件点击路由到漫画阅读器，尚未增加视频路由。
+- Room 数据库当时已有 library/source 模型；视频播放历史计划独立保存，不混用漫画阅读进度。
 
 ### mpvEx 可借鉴能力
 
@@ -41,29 +45,44 @@
 - `NetworkBrowserViewModel` 展示了网络文件打开时把原路径、标题、MIME、连接 ID 传给播放器的思路。
 - `VideoScanUtils.FileTypeUtils` 提供可复用的视频扩展名和 MIME 映射参考。
 
+## 当前实现状态
+
+- `settings.gradle.kts` 已声明 `:feature:video`；播放器、播放会话和 localhost 代理实现位于
+  `feature/video`，`app` 负责依赖装配、导航及启动播放。
+- 跨功能共享的 `MediaKind`、MIME 映射和视频打开请求位于 `:core:model`；WebDAV 契约位于
+  `:core:model`，OkHttp 实现位于 `:webdav`。
+- 本地与 WebDAV 视频路由、sidecar 字幕、播放历史、内存 Range 缓存/预读和 Anime4K
+  设置均已落地。因此下文第一版排除项和阶段清单只记录历史范围，不表示当前缺失。
+- libmpv 使用现代 JNI 库打包：`app` 当前配置
+  `packaging { jniLibs { useLegacyPackaging = false } }`。
+
 ## 目标架构
 
 ```text
 MuBOX-pro App
+├── App composition/navigation (:app)
+├── Media kind detection (:core:model)
 ├── Sources
 │   ├── local SAF browser
 │   └── WebDAV browser
-├── Reader
+├── Reader (:feature:reader)
 │   └── existing comic/document reader
-└── Video
-    ├── media kind detection
+└── Video (:feature:video)
     ├── VideoPlayerActivity
     ├── MpvView / MpvController
     └── MuBoxVideoProxy
         └── OkHttpWebDavClient.openRangeStream()
 ```
 
-### 新模块建议
+### 当前模块归属（原模块建议已落地）
 
 ```text
-app/src/main/java/com/example/comicdav/video/
+core/model/src/main/kotlin/com/example/comicdav/core/model/media/
 ├── MediaKind.kt
-├── MediaMimeTypes.kt
+└── MediaMimeTypes.kt
+
+feature/video/src/main/java/com/example/comicdav/video/
+├── VideoPlaybackMemoryBudget.kt
 ├── player/
 │   ├── MuBoxMpvView.kt
 │   ├── MpvController.kt
@@ -76,9 +95,9 @@ app/src/main/java/com/example/comicdav/video/
     └── VideoRangeMemoryCache.kt
 ```
 
-### WebDAV 接口扩展
+### WebDAV 接口扩展（已落地）
 
-`openRangeStream()` 不应只返回 `InputStream`。需要返回一个可关闭响应对象，保证关闭本地响应时也关闭 OkHttp response。
+`openRangeStream()` 返回可关闭的 `WebDavStreamResponse`，关闭本地响应时也关闭 OkHttp response。
 
 ```kotlin
 interface WebDavClient {
@@ -103,9 +122,9 @@ data class WebDavStreamResponse(
 )
 ```
 
-## 媒体识别
+## 媒体识别（已落地）
 
-新增统一 `MediaKind`：
+统一 `MediaKind`：
 
 - `Directory`
 - `Comic`
@@ -144,8 +163,10 @@ srt, ass, ssa, vtt, sub
 - `feature:video` 通过
   `implementation("is.xyz.mpv:mpv-android-lib:0.0.1")` 持有依赖；`app`
   不直接引用 AAR 文件
-- `packaging { jniLibs { useLegacyPackaging = true } }`
-- R8 keep：`-keep,allowoptimization class is.xyz.mpv.** { public protected *; }`
+- `app` 使用 `packaging { jniLibs { useLegacyPackaging = false } }`，在当前 API 23+
+  基线下直接从 APK 加载页对齐的原生库
+- R8 仅保留 JNI 实际依赖的 `MPVLib` native/callback 方法和 `MPVNode` 层级；
+  其余 mpv Kotlin 包装代码仍可压缩、混淆和内联
 - `Utils.copyAssets(context)` 必须在 `BaseMPVView.initialize()` 前执行。
 - Activity 需要处理 orientation/config changes。
 - localhost 代理需要 network security 配置支持 cleartext 到 `127.0.0.1`。
@@ -311,4 +332,3 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew :app:assembleDebug
 - 第一版完整 mpvEx 设置页。
 - 第一版磁盘视频缓存。
 - 把 mpvEx 整个项目合并进 MuBOX。
-

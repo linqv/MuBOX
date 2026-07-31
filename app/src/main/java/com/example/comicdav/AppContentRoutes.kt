@@ -2,6 +2,7 @@ package com.example.comicdav
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.data.AppSettingsStore
@@ -13,21 +14,20 @@ import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryScreen
 import com.example.comicdav.feature.filedirectory.FileDirectoryUiState
-import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.ui.directorylisting.DirectorySortField
 import com.example.comicdav.feature.library.LibraryScreen
 import com.example.comicdav.feature.library.LibraryUiState
 import com.example.comicdav.feature.reader.ReaderScreen
 import com.example.comicdav.feature.reader.ReaderUiState
-import com.example.comicdav.feature.settings.SettingsAction
 import com.example.comicdav.feature.settings.SettingsScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryScreen
 import com.example.comicdav.feature.videolibrary.VideoLibraryUiState
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun ReaderRoute(
     readerUiState: ReaderUiState,
+    diagnostics: Diagnostics,
     localOpenError: String?,
     downloadProgress: com.example.comicdav.core.model.transfer.TransferProgress?,
     appSettings: AppSettings,
@@ -48,6 +48,7 @@ internal fun ReaderRoute(
 ) {
     ReaderScreen(
         uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
+        diagnostics = diagnostics,
         onPageChanged = onPageChanged,
         onPageDemanded = onPageDemanded,
         onImageLoadStarted = onImageLoadStarted,
@@ -195,100 +196,21 @@ internal fun SettingsTabContent(
     onClearAllCache: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val actionHandler = SettingsActionHandler(
+        appSettingsStore = appSettingsStore,
+        scope = scope,
+        onClearCacheCategory = onClearCacheCategory,
+        onClearAllCache = onClearAllCache,
+        onDeleteHistoryEntry = onDeleteHistoryEntry,
+        onClearHistory = onClearHistory,
+    )
     SettingsScreen(
         settings = settings,
-        onAction = { action ->
-            dispatchSettingsAction(
-                action = action,
-                appSettingsStore = appSettingsStore,
-                scope = scope,
-                onClearCacheCategory = onClearCacheCategory,
-                onClearAllCache = onClearAllCache,
-                onDeleteHistoryEntry = onDeleteHistoryEntry,
-                onClearHistory = onClearHistory,
-            )
-        },
+        onAction = actionHandler::handle,
         history = history,
         onOpenHistoryEntry = onOpenHistoryEntry,
         cacheAnalysis = cacheAnalysis,
         cacheActionMessage = cacheActionMessage,
         modifier = modifier,
     )
-}
-
-internal fun dispatchSettingsAction(
-    action: SettingsAction,
-    appSettingsStore: AppSettingsStore,
-    scope: CoroutineScope,
-    onClearCacheCategory: (ComicCacheCategory) -> Unit,
-    onClearAllCache: () -> Unit,
-    onDeleteHistoryEntry: (WatchHistoryEntry) -> Unit = {},
-    onClearHistory: () -> Unit = {},
-) {
-    when (action) {
-        is SettingsAction.SetReadingDirection ->
-            scope.launch { appSettingsStore.updateReadingDirection(action.value) }
-        is SettingsAction.SetReaderLoggingMode ->
-            scope.launch { appSettingsStore.updateReaderLoggingMode(action.value) }
-        is SettingsAction.SetColorPalette ->
-            scope.launch { appSettingsStore.updateColorPalette(action.value) }
-        is SettingsAction.SetAvifImagesEnabled ->
-            scope.launch { appSettingsStore.updateAvifImagesEnabled(action.value) }
-        is SettingsAction.SetAutoPageEnabled ->
-            scope.launch { appSettingsStore.updateAutoPageEnabled(action.value) }
-        is SettingsAction.SetAutoPageSpeedMillis ->
-            scope.launch { appSettingsStore.updateAutoPageSpeedMillis(action.value) }
-        is SettingsAction.SetScreenRotationLockEnabled ->
-            scope.launch { appSettingsStore.updateScreenRotationLockEnabled(action.value) }
-        is SettingsAction.SetVolumeKeysTurnPagesEnabled ->
-            scope.launch { appSettingsStore.updateVolumeKeysTurnPagesEnabled(action.value) }
-        is SettingsAction.SetReaderPinchZoomEnabled ->
-            scope.launch { appSettingsStore.updateReaderPinchZoomEnabled(action.value) }
-        is SettingsAction.SetPageImageCacheEnabled ->
-            scope.launch { appSettingsStore.updatePageImageCacheEnabled(action.value) }
-        is SettingsAction.SetDiskCacheLimitMb ->
-            scope.launch { appSettingsStore.updateDiskCacheLimitMb(action.value) }
-        is SettingsAction.SetWebDavPrefetchPageCount ->
-            scope.launch { appSettingsStore.updateWebDavPrefetchPageCount(action.value) }
-        is SettingsAction.SetLibraryCoversEnabled ->
-            scope.launch { appSettingsStore.updateLibraryCoversEnabled(action.value) }
-        is SettingsAction.SetVideoResumeEnabled ->
-            scope.launch { appSettingsStore.updateVideoResumeEnabled(action.value) }
-        is SettingsAction.SetVideoBackgroundMode ->
-            scope.launch { appSettingsStore.updateVideoBackgroundMode(action.value) }
-        is SettingsAction.SetVideoSeekOptimizationEnabled ->
-            scope.launch { appSettingsStore.updateVideoSeekOptimizationEnabled(action.value) }
-        is SettingsAction.SetVideoForwardPrefetchMode ->
-            scope.launch { appSettingsStore.updateVideoForwardPrefetchMode(action.value) }
-        is SettingsAction.SetVideoProxyDiagnosticsMode ->
-            scope.launch { appSettingsStore.updateVideoProxyDiagnosticsMode(action.value) }
-        is SettingsAction.SetVideoPlayerProxyDebugInfoEnabled ->
-            scope.launch { appSettingsStore.updateVideoPlayerProxyDebugInfoEnabled(action.value) }
-        is SettingsAction.SetVideoOutputMode ->
-            scope.launch { appSettingsStore.updateVideoOutputMode(action.value) }
-        is SettingsAction.SetGpuApiMode ->
-            scope.launch { appSettingsStore.updateGpuApiMode(action.value) }
-        is SettingsAction.SetAnime4KProfile ->
-            scope.launch { appSettingsStore.updateAnime4KProfile(action.value) }
-        is SettingsAction.SetVideoDecoderMode ->
-            scope.launch { appSettingsStore.updateVideoDecoderMode(action.value) }
-        is SettingsAction.SetMpvProfileMode ->
-            scope.launch { appSettingsStore.updateMpvProfileMode(action.value) }
-        is SettingsAction.SetVideoControlsAutoHideMillis ->
-            scope.launch { appSettingsStore.updateVideoControlsAutoHideMillis(action.value) }
-        is SettingsAction.SetVideoPlayerOrientationMode ->
-            scope.launch { appSettingsStore.updateVideoPlayerOrientationMode(action.value) }
-        is SettingsAction.SetGridVideoThumbnailsEnabled ->
-            scope.launch { appSettingsStore.updateGridVideoThumbnailsEnabled(action.value) }
-        is SettingsAction.SetVideoLibraryThumbnailsEnabled ->
-            scope.launch { appSettingsStore.updateVideoLibraryThumbnailsEnabled(action.value) }
-        is SettingsAction.SetHistoryRetentionDays ->
-            scope.launch { appSettingsStore.updateHistoryRetentionDays(action.value) }
-        is SettingsAction.SetHistoryMaxRecords ->
-            scope.launch { appSettingsStore.updateHistoryMaxRecords(action.value) }
-        is SettingsAction.DeleteHistoryEntry -> onDeleteHistoryEntry(action.entry)
-        SettingsAction.ClearHistory -> onClearHistory()
-        is SettingsAction.ClearCacheCategory -> onClearCacheCategory(action.category)
-        SettingsAction.ClearAllCache -> onClearAllCache()
-    }
 }

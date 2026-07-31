@@ -3,10 +3,8 @@ package com.example.comicdav.video.player
 import com.example.comicdav.core.model.media.VideoSubtitleOpenRequest
 import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.GpuApiMode
-import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
-import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,211 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
-
-data class MpvPlayerState(
-    val displayName: String = "",
-    val isPaused: Boolean = false,
-    val durationMillis: Long = 0L,
-    val positionMillis: Long = 0L,
-    val errorMessage: String? = null,
-    val playbackSpeed: Double = 1.0,
-    val decoderMode: VideoDecoderMode = VideoDecoderMode.AUTO,
-    val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
-    val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
-    val statusMessage: String? = null,
-    val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
-    val anime4kPipeline: Anime4KPipeline? = null,
-    val scaleMode: VideoScaleMode = VideoScaleMode.FIT,
-    val gestureState: VideoGestureState = VideoGestureState(),
-    val audioTracks: List<MpvTrack> = emptyList(),
-    val subtitleTracks: List<MpvTrack> = emptyList(),
-    val selectedAudioTrackId: Int? = null,
-    val selectedSubtitleTrackId: Int? = null,
-    val audioDelayMillis: Long = 0L,
-    val currentHwdec: String? = null,
-    val activeHwdec: String? = null,
-    val activeVideoDecoder: String? = null,
-    val currentVideoOutput: String? = null,
-    val currentGpuApi: String? = null,
-    val currentGpuContext: String? = null,
-    val decoderDroppedFrames: Long? = null,
-    val outputDroppedFrames: Long? = null,
-    val videoParams: VideoParams = VideoParams(),
-    val videoOutParams: VideoParams = VideoParams(),
-    val statisticsVisible: Boolean = false,
-) {
-    val hasMultipleSubtitleChoices: Boolean
-        get() = subtitleTracks.size > 1
-}
-
-data class VideoPlaybackProgressState(
-    val durationMillis: Long = 0L,
-    val positionMillis: Long = 0L,
-)
-
-data class VideoGestureState(
-    val controlsLocked: Boolean = false,
-    val isTemporarySpeedActive: Boolean = false,
-    val hudMessage: String? = null,
-    val volumePercent: Int? = null,
-    val brightnessPercent: Int? = null,
-    val zoom: Float = 0f,
-)
-
-data class MpvTrack(
-    val id: Int,
-    val type: MpvTrackType,
-    val title: String,
-    val language: String? = null,
-    val decoder: String? = null,
-    val isSelected: Boolean = false,
-    val isExternal: Boolean = false,
-)
-
-enum class MpvTrackType {
-    AUDIO,
-    SUBTITLE,
-    VIDEO,
-    UNKNOWN,
-}
-
-internal val VideoDecoderMode.hwdec: String
-    get() = when (this) {
-        VideoDecoderMode.AUTO -> "mediacodec,mediacodec-copy,no"
-        VideoDecoderMode.SOFTWARE -> "no"
-        VideoDecoderMode.HARDWARE -> "mediacodec-copy"
-        VideoDecoderMode.HARDWARE_PLUS -> "mediacodec"
-    }
-
-internal val MpvProfileMode.profile: String
-    get() = when (this) {
-        MpvProfileMode.FAST -> "fast"
-        MpvProfileMode.DEFAULT -> "default"
-        MpvProfileMode.HIGH_QUALITY -> "high-quality"
-        MpvProfileMode.GPU_HQ -> "gpu-hq"
-        MpvProfileMode.LOW_LATENCY -> "low-latency"
-        MpvProfileMode.SW_FAST -> "sw-fast"
-    }
-
-internal val VideoOutputMode.videoOutput: String
-    get() = when (this) {
-        VideoOutputMode.AUTO -> "gpu"
-        VideoOutputMode.GPU_NEXT -> "gpu-next"
-    }
-
-internal val GpuApiMode.gpuApi: String
-    get() = when (this) {
-        GpuApiMode.AUTO -> "auto"
-        GpuApiMode.VULKAN -> "vulkan"
-    }
-
-enum class VideoScaleMode {
-    FIT,
-    FILL,
-    ORIGINAL,
-    RATIO_16_9,
-    RATIO_4_3,
-}
-
-data class VideoParams(
-    val codec: String? = null,
-    val width: Int? = null,
-    val height: Int? = null,
-    val frameRate: Double? = null,
-    val rotationDegrees: Int? = null,
-    val aspectRatio: Double? = null,
-    val primaries: String? = null,
-    val gamma: String? = null,
-)
-
-interface MpvEngine {
-    fun loadFile(uri: String) {
-        command("loadfile", uri)
-    }
-
-    fun loadFile(uri: String, afterLoadfile: () -> Unit) {
-        loadFile(uri)
-        afterLoadfile()
-    }
-
-    fun command(vararg args: String)
-    fun setPropertyString(name: String, value: String)
-    fun setPropertyBoolean(name: String, value: Boolean)
-    fun setPropertyInt(name: String, value: Int) = Unit
-    fun setPropertyDouble(name: String, value: Double) = Unit
-    fun setOptionString(name: String, value: String) = Unit
-    fun destroy()
-}
-
-object RealMpvEngine : MpvEngine {
-    override fun command(vararg args: String) {
-        MPVLib.command(*args)
-    }
-
-    override fun setPropertyString(name: String, value: String) {
-        MPVLib.setPropertyString(name, value)
-    }
-
-    override fun setPropertyBoolean(name: String, value: Boolean) {
-        MPVLib.setPropertyBoolean(name, value)
-    }
-
-    override fun setPropertyInt(name: String, value: Int) {
-        MPVLib.setPropertyInt(name, value)
-    }
-
-    override fun setPropertyDouble(name: String, value: Double) {
-        MPVLib.setPropertyDouble(name, value)
-    }
-
-    override fun setOptionString(name: String, value: String) {
-        MPVLib.setOptionString(name, value)
-    }
-
-    override fun destroy() {
-        MPVLib.destroy()
-    }
-}
-
-class ViewBackedMpvEngine(
-    private val view: MpvFileLoader,
-) : MpvEngine {
-    override fun loadFile(uri: String) {
-        view.playFileWhenReady(uri) {}
-    }
-
-    override fun loadFile(uri: String, afterLoadfile: () -> Unit) {
-        view.playFileWhenReady(uri, afterLoadfile)
-    }
-
-    override fun command(vararg args: String) {
-        MPVLib.command(*args)
-    }
-
-    override fun setPropertyString(name: String, value: String) {
-        MPVLib.setPropertyString(name, value)
-    }
-
-    override fun setPropertyBoolean(name: String, value: Boolean) {
-        MPVLib.setPropertyBoolean(name, value)
-    }
-
-    override fun setPropertyInt(name: String, value: Int) {
-        MPVLib.setPropertyInt(name, value)
-    }
-
-    override fun setPropertyDouble(name: String, value: Double) {
-        MPVLib.setPropertyDouble(name, value)
-    }
-
-    override fun setOptionString(name: String, value: String) {
-        MPVLib.setOptionString(name, value)
-    }
-
-    override fun destroy() {
-        view.destroy()
-    }
-}
 
 class MpvController(
     private val engine: MpvEngine,
@@ -582,17 +375,13 @@ class MpvController(
     }
 
     fun onTrackListChanged(trackList: MPVNode) {
-        val tracks = parseTrackList(trackList)
-        val selectedAudioId = tracks.firstOrNull { it.type == MpvTrackType.AUDIO && it.isSelected }?.id
-        val selectedSubtitleId = tracks.firstOrNull { it.type == MpvTrackType.SUBTITLE && it.isSelected }?.id
-        val selectedVideoDecoder = tracks.firstOrNull { it.type == MpvTrackType.VIDEO && it.isSelected }
-            ?.decoder
+        val parsedTracks = MpvTrackParser.parse(trackList)
         _state.value = _state.value.copy(
-            audioTracks = tracks.filter { it.type == MpvTrackType.AUDIO },
-            subtitleTracks = tracks.filter { it.type == MpvTrackType.SUBTITLE },
-            selectedAudioTrackId = selectedAudioId ?: _state.value.selectedAudioTrackId,
-            selectedSubtitleTrackId = selectedSubtitleId ?: _state.value.selectedSubtitleTrackId,
-            activeVideoDecoder = selectedVideoDecoder ?: _state.value.activeVideoDecoder,
+            audioTracks = parsedTracks.audioTracks,
+            subtitleTracks = parsedTracks.subtitleTracks,
+            selectedAudioTrackId = parsedTracks.selectedAudioTrackId ?: _state.value.selectedAudioTrackId,
+            selectedSubtitleTrackId = parsedTracks.selectedSubtitleTrackId ?: _state.value.selectedSubtitleTrackId,
+            activeVideoDecoder = parsedTracks.selectedVideoDecoder ?: _state.value.activeVideoDecoder,
         )
     }
 
@@ -997,33 +786,6 @@ class MpvController(
         _state.value = _state.value.copy(audioDelayMillis = delayMillis)
     }
 
-    private fun parseTrackList(trackList: MPVNode): List<MpvTrack> =
-        trackList.asArray().orEmpty().mapNotNull(::parseTrack)
-
-    private fun parseTrack(node: MPVNode): MpvTrack? {
-        val id = node.nodeInt("id")?.toInt() ?: return null
-        val rawType = node.nodeString("type").orEmpty()
-        val type = when (rawType) {
-            "audio" -> MpvTrackType.AUDIO
-            "sub" -> MpvTrackType.SUBTITLE
-            "video" -> MpvTrackType.VIDEO
-            else -> MpvTrackType.UNKNOWN
-        }
-        val title = node.nodeString("title")
-            ?: node.nodeString("external-filename")?.substringAfterLast('/')
-            ?: node.nodeString("lang")
-            ?: "$rawType $id"
-        return MpvTrack(
-            id = id,
-            type = type,
-            title = title,
-            language = node.nodeString("lang"),
-            decoder = node.nodeString("decoder"),
-            isSelected = node.nodeBoolean("selected") == true,
-            isExternal = node.nodeBoolean("external") == true,
-        )
-    }
-
     private fun parseVideoParams(node: MPVNode): VideoParams =
         VideoParams(
             codec = node.nodeString("codec"),
@@ -1058,8 +820,6 @@ class MpvController(
     private fun MPVNode.nodeInt(key: String): Long? = this[key]?.asInt()
 
     private fun MPVNode.nodeDouble(key: String): Double? = this[key]?.asDouble()
-
-    private fun MPVNode.nodeBoolean(key: String): Boolean? = this[key]?.asBoolean()
 
     private fun seekToPendingResumePosition() {
         val pendingPositionMillis = pendingResumeSeekMillis ?: return

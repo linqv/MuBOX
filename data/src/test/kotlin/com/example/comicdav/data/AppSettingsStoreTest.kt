@@ -3,11 +3,25 @@ package com.example.comicdav.data
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.core.model.settings.Anime4KProfile
+import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.model.settings.AppearanceSettings
+import com.example.comicdav.core.model.settings.GpuApiMode
+import com.example.comicdav.core.model.settings.HistorySettings
 import com.example.comicdav.core.model.settings.MpvProfileMode
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.settings.ReaderSettings
+import com.example.comicdav.core.model.settings.ReadingDirection
+import com.example.comicdav.core.model.settings.StorageSettings
+import com.example.comicdav.core.model.settings.VideoBackgroundMode
+import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
+import com.example.comicdav.core.model.settings.VideoOutputMode
+import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
+import com.example.comicdav.core.model.settings.VideoSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -104,6 +118,56 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun existingFlatPreferenceKeysPopulateGroupedSettings() = runTest {
+        val preferencesFile = temporaryFolder.newFile("flat_keys.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        dataStore.edit { preferences ->
+            preferences[stringPreferencesKey("reading_direction")] = ReadingDirection.RIGHT_TO_LEFT.name
+            preferences[stringPreferencesKey("color_palette")] = AppColorPalette.SEPIA.name
+            preferences[intPreferencesKey("disk_cache_limit_gb")] = 2048
+            preferences[booleanPreferencesKey("video_resume_enabled")] = false
+            preferences[intPreferencesKey("history_retention_days")] = 180
+        }
+
+        val settings = AppSettingsStore(dataStore).settings.first()
+
+        assertEquals(ReadingDirection.RIGHT_TO_LEFT, settings.reader.readingDirection)
+        assertEquals(AppColorPalette.SEPIA, settings.appearance.colorPalette)
+        assertEquals(2048, settings.storage.diskCacheLimitMb)
+        assertFalse(settings.video.videoResumeEnabled)
+        assertEquals(180, settings.history.historyRetentionDays)
+    }
+
+    @Test
+    fun groupedUpdatesKeepWritingExistingPreferenceKeys() = runTest {
+        val preferencesFile = temporaryFolder.newFile("grouped_keys.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        val store = AppSettingsStore(dataStore)
+
+        store.updateReaderSettings(ReaderSettings(readingDirection = ReadingDirection.VERTICAL))
+        store.updateAppearanceSettings(AppearanceSettings(colorPalette = AppColorPalette.NIGHT))
+        store.updateStorageSettings(StorageSettings(diskCacheLimitMb = 3072))
+        store.updateVideoSettings(VideoSettings(videoResumeEnabled = false))
+        store.updateHistorySettings(HistorySettings(historyMaxRecords = 500))
+
+        val preferences = dataStore.data.first()
+        assertEquals(
+            ReadingDirection.VERTICAL.name,
+            preferences[stringPreferencesKey("reading_direction")],
+        )
+        assertEquals(AppColorPalette.NIGHT.name, preferences[stringPreferencesKey("color_palette")])
+        assertEquals(3072, preferences[intPreferencesKey("disk_cache_limit_gb")])
+        assertEquals(false, preferences[booleanPreferencesKey("video_resume_enabled")])
+        assertEquals(500, preferences[intPreferencesKey("history_max_records")])
+    }
+
+    @Test
     fun videoLibraryThumbnailsEnabledDefaultsToTrue() = runTest {
         val store = createStore("video_library_thumbnail_default.preferences_pb")
 
@@ -176,6 +240,111 @@ class AppSettingsStoreTest {
         val settings = store.settings.first()
         assertEquals(30, settings.historyRetentionDays)
         assertEquals(500, settings.historyMaxRecords)
+    }
+
+    @Test
+    fun readerSettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("reader_group.preferences_pb")
+        val reader = ReaderSettings(
+            readingDirection = ReadingDirection.RIGHT_TO_LEFT,
+            readerLoggingMode = ReaderLoggingMode.DETAIL,
+            avifImagesEnabled = true,
+            autoPageEnabled = true,
+            autoPageSpeedMillis = 12_000,
+            volumeKeysTurnPagesEnabled = true,
+            readerPinchZoomEnabled = true,
+        )
+
+        store.updateReaderSettings(reader)
+
+        assertEquals(reader, store.settings.first().reader)
+    }
+
+    @Test
+    fun appearanceSettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("appearance_group.preferences_pb")
+        val appearance = AppearanceSettings(
+            colorPalette = AppColorPalette.NIGHT,
+            screenRotationLockEnabled = true,
+            libraryCoversEnabled = false,
+        )
+
+        store.updateAppearanceSettings(appearance)
+
+        assertEquals(appearance, store.settings.first().appearance)
+    }
+
+    @Test
+    fun storageSettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("storage_group.preferences_pb")
+        val storage = StorageSettings(
+            pageImageCacheEnabled = false,
+            diskCacheLimitMb = 2048,
+            webDavPrefetchPageCount = 8,
+        )
+
+        store.updateStorageSettings(storage)
+
+        assertEquals(storage, store.settings.first().storage)
+    }
+
+    @Test
+    fun videoSettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("video_group.preferences_pb")
+        val video = VideoSettings(
+            videoResumeEnabled = false,
+            videoSeekOptimizationEnabled = false,
+            videoForwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE,
+            videoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.DETAIL,
+            videoPlayerProxyDebugInfoEnabled = true,
+            videoOutputMode = VideoOutputMode.GPU_NEXT,
+            gpuApiMode = GpuApiMode.VULKAN,
+            anime4kProfile = Anime4KProfile.EXTREME,
+            videoDecoderMode = VideoDecoderMode.SOFTWARE,
+            mpvProfileMode = MpvProfileMode.HIGH_QUALITY,
+            videoControlsAutoHideMillis = 10_000,
+            videoPlayerOrientationMode = VideoPlayerOrientationMode.LANDSCAPE,
+            videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
+            gridVideoThumbnailsEnabled = false,
+            videoLibraryThumbnailsEnabled = false,
+        )
+
+        store.updateVideoSettings(video)
+
+        assertEquals(video, store.settings.first().video)
+    }
+
+    @Test
+    fun historySettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("history_group.preferences_pb")
+        val history = HistorySettings(
+            historyRetentionDays = 180,
+            historyMaxRecords = 500,
+        )
+
+        store.updateHistorySettings(history)
+
+        assertEquals(history, store.settings.first().history)
+    }
+
+    @Test
+    fun updatingOneGroupDoesNotOverwriteOtherGroups() = runTest {
+        val store = createStore("group_isolation.preferences_pb")
+        store.updateReaderSettings(ReaderSettings(autoPageEnabled = true))
+        store.updateAppearanceSettings(AppearanceSettings(colorPalette = AppColorPalette.SEPIA))
+        store.updateStorageSettings(StorageSettings(diskCacheLimitMb = 2048))
+        store.updateVideoSettings(VideoSettings(videoResumeEnabled = false))
+        store.updateHistorySettings(HistorySettings(historyRetentionDays = 180))
+        val before = store.settings.first()
+
+        store.updateReaderSettings(before.reader.copy(readerPinchZoomEnabled = true))
+
+        val after = store.settings.first()
+        assertTrue(after.reader.readerPinchZoomEnabled)
+        assertEquals(before.appearance, after.appearance)
+        assertEquals(before.storage, after.storage)
+        assertEquals(before.video, after.video)
+        assertEquals(before.history, after.history)
     }
 
     private fun TestScope.createStore(fileName: String): AppSettingsStore {

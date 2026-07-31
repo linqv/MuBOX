@@ -8,9 +8,10 @@ suspend fun startWebDavVideoPlayback(
     request: WebDavVideoOpenRequest,
     clientFactory: WebDavClientFactory,
     proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
+    proxyManager: VideoProxyManager,
     openProxy: suspend (WebDavVideoOpenRequest, WebDavClientFactory, VideoProxySettings) -> ProxySession =
-        VideoProxyManager::open,
-    closeProxy: (String) -> Unit = VideoProxyManager::close,
+        proxyManager::open,
+    closeProxy: (String) -> Unit = proxyManager::close,
     startPlayback: (ProxySession) -> Unit,
 ) {
     val session = openProxy(request, clientFactory, proxySettings)

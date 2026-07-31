@@ -1,6 +1,7 @@
 package com.example.comicdav.data
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -9,16 +10,21 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.AppearanceSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
+import com.example.comicdav.core.model.settings.HistorySettings
 import com.example.comicdav.core.model.settings.MpvProfileMode
 import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.settings.ReaderSettings
 import com.example.comicdav.core.model.settings.ReadingDirection
+import com.example.comicdav.core.model.settings.StorageSettings
 import com.example.comicdav.core.model.settings.VideoBackgroundMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
 import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
+import com.example.comicdav.core.model.settings.VideoSettings
 import com.example.comicdav.core.model.settings.anime4KProfileFromLegacy
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import kotlinx.coroutines.flow.Flow
@@ -27,23 +33,54 @@ import kotlinx.coroutines.flow.map
 class AppSettingsStore(
     private val dataStore: DataStore<Preferences>,
 ) {
-    val settings: Flow<AppSettings> = dataStore.data.map { preferences ->
-        val storedDiskCacheLimitMb = preferences[DISK_CACHE_LIMIT_MB]
+    val settings: Flow<AppSettings> = dataStore.data.map(::appSettingsFrom)
+
+    private fun appSettingsFrom(preferences: Preferences): AppSettings =
         AppSettings(
-            readingDirection = preferences[READING_DIRECTION].toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
+            reader = readerSettingsFrom(preferences),
+            appearance = appearanceSettingsFrom(preferences),
+            storage = storageSettingsFrom(preferences),
+            video = videoSettingsFrom(preferences),
+            history = historySettingsFrom(preferences),
+        )
+
+    private fun readerSettingsFrom(preferences: Preferences): ReaderSettings =
+        ReaderSettings(
+            readingDirection = preferences[READING_DIRECTION]
+                .toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
             readerLoggingMode = preferences[READER_LOGGING_MODE].toEnumOrNull<ReaderLoggingMode>()
-                ?: if (preferences[LOGGING_ENABLED] == false) ReaderLoggingMode.OFF else ReaderLoggingMode.SUMMARY,
-            colorPalette = preferences[COLOR_PALETTE].toEnumOrDefault(AppColorPalette.DEFAULT),
+                ?: if (preferences[LOGGING_ENABLED] == false) {
+                    ReaderLoggingMode.OFF
+                } else {
+                    ReaderLoggingMode.SUMMARY
+                },
             avifImagesEnabled = preferences[AVIF_IMAGES_ENABLED] ?: false,
             autoPageEnabled = preferences[AUTO_PAGE_ENABLED] ?: false,
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
-            screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
             readerPinchZoomEnabled = preferences[READER_PINCH_ZOOM_ENABLED] ?: false,
+        )
+
+    private fun appearanceSettingsFrom(preferences: Preferences): AppearanceSettings =
+        AppearanceSettings(
+            colorPalette = preferences[COLOR_PALETTE].toEnumOrDefault(AppColorPalette.DEFAULT),
+            screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
+            libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
+        )
+
+    private fun storageSettingsFrom(preferences: Preferences): StorageSettings {
+        val storedDiskCacheLimitMb = preferences[DISK_CACHE_LIMIT_MB]
+        return StorageSettings(
             pageImageCacheEnabled = preferences[PAGE_IMAGE_CACHE_ENABLED] ?: (storedDiskCacheLimitMb != 0),
             diskCacheLimitMb = coerceStoredDiskCacheLimitMb(storedDiskCacheLimitMb ?: 1024),
-            webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4),
-            libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
+            webDavPrefetchPageCount = coerceWebDavPrefetchPageCount(
+                preferences[WEB_DAV_PREFETCH_PAGE_COUNT] ?: 4,
+            ),
+        )
+    }
+
+    private fun videoSettingsFrom(preferences: Preferences): VideoSettings =
+        VideoSettings(
             videoResumeEnabled = preferences[VIDEO_RESUME_ENABLED] ?: true,
             videoSeekOptimizationEnabled = preferences[VIDEO_SEEK_OPTIMIZATION_ENABLED] ?: true,
             videoForwardPrefetchMode = preferences[VIDEO_FORWARD_PREFETCH_MODE]
@@ -70,9 +107,122 @@ class AppSettingsStore(
                 .toEnumOrDefault(VideoBackgroundMode.NONE),
             gridVideoThumbnailsEnabled = preferences[GRID_VIDEO_THUMBNAILS_ENABLED] ?: true,
             videoLibraryThumbnailsEnabled = preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] ?: true,
+        )
+
+    private fun historySettingsFrom(preferences: Preferences): HistorySettings =
+        HistorySettings(
             historyRetentionDays = coerceHistoryRetentionDays(preferences[HISTORY_RETENTION_DAYS] ?: 90),
             historyMaxRecords = coerceHistoryMaxRecords(preferences[HISTORY_MAX_RECORDS] ?: 200),
         )
+
+    suspend fun updateReaderSettings(settings: ReaderSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeReaderSettings(settings)
+        }
+    }
+
+    suspend fun updateReaderSettings(transform: (ReaderSettings) -> ReaderSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeReaderSettings(transform(readerSettingsFrom(preferences)))
+        }
+    }
+
+    suspend fun updateAppearanceSettings(settings: AppearanceSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeAppearanceSettings(settings)
+        }
+    }
+
+    suspend fun updateAppearanceSettings(transform: (AppearanceSettings) -> AppearanceSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeAppearanceSettings(transform(appearanceSettingsFrom(preferences)))
+        }
+    }
+
+    suspend fun updateStorageSettings(settings: StorageSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeStorageSettings(settings)
+        }
+    }
+
+    suspend fun updateStorageSettings(transform: (StorageSettings) -> StorageSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeStorageSettings(transform(storageSettingsFrom(preferences)))
+        }
+    }
+
+    suspend fun updateVideoSettings(settings: VideoSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeVideoSettings(settings)
+        }
+    }
+
+    suspend fun updateVideoSettings(transform: (VideoSettings) -> VideoSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeVideoSettings(transform(videoSettingsFrom(preferences)))
+        }
+    }
+
+    suspend fun updateHistorySettings(settings: HistorySettings) {
+        dataStore.edit { preferences ->
+            preferences.writeHistorySettings(settings)
+        }
+    }
+
+    suspend fun updateHistorySettings(transform: (HistorySettings) -> HistorySettings) {
+        dataStore.edit { preferences ->
+            preferences.writeHistorySettings(transform(historySettingsFrom(preferences)))
+        }
+    }
+
+    private fun MutablePreferences.writeReaderSettings(settings: ReaderSettings) {
+        this[READING_DIRECTION] = settings.readingDirection.name
+        this[READER_LOGGING_MODE] = settings.readerLoggingMode.name
+        this[LOGGING_ENABLED] = settings.readerLoggingMode != ReaderLoggingMode.OFF
+        this[AVIF_IMAGES_ENABLED] = settings.avifImagesEnabled
+        this[AUTO_PAGE_ENABLED] = settings.autoPageEnabled
+        this[AUTO_PAGE_SPEED_MILLIS] = settings.autoPageSpeedMillis
+        this[VOLUME_KEYS_TURN_PAGES_ENABLED] = settings.volumeKeysTurnPagesEnabled
+        this[READER_PINCH_ZOOM_ENABLED] = settings.readerPinchZoomEnabled
+    }
+
+    private fun MutablePreferences.writeAppearanceSettings(settings: AppearanceSettings) {
+        this[COLOR_PALETTE] = settings.colorPalette.name
+        this[SCREEN_ROTATION_LOCK_ENABLED] = settings.screenRotationLockEnabled
+        this[LIBRARY_COVERS_ENABLED] = settings.libraryCoversEnabled
+    }
+
+    private fun MutablePreferences.writeStorageSettings(settings: StorageSettings) {
+        this[PAGE_IMAGE_CACHE_ENABLED] = settings.pageImageCacheEnabled
+        this[DISK_CACHE_LIMIT_MB] = coerceDiskCacheLimitMb(settings.diskCacheLimitMb)
+        this[WEB_DAV_PREFETCH_PAGE_COUNT] = coerceWebDavPrefetchPageCount(
+            settings.webDavPrefetchPageCount,
+        )
+    }
+
+    private fun MutablePreferences.writeVideoSettings(settings: VideoSettings) {
+        this[VIDEO_RESUME_ENABLED] = settings.videoResumeEnabled
+        this[VIDEO_SEEK_OPTIMIZATION_ENABLED] = settings.videoSeekOptimizationEnabled
+        this[VIDEO_FORWARD_PREFETCH_MODE] = settings.videoForwardPrefetchMode.name
+        this[VIDEO_PROXY_DIAGNOSTICS_MODE] = settings.videoProxyDiagnosticsMode.name
+        this[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] = settings.videoPlayerProxyDebugInfoEnabled
+        this[VIDEO_OUTPUT_MODE] = settings.videoOutputMode.name
+        this[GPU_API_MODE] = settings.gpuApiMode.name
+        this[ANIME4K_PROFILE] = settings.anime4kProfile.name
+        this[VIDEO_DECODER_MODE] = settings.videoDecoderMode.name
+        this[MPV_PROFILE_MODE] = settings.mpvProfileMode.name
+        this[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] = coerceVideoControlsAutoHideMillis(
+            settings.videoControlsAutoHideMillis,
+        )
+        this[VIDEO_PLAYER_ORIENTATION_MODE] = settings.videoPlayerOrientationMode.name
+        this[VIDEO_BACKGROUND_MODE] = settings.videoBackgroundMode.name
+        this[GRID_VIDEO_THUMBNAILS_ENABLED] = settings.gridVideoThumbnailsEnabled
+        this[VIDEO_LIBRARY_THUMBNAILS_ENABLED] = settings.videoLibraryThumbnailsEnabled
+    }
+
+    private fun MutablePreferences.writeHistorySettings(settings: HistorySettings) {
+        this[HISTORY_RETENTION_DAYS] = coerceHistoryRetentionDays(settings.historyRetentionDays)
+        this[HISTORY_MAX_RECORDS] = coerceHistoryMaxRecords(settings.historyMaxRecords)
     }
 
     suspend fun updateReadingDirection(readingDirection: ReadingDirection) {

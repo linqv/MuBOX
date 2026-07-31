@@ -2,7 +2,10 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchHistoryMetadata
 import com.example.comicdav.core.model.history.WatchMediaType
@@ -18,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -30,11 +34,14 @@ class ReaderViewModelTest {
     @get:Rule
     val mainDispatcher = MainDispatcherRule()
 
-    private fun kotlinx.coroutines.test.TestScope.createTestViewModel(): ReaderViewModel {
+    private fun kotlinx.coroutines.test.TestScope.createTestViewModel(
+        diagnosticLog: Diagnostics = NoopDiagnostics,
+    ): ReaderViewModel {
         val dispatcher = StandardTestDispatcher(testScheduler)
         mainDispatcher.set(dispatcher)
         return ReaderViewModel(
             ioDispatcher = dispatcher,
+            diagnosticLog = diagnosticLog,
             elapsedRealtimeMs = { testScheduler.currentTime },
         )
     }
@@ -116,8 +123,10 @@ class ReaderViewModelTest {
     @Test
     fun pagePrefetchCancellationWrappedByEngineErrorDoesNotLogFailure() = runTest {
         val sink = CollectingReaderLogSink()
-        ReaderDiagnosticLog.setSink(sink)
-        ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
+        val diagnostics = ConfigurableDiagnostics(
+            defaultSink = sink,
+            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        )
         val session = RecordingComicSession(
             pageCount = 4,
             forwardPrefetchPageCount = 1,
@@ -128,19 +137,51 @@ class ReaderViewModelTest {
                 ),
             ),
         )
-        val viewModel = createTestViewModel()
+        val viewModel = createTestViewModel(diagnostics)
 
-        try {
-            openDefaultSession(viewModel, session)
-            runCurrent()
-            advanceTimeBy(200)
-            runCurrent()
+        openDefaultSession(viewModel, session)
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
 
-            assertFalse(sink.lines.any { it.contains("prefetch_failed") })
-        } finally {
-            ReaderDiagnosticLog.clearSink()
-            ReaderDiagnosticLog.setMode(ReaderLoggingMode.SUMMARY)
-        }
+        assertFalse(sink.lines.any { it.contains("prefetch_failed") })
+    }
+
+    @Test
+    fun viewModelsUseInjectedDiagnosticsWithoutCrossTalk() = runTest {
+        val firstSink = CollectingReaderLogSink()
+        val secondSink = CollectingReaderLogSink()
+        val firstViewModel = createTestViewModel(
+            ConfigurableDiagnostics(
+                defaultSink = firstSink,
+                initialVerbosity = DiagnosticVerbosity.SUMMARY,
+            ),
+        )
+        val secondViewModel = createTestViewModel(
+            ConfigurableDiagnostics(
+                defaultSink = secondSink,
+                initialVerbosity = DiagnosticVerbosity.SUMMARY,
+            ),
+        )
+
+        firstViewModel.openExistingSession(
+            openedSession = RecordingComicSession(pageCount = 1, forwardPrefetchPageCount = 0),
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "first-reader",
+        )
+        secondViewModel.openExistingSession(
+            openedSession = RecordingComicSession(pageCount = 1, forwardPrefetchPageCount = 0),
+            cacheDir = temp.root,
+            initialPage = 0,
+            comicKey = "second-reader",
+        )
+        runCurrent()
+
+        assertTrue(firstSink.lines.any { it.contains("key=first-reader") })
+        assertFalse(firstSink.lines.any { it.contains("key=second-reader") })
+        assertTrue(secondSink.lines.any { it.contains("key=second-reader") })
+        assertFalse(secondSink.lines.any { it.contains("key=first-reader") })
     }
 
     @Test

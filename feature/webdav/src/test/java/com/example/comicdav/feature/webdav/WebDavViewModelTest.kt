@@ -1,8 +1,8 @@
 package com.example.comicdav.feature.webdav
 
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.feature.directorylisting.DirectoryListingViewMode
-import com.example.comicdav.feature.directorylisting.DirectorySortField
+import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
+import com.example.comicdav.ui.directorylisting.DirectorySortField
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavItem

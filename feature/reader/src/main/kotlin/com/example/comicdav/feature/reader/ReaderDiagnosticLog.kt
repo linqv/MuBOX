@@ -3,16 +3,11 @@ package com.example.comicdav.feature.reader
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
 import com.example.comicdav.core.diagnostics.DiagnosticSink
-import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
-import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.diagnostics.diagnosticId
 import com.example.comicdav.core.diagnostics.formatDiagnosticLine
 import com.example.comicdav.core.diagnostics.formatDiagnosticThrowable
 import com.example.comicdav.core.diagnostics.redactDiagnosticText
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -90,45 +85,6 @@ fun createReaderLogFile(
         uri = fileUri.toString(),
         sink = ContentUriReaderLogSink(context, fileUri, scope),
     )
-}
-
-object ReaderDiagnosticLog : Diagnostics {
-    @Volatile
-    private var delegate = ConfigurableDiagnostics()
-
-    fun attach(diagnostics: ConfigurableDiagnostics) {
-        delegate = diagnostics
-    }
-
-    fun setSink(nextSink: DiagnosticSink) {
-        delegate.setAdditionalSink(nextSink)
-    }
-
-    fun clearSink() {
-        delegate.clearAdditionalSink()
-    }
-
-    fun setMode(nextMode: ReaderLoggingMode) {
-        delegate.setVerbosity(nextMode.toDiagnosticVerbosity())
-    }
-
-    override fun summary(category: DiagnosticCategory, event: () -> String) =
-        delegate.summary(category, event)
-
-    override fun detail(category: DiagnosticCategory, event: () -> String) =
-        delegate.detail(category, event)
-
-    override fun error(category: DiagnosticCategory, event: String, error: Throwable) =
-        delegate.error(category, event, error)
-
-    override fun errorBlocking(category: DiagnosticCategory, event: String, error: Throwable) =
-        delegate.errorBlocking(category, event, error)
-}
-
-private fun ReaderLoggingMode.toDiagnosticVerbosity(): DiagnosticVerbosity = when (this) {
-    ReaderLoggingMode.OFF -> DiagnosticVerbosity.OFF
-    ReaderLoggingMode.SUMMARY -> DiagnosticVerbosity.SUMMARY
-    ReaderLoggingMode.DETAIL -> DiagnosticVerbosity.DETAIL
 }
 
 fun formatPagerSnapshot(snapshot: ReaderPagerSnapshot): String {

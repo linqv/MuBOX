@@ -13,16 +13,39 @@ class PackageDependencyRulesTest {
     }
 
     @Test
-    fun readerDiagnosticBridgeIsOnlyUsedAtTheCompositionRoot() {
-        val outsideReaderFeature = dependencies.filter { dependency ->
-            dependency.reference == "$FEATURE_PACKAGE.reader.ReaderDiagnosticLog" &&
-                dependency.sourcePackage.featureName() != "reader"
+    fun directoryListingPackageLivesInSharedUiModule() {
+        assertEquals(null, DIRECTORY_LISTING_PACKAGE.featureName())
+
+        val misplacedSources = sourceFiles.filter { sourceFile ->
+            val isDirectoryListingPackage =
+                sourceFile.packageName == DIRECTORY_LISTING_PACKAGE ||
+                    sourceFile.packageName.startsWith("$DIRECTORY_LISTING_PACKAGE.")
+            val isDirectoryListingModule =
+                sourceFile.relativePath.modulePath() == DIRECTORY_LISTING_MODULE_PATH
+            isDirectoryListingPackage != isDirectoryListingModule
         }
 
-        assertEquals(
-            "Application code should inject core Diagnostics instead of using the reader-owned global bridge.",
-            setOf("app/src/main/java/com/example/comicdav/AppContainer.kt"),
-            outsideReaderFeature.map(DependencyReference::sourcePath).toSet(),
+        assertTrue(
+            buildString {
+                appendLine("Directory listing is shared UI and must live in $DIRECTORY_LISTING_MODULE_PATH.")
+                misplacedSources.forEach { sourceFile ->
+                    appendLine("  - ${sourceFile.relativePath}: ${sourceFile.packageName}")
+                }
+            },
+            misplacedSources.isEmpty(),
+        )
+    }
+
+    @Test
+    fun readerDiagnosticsDoNotUseAGlobalBridge() {
+        val globalBridgeSources = sourceFiles.filter { sourceFile ->
+            "ReaderDiagnosticLog" in sourceFile.source
+        }
+
+        assertTrue(
+            "Reader production code must receive core Diagnostics explicitly instead of using a global bridge: " +
+                globalBridgeSources.joinToString { it.relativePath },
+            globalBridgeSources.isEmpty(),
         )
     }
 
@@ -43,6 +66,28 @@ class PackageDependencyRulesTest {
             "AppVideoActions must remain an orchestration facade; move infrastructure to its collaborators: " +
                 forbiddenReferences.joinToString(),
             forbiddenReferences.isEmpty(),
+        )
+    }
+
+    @Test
+    fun videoActionFacadeUsesNarrowCompositionDependencies() {
+        val videoCompositionSources = sourceFiles.filter { sourceFile ->
+            sourceFile.relativePath in setOf(
+                "app/src/main/java/com/example/comicdav/AppVideoActions.kt",
+                "app/src/main/java/com/example/comicdav/AppVideoActionDependencies.kt",
+            )
+        }
+        val forbiddenAggregates = setOf(
+            "AppContainer",
+            "AppViewModels",
+        ).filter { aggregate ->
+            videoCompositionSources.any { sourceFile -> aggregate in sourceFile.source }
+        }
+
+        assertTrue(
+            "AppVideoActions must receive explicit video services and presenters, not app-wide aggregates: " +
+                forbiddenAggregates.joinToString(),
+            forbiddenAggregates.isEmpty(),
         )
     }
 
@@ -116,18 +161,17 @@ class PackageDependencyRulesTest {
     }
 
     @Test
-    fun crossFeatureDependenciesMatchWhitelistAndDebtLedger() {
+    fun logicalFeaturePackagesDoNotDependOnOtherFeatures() {
         val violations = dependencies.filter { dependency ->
             val sourceFeature = dependency.sourcePackage.featureName()
             val targetFeature = dependency.targetPackage.featureName()
             sourceFeature != null &&
                 targetFeature != null &&
-                sourceFeature != targetFeature &&
-                FeatureEdge(sourceFeature, targetFeature) !in PERMANENT_FEATURE_WHITELIST
+                sourceFeature != targetFeature
         }
 
         assertDebtLedgerMatches(
-            rule = "feature:* -> feature:* outside the permanent whitelist",
+            rule = "logical feature package -> another logical feature package",
             violations = violations,
             expectedDebt = CROSS_FEATURE_DEBT,
         )
@@ -448,15 +492,12 @@ class PackageDependencyRulesTest {
         val reference: String,
     )
 
-    private data class FeatureEdge(
-        val sourceFeature: String,
-        val targetFeature: String,
-    )
-
     private companion object {
         const val BASE_PACKAGE = "com.example.comicdav"
         const val FEATURE_PACKAGE = "$BASE_PACKAGE.feature"
         const val VIDEO_PACKAGE = "$BASE_PACKAGE.video"
+        const val DIRECTORY_LISTING_PACKAGE = "$BASE_PACKAGE.ui.directorylisting"
+        const val DIRECTORY_LISTING_MODULE_PATH = "ui/directory-listing"
         const val IDENTIFIER = "[A-Za-z_][A-Za-z0-9_]*"
 
         val PACKAGE_REGEX = Regex(
@@ -477,18 +518,12 @@ class PackageDependencyRulesTest {
         val ADAPTER_PACKAGE_AREAS = setOf("data", "network", "nativebridge", "security")
         val APP_ROOT_RESTRICTED_AREAS = setOf("feature", "data", "video")
 
-        val PERMANENT_FEATURE_WHITELIST = setOf(
-            FeatureEdge("filedirectory", "directorylisting"),
-            FeatureEdge("webdav", "directorylisting"),
-        )
-
         val LOWER_LAYER_TO_FEATURE_DEBT: Set<DependencyKey> = emptySet()
         val CROSS_FEATURE_DEBT: Set<DependencyKey> = emptySet()
         val FEATURE_TO_ADAPTER_DEBT: Set<DependencyKey> = emptySet()
         val APP_ROOT_DEBT: Set<DependencyKey> = emptySet()
 
         val APPROVED_FEATURE_MODULE_PATHS = mapOf(
-            "directorylisting" to "feature/directory-listing",
             "filedirectory" to "feature/file-directory",
             "home" to "feature/home",
             "library" to "feature/library",
@@ -508,7 +543,7 @@ class PackageDependencyRulesTest {
             "webdav",
             "data",
             "ui",
-            "feature/directory-listing",
+            "ui/directory-listing",
             "feature/file-directory",
             "feature/home",
             "feature/library",
@@ -528,7 +563,7 @@ class PackageDependencyRulesTest {
             "webdav",
             "data",
             "ui",
-            "feature/directory-listing",
+            "ui/directory-listing",
             "feature/file-directory",
             "feature/home",
             "feature/library",

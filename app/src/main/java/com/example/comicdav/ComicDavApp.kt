@@ -206,6 +206,7 @@ internal fun ComicDavApp(container: AppContainer) {
                         readerContent = {
                             ReaderRoute(
                                 readerUiState = readerViewModel.uiState,
+                                diagnostics = container.diagnostics,
                                 localOpenError = ui.localOpenError,
                                 downloadProgress = downloadProgress,
                                 appSettings = appSettings,

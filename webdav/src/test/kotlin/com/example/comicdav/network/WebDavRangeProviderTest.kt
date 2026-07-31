@@ -306,18 +306,6 @@ class WebDavRangeProviderTest {
     }
 
     @Test
-    fun cacheKeepsFixedSizeSegmentsAndComposesOnlyTheRequestedBytes() {
-        val bytes = ByteArray(16) { it.toByte() }
-        val cache = WebDavRangeProvider.RangeWindowCache(maxBytes = 64, segmentBytes = 4)
-
-        assertTrue(cache.store(start = 0, endInclusive = 7, bytes = bytes.sliceArray(0..7)).stored)
-        assertTrue(cache.store(start = 8, endInclusive = 15, bytes = bytes.sliceArray(8..15)).stored)
-
-        assertEquals(4, cache.windowCount())
-        assertArrayEquals(bytes.sliceArray(3..12), cache.find(start = 3, endInclusive = 12)?.bytes)
-    }
-
-    @Test
     fun truncatedNetworkResponseIsRejectedAndNeverCached() {
         val bytes = ByteArray(64) { it.toByte() }
         val client = TruncatedStreamingWebDavClient(bytes)

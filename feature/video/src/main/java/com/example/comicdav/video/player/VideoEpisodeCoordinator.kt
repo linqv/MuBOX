@@ -86,13 +86,15 @@ internal data class PreparedVideoEpisode(
     val webDavStreamIds: List<String> = emptyList(),
 )
 
-internal object VideoProxyManagerGateway : VideoProxyGateway {
+internal class VideoProxyManagerGateway(
+    private val manager: VideoProxyManager,
+) : VideoProxyGateway {
     override suspend fun open(
         request: WebDavVideoOpenRequest,
         clientFactory: WebDavClientFactory,
         proxySettings: VideoProxySettings,
     ): VideoProxyPlaybackSession {
-        val session = VideoProxyManager.open(
+        val session = manager.open(
             request = request,
             clientFactory = clientFactory,
             proxySettings = proxySettings,
@@ -105,14 +107,14 @@ internal object VideoProxyManagerGateway : VideoProxyGateway {
     }
 
     override fun close(streamIds: Iterable<String>) {
-        VideoProxyManager.close(streamIds)
+        manager.close(streamIds)
     }
 
     override fun streamIdFromUrl(url: String): String? =
         MuBoxVideoProxy.streamIdFromUrl(url).takeIf(String::isNotBlank)
 
     override fun statistics(streamId: String): VideoProxyStatistics? =
-        VideoProxyManager.statistics(streamId)?.let { statistics ->
+        manager.statistics(streamId)?.let { statistics ->
             VideoProxyStatistics(
                 currentRange = statistics.currentRange,
                 remoteHttpStatus = statistics.remoteHttpStatus,

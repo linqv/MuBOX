@@ -2,6 +2,7 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.core.diagnostics.DiagnosticCategory
 import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -31,10 +32,10 @@ typealias OpenLocalDocumentSessionFactory = (
 class LocalComicOpener(
     private val context: Context,
     private val openSession: OpenLocalFdSessionFactory,
-    private val diagnostics: Diagnostics = ReaderDiagnosticLog,
+    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val openDocumentSession: OpenLocalDocumentSessionFactory = { descriptor, fileName, format ->
         val document = RealMuPdfDocumentAdapter().open(descriptor, fileName, format)
-        MuPdfReaderSession(document, format)
+        MuPdfReaderSession(document, format, diagnostics = diagnostics)
     },
     private val logDiagnostic: (() -> String) -> Unit = { event ->
         diagnostics.summary(DiagnosticCategory.LOCAL_FILE, event)

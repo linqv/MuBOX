@@ -256,6 +256,32 @@ class VideoPlayerLaunchContractTest {
     }
 
     @Test
+    fun scopedWebDavLaunchCarriesRequestWithoutProcessGlobalProxyUrl() {
+        val request = WebDavVideoOpenRequest(
+            accountId = "account-1",
+            remotePath = "/movies/movie.mkv",
+            displayName = "movie.mkv",
+            size = 300L,
+            etag = "etag",
+            lastModified = 400L,
+            mimeType = "video/x-matroska",
+        )
+
+        val arguments = VideoPlayerLaunchContract.read(
+            context,
+            VideoPlayerLaunchContract.webDavIntent(
+                context = context,
+                request = request,
+            ),
+        )
+
+        assertNull(arguments.uri)
+        assertTrue(arguments.webDavStreamIds.isEmpty())
+        assertTrue(arguments.subtitles.isEmpty())
+        assertEquals(request, arguments.episodeQueue?.currentEpisode?.webDavRequest)
+    }
+
+    @Test
     fun activityCompanionKeepsExistingLaunchApiAsContractAliases() {
         assertEquals(VideoPlayerLaunchContract.EXTRA_SOURCE, VideoPlayerActivity.EXTRA_SOURCE)
         assertEquals(VideoPlayerLaunchContract.EXTRA_URI, VideoPlayerActivity.EXTRA_URI)

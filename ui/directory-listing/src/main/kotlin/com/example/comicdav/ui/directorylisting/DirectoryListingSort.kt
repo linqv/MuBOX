@@ -1,4 +1,4 @@
-package com.example.comicdav.feature.directorylisting
+package com.example.comicdav.ui.directorylisting
 
 import java.util.Locale
 

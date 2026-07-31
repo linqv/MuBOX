@@ -37,6 +37,7 @@ internal class AppVideoThumbnailLoader(
     private val localComicOpener: LocalComicOpener,
     private val coverExtractor: WebDavLibraryCoverExtractor,
     private val webDavResolver: AppWebDavResolver,
+    private val videoProxyManager: VideoProxyManager,
 ) {
     suspend fun extractLocal(
         uri: String,
@@ -79,7 +80,7 @@ internal class AppVideoThumbnailLoader(
         }
         val clientFactory = webDavResolver.clientFactoryForPlayback(request.accountId)
             ?: error("缺少 WebDAV 账号，请重新连接后再提取缩略图")
-        val session = VideoProxyManager.open(
+        val session = videoProxyManager.open(
             request = request.copy(subtitles = emptyList()),
             clientFactory = clientFactory,
             proxySettings = settings.toVideoProxySettings(),
@@ -91,7 +92,7 @@ internal class AppVideoThumbnailLoader(
                 forceRefresh = forceRefresh,
             )
         } finally {
-            VideoProxyManager.close(session.streamIds)
+            videoProxyManager.close(session)
         }
     }
 

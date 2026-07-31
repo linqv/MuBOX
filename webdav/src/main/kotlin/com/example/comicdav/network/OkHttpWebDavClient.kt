@@ -1,6 +1,5 @@
 package com.example.comicdav.network
 
-import com.example.comicdav.core.remote.ContentRange
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavException
@@ -15,7 +14,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Credentials
 import okhttp3.EventListener
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -24,12 +22,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
-import java.net.URI
-import java.net.URLDecoder
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
-import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -41,7 +36,11 @@ internal class OkHttpWebDavClient(
     private val diagnostics: WebDavNetworkDiagnostics = WebDavNetworkDiagnostics(),
     private val allowPlaintextHttp: Boolean = isPlaintextHttpUrl(baseUrl),
 ) : WebDavClient {
-    private val urlResolver = WebDavUrlResolver(baseUrl)
+    private val urlResolver = WebDavUrlResolver(
+        baseUrl = baseUrl,
+        allowPlaintextHttp = allowPlaintextHttp,
+        sanitizedUrl = diagnostics::sanitizedUrl,
+    )
     private val httpClient: OkHttpClient = run {
         val upstreamEvents = httpClient.eventListenerFactory
         val diagnosticEvents = diagnostics.eventListenerFactory()
@@ -52,7 +51,7 @@ internal class OkHttpWebDavClient(
                 },
             )
             .addNetworkInterceptor { chain ->
-                requireAllowedTransport(chain.request().url)
+                urlResolver.requireAllowedTransport(chain.request().url)
                 chain.proceed(chain.request())
             }
             .build()
@@ -66,12 +65,11 @@ internal class OkHttpWebDavClient(
             .build()
         request.withFailureDiagnostics {
             httpClient.withNonStreamingResponse(request) { response ->
-                if (!response.isSuccessful) {
-                    throw WebDavException.HttpStatus(
-                        response.code,
-                        httpFailureMessage("PROPFIND", response.code, request),
-                    )
-                }
+                WebDavResponseValidator.requireSuccessful(
+                    response.code,
+                    "PROPFIND",
+                    diagnostics.sanitizedUrl(request.url),
+                )
                 WebDavXmlParser.parse(response.body.byteStream(), request.url.encodedPath, urlResolver.baseOrigin())
             }
         }
@@ -85,10 +83,12 @@ internal class OkHttpWebDavClient(
                     if (response.code in HEAD_FALLBACK_STATUS_CODES) {
                         HeadResponseResult.FallbackToPropfind(supportsRange = false)
                     } else {
-                        throw WebDavException.HttpStatus(
+                        WebDavResponseValidator.requireSuccessful(
                             response.code,
-                            httpFailureMessage("HEAD", response.code, request),
+                            "HEAD",
+                            diagnostics.sanitizedUrl(request.url),
                         )
+                        HeadResponseResult.FallbackToPropfind(supportsRange = false)
                     }
                 } else {
                     val supportsRange = response.supportsRange()
@@ -192,12 +192,16 @@ internal class OkHttpWebDavClient(
             val call = httpClient.newCall(request)
             registerCancellation(Closeable { call.cancel() })
             val response = call.execute()
-            if (response.code != 200) {
-                response.close()
-                throw WebDavException.HttpStatus(
+            try {
+                WebDavResponseValidator.requireStatus(
                     response.code,
-                    httpFailureMessage("GET", response.code, request),
+                    expectedStatus = 200,
+                    operation = "GET",
+                    sanitizedUrl = diagnostics.sanitizedUrl(request.url),
                 )
+            } catch (error: Throwable) {
+                response.close()
+                throw error
             }
             val body = response.body
             val contentLength = body.contentLength()
@@ -219,12 +223,11 @@ internal class OkHttpWebDavClient(
             val request = requestBuilder(path, WebDavOperation.DOWNLOAD).get().build()
             request.withFailureDiagnostics {
                 httpClient.withCancellableResponse(request, callTimeoutSeconds = null) { response, ensureActive ->
-                    if (!response.isSuccessful) {
-                        throw WebDavException.HttpStatus(
-                            response.code,
-                            httpFailureMessage("GET", response.code, request),
-                        )
-                    }
+                    WebDavResponseValidator.requireSuccessful(
+                        response.code,
+                        "GET",
+                        diagnostics.sanitizedUrl(request.url),
+                    )
                     val body = response.body
                     target.parentFile?.mkdirs()
                     var total = 0L
@@ -304,28 +307,14 @@ internal class OkHttpWebDavClient(
         rangeHeader: String? = null,
     ): Request.Builder {
         val resolvedUrl = urlResolver.resolve(path)
-        requireAllowedEndpoint(resolvedUrl)
         return Request.Builder()
             .url(resolvedUrl)
             .tag(WebDavRequestTag::class.java, diagnostics.requestTag(operation, path, rangeHeader))
             .also { builder ->
-                if (!username.isNullOrBlank() && password != null && urlResolver.isSameOrigin(resolvedUrl)) {
+                if (!username.isNullOrBlank() && password != null) {
                     builder.header("Authorization", Credentials.basic(username, password, Charsets.UTF_8))
                 }
             }
-    }
-
-    private fun requireAllowedEndpoint(url: HttpUrl) {
-        if (!urlResolver.isSameOrigin(url)) {
-            throw WebDavException.Network("Cross-origin WebDAV request is not allowed: ${diagnostics.sanitizedUrl(url)}")
-        }
-        requireAllowedTransport(url)
-    }
-
-    private fun requireAllowedTransport(url: HttpUrl) {
-        if (url.scheme == "http" && !allowPlaintextHttp) {
-            throw WebDavException.Network("Plaintext HTTP is not allowed: ${diagnostics.sanitizedUrl(url)}")
-        }
     }
 
     private fun buildRangeHeader(start: Long, endInclusive: Long?): String =
@@ -335,9 +324,6 @@ internal class OkHttpWebDavClient(
             "bytes=$start-$endInclusive"
         }
 
-    private fun httpFailureMessage(operation: String, statusCode: Int, request: Request): String =
-        "$operation failed with HTTP $statusCode: ${diagnostics.sanitizedUrl(request.url)}"
-
     private fun executeRangeStream(
         call: Call,
         request: Request,
@@ -345,52 +331,28 @@ internal class OkHttpWebDavClient(
         endInclusive: Long?,
     ): WebDavStreamResponse {
         val response = call.execute()
-        when (response.code) {
-            206 -> {
-                val body = response.body
-                try {
-                    val contentRangeHeader = response.header("Content-Range")
-                    val parsedRange = validateContentRange(
-                        header = contentRangeHeader,
-                        expectedStart = start,
-                        expectedEndInclusive = endInclusive,
-                    )
-                    val totalSize = parsedRange.totalSize.takeIf { it >= 0 }
-                    val expectedContentLength = parsedRange.endInclusive - parsedRange.start + 1
-                    val declaredContentLength = body.contentLength()
-                    if (declaredContentLength >= 0 && declaredContentLength != expectedContentLength) {
-                        throw WebDavException.InvalidContentRange(
-                            "Expected response body length $expectedContentLength but got $declaredContentLength",
-                        )
-                    }
-                    val contentLength = declaredContentLength.takeIf { it >= 0 } ?: expectedContentLength
-                    val stream = body.byteStream()
-                    val close = { response.close() }
-                    return WebDavStreamResponse(
-                        stream = stream,
-                        statusCode = response.code,
-                        contentLength = contentLength,
-                        contentRange = parsedRange,
-                        contentType = response.header("Content-Type"),
-                        totalSize = totalSize,
-                        close = close,
-                    )
-                } catch (error: Throwable) {
-                    response.close()
-                    throw error
-                }
-            }
-            200 -> {
-                response.close()
-                throw WebDavException.RangeNotSupported()
-            }
-            else -> {
-                response.close()
-                throw WebDavException.HttpStatus(
-                    response.code,
-                    httpFailureMessage("Range GET", response.code, request),
-                )
-            }
+        val body = response.body
+        try {
+            val validated = WebDavResponseValidator.validateRange(
+                statusCode = response.code,
+                contentRangeHeader = response.header("Content-Range"),
+                declaredContentLength = body.contentLength(),
+                expectedStart = start,
+                expectedEndInclusive = endInclusive,
+                sanitizedUrl = diagnostics.sanitizedUrl(request.url),
+            )
+            return WebDavStreamResponse(
+                stream = body.byteStream(),
+                statusCode = response.code,
+                contentLength = validated.contentLength,
+                contentRange = validated.contentRange,
+                contentType = response.header("Content-Type"),
+                totalSize = validated.totalSize,
+                close = { response.close() },
+            )
+        } catch (error: Throwable) {
+            response.close()
+            throw error
         }
     }
 
@@ -434,12 +396,11 @@ internal class OkHttpWebDavClient(
             .build()
         return request.withFailureDiagnostics {
             httpClient.withNonStreamingResponse(request) { response ->
-                if (!response.isSuccessful) {
-                    throw WebDavException.HttpStatus(
-                        response.code,
-                        httpFailureMessage("PROPFIND", response.code, request),
-                    )
-                }
+                WebDavResponseValidator.requireSuccessful(
+                    response.code,
+                    "PROPFIND",
+                    diagnostics.sanitizedUrl(request.url),
+                )
                 WebDavXmlParser.parseMetadata(response.body.byteStream(), request.url.encodedPath, supportsRange)
                     ?.copy(path = path)
                     ?: throw WebDavException.MissingMetadata("PROPFIND response is missing Content-Length")
@@ -458,46 +419,6 @@ internal class OkHttpWebDavClient(
         </d:propfind>
     """.trimIndent().toRequestBody("application/xml; charset=utf-8".toMediaType())
 
-    private fun parseContentRange(header: String?): ContentRange? {
-        val value = header ?: return null
-        val match = CONTENT_RANGE.matchEntire(value.lowercase(Locale.US)) ?: return null
-        return ContentRange(
-            start = match.groupValues[1].toLong(),
-            endInclusive = match.groupValues[2].toLong(),
-            totalSize = match.groupValues[3].takeIf { it != "*" }?.toLong() ?: -1L,
-        )
-    }
-
-    private fun validateContentRange(
-        header: String?,
-        expectedStart: Long,
-        expectedEndInclusive: Long?,
-    ): ContentRange {
-        val parsed = parseContentRange(header)
-            ?: throw WebDavException.InvalidContentRange("Missing or invalid Content-Range header: ${header ?: "<null>"}")
-        if (parsed.endInclusive < parsed.start) {
-            throw WebDavException.InvalidContentRange(
-                "Content-Range end is before start in ${header ?: "<null>"}",
-            )
-        }
-        if (parsed.totalSize >= 0 && parsed.endInclusive >= parsed.totalSize) {
-            throw WebDavException.InvalidContentRange(
-                "Content-Range end ${parsed.endInclusive} is outside total size ${parsed.totalSize}",
-            )
-        }
-        if (parsed.start != expectedStart) {
-            throw WebDavException.InvalidContentRange(
-                "Expected Content-Range start $expectedStart but got ${parsed.start} in ${header ?: "<null>"}",
-            )
-        }
-        if (expectedEndInclusive != null && parsed.endInclusive != expectedEndInclusive) {
-            throw WebDavException.InvalidContentRange(
-                "Expected Content-Range end $expectedEndInclusive but got ${parsed.endInclusive} in ${header ?: "<null>"}",
-            )
-        }
-        return parsed
-    }
-
     private suspend fun <T> WebDavStreamResponse.useResponse(block: suspend (WebDavStreamResponse) -> T): T {
         try {
             return block(this)
@@ -507,7 +428,6 @@ internal class OkHttpWebDavClient(
     }
 
     companion object {
-        private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""")
         private val RETRYABLE_RANGE_STATUS_CODES = setOf(429, 500, 502, 503, 504)
         private val HEAD_FALLBACK_STATUS_CODES = setOf(405, 501)
         private val RANGE_RETRY_DELAYS_MS = longArrayOf(150L, 400L)
@@ -531,76 +451,4 @@ internal class OkHttpWebDavClient(
                 }
     }
 
-    private class WebDavUrlResolver(baseUrl: String) {
-        private val base: String = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        private val baseUri: URI = URI(base)
-        private val baseHttpUrl: HttpUrl = base.toHttpUrlOrNull()
-            ?: throw WebDavException.Network("Invalid WebDAV base URL: $baseUrl")
-        private val baseOrigin = Origin.from(baseHttpUrl)
-        private val mountedPrefixes: List<String> = run {
-            val basePath = baseUri.rawPath.orEmpty()
-            val mountedPrefix = if (basePath.endsWith("/")) basePath else "$basePath/"
-            val decodedMountedPrefix = decodePath(mountedPrefix)
-            val encodedMountedPrefix = encodePath(decodedMountedPrefix)
-            listOf(mountedPrefix, decodedMountedPrefix, encodedMountedPrefix)
-        }
-
-        fun resolve(path: String): HttpUrl {
-            val trimmedPath = path.trim()
-            if (trimmedPath.startsWith("http://", ignoreCase = true) ||
-                trimmedPath.startsWith("https://", ignoreCase = true)
-            ) {
-                return trimmedPath.toHttpUrlOrNull()
-                    ?: throw WebDavException.Network("Invalid WebDAV request URL")
-            }
-
-            val requestPath = normalizeRequestPath(path)
-            val resolved = baseUri.resolve(requestPath).toString()
-            return resolved.toHttpUrlOrNull()
-                ?: throw WebDavException.Network("Invalid WebDAV request URL")
-        }
-
-        fun isSameOrigin(url: HttpUrl): Boolean =
-            Origin.from(url) == baseOrigin
-
-        fun baseOrigin(): String? {
-            val host = if (baseOrigin.host.contains(":")) {
-                "[${baseOrigin.host}]"
-            } else {
-                baseOrigin.host
-            }
-            return "${baseOrigin.scheme}://$host:${baseOrigin.port}"
-        }
-
-        private fun normalizeRequestPath(path: String): String {
-            if (mountedPrefixes.any { path.startsWith(it) }) {
-                return path
-            }
-            if (mountedPrefixes.any { path.startsWith(it.trimStart('/')) }) {
-                return "/$path"
-            }
-            return path.trimStart('/')
-        }
-
-        private fun decodePath(path: String): String =
-            URLDecoder.decode(path.replace("+", "%2B"), Charsets.UTF_8.name())
-
-        private fun encodePath(path: String): String =
-            URI(null, null, path, null).toASCIIString()
-
-        private data class Origin(
-            val scheme: String,
-            val host: String,
-            val port: Int,
-        ) {
-            companion object {
-                fun from(url: HttpUrl): Origin =
-                    Origin(
-                        scheme = url.scheme.lowercase(Locale.ROOT),
-                        host = url.host.lowercase(Locale.ROOT),
-                        port = url.port,
-                    )
-            }
-        }
-    }
 }

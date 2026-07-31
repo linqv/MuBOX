@@ -17,6 +17,7 @@ import com.example.comicdav.core.model.transfer.VideoDownloadRecord
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import com.example.comicdav.core.remote.WebDavItem
+import com.example.comicdav.core.remote.WebDavClientFactory
 import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.filedirectory.FileDirectoryViewModel
 import com.example.comicdav.feature.filedirectory.LocalDirectoryReader
@@ -27,7 +28,6 @@ import com.example.comicdav.video.player.buildLocalDirectoryEpisodeQueue
 import com.example.comicdav.video.player.buildWebDavDirectoryEpisodeQueue
 import com.example.comicdav.video.player.localVideoEpisodeRequest
 import com.example.comicdav.video.player.webDavVideoEpisodeRequest
-import com.example.comicdav.video.proxy.startWebDavVideoPlayback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -42,6 +42,7 @@ internal class AppVideoPlaybackActions(
     private val webDavViewModel: WebDavViewModel,
     private val videoLibraryViewModel: VideoLibraryViewModel,
     private val webDavResolver: AppWebDavResolver,
+    private val rememberWebDavClientFactory: (String, WebDavClientFactory) -> Unit,
     private val callbacks: AppVideoActionCallbacks,
 ) {
     fun openLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
@@ -95,26 +96,17 @@ internal class AppVideoPlaybackActions(
                     lastModified = entry.lastModified,
                     mimeType = mimeTypeForMediaFileName(entry.displayTitle),
                 )
+                callbacks.setError(null)
                 scope.launch {
                     runCatching {
-                        val clientFactory = webDavResolver.clientFactoryForPlayback(accountId)
-                            ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
-                        startWebDavVideoPlayback(
-                            request = request,
-                            clientFactory = clientFactory,
-                            proxySettings = settings.toVideoProxySettings(),
-                        ) { session ->
-                            callbacks.launchPlayer(
-                                VideoPlayerActivity.webDavIntent(
-                                    context = context,
-                                    request = request,
-                                    uri = session.url,
-                                    subtitleUrls = session.subtitleUrls,
-                                    streamIds = session.streamIds,
-                                    options = settings.toVideoPlayerOptions(),
-                                ),
-                            )
-                        }
+                        rememberWebDavPlaybackFactory(accountId)
+                        callbacks.launchPlayer(
+                            VideoPlayerActivity.webDavIntent(
+                                context = context,
+                                request = request,
+                                options = settings.toVideoPlayerOptions(),
+                            ),
+                        )
                     }.onFailure { error ->
                         callbacks.setError(error.message ?: "打开历史视频失败")
                     }
@@ -136,25 +128,15 @@ internal class AppVideoPlaybackActions(
         callbacks.setActionMessage("已进入内部视频打开流程：${item.name}")
         scope.launch {
             runCatching {
-                val clientFactory = webDavResolver.clientFactoryForPlayback(accountId)
-                    ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
-                startWebDavVideoPlayback(
-                    request = request,
-                    clientFactory = clientFactory,
-                    proxySettings = settings.toVideoProxySettings(),
-                ) { session ->
-                    callbacks.launchPlayer(
-                        VideoPlayerActivity.webDavIntent(
-                            context = context,
-                            request = request,
-                            uri = session.url,
-                            subtitleUrls = session.subtitleUrls,
-                            streamIds = session.streamIds,
-                            options = settings.toVideoPlayerOptions(),
-                            episodeQueue = episodeQueue,
-                        ),
-                    )
-                }
+                rememberWebDavPlaybackFactory(accountId)
+                callbacks.launchPlayer(
+                    VideoPlayerActivity.webDavIntent(
+                        context = context,
+                        request = request,
+                        options = settings.toVideoPlayerOptions(),
+                        episodeQueue = episodeQueue,
+                    ),
+                )
             }.onFailure { error ->
                 callbacks.setError(error.message ?: "打开视频失败")
                 callbacks.setActionMessage(null)
@@ -240,25 +222,15 @@ internal class AppVideoPlaybackActions(
                     videoFileName = source.fileName,
                 )
                 val playbackRequest = request.copy(subtitles = subtitles)
-                val clientFactory = webDavResolver.clientFactoryForPlayback(source.accountId)
-                    ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
-                startWebDavVideoPlayback(
-                    request = playbackRequest,
-                    clientFactory = clientFactory,
-                    proxySettings = settings.toVideoProxySettings(),
-                ) { session ->
-                    videoLibraryViewModel.markOpened(item.item.id)
-                    callbacks.launchPlayer(
-                        VideoPlayerActivity.webDavIntent(
-                            context = context,
-                            request = playbackRequest,
-                            uri = session.url,
-                            subtitleUrls = session.subtitleUrls,
-                            streamIds = session.streamIds,
-                            options = settings.toVideoPlayerOptions(),
-                        ),
-                    )
-                }
+                rememberWebDavPlaybackFactory(source.accountId)
+                videoLibraryViewModel.markOpened(item.item.id)
+                callbacks.launchPlayer(
+                    VideoPlayerActivity.webDavIntent(
+                        context = context,
+                        request = playbackRequest,
+                        options = settings.toVideoPlayerOptions(),
+                    ),
+                )
             }.onFailure { error ->
                 videoLibraryViewModel.showError(error.message ?: "打开视频失败")
             }
@@ -315,6 +287,12 @@ internal class AppVideoPlaybackActions(
                 mimeType = mimeTypeForMediaFileName(subtitle.name),
             )
         }
+    }
+
+    private suspend fun rememberWebDavPlaybackFactory(accountId: String) {
+        val factory = webDavResolver.clientFactoryForPlayback(accountId)
+            ?: error("缺少 WebDAV 账号，请重新连接后再打开视频")
+        rememberWebDavClientFactory(accountId, factory)
     }
 
     private fun currentWebDavAccountId(): String =
