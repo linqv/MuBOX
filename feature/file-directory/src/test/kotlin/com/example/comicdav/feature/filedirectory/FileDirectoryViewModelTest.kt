@@ -194,15 +194,18 @@ class FileDirectoryViewModelTest {
 
         viewModel.openLocalSource(source)
         advanceUntilIdle()
+        val parentDirectoryKey = viewModel.uiState.currentDirectoryKey
         viewModel.openLocalDirectory(viewModel.uiState.entries.single())
         advanceUntilIdle()
 
         assertEquals("Series", viewModel.uiState.currentTitle)
+        assertEquals("content://tree/comics/series", viewModel.uiState.currentDirectoryKey)
 
         assertTrue(viewModel.handleBack())
         advanceUntilIdle()
 
         assertEquals("Comics", viewModel.uiState.currentTitle)
+        assertEquals(parentDirectoryKey, viewModel.uiState.currentDirectoryKey)
         assertEquals(listOf("Series"), viewModel.uiState.entries.map { it.name })
     }
 
@@ -227,6 +230,7 @@ class FileDirectoryViewModelTest {
         assertTrue(viewModel.handleBack())
 
         assertEquals(null, viewModel.uiState.currentTitle)
+        assertEquals(null, viewModel.uiState.currentDirectoryKey)
         assertTrue(viewModel.uiState.entries.isEmpty())
     }
 

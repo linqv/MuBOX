@@ -10,6 +10,7 @@ import com.example.comicdav.core.ports.FileDirectoryCatalog
 import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.core.model.media.MediaKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -73,6 +74,36 @@ class FileDirectoryScreenTest {
                 fileDirectoryEntryTypeContentDescription(mediaKind),
             )
         }
+    }
+
+    @Test
+    fun scrollStateIsScopedToDirectoryAndViewMode() {
+        val rootListKey = fileDirectoryScrollStateKey(
+            directoryKey = "content://tree/comics/root",
+            viewMode = DirectoryListingViewMode.LIST,
+        )
+
+        assertEquals(
+            rootListKey,
+            fileDirectoryScrollStateKey(
+                directoryKey = "content://tree/comics/root",
+                viewMode = DirectoryListingViewMode.LIST,
+            ),
+        )
+        assertNotEquals(
+            rootListKey,
+            fileDirectoryScrollStateKey(
+                directoryKey = "content://tree/comics/series",
+                viewMode = DirectoryListingViewMode.LIST,
+            ),
+        )
+        assertNotEquals(
+            rootListKey,
+            fileDirectoryScrollStateKey(
+                directoryKey = "content://tree/comics/root",
+                viewMode = DirectoryListingViewMode.GRID,
+            ),
+        )
     }
 
     @Test

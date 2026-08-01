@@ -6,6 +6,7 @@ import com.example.comicdav.core.model.media.webDavVideoThumbnailVersion
 import com.example.comicdav.core.remote.WebDavException
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.comicDavColorSchemeFor
+import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.ui.muBoxColorsFor
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
@@ -133,6 +134,18 @@ class WebDavBrowserScreenTest {
             listOf("webdav", "漫画", "myy"),
             webDavBreadcrumbLabels("/webdav/%E6%BC%AB%E7%94%BB/myy/"),
         )
+    }
+
+    @Test
+    fun scrollStateIsScopedToDirectoryAndViewMode() {
+        val rootListKey = webDavScrollStateKey(
+            path = "/",
+            viewMode = DirectoryListingViewMode.LIST,
+        )
+
+        assertEquals(rootListKey, webDavScrollStateKey("/", DirectoryListingViewMode.LIST))
+        assertNotEquals(rootListKey, webDavScrollStateKey("/Series/", DirectoryListingViewMode.LIST))
+        assertNotEquals(rootListKey, webDavScrollStateKey("/", DirectoryListingViewMode.GRID))
     }
 
     @Test

@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Cloud
@@ -46,9 +48,11 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -61,6 +65,7 @@ import com.example.comicdav.core.model.source.FileDirectorySource
 import com.example.comicdav.core.model.source.FileDirectorySourceType
 import com.example.comicdav.core.model.media.fileDirectoryBrowserVideoThumbnailVersion
 import com.example.comicdav.ui.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.ui.directorylisting.DirectoryListingScrollStateRetention
 import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.ui.directorylisting.DirectoryVideoThumbnail
 import com.example.comicdav.ui.directorylisting.DirectorySortField
@@ -152,6 +157,11 @@ internal fun fileDirectorySourceTitle(source: FileDirectorySource): String =
         source.displayName
     }
 
+internal fun fileDirectoryScrollStateKey(
+    directoryKey: String,
+    viewMode: DirectoryListingViewMode,
+): String = "file-directory:${viewMode.name}:$directoryKey"
+
 internal fun fileDirectorySourceSubtitle(source: FileDirectorySource): String =
     when (source.sourceType) {
         FileDirectorySourceType.LOCAL -> fileDirectoryLocalPathSummary(source.localTreeUri)
@@ -202,6 +212,8 @@ fun FileDirectoryScreen(
     onEditWebDavSource: (FileDirectorySource) -> Unit = {},
 ) {
     val colors = rememberMuBoxColors()
+    val scrollStateHolder = rememberSaveableStateHolder()
+    val scrollStateRetention = remember { DirectoryListingScrollStateRetention() }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -257,26 +269,36 @@ fun FileDirectoryScreen(
                             CircularProgressIndicator(color = colors.mediaAccent)
                         }
                     } else {
-                        PullToRefreshBox(
-                            isRefreshing = uiState.isRefreshing,
-                            onRefresh = onRefresh,
-                            modifier = Modifier.fillMaxSize(),
+                        val directoryKey = uiState.currentDirectoryKey
+                            ?: uiState.breadcrumbLabels.joinToString(separator = "/")
+                        val scrollStateKey = fileDirectoryScrollStateKey(directoryKey, uiState.viewMode)
+                        SideEffect {
+                            scrollStateRetention.recordAccess(scrollStateKey).forEach(scrollStateHolder::removeState)
+                        }
+                        scrollStateHolder.SaveableStateProvider(
+                            key = scrollStateKey,
                         ) {
-                            EntryList(
-                                entries = uiState.entries,
-                                onOpenDirectory = onOpenDirectory,
-                                onOpenComic = onOpenComic,
-                                onOpenVideo = onOpenVideo,
-                                onSelectComic = onSelectComic,
-                                onSelectVideo = onSelectVideo,
-                                selectedEntry = selectedVideo ?: selectedComic,
-                                viewMode = uiState.viewMode,
-                                gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
-                                videoThumbnails = uiState.videoThumbnails,
-                                thumbnailRequestRevision = uiState.thumbnailRequestRevision,
-                                onRequestVideoThumbnail = onRequestVideoThumbnail,
+                            PullToRefreshBox(
+                                isRefreshing = uiState.isRefreshing,
+                                onRefresh = onRefresh,
                                 modifier = Modifier.fillMaxSize(),
-                            )
+                            ) {
+                                EntryList(
+                                    entries = uiState.entries,
+                                    onOpenDirectory = onOpenDirectory,
+                                    onOpenComic = onOpenComic,
+                                    onOpenVideo = onOpenVideo,
+                                    onSelectComic = onSelectComic,
+                                    onSelectVideo = onSelectVideo,
+                                    selectedEntry = selectedVideo ?: selectedComic,
+                                    viewMode = uiState.viewMode,
+                                    gridVideoThumbnailsEnabled = gridVideoThumbnailsEnabled,
+                                    videoThumbnails = uiState.videoThumbnails,
+                                    thumbnailRequestRevision = uiState.thumbnailRequestRevision,
+                                    onRequestVideoThumbnail = onRequestVideoThumbnail,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 } else {
@@ -724,69 +746,77 @@ private fun EntryList(
     modifier: Modifier = Modifier,
 ) {
     when (viewMode) {
-        DirectoryListingViewMode.LIST -> LazyColumn(
-            modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(entries, key = { it.uri }) { entry ->
-                FileDirectoryEntryRow(
-                    entry = entry,
-                    onOpenDirectory = { onOpenDirectory(entry) },
-                    onOpenComic = { onOpenComic(entry) },
-                    onOpenVideo = { onOpenVideo(entry) },
-                    onSelectComic = { onSelectComic(entry) },
-                    onSelectVideo = { onSelectVideo(entry) },
-                    isSelected = selectedEntry?.uri == entry.uri,
-                )
+        DirectoryListingViewMode.LIST -> {
+            val listState = rememberLazyListState()
+            LazyColumn(
+                state = listState,
+                modifier = modifier,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(entries, key = { it.uri }) { entry ->
+                    FileDirectoryEntryRow(
+                        entry = entry,
+                        onOpenDirectory = { onOpenDirectory(entry) },
+                        onOpenComic = { onOpenComic(entry) },
+                        onOpenVideo = { onOpenVideo(entry) },
+                        onSelectComic = { onSelectComic(entry) },
+                        onSelectVideo = { onSelectVideo(entry) },
+                        isSelected = selectedEntry?.uri == entry.uri,
+                    )
+                }
             }
         }
-        DirectoryListingViewMode.GRID -> LazyVerticalGrid(
-            columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 8.dp),
-        ) {
-            gridItems(entries, key = { it.uri }) { entry ->
-                val thumbnailVersion = fileDirectoryBrowserVideoThumbnailVersion(
-                    item = entry,
-                    requestRevision = thumbnailRequestRevision,
-                )
-                val thumbnail = videoThumbnails[entry.uri]
-                    .takeIf { gridVideoThumbnailsEnabled }
-                val artworkModel = rememberDirectoryVideoArtworkModel(
-                    thumbnail = thumbnail,
-                    expectedVersion = thumbnailVersion,
-                    validationRevision = thumbnailRequestRevision,
-                )
-                if (
-                    shouldRequestDirectoryVideoThumbnail(
-                        enabled = gridVideoThumbnailsEnabled,
-                        mediaKind = entry.mediaKind,
-                        hasArtwork = artworkModel != null,
+        DirectoryListingViewMode.GRID -> {
+            val gridState = rememberLazyGridState()
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
+                state = gridState,
+                modifier = modifier,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 8.dp),
+            ) {
+                gridItems(entries, key = { it.uri }) { entry ->
+                    val thumbnailVersion = fileDirectoryBrowserVideoThumbnailVersion(
+                        item = entry,
+                        requestRevision = thumbnailRequestRevision,
                     )
-                ) {
-                    LaunchedEffect(
-                        entry.uri,
-                        thumbnailVersion,
-                        thumbnailRequestRevision,
-                        gridVideoThumbnailsEnabled,
-                        thumbnail?.path,
-                        thumbnail?.artworkRevision,
+                    val thumbnail = videoThumbnails[entry.uri]
+                        .takeIf { gridVideoThumbnailsEnabled }
+                    val artworkModel = rememberDirectoryVideoArtworkModel(
+                        thumbnail = thumbnail,
+                        expectedVersion = thumbnailVersion,
+                        validationRevision = thumbnailRequestRevision,
+                    )
+                    if (
+                        shouldRequestDirectoryVideoThumbnail(
+                            enabled = gridVideoThumbnailsEnabled,
+                            mediaKind = entry.mediaKind,
+                            hasArtwork = artworkModel != null,
+                        )
                     ) {
-                        onRequestVideoThumbnail(entry)
+                        LaunchedEffect(
+                            entry.uri,
+                            thumbnailVersion,
+                            thumbnailRequestRevision,
+                            gridVideoThumbnailsEnabled,
+                            thumbnail?.path,
+                            thumbnail?.artworkRevision,
+                        ) {
+                            onRequestVideoThumbnail(entry)
+                        }
                     }
+                    FileDirectoryEntryGridTile(
+                        entry = entry,
+                        artworkModel = artworkModel,
+                        onOpenDirectory = { onOpenDirectory(entry) },
+                        onOpenComic = { onOpenComic(entry) },
+                        onOpenVideo = { onOpenVideo(entry) },
+                        onSelectComic = { onSelectComic(entry) },
+                        onSelectVideo = { onSelectVideo(entry) },
+                        isSelected = selectedEntry?.uri == entry.uri,
+                    )
                 }
-                FileDirectoryEntryGridTile(
-                    entry = entry,
-                    artworkModel = artworkModel,
-                    onOpenDirectory = { onOpenDirectory(entry) },
-                    onOpenComic = { onOpenComic(entry) },
-                    onOpenVideo = { onOpenVideo(entry) },
-                    onSelectComic = { onSelectComic(entry) },
-                    onSelectVideo = { onSelectVideo(entry) },
-                    isSelected = selectedEntry?.uri == entry.uri,
-                )
             }
         }
     }

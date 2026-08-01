@@ -43,6 +43,7 @@ data class FileDirectoryUiState(
     val videoThumbnails: Map<String, DirectoryVideoThumbnail> = emptyMap(),
     val thumbnailRequestRevision: Long = 0L,
     val currentTitle: String? = null,
+    val currentDirectoryKey: String? = null,
     val breadcrumbLabels: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
@@ -155,6 +156,7 @@ class FileDirectoryViewModel(
             searchQuery = "",
             videoThumbnails = emptyMap(),
             currentTitle = null,
+            currentDirectoryKey = null,
             breadcrumbLabels = emptyList(),
             isLoading = false,
             isRefreshing = false,
@@ -294,6 +296,7 @@ class FileDirectoryViewModel(
                 isRefreshing = false,
                 searchQuery = "",
                 currentTitle = frame.title,
+                currentDirectoryKey = frame.documentUri,
                 breadcrumbLabels = breadcrumbLabels,
                 error = null,
             )
@@ -307,6 +310,7 @@ class FileDirectoryViewModel(
                 uiState = uiState.copy(
                     entries = visibleEntries(),
                     currentTitle = frame.title,
+                    currentDirectoryKey = frame.documentUri,
                     breadcrumbLabels = breadcrumbLabels,
                     isLoading = false,
                     isRefreshing = false,

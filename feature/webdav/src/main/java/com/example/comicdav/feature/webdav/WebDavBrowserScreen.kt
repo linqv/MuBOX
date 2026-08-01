@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
@@ -30,6 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.core.model.transfer.TransferProgress
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.ui.directorylisting.DirectoryListingTopBar
+import com.example.comicdav.ui.directorylisting.DirectoryListingScrollStateRetention
 import com.example.comicdav.ui.directorylisting.DirectoryListingViewMode
 import com.example.comicdav.ui.directorylisting.DirectorySortField
 import com.example.comicdav.ui.directorylisting.rememberDirectoryVideoArtworkModel
@@ -58,6 +64,11 @@ internal fun webDavBreadcrumbLabels(path: String): List<String> =
         .filter { it.isNotBlank() }
         .map(::decodeWebDavPathForDisplay)
         .ifEmpty { listOf("根目录") }
+
+internal fun webDavScrollStateKey(
+    path: String,
+    viewMode: DirectoryListingViewMode,
+): String = "webdav:${viewMode.name}:$path"
 
 enum class WebDavItemClickAction {
     OpenDirectory,
@@ -119,6 +130,8 @@ fun WebDavBrowserScreen(
     selectedFile: WebDavItem? = null,
 ) {
     val colors = rememberMuBoxColors()
+    val scrollStateHolder = rememberSaveableStateHolder()
+    val scrollStateRetention = remember { DirectoryListingScrollStateRetention() }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -188,64 +201,80 @@ fun WebDavBrowserScreen(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    when (uiState.viewMode) {
-                        DirectoryListingViewMode.LIST -> LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(uiState.items, key = { it.path }) { item ->
-                                WebDavItemRow(
-                                    item = item,
-                                    isSelected = selectedFile?.path == item.path,
-                                    onItemClick = { onItemClick(item) },
-                                    onSelectFile = { onSelectFile(item) },
-                                )
-                            }
-                        }
-                        DirectoryListingViewMode.GRID -> LazyVerticalGrid(
-                            columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
-                        ) {
-                            gridItems(uiState.items, key = { it.path }) { item ->
-                                val thumbnailVersion = webDavBrowserVideoThumbnailVersion(
-                                    item = item,
-                                    requestRevision = uiState.thumbnailRequestRevision,
-                                )
-                                val thumbnail = uiState.videoThumbnails[item.path]
-                                    .takeIf { gridVideoThumbnailsEnabled }
-                                val artworkModel = rememberDirectoryVideoArtworkModel(
-                                    thumbnail = thumbnail,
-                                    expectedVersion = thumbnailVersion,
-                                    validationRevision = uiState.thumbnailRequestRevision,
-                                )
-                                if (
-                                    shouldRequestDirectoryVideoThumbnail(
-                                        enabled = gridVideoThumbnailsEnabled,
-                                        mediaKind = item.mediaKind,
-                                        hasArtwork = artworkModel != null,
-                                    )
+                    val scrollStateKey = webDavScrollStateKey(uiState.currentPath, uiState.viewMode)
+                    SideEffect {
+                        scrollStateRetention.recordAccess(scrollStateKey).forEach(scrollStateHolder::removeState)
+                    }
+                    scrollStateHolder.SaveableStateProvider(
+                        key = scrollStateKey,
+                    ) {
+                        when (uiState.viewMode) {
+                            DirectoryListingViewMode.LIST -> {
+                                val listState = rememberLazyListState()
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    LaunchedEffect(
-                                        item.path,
-                                        thumbnailVersion,
-                                        uiState.thumbnailRequestRevision,
-                                        gridVideoThumbnailsEnabled,
-                                        thumbnail?.path,
-                                        thumbnail?.artworkRevision,
-                                    ) {
-                                        onRequestVideoThumbnail(item)
+                                    items(uiState.items, key = { it.path }) { item ->
+                                        WebDavItemRow(
+                                            item = item,
+                                            isSelected = selectedFile?.path == item.path,
+                                            onItemClick = { onItemClick(item) },
+                                            onSelectFile = { onSelectFile(item) },
+                                        )
                                     }
                                 }
-                                WebDavItemGridTile(
-                                    item = item,
-                                    artworkModel = artworkModel,
-                                    isSelected = selectedFile?.path == item.path,
-                                    onItemClick = { onItemClick(item) },
-                                    onSelectFile = { onSelectFile(item) },
-                                )
+                            }
+                            DirectoryListingViewMode.GRID -> {
+                                val gridState = rememberLazyGridState()
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(MU_BOX_MEDIA_GRID_COLUMN_COUNT),
+                                    state = gridState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+                                ) {
+                                    gridItems(uiState.items, key = { it.path }) { item ->
+                                        val thumbnailVersion = webDavBrowserVideoThumbnailVersion(
+                                            item = item,
+                                            requestRevision = uiState.thumbnailRequestRevision,
+                                        )
+                                        val thumbnail = uiState.videoThumbnails[item.path]
+                                            .takeIf { gridVideoThumbnailsEnabled }
+                                        val artworkModel = rememberDirectoryVideoArtworkModel(
+                                            thumbnail = thumbnail,
+                                            expectedVersion = thumbnailVersion,
+                                            validationRevision = uiState.thumbnailRequestRevision,
+                                        )
+                                        if (
+                                            shouldRequestDirectoryVideoThumbnail(
+                                                enabled = gridVideoThumbnailsEnabled,
+                                                mediaKind = item.mediaKind,
+                                                hasArtwork = artworkModel != null,
+                                            )
+                                        ) {
+                                            LaunchedEffect(
+                                                item.path,
+                                                thumbnailVersion,
+                                                uiState.thumbnailRequestRevision,
+                                                gridVideoThumbnailsEnabled,
+                                                thumbnail?.path,
+                                                thumbnail?.artworkRevision,
+                                            ) {
+                                                onRequestVideoThumbnail(item)
+                                            }
+                                        }
+                                        WebDavItemGridTile(
+                                            item = item,
+                                            artworkModel = artworkModel,
+                                            isSelected = selectedFile?.path == item.path,
+                                            onItemClick = { onItemClick(item) },
+                                            onSelectFile = { onSelectFile(item) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
