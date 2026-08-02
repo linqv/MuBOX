@@ -21,36 +21,6 @@ interface MpvEngine {
     fun destroy()
 }
 
-object RealMpvEngine : MpvEngine {
-    override fun command(vararg args: String) {
-        MPVLib.command(*args)
-    }
-
-    override fun setPropertyString(name: String, value: String) {
-        MPVLib.setPropertyString(name, value)
-    }
-
-    override fun setPropertyBoolean(name: String, value: Boolean) {
-        MPVLib.setPropertyBoolean(name, value)
-    }
-
-    override fun setPropertyInt(name: String, value: Int) {
-        MPVLib.setPropertyInt(name, value)
-    }
-
-    override fun setPropertyDouble(name: String, value: Double) {
-        MPVLib.setPropertyDouble(name, value)
-    }
-
-    override fun setOptionString(name: String, value: String) {
-        MPVLib.setOptionString(name, value)
-    }
-
-    override fun destroy() {
-        MPVLib.destroy()
-    }
-}
-
 class ViewBackedMpvEngine(
     private val view: MpvFileLoader,
 ) : MpvEngine {

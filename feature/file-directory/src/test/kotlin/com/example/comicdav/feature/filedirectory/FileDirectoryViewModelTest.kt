@@ -93,9 +93,6 @@ class FileDirectoryViewModelTest {
             displayName = "/manga",
             accountId = "https://example.test/dav|lin",
             path = "/manga",
-            baseUrl = "https://example.test/dav",
-            username = "lin",
-            password = "secret",
         )
         advanceUntilIdle()
 
@@ -264,9 +261,6 @@ class FileDirectoryViewModelTest {
             displayName = "漫画库",
             accountId = "https://cloud.example.test:8443/dav|lin",
             path = "/manga/",
-            baseUrl = "https://cloud.example.test:8443/dav",
-            username = "lin",
-            password = "secret",
         )
         advanceUntilIdle()
 

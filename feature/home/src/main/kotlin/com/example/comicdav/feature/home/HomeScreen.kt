@@ -1,27 +1,21 @@
 package com.example.comicdav.feature.home
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,9 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
@@ -45,7 +37,6 @@ import com.example.comicdav.ui.HistoryEntryRow
 import com.example.comicdav.ui.MuBoxEmptyState
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MuBoxMetrics
-import com.example.comicdav.ui.MuBoxSection
 import com.example.comicdav.ui.muBoxAppBackground
 import com.example.comicdav.ui.rememberMuBoxColors
 import com.example.comicdav.ui.decodeWebDavPathForDisplay
@@ -57,33 +48,6 @@ internal enum class HomeSubPage {
     HISTORY,
     LIBRARY,
     VIDEO_LIBRARY,
-}
-
-internal data class HomeSearchResults(
-    val history: List<WatchHistoryEntry>,
-    val comics: List<LibraryItemWithSources>,
-    val videos: List<VideoLibraryItemWithSources>,
-) {
-    val isEmpty: Boolean
-        get() = history.isEmpty() && comics.isEmpty() && videos.isEmpty()
-}
-
-// 首页搜索只过滤应用已持有的数据（§7.2），不触发文件系统或 WebDAV 请求。
-internal fun filterHomeSearchResults(
-    query: String,
-    history: List<WatchHistoryEntry>,
-    comics: List<LibraryItemWithSources>,
-    videos: List<VideoLibraryItemWithSources>,
-): HomeSearchResults {
-    val trimmed = query.trim()
-    if (trimmed.isEmpty()) {
-        return HomeSearchResults(emptyList(), emptyList(), emptyList())
-    }
-    return HomeSearchResults(
-        history = history.filter { it.displayTitle.contains(trimmed, ignoreCase = true) },
-        comics = comics.filter { it.item.displayName.contains(trimmed, ignoreCase = true) },
-        videos = videos.filter { it.item.displayName.contains(trimmed, ignoreCase = true) },
-    )
 }
 
 // 最近记录进度文案（§7.3）：总量未知时只显示当前进度，不显示百分比。
@@ -121,18 +85,6 @@ internal fun formatHomeVideoDuration(millis: Long): String {
         "%02d:%02d".format(minutes, seconds)
     }
 }
-
-internal fun homeLibrarySourceLabel(sourceType: SourceType): String =
-    when (sourceType) {
-        SourceType.LOCAL -> "本地"
-        SourceType.WEBDAV -> "WebDAV"
-    }
-
-internal fun homeVideoSourceLabel(sourceType: VideoSourceType): String =
-    when (sourceType) {
-        VideoSourceType.LOCAL -> "本地"
-        VideoSourceType.WEBDAV -> "WebDAV"
-    }
 
 // 书架预览副信息（§7.4）：优先页数，退化为来源信息。
 internal fun homeLibrarySubtitle(item: LibraryItemWithSources): String {
@@ -257,158 +209,6 @@ fun HomeScreen(
         onOpenFullVideoLibrary = { subPageName = HomeSubPage.VIDEO_LIBRARY.name },
         modifier = modifier,
     )
-}
-
-@Composable
-private fun HomeSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClose: () -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = 64.dp)
-            .padding(start = 4.dp, end = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onClose) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = colors.text,
-            )
-        }
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("搜索漫画、视频和观看记录") },
-            singleLine = true,
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "清除搜索",
-                        )
-                    }
-                }
-            },
-        )
-    }
-}
-
-@Composable
-private fun HomeSearchResultContent(
-    query: String,
-    history: List<WatchHistoryEntry>,
-    libraryItems: List<LibraryItemWithSources>,
-    videoLibraryItems: List<VideoLibraryItemWithSources>,
-    onOpenHistoryEntry: (WatchHistoryEntry) -> Unit,
-    onOpenLibraryItem: (LibraryItemWithSources) -> Unit,
-    onOpenVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
-    onCloseSearch: () -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    val trimmedQuery = query.trim()
-    if (trimmedQuery.isEmpty()) {
-        return
-    }
-    val results = filterHomeSearchResults(
-        query = trimmedQuery,
-        history = history,
-        comics = libraryItems,
-        videos = videoLibraryItems,
-    )
-    if (results.isEmpty) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "没有找到与“$trimmedQuery”相关的内容",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.muted,
-            )
-            TextButton(onClick = onCloseSearch) {
-                Text("返回")
-            }
-        }
-        return
-    }
-    if (results.history.isNotEmpty()) {
-        MuBoxSection(title = "最近记录") {
-            results.history.forEach { entry ->
-                HomeSearchResultRow(
-                    title = entry.displayTitle,
-                    subtitle = homeHistoryProgressLabel(entry),
-                    onClick = { onOpenHistoryEntry(entry) },
-                )
-            }
-        }
-    }
-    if (results.comics.isNotEmpty()) {
-        MuBoxSection(title = "漫画") {
-            results.comics.forEach { item ->
-                HomeSearchResultRow(
-                    title = item.item.displayName,
-                    subtitle = homeLibrarySubtitle(item),
-                    onClick = { onOpenLibraryItem(item) },
-                )
-            }
-        }
-    }
-    if (results.videos.isNotEmpty()) {
-        MuBoxSection(title = "视频") {
-            results.videos.forEach { item ->
-                HomeSearchResultRow(
-                    title = item.item.displayName,
-                    subtitle = homeVideoLibrarySubtitle(item),
-                    onClick = { onOpenVideoLibraryItem(item) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeSearchResultRow(
-    title: String,
-    subtitle: String?,
-    onClick: () -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = MuBoxMetrics.MinTouchTargetDp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
 }
 
 // 首页二级页：全部观看记录。打开/删除逻辑沿用设置页历史子页的交互。

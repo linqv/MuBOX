@@ -247,13 +247,6 @@ internal fun dispatchVerticalGesture(
     }
 }
 
-internal fun isWithinPlayerTopGestureGuard(
-    startY: Float,
-    density: androidx.compose.ui.unit.Density,
-): Boolean = with(density) {
-    startY < PLAYER_GESTURE_TOP_EDGE_GUARD_DP.dp.toPx()
-}
-
 private const val VERTICAL_GESTURE_PIXELS_PER_PERCENT = 8f
 private const val HORIZONTAL_GESTURE_MIN_PAN_PX = 1f
 private const val PLAYER_GESTURE_DRAG_DIRECTION_THRESHOLD_PX = 12f

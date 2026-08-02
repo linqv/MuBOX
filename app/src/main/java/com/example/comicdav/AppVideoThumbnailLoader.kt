@@ -172,7 +172,7 @@ internal class AppVideoThumbnailLoader(
                 val session = localComicOpener.open(
                     uri = Uri.parse(entry.sourceLocator),
                     fileName = entry.displayTitle,
-                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                 )
                 val temporary = File(target.parentFile, "${target.name}.tmp")
                 try {
@@ -194,7 +194,7 @@ internal class AppVideoThumbnailLoader(
                     client = client,
                     accountId = accountId,
                     remotePath = entry.sourceLocator,
-                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                     knownInfo = entry.size?.let { size ->
                         RemoteFileInfo(
                             path = entry.sourceLocator,

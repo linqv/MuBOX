@@ -42,42 +42,46 @@ class AppSettingsStoreTest {
 
         val settings = store.settings.first()
 
-        assertTrue(settings.videoSeekOptimizationEnabled)
-        assertEquals(VideoForwardPrefetchMode.STANDARD, settings.videoForwardPrefetchMode)
-        assertEquals(VideoProxyDiagnosticsMode.OFF, settings.videoProxyDiagnosticsMode)
-        assertFalse(settings.videoPlayerProxyDebugInfoEnabled)
-        assertEquals(MpvProfileMode.FAST, settings.mpvProfileMode)
-        assertTrue(settings.gridVideoThumbnailsEnabled)
-        assertEquals(90, settings.historyRetentionDays)
-        assertEquals(200, settings.historyMaxRecords)
+        assertTrue(settings.video.videoSeekOptimizationEnabled)
+        assertEquals(VideoForwardPrefetchMode.STANDARD, settings.video.videoForwardPrefetchMode)
+        assertEquals(VideoProxyDiagnosticsMode.OFF, settings.video.videoProxyDiagnosticsMode)
+        assertFalse(settings.video.videoPlayerProxyDebugInfoEnabled)
+        assertEquals(MpvProfileMode.FAST, settings.video.mpvProfileMode)
+        assertTrue(settings.video.gridVideoThumbnailsEnabled)
+        assertEquals(90, settings.history.historyRetentionDays)
+        assertEquals(200, settings.history.historyMaxRecords)
     }
 
     @Test
     fun videoProxySettingsCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("updates.preferences_pb")
 
-        store.updateVideoSeekOptimizationEnabled(false)
-        store.updateVideoForwardPrefetchMode(VideoForwardPrefetchMode.AGGRESSIVE)
-        store.updateVideoProxyDiagnosticsMode(VideoProxyDiagnosticsMode.DETAIL)
-        store.updateVideoPlayerProxyDebugInfoEnabled(true)
+        store.updateVideoSettings { video ->
+            video.copy(
+                videoSeekOptimizationEnabled = false,
+                videoForwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE,
+                videoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.DETAIL,
+                videoPlayerProxyDebugInfoEnabled = true,
+            )
+        }
 
         val settings = store.settings.first()
 
-        assertFalse(settings.videoSeekOptimizationEnabled)
-        assertEquals(VideoForwardPrefetchMode.AGGRESSIVE, settings.videoForwardPrefetchMode)
-        assertEquals(VideoProxyDiagnosticsMode.DETAIL, settings.videoProxyDiagnosticsMode)
-        assertTrue(settings.videoPlayerProxyDebugInfoEnabled)
+        assertFalse(settings.video.videoSeekOptimizationEnabled)
+        assertEquals(VideoForwardPrefetchMode.AGGRESSIVE, settings.video.videoForwardPrefetchMode)
+        assertEquals(VideoProxyDiagnosticsMode.DETAIL, settings.video.videoProxyDiagnosticsMode)
+        assertTrue(settings.video.videoPlayerProxyDebugInfoEnabled)
     }
 
     @Test
     fun mpvProfileModeCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("mpv_profile.preferences_pb")
 
-        store.updateMpvProfileMode(MpvProfileMode.HIGH_QUALITY)
+        store.updateVideoSettings { video -> video.copy(mpvProfileMode = MpvProfileMode.HIGH_QUALITY) }
 
         val settings = store.settings.first()
 
-        assertEquals(MpvProfileMode.HIGH_QUALITY, settings.mpvProfileMode)
+        assertEquals(MpvProfileMode.HIGH_QUALITY, settings.video.mpvProfileMode)
     }
 
     @Test
@@ -86,17 +90,17 @@ class AppSettingsStoreTest {
 
         val settings = store.settings.first()
 
-        assertEquals(Anime4KProfile.OFF, settings.anime4kProfile)
+        assertEquals(Anime4KProfile.OFF, settings.video.anime4kProfile)
     }
 
     @Test
     fun anime4kProfileCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("anime4k_updates.preferences_pb")
 
-        store.updateAnime4KProfile(Anime4KProfile.AUTO)
+        store.updateVideoSettings { video -> video.copy(anime4kProfile = Anime4KProfile.AUTO) }
 
         val settings = store.settings.first()
-        assertEquals(Anime4KProfile.AUTO, settings.anime4kProfile)
+        assertEquals(Anime4KProfile.AUTO, settings.video.anime4kProfile)
     }
 
     @Test
@@ -114,7 +118,7 @@ class AppSettingsStoreTest {
 
         val settings = AppSettingsStore(dataStore).settings.first()
 
-        assertEquals(Anime4KProfile.EXTREME, settings.anime4kProfile)
+        assertEquals(Anime4KProfile.EXTREME, settings.video.anime4kProfile)
     }
 
     @Test
@@ -150,11 +154,11 @@ class AppSettingsStoreTest {
         )
         val store = AppSettingsStore(dataStore)
 
-        store.updateReaderSettings(ReaderSettings(readingDirection = ReadingDirection.VERTICAL))
-        store.updateAppearanceSettings(AppearanceSettings(colorPalette = AppColorPalette.NIGHT))
-        store.updateStorageSettings(StorageSettings(diskCacheLimitMb = 3072))
-        store.updateVideoSettings(VideoSettings(videoResumeEnabled = false))
-        store.updateHistorySettings(HistorySettings(historyMaxRecords = 500))
+        store.updateReaderSettings { ReaderSettings(readingDirection = ReadingDirection.VERTICAL) }
+        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.NIGHT) }
+        store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 3072) }
+        store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
+        store.updateHistorySettings { HistorySettings(historyMaxRecords = 500) }
 
         val preferences = dataStore.data.first()
         assertEquals(
@@ -171,75 +175,76 @@ class AppSettingsStoreTest {
     fun videoLibraryThumbnailsEnabledDefaultsToTrue() = runTest {
         val store = createStore("video_library_thumbnail_default.preferences_pb")
 
-        assertTrue(store.settings.first().videoLibraryThumbnailsEnabled)
+        assertTrue(store.settings.first().video.videoLibraryThumbnailsEnabled)
     }
 
     @Test
     fun videoLibraryThumbnailsEnabledCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("video_library_thumbnail_update.preferences_pb")
 
-        store.updateVideoLibraryThumbnailsEnabled(false)
+        store.updateVideoSettings { video -> video.copy(videoLibraryThumbnailsEnabled = false) }
 
-        assertFalse(store.settings.first().videoLibraryThumbnailsEnabled)
+        assertFalse(store.settings.first().video.videoLibraryThumbnailsEnabled)
     }
 
     @Test
     fun gridVideoThumbnailsEnabledCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("grid_video_thumbnail_update.preferences_pb")
 
-        store.updateGridVideoThumbnailsEnabled(false)
+        store.updateVideoSettings { video -> video.copy(gridVideoThumbnailsEnabled = false) }
 
-        assertFalse(store.settings.first().gridVideoThumbnailsEnabled)
+        assertFalse(store.settings.first().video.gridVideoThumbnailsEnabled)
     }
 
     @Test
     fun avifImageSupportDefaultsOffAndCanBeUpdated() = runTest {
         val store = createStore("avif_image_support.preferences_pb")
 
-        assertFalse(store.settings.first().avifImagesEnabled)
+        assertFalse(store.settings.first().reader.avifImagesEnabled)
 
-        store.updateAvifImagesEnabled(true)
+        store.updateReaderSettings { reader -> reader.copy(avifImagesEnabled = true) }
 
-        assertTrue(store.settings.first().avifImagesEnabled)
+        assertTrue(store.settings.first().reader.avifImagesEnabled)
     }
 
     @Test
     fun pageImageCacheDefaultsOnAndCanBeUpdated() = runTest {
         val store = createStore("page_image_cache_enabled.preferences_pb")
 
-        assertTrue(store.settings.first().pageImageCacheEnabled)
+        assertTrue(store.settings.first().storage.pageImageCacheEnabled)
 
-        store.updatePageImageCacheEnabled(false)
+        store.updateStorageSettings { storage -> storage.copy(pageImageCacheEnabled = false) }
 
-        assertFalse(store.settings.first().pageImageCacheEnabled)
+        assertFalse(store.settings.first().storage.pageImageCacheEnabled)
     }
 
     @Test
     fun readerPinchZoomDefaultsOff() = runTest {
         val store = createStore("reader_pinch_zoom_default.preferences_pb")
 
-        assertFalse(store.settings.first().readerPinchZoomEnabled)
+        assertFalse(store.settings.first().reader.readerPinchZoomEnabled)
     }
 
     @Test
     fun readerPinchZoomCanBeUpdatedAndReadBack() = runTest {
         val store = createStore("reader_pinch_zoom_update.preferences_pb")
 
-        store.updateReaderPinchZoomEnabled(true)
+        store.updateReaderSettings { reader -> reader.copy(readerPinchZoomEnabled = true) }
 
-        assertTrue(store.settings.first().readerPinchZoomEnabled)
+        assertTrue(store.settings.first().reader.readerPinchZoomEnabled)
     }
 
     @Test
     fun historyPolicyCanBeUpdatedAndIsCoercedToSupportedOptions() = runTest {
         val store = createStore("history_policy.preferences_pb")
 
-        store.updateHistoryRetentionDays(31)
-        store.updateHistoryMaxRecords(490)
+        store.updateHistorySettings { history ->
+            history.copy(historyRetentionDays = 31, historyMaxRecords = 490)
+        }
 
         val settings = store.settings.first()
-        assertEquals(30, settings.historyRetentionDays)
-        assertEquals(500, settings.historyMaxRecords)
+        assertEquals(30, settings.history.historyRetentionDays)
+        assertEquals(500, settings.history.historyMaxRecords)
     }
 
     @Test
@@ -255,7 +260,7 @@ class AppSettingsStoreTest {
             readerPinchZoomEnabled = true,
         )
 
-        store.updateReaderSettings(reader)
+        store.updateReaderSettings { reader }
 
         assertEquals(reader, store.settings.first().reader)
     }
@@ -269,7 +274,7 @@ class AppSettingsStoreTest {
             libraryCoversEnabled = false,
         )
 
-        store.updateAppearanceSettings(appearance)
+        store.updateAppearanceSettings { appearance }
 
         assertEquals(appearance, store.settings.first().appearance)
     }
@@ -283,7 +288,7 @@ class AppSettingsStoreTest {
             webDavPrefetchPageCount = 8,
         )
 
-        store.updateStorageSettings(storage)
+        store.updateStorageSettings { storage }
 
         assertEquals(storage, store.settings.first().storage)
     }
@@ -309,7 +314,7 @@ class AppSettingsStoreTest {
             videoLibraryThumbnailsEnabled = false,
         )
 
-        store.updateVideoSettings(video)
+        store.updateVideoSettings { video }
 
         assertEquals(video, store.settings.first().video)
     }
@@ -322,7 +327,7 @@ class AppSettingsStoreTest {
             historyMaxRecords = 500,
         )
 
-        store.updateHistorySettings(history)
+        store.updateHistorySettings { history }
 
         assertEquals(history, store.settings.first().history)
     }
@@ -330,14 +335,14 @@ class AppSettingsStoreTest {
     @Test
     fun updatingOneGroupDoesNotOverwriteOtherGroups() = runTest {
         val store = createStore("group_isolation.preferences_pb")
-        store.updateReaderSettings(ReaderSettings(autoPageEnabled = true))
-        store.updateAppearanceSettings(AppearanceSettings(colorPalette = AppColorPalette.SEPIA))
-        store.updateStorageSettings(StorageSettings(diskCacheLimitMb = 2048))
-        store.updateVideoSettings(VideoSettings(videoResumeEnabled = false))
-        store.updateHistorySettings(HistorySettings(historyRetentionDays = 180))
+        store.updateReaderSettings { ReaderSettings(autoPageEnabled = true) }
+        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.SEPIA) }
+        store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 2048) }
+        store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
+        store.updateHistorySettings { HistorySettings(historyRetentionDays = 180) }
         val before = store.settings.first()
 
-        store.updateReaderSettings(before.reader.copy(readerPinchZoomEnabled = true))
+        store.updateReaderSettings { before.reader.copy(readerPinchZoomEnabled = true) }
 
         val after = store.settings.first()
         assertTrue(after.reader.readerPinchZoomEnabled)

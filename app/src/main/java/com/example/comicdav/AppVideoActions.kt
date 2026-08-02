@@ -86,7 +86,7 @@ internal class AppVideoActions(
         playbackActions.openLocalDirectoryVideo(item)
 
     suspend fun requestLocalBrowserVideoThumbnail(item: FileDirectoryBrowserItem) {
-        if (!settings.gridVideoThumbnailsEnabled || item.mediaKind != MediaKind.Video) return
+        if (!settings.video.gridVideoThumbnailsEnabled || item.mediaKind != MediaKind.Video) return
         val requestRevision = fileDirectoryViewModel.uiState.thumbnailRequestRevision
         val version = fileDirectoryBrowserVideoThumbnailVersion(
             item = item,
@@ -127,7 +127,7 @@ internal class AppVideoActions(
     }
 
     suspend fun requestWebDavBrowserVideoThumbnail(item: WebDavItem) {
-        if (!settings.gridVideoThumbnailsEnabled || item.mediaKind != MediaKind.Video) return
+        if (!settings.video.gridVideoThumbnailsEnabled || item.mediaKind != MediaKind.Video) return
         val accountId = currentWebDavAccountId()
         if (accountId.substringBefore("|").isBlank()) return
         val request = webDavVideoRequestForItem(item)
@@ -185,7 +185,7 @@ internal class AppVideoActions(
     fun favoriteLocalDirectoryVideo(item: FileDirectoryBrowserItem) {
         scope.launch {
             runCatching {
-                val thumbnailPath = if (settings.videoLibraryThumbnailsEnabled) {
+                val thumbnailPath = if (settings.video.videoLibraryThumbnailsEnabled) {
                     runCatching {
                         thumbnailLoader.extractLocal(
                             uri = item.uri,
@@ -226,7 +226,7 @@ internal class AppVideoActions(
         scope.launch {
             runCatching {
                 val request = webDavVideoRequestForItem(item)
-                val thumbnailPath = if (settings.videoLibraryThumbnailsEnabled) {
+                val thumbnailPath = if (settings.video.videoLibraryThumbnailsEnabled) {
                     runCatching {
                         thumbnailLoader.extractWebDav(request)
                     }.onFailure { error ->
@@ -308,7 +308,7 @@ internal class AppVideoActions(
         history: List<WatchHistoryEntry>,
         libraryItems: List<LibraryItemWithSources>,
     ) {
-        if (!settings.videoLibraryThumbnailsEnabled && !settings.libraryCoversEnabled) {
+        if (!settings.video.videoLibraryThumbnailsEnabled && !settings.appearance.libraryCoversEnabled) {
             videoLibraryViewModel.showThumbnailExtractionResult(
                 message = "请先在设置中开启封面或缩略图",
                 isError = true,
@@ -317,7 +317,7 @@ internal class AppVideoActions(
         }
         if (videoLibraryViewModel.uiState.isExtractingThumbnails) return
 
-        val videoTargets = if (settings.videoLibraryThumbnailsEnabled) {
+        val videoTargets = if (settings.video.videoLibraryThumbnailsEnabled) {
             videoLibraryItemsNeedingThumbnails(videoLibraryItems, context.cacheDir)
         } else {
             emptyList()
@@ -329,8 +329,8 @@ internal class AppVideoActions(
             cacheDir = context.cacheDir,
         ).filter { entry ->
             val typeEnabled = when (entry.mediaType) {
-                WatchMediaType.COMIC -> settings.libraryCoversEnabled
-                WatchMediaType.VIDEO -> settings.videoLibraryThumbnailsEnabled
+                WatchMediaType.COMIC -> settings.appearance.libraryCoversEnabled
+                WatchMediaType.VIDEO -> settings.video.videoLibraryThumbnailsEnabled
             }
             typeEnabled
         }
@@ -575,7 +575,7 @@ internal fun shouldSkipBrowserThumbnailRequest(
 
 internal fun AppSettings.toVideoProxySettings(): VideoProxySettings =
     VideoProxySettings(
-        seekOptimizationEnabled = videoSeekOptimizationEnabled,
-        forwardPrefetchMode = videoForwardPrefetchMode,
-        diagnosticsMode = videoProxyDiagnosticsMode,
+        seekOptimizationEnabled = video.videoSeekOptimizationEnabled,
+        forwardPrefetchMode = video.videoForwardPrefetchMode,
+        diagnosticsMode = video.videoProxyDiagnosticsMode,
     )

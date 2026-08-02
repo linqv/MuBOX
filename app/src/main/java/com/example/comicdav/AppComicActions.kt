@@ -152,13 +152,13 @@ internal class AppComicActions(
         callbacks.setActionMessage(null)
         scope.launch {
             runCatching {
-                val coverPath = if (settings.libraryCoversEnabled) {
+                val coverPath = if (settings.appearance.libraryCoversEnabled) {
                     runCatching {
                         container.coverExtractor.extractFirstPageCover(
                             client = client,
                             accountId = accountId,
                             remotePath = item.path,
-                            avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                            avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                             knownInfo = item.toKnownRemoteFileInfo(),
                         )
                     }.onFailure { error ->
@@ -224,7 +224,7 @@ internal class AppComicActions(
                     client = client,
                     accountId = source.accountId,
                     remotePath = source.remotePath,
-                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled),
+                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                     knownInfo = source.size?.let { knownSize ->
                         RemoteFileInfo(
                             path = source.remotePath,
@@ -294,10 +294,10 @@ internal class AppComicActions(
             folderUriText = logFolderUri,
             scope = scope,
             diagnostics = container.diagnostics,
-            loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
+            loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
         )
         container.diagnostics.event("open_remote_start path=$remotePath size=${size ?: -1}")
-        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled)
+        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         readerViewModel.openRemote(
             cacheDir = context.cacheDir,
             historyMetadata = comicHistoryMetadata(
@@ -317,7 +317,7 @@ internal class AppComicActions(
                 progressStore = container.progressStore,
                 diagnostics = container.diagnostics,
                 avifImagesEnabled = avifImagesEnabled,
-                webDavPrefetchPageCount = settings.webDavPrefetchPageCount,
+                webDavPrefetchPageCount = settings.storage.webDavPrefetchPageCount,
             ).open(
                 client = client,
                 remotePath = remotePath,
@@ -411,9 +411,9 @@ internal class AppComicActions(
             folderUriText = logFolderUri,
             scope = scope,
             diagnostics = container.diagnostics,
-            loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
+            loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
         )
-        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.avifImagesEnabled)
+        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {

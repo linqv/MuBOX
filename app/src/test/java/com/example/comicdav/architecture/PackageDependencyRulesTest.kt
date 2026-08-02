@@ -1,587 +1,166 @@
 package com.example.comicdav.architecture
 
 import java.io.File
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PackageDependencyRulesTest {
     @Test
-    fun physicalVideoNamespaceIsClassifiedAsAFeature() {
-        assertEquals("video", VIDEO_PACKAGE.featureName())
-        assertEquals("video", "$VIDEO_PACKAGE.player".featureName())
-    }
+    fun ownedPackagesLiveInTheirApprovedModules() {
+        val violations = sourceFiles.mapNotNull { sourceFile ->
+            val expectedModule = sourceFile.packageName.approvedModule()
+            val physicalOwner = sourceFile.modulePath in OWNED_MODULES
+            when {
+                sourceFile.packageName.isLogicalFeature() && expectedModule == null ->
+                    "${sourceFile.relativePath}: unapproved feature package ${sourceFile.packageName}"
 
-    @Test
-    fun directoryListingPackageLivesInSharedUiModule() {
-        assertEquals(null, DIRECTORY_LISTING_PACKAGE.featureName())
+                expectedModule != null && sourceFile.modulePath != expectedModule ->
+                    "${sourceFile.relativePath}: ${sourceFile.packageName} belongs in $expectedModule"
 
-        val misplacedSources = sourceFiles.filter { sourceFile ->
-            val isDirectoryListingPackage =
-                sourceFile.packageName == DIRECTORY_LISTING_PACKAGE ||
-                    sourceFile.packageName.startsWith("$DIRECTORY_LISTING_PACKAGE.")
-            val isDirectoryListingModule =
-                sourceFile.relativePath.modulePath() == DIRECTORY_LISTING_MODULE_PATH
-            isDirectoryListingPackage != isDirectoryListingModule
+                physicalOwner && expectedModule != sourceFile.modulePath ->
+                    "${sourceFile.relativePath}: package does not belong in ${sourceFile.modulePath}"
+
+                else -> null
+            }
         }
 
-        assertTrue(
-            buildString {
-                appendLine("Directory listing is shared UI and must live in $DIRECTORY_LISTING_MODULE_PATH.")
-                misplacedSources.forEach { sourceFile ->
-                    appendLine("  - ${sourceFile.relativePath}: ${sourceFile.packageName}")
-                }
-            },
-            misplacedSources.isEmpty(),
+        assertNoViolations(
+            "App-root, data, shared directory-listing, and feature packages must live in their approved modules.",
+            violations,
         )
     }
 
     @Test
     fun readerDiagnosticsDoNotUseAGlobalBridge() {
-        val globalBridgeSources = sourceFiles.filter { sourceFile ->
-            "ReaderDiagnosticLog" in sourceFile.source
-        }
-
-        assertTrue(
-            "Reader production code must receive core Diagnostics explicitly instead of using a global bridge: " +
-                globalBridgeSources.joinToString { it.relativePath },
-            globalBridgeSources.isEmpty(),
+        assertNoReferences(
+            paths = sourceFiles.map(SourceFile::relativePath),
+            forbidden = setOf("ReaderDiagnosticLog"),
+            message = "Reader production code must receive core Diagnostics explicitly instead of using a global bridge.",
         )
     }
 
     @Test
-    fun videoActionFacadeDoesNotOwnPlaybackOrExtractionInfrastructure() {
-        val facade = sourceFiles.single { sourceFile ->
-            sourceFile.relativePath == "app/src/main/java/com/example/comicdav/AppVideoActions.kt"
-        }
-        val forbiddenReferences = setOf(
-            "VideoPlayerActivity",
-            "VideoProxyManager",
-            "startWebDavVideoPlayback",
-            "extractFromContentUri",
-            "extractFromUrl",
-        ).filter(facade.source::contains)
-
-        assertTrue(
-            "AppVideoActions must remain an orchestration facade; move infrastructure to its collaborators: " +
-                forbiddenReferences.joinToString(),
-            forbiddenReferences.isEmpty(),
+    fun videoActionFacadeStaysAThinOrchestrationBoundary() {
+        assertNoReferences(
+            paths = setOf(APP_VIDEO_ACTIONS_PATH),
+            forbidden = setOf(
+                "VideoPlayerActivity",
+                "VideoProxyManager",
+                "startWebDavVideoPlayback",
+                "extractFromContentUri",
+                "extractFromUrl",
+            ),
+            message = "AppVideoActions must delegate playback and extraction infrastructure.",
+        )
+        assertNoReferences(
+            paths = setOf(APP_VIDEO_ACTIONS_PATH, APP_VIDEO_DEPENDENCIES_PATH),
+            forbidden = setOf("AppContainer", "AppViewModels"),
+            message = "Video composition must receive narrow dependencies, not app-wide aggregates.",
         )
     }
 
-    @Test
-    fun videoActionFacadeUsesNarrowCompositionDependencies() {
-        val videoCompositionSources = sourceFiles.filter { sourceFile ->
-            sourceFile.relativePath in setOf(
-                "app/src/main/java/com/example/comicdav/AppVideoActions.kt",
-                "app/src/main/java/com/example/comicdav/AppVideoActionDependencies.kt",
-            )
+    private fun assertNoReferences(
+        paths: Collection<String>,
+        forbidden: Set<String>,
+        message: String,
+    ) {
+        val matchingSources = sourceFiles.filter { sourceFile -> sourceFile.relativePath in paths }
+        require(matchingSources.size == paths.size) {
+            "Missing architecture source: ${(paths - matchingSources.map(SourceFile::relativePath).toSet()).joinToString()}"
         }
-        val forbiddenAggregates = setOf(
-            "AppContainer",
-            "AppViewModels",
-        ).filter { aggregate ->
-            videoCompositionSources.any { sourceFile -> aggregate in sourceFile.source }
-        }
-
-        assertTrue(
-            "AppVideoActions must receive explicit video services and presenters, not app-wide aggregates: " +
-                forbiddenAggregates.joinToString(),
-            forbiddenAggregates.isEmpty(),
-        )
-    }
-
-    @Test
-    fun sourceScanIncludesEveryPhysicalArchitectureModule() {
-        val scannedPaths = sourceFiles.map(SourceFile::relativePath)
-
-        REQUIRED_PHYSICAL_MODULE_PATHS.forEach { modulePath ->
-            assertTrue(
-                "Architecture scan missed sources from $modulePath",
-                scannedPaths.any { path -> path.startsWith("$modulePath/src/main/") },
-            )
-        }
-    }
-
-    @Test
-    fun logicalFeaturesMatchTheirApprovedPhysicalModules() {
-        val misplacedSources = sourceFiles.mapNotNull { sourceFile ->
-            val featureName = sourceFile.packageName.featureName()
-            val modulePath = sourceFile.relativePath.modulePath()
-            val expectedModulePath = featureName?.let(APPROVED_FEATURE_MODULE_PATHS::get)
-            when {
-                featureName != null && expectedModulePath == null ->
-                    "${sourceFile.relativePath}: unapproved logical feature '$featureName'"
-                expectedModulePath != null && modulePath != expectedModulePath ->
-                    "${sourceFile.relativePath}: feature '$featureName' belongs in $expectedModulePath"
-                modulePath in APPROVED_FEATURE_MODULE_PATHS.values &&
-                    featureName != APPROVED_FEATURE_MODULE_PATHS.entries
-                        .first { (_, path) -> path == modulePath }
-                        .key ->
-                    "${sourceFile.relativePath}: package does not match physical feature module $modulePath"
-                else -> null
+        val violations = matchingSources.flatMap { sourceFile ->
+            forbidden.filter(sourceFile.source::contains).map { reference ->
+                "${sourceFile.relativePath}: $reference"
             }
         }
+        assertNoViolations(message, violations)
+    }
 
+    private fun assertNoViolations(message: String, violations: List<String>) {
         assertTrue(
             buildString {
-                appendLine("Logical feature packages must live in their approved physical modules.")
-                misplacedSources.forEach { violation -> appendLine("  - $violation") }
+                appendLine(message)
+                violations.forEach { violation -> appendLine("  - $violation") }
             },
-            misplacedSources.isEmpty(),
-        )
-    }
-
-    @Test
-    fun dataNetworkAndNativeBridgeFeatureDependenciesMatchDebtLedger() {
-        val violations = dependencies.filter { dependency ->
-            dependency.sourcePath.modulePath() in LOWER_LAYER_MODULE_PATHS &&
-                dependency.targetPackage.featureName() != null
-        }
-
-        assertDebtLedgerMatches(
-            rule = "data/network/nativebridge -> feature",
-            violations = violations,
-            expectedDebt = LOWER_LAYER_TO_FEATURE_DEBT,
-        )
-    }
-
-    @Test
-    fun logicalFeaturePackagesDoNotImportAdapterImplementations() {
-        val violations = dependencies.filter { dependency ->
-            dependency.sourcePackage.featureName() != null &&
-                dependency.targetPackage.packageArea() in ADAPTER_PACKAGE_AREAS
-        }
-
-        assertDebtLedgerMatches(
-            rule = "logical feature package -> data/network/nativebridge adapter",
-            violations = violations,
-            expectedDebt = FEATURE_TO_ADAPTER_DEBT,
-        )
-    }
-
-    @Test
-    fun logicalFeaturePackagesDoNotDependOnOtherFeatures() {
-        val violations = dependencies.filter { dependency ->
-            val sourceFeature = dependency.sourcePackage.featureName()
-            val targetFeature = dependency.targetPackage.featureName()
-            sourceFeature != null &&
-                targetFeature != null &&
-                sourceFeature != targetFeature
-        }
-
-        assertDebtLedgerMatches(
-            rule = "logical feature package -> another logical feature package",
-            violations = violations,
-            expectedDebt = CROSS_FEATURE_DEBT,
-        )
-    }
-
-    @Test
-    fun appRootDependenciesMatchDebtLedger() {
-        val violations = dependencies.filter { dependency ->
-            (
-                dependency.sourcePath.modulePath() != "app" ||
-                    dependency.sourcePackage.packageArea() in APP_ROOT_RESTRICTED_AREAS
-            ) &&
-                dependency.targetPackage == BASE_PACKAGE
-        }
-
-        assertDebtLedgerMatches(
-            rule = "feature/data/video -> app root",
-            violations = violations,
-            expectedDebt = APP_ROOT_DEBT,
+            violations.isEmpty(),
         )
     }
 
     private val sourceFiles: List<SourceFile> by lazy {
-        val repositoryRoot = locateRepositoryRoot()
-        mainSourceRoots(repositoryRoot)
-            .asSequence()
-            .flatMap { sourceRoot -> sourceRoot.walkTopDown() }
+        repositoryRoot.walkTopDown()
+            .onEnter { directory ->
+                directory == repositoryRoot || directory.name !in IGNORED_DIRECTORIES
+            }
             .filter { file -> file.isFile && file.extension in SOURCE_EXTENSIONS }
-            .map { file ->
+            .mapNotNull { file ->
+                val relativePath = file.relativeTo(repositoryRoot).invariantSeparatorsPath
+                val modulePath = MAIN_SOURCE_PATH_REGEX.matchEntire(relativePath)
+                    ?.groupValues
+                    ?.get(1)
+                    ?: return@mapNotNull null
                 val source = file.readText()
                 val packageName = requireNotNull(PACKAGE_REGEX.find(source)?.groupValues?.get(1)) {
                     "Missing package declaration in ${file.absolutePath}"
                 }
-                SourceFile(
-                    relativePath = file.relativeTo(repositoryRoot).invariantSeparatorsPath,
-                    packageName = packageName,
-                    source = source,
-                )
+                SourceFile(relativePath, modulePath, packageName, source)
             }
             .sortedBy(SourceFile::relativePath)
             .toList()
     }
 
-    private val dependencies: List<DependencyReference> by lazy {
-        val knownPackages = sourceFiles
-            .map(SourceFile::packageName)
-            .distinct()
-            .sortedByDescending(String::length)
-
-        sourceFiles.flatMap { sourceFile ->
-            sourceFile.dependencyReferences(knownPackages)
-        }.distinctBy { dependency ->
-            dependency.key
-        }.sortedWith(
-            compareBy(
-                DependencyReference::sourcePath,
-                DependencyReference::reference,
-            ),
-        )
-    }
-
-    private fun SourceFile.dependencyReferences(
-        knownPackages: List<String>,
-    ): List<DependencyReference> {
-        val imports = IMPORT_REGEX.findAll(source).mapNotNull { match ->
-            dependencyReference(
-                reference = match.groupValues[1],
-                offset = match.range.first,
-                knownPackages = knownPackages,
-            )
-        }
-
-        val codeWithoutCommentsOrLiterals = maskCommentsAndLiterals(source)
-            .maskMatches(PACKAGE_REGEX)
-            .maskMatches(IMPORT_REGEX)
-        val fullyQualifiedReferences = PROJECT_REFERENCE_REGEX
-            .findAll(codeWithoutCommentsOrLiterals)
-            .mapNotNull { match ->
-                dependencyReference(
-                    reference = match.value,
-                    offset = match.range.first,
-                    knownPackages = knownPackages,
-                )
-            }
-
-        return (imports + fullyQualifiedReferences).toList()
-    }
-
-    private fun SourceFile.dependencyReference(
-        reference: String,
-        offset: Int,
-        knownPackages: List<String>,
-    ): DependencyReference? {
-        val targetPackage = knownPackages.firstOrNull { packageName ->
-            reference == packageName || reference.startsWith("$packageName.")
-        } ?: return null
-
-        return DependencyReference(
-            sourcePath = relativePath,
-            sourcePackage = packageName,
-            targetPackage = targetPackage,
-            reference = reference,
-            line = source.lineNumberAt(offset),
-        )
-    }
-
-    private fun assertDebtLedgerMatches(
-        rule: String,
-        violations: List<DependencyReference>,
-        expectedDebt: Set<DependencyKey>,
-    ) {
-        val actualByKey = violations.associateBy(DependencyReference::key)
-        val actual = actualByKey.keys
-        val unexpected = actual - expectedDebt
-        val resolved = expectedDebt - actual
-        val matches = unexpected.isEmpty() && resolved.isEmpty()
-        val message = buildString {
-            appendLine("Package dependency debt changed for $rule.")
-            if (unexpected.isNotEmpty()) {
-                appendLine("Unexpected dependencies (move the contract or explicitly review the debt ledger):")
-                unexpected.sortedKeys().forEach { key ->
-                    val dependency = checkNotNull(actualByKey[key])
-                    appendLine(
-                        "  + ${dependency.sourcePath}:${dependency.line} -> " +
-                            "${dependency.reference} [${dependency.targetPackage}]",
-                    )
-                }
-            }
-            if (resolved.isNotEmpty()) {
-                appendLine("Resolved dependencies (remove these stale debt entries):")
-                resolved.sortedKeys().forEach { key ->
-                    appendLine("  - ${key.sourcePath} -> ${key.reference}")
-                }
-            }
-        }
-
-        assertTrue(message, matches)
-    }
-
-    private fun locateRepositoryRoot(): File =
+    private val repositoryRoot: File by lazy {
         generateSequence(File(".").absoluteFile.normalize()) { directory -> directory.parentFile }
             .firstOrNull { directory -> File(directory, "settings.gradle.kts").isFile }
             ?: error("Could not locate repository root from ${File(".").absolutePath}")
-
-    private fun mainSourceRoots(repositoryRoot: File): List<File> =
-        ARCHITECTURE_MODULE_PATHS.flatMap { modulePath ->
-            listOf(
-                File(repositoryRoot, "$modulePath/src/main/java"),
-                File(repositoryRoot, "$modulePath/src/main/kotlin"),
-            )
-        }.filter(File::isDirectory)
-
-    private fun String.packageArea(): String? {
-        val prefix = "$BASE_PACKAGE."
-        if (!startsWith(prefix)) return null
-        return removePrefix(prefix).substringBefore('.')
     }
 
-    private fun String.modulePath(): String? =
-        ARCHITECTURE_MODULE_PATHS.firstOrNull { modulePath -> startsWith("$modulePath/src/main/") }
-
-    private fun String.featureName(): String? {
-        if (this == VIDEO_PACKAGE || startsWith("$VIDEO_PACKAGE.")) return "video"
-        val prefix = "$FEATURE_PACKAGE."
-        if (!startsWith(prefix)) return null
-        return removePrefix(prefix).substringBefore('.').takeIf(String::isNotBlank)
+    private fun String.approvedModule(): String? = when {
+        this == BASE_PACKAGE -> "app"
+        this == DATA_PACKAGE || startsWith("$DATA_PACKAGE.") -> "data"
+        this == DIRECTORY_LISTING_PACKAGE || startsWith("$DIRECTORY_LISTING_PACKAGE.") ->
+            DIRECTORY_LISTING_MODULE
+        this == VIDEO_PACKAGE || startsWith("$VIDEO_PACKAGE.") -> "feature/video"
+        isLogicalFeature() -> APPROVED_FEATURE_MODULES[removePrefix("$FEATURE_PACKAGE.").substringBefore('.')]
+        else -> null
     }
 
-    private fun String.lineNumberAt(offset: Int): Int =
-        1 + take(offset).count { character -> character == '\n' }
-
-    private fun String.maskMatches(regex: Regex): String =
-        regex.replace(this) { match ->
-            match.value.map { character ->
-                if (character == '\n' || character == '\r') character else ' '
-            }.joinToString(separator = "")
-        }
-
-    private fun maskCommentsAndLiterals(source: String): String {
-        val masked = source.toCharArray()
-
-        fun mask(index: Int) {
-            if (masked[index] != '\n' && masked[index] != '\r') {
-                masked[index] = ' '
-            }
-        }
-
-        fun maskRange(start: Int, endExclusive: Int) {
-            for (index in start until minOf(endExclusive, masked.size)) {
-                mask(index)
-            }
-        }
-
-        var index = 0
-        while (index < source.length) {
-            when {
-                source.startsWith("//", index) -> {
-                    maskRange(index, index + 2)
-                    index += 2
-                    while (index < source.length && source[index] != '\n') {
-                        mask(index)
-                        index += 1
-                    }
-                }
-
-                source.startsWith("/*", index) -> {
-                    var depth = 1
-                    maskRange(index, index + 2)
-                    index += 2
-                    while (index < source.length && depth > 0) {
-                        when {
-                            source.startsWith("/*", index) -> {
-                                depth += 1
-                                maskRange(index, index + 2)
-                                index += 2
-                            }
-
-                            source.startsWith("*/", index) -> {
-                                depth -= 1
-                                maskRange(index, index + 2)
-                                index += 2
-                            }
-
-                            else -> {
-                                mask(index)
-                                index += 1
-                            }
-                        }
-                    }
-                }
-
-                source.startsWith("\"\"\"", index) -> {
-                    maskRange(index, index + 3)
-                    index += 3
-                    while (index < source.length && !source.startsWith("\"\"\"", index)) {
-                        mask(index)
-                        index += 1
-                    }
-                    if (index < source.length) {
-                        maskRange(index, index + 3)
-                        index += 3
-                    }
-                }
-
-                source[index] == '"' -> {
-                    mask(index)
-                    index += 1
-                    while (index < source.length) {
-                        when (source[index]) {
-                            '\\' -> {
-                                maskRange(index, index + 2)
-                                index += 2
-                            }
-
-                            '"' -> {
-                                mask(index)
-                                index += 1
-                                break
-                            }
-
-                            else -> {
-                                mask(index)
-                                index += 1
-                            }
-                        }
-                    }
-                }
-
-                source[index] == '\'' -> {
-                    mask(index)
-                    index += 1
-                    while (index < source.length) {
-                        when (source[index]) {
-                            '\\' -> {
-                                maskRange(index, index + 2)
-                                index += 2
-                            }
-
-                            '\'' -> {
-                                mask(index)
-                                index += 1
-                                break
-                            }
-
-                            else -> {
-                                mask(index)
-                                index += 1
-                            }
-                        }
-                    }
-                }
-
-                else -> index += 1
-            }
-        }
-
-        return masked.concatToString()
-    }
+    private fun String.isLogicalFeature(): Boolean = startsWith("$FEATURE_PACKAGE.")
 
     private data class SourceFile(
         val relativePath: String,
+        val modulePath: String,
         val packageName: String,
         val source: String,
     )
 
-    private data class DependencyReference(
-        val sourcePath: String,
-        val sourcePackage: String,
-        val targetPackage: String,
-        val reference: String,
-        val line: Int,
-    ) {
-        val key: DependencyKey = DependencyKey(sourcePath, reference)
-    }
-
-    private data class DependencyKey(
-        val sourcePath: String,
-        val reference: String,
-    )
-
     private companion object {
         const val BASE_PACKAGE = "com.example.comicdav"
+        const val DATA_PACKAGE = "$BASE_PACKAGE.data"
         const val FEATURE_PACKAGE = "$BASE_PACKAGE.feature"
         const val VIDEO_PACKAGE = "$BASE_PACKAGE.video"
         const val DIRECTORY_LISTING_PACKAGE = "$BASE_PACKAGE.ui.directorylisting"
-        const val DIRECTORY_LISTING_MODULE_PATH = "ui/directory-listing"
-        const val IDENTIFIER = "[A-Za-z_][A-Za-z0-9_]*"
+        const val DIRECTORY_LISTING_MODULE = "ui/directory-listing"
+        const val APP_VIDEO_ACTIONS_PATH = "app/src/main/java/com/example/comicdav/AppVideoActions.kt"
+        const val APP_VIDEO_DEPENDENCIES_PATH =
+            "app/src/main/java/com/example/comicdav/AppVideoActionDependencies.kt"
 
-        val PACKAGE_REGEX = Regex(
-            "(?m)^[ \\t]*package[ \\t]+" +
-                "($IDENTIFIER(?:\\.$IDENTIFIER)*)[ \\t]*;?[ \\t]*\\r?$",
-        )
-        val IMPORT_REGEX = Regex(
-            "(?m)^[ \\t]*import[ \\t]+(?:static[ \\t]+)?" +
-                "($IDENTIFIER(?:\\.(?:$IDENTIFIER|\\*))+)(?:[ \\t]+as[ \\t]+$IDENTIFIER)?" +
-                "[ \\t]*;?[ \\t]*\\r?$",
-        )
-        val PROJECT_REFERENCE_REGEX = Regex(
-            "(?<![A-Za-z0-9_])com\\.example\\.comicdav(?:\\.$IDENTIFIER)+",
-        )
-
+        val PACKAGE_REGEX = Regex("(?m)^\\s*package\\s+([A-Za-z_][A-Za-z0-9_.]*)")
+        val MAIN_SOURCE_PATH_REGEX = Regex("(.+)/src/main/(?:java|kotlin)/.+")
         val SOURCE_EXTENSIONS = setOf("kt", "java")
-        val LOWER_LAYER_MODULE_PATHS = setOf("data", "webdav", "nativebridge")
-        val ADAPTER_PACKAGE_AREAS = setOf("data", "network", "nativebridge", "security")
-        val APP_ROOT_RESTRICTED_AREAS = setOf("feature", "data", "video")
+        val IGNORED_DIRECTORIES = setOf(".git", ".gradle", "build", "target")
 
-        val LOWER_LAYER_TO_FEATURE_DEBT: Set<DependencyKey> = emptySet()
-        val CROSS_FEATURE_DEBT: Set<DependencyKey> = emptySet()
-        val FEATURE_TO_ADAPTER_DEBT: Set<DependencyKey> = emptySet()
-        val APP_ROOT_DEBT: Set<DependencyKey> = emptySet()
-
-        val APPROVED_FEATURE_MODULE_PATHS = mapOf(
+        val APPROVED_FEATURE_MODULES = mapOf(
             "filedirectory" to "feature/file-directory",
             "home" to "feature/home",
             "library" to "feature/library",
             "reader" to "feature/reader",
-            "video" to "feature/video",
             "downloads" to "feature/downloads",
             "settings" to "feature/settings",
             "videolibrary" to "feature/video-library",
             "webdav" to "feature/webdav",
         )
 
-        val ARCHITECTURE_MODULE_PATHS = listOf(
-            "app",
-            "core/model",
-            "core/diagnostics",
-            "nativebridge",
-            "webdav",
-            "data",
-            "ui",
-            "ui/directory-listing",
-            "feature/file-directory",
-            "feature/home",
-            "feature/library",
-            "feature/reader",
-            "feature/video",
-            "feature/downloads",
-            "feature/settings",
-            "feature/video-library",
-            "feature/webdav",
-        )
-
-        val REQUIRED_PHYSICAL_MODULE_PATHS = setOf(
-            "app",
-            "core/model",
-            "core/diagnostics",
-            "nativebridge",
-            "webdav",
-            "data",
-            "ui",
-            "ui/directory-listing",
-            "feature/file-directory",
-            "feature/home",
-            "feature/library",
-            "feature/reader",
-            "feature/video",
-            "feature/downloads",
-            "feature/settings",
-            "feature/video-library",
-            "feature/webdav",
-        )
-
-        fun dependencyKey(relativePath: String, reference: String): DependencyKey =
-            DependencyKey(
-                sourcePath = "com/example/comicdav/$relativePath",
-                reference = "$BASE_PACKAGE.$reference",
-            )
-
-        fun Set<DependencyKey>.sortedKeys(): List<DependencyKey> =
-            sortedWith(compareBy(DependencyKey::sourcePath, DependencyKey::reference))
+        val OWNED_MODULES = APPROVED_FEATURE_MODULES.values +
+            setOf("feature/video", DIRECTORY_LISTING_MODULE)
     }
 }

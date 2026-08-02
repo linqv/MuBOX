@@ -26,9 +26,9 @@ internal class AppVideoPlayerDependencies(
     override suspend fun loadProxySettings(): VideoProxySettings = withContext(ioDispatcher) {
         settingsStore.settings.first().let { settings ->
             VideoProxySettings(
-                seekOptimizationEnabled = settings.videoSeekOptimizationEnabled,
-                forwardPrefetchMode = settings.videoForwardPrefetchMode,
-                diagnosticsMode = settings.videoProxyDiagnosticsMode,
+                seekOptimizationEnabled = settings.video.videoSeekOptimizationEnabled,
+                forwardPrefetchMode = settings.video.videoForwardPrefetchMode,
+                diagnosticsMode = settings.video.videoProxyDiagnosticsMode,
             )
         }
     }

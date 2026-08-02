@@ -773,6 +773,15 @@ class OkHttpWebDavClientTest {
         )
     }
 
+    private fun enqueueEmptyDirectoryListing() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(207)
+                .setHeader("Content-Type", "application/xml")
+                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
+        )
+    }
+
     private fun recordingDiagnostics(
         detailLogs: MutableList<String> = mutableListOf(),
         failureLogs: MutableList<String> = mutableListOf(),
@@ -842,135 +851,60 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
-    fun preservesMountedBasePathWhenListingRootRelativeDirectory() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody(
-                    """<?xml version="1.0"?>
-                    <d:multistatus xmlns:d="DAV:">
-                        <d:response><d:href>/webdav/books/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>
-                    </d:multistatus>
-                    """.trimIndent(),
-                ),
-        )
-        val client = OkHttpWebDavClient(server.url("/webdav/").toString(), username = null, password = null, allowPlaintextHttp = true)
-
-        client.list("/books/")
-
-        assertEquals("/webdav/books/", server.takeRequest().path)
-    }
-
-    @Test
-    fun doesNotDuplicateMountedBasePathWhenHrefAlreadyContainsIt() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody(
-                    """<?xml version="1.0"?>
-                    <d:multistatus xmlns:d="DAV:">
-                        <d:response><d:href>/webdav/books/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>
-                    </d:multistatus>
-                    """.trimIndent(),
-                ),
-        )
-        val client = OkHttpWebDavClient(server.url("/webdav/").toString(), username = null, password = null, allowPlaintextHttp = true)
-
-        client.list("/webdav/books/")
-
-        assertEquals("/webdav/books/", server.takeRequest().path)
-    }
-
-    @Test
-    fun encodesChinesePathSegmentsWhenListingDirectory() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
-        )
-        val client = OkHttpWebDavClient(server.url("/webdav/").toString(), username = null, password = null, allowPlaintextHttp = true)
-
-        client.list("/webdav/漫画/")
-
-        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/", server.takeRequest().path)
-    }
-
-    @Test
-    fun preservesAlreadyEncodedChinesePathSegmentsWhenListingDirectory() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
-        )
-        val client = OkHttpWebDavClient(server.url("/webdav/").toString(), username = null, password = null, allowPlaintextHttp = true)
-
-        client.list("/webdav/%E6%BC%AB%E7%94%BB/")
-
-        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/", server.takeRequest().path)
-    }
-
-    @Test
-    fun doesNotDuplicateEncodedMountedBasePathWhenHrefAlreadyContainsIt() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
-        )
-        val client = OkHttpWebDavClient(
-            server.url("/webdav/%E6%BC%AB%E7%94%BB/").toString(),
-            username = null,
-            password = null,
-            allowPlaintextHttp = true,
+    fun normalizesMountedAndEncodedListingPaths() = runTest {
+        val rootBaseUrl = server.url("/webdav/").toString()
+        val encodedBaseUrl = server.url("/webdav/%E6%BC%AB%E7%94%BB/").toString()
+        val cases = listOf(
+            ListingPathCase(
+                description = "root-relative path keeps the mounted base",
+                baseUrl = rootBaseUrl,
+                inputPath = "/books/",
+                expectedPath = "/webdav/books/",
+            ),
+            ListingPathCase(
+                description = "path containing the mounted base is not duplicated",
+                baseUrl = rootBaseUrl,
+                inputPath = "/webdav/books/",
+                expectedPath = "/webdav/books/",
+            ),
+            ListingPathCase(
+                description = "unencoded Chinese segments are encoded",
+                baseUrl = rootBaseUrl,
+                inputPath = "/webdav/漫画/",
+                expectedPath = "/webdav/%E6%BC%AB%E7%94%BB/",
+            ),
+            ListingPathCase(
+                description = "encoded Chinese segments stay encoded once",
+                baseUrl = rootBaseUrl,
+                inputPath = "/webdav/%E6%BC%AB%E7%94%BB/",
+                expectedPath = "/webdav/%E6%BC%AB%E7%94%BB/",
+            ),
+            ListingPathCase(
+                description = "encoded mounted base is not duplicated",
+                baseUrl = encodedBaseUrl,
+                inputPath = "/webdav/%E6%BC%AB%E7%94%BB/books/",
+                expectedPath = "/webdav/%E6%BC%AB%E7%94%BB/books/",
+            ),
+            ListingPathCase(
+                description = "encoded mounted base without a leading slash is not duplicated",
+                baseUrl = encodedBaseUrl,
+                inputPath = "webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+                expectedPath = "/webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+            ),
+            ListingPathCase(
+                description = "unencoded base and encoded input resolve to one mounted path",
+                baseUrl = rootBaseUrl + "漫画/",
+                inputPath = "webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+                expectedPath = "/webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/",
+            ),
         )
 
-        client.list("/webdav/%E6%BC%AB%E7%94%BB/books/")
+        cases.forEach { case ->
+            enqueueEmptyDirectoryListing()
+            testClient(baseUrl = case.baseUrl).list(case.inputPath)
 
-        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/books/", server.takeRequest().path)
-    }
-
-    @Test
-    fun doesNotDuplicateEncodedMountedBasePathWhenPathOmitsLeadingSlash() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
-        )
-        val client = OkHttpWebDavClient(
-            server.url("/webdav/%E6%BC%AB%E7%94%BB/").toString(),
-            username = null,
-            password = null,
-            allowPlaintextHttp = true,
-        )
-
-        client.list("webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/")
-
-        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/", server.takeRequest().path)
-    }
-
-    @Test
-    fun doesNotDuplicateMountedBasePathWhenBaseUrlHasUnencodedChineseAndPathIsEncoded() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(207)
-                .setHeader("Content-Type", "application/xml")
-                .setBody("""<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" />"""),
-        )
-        val client = OkHttpWebDavClient(
-            server.url("/webdav/").toString() + "漫画/",
-            username = null,
-            password = null,
-            allowPlaintextHttp = true,
-        )
-
-        client.list("webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/")
-
-        assertEquals("/webdav/%E6%BC%AB%E7%94%BB/%E6%A8%A1%E5%9B%A0/", server.takeRequest().path)
+            assertEquals(case.description, case.expectedPath, server.takeRequest().path)
+        }
     }
 
     @Test
@@ -1005,4 +939,11 @@ class OkHttpWebDavClientTest {
             items.map { it.path },
         )
     }
+
+    private data class ListingPathCase(
+        val description: String,
+        val baseUrl: String,
+        val inputPath: String,
+        val expectedPath: String,
+    )
 }

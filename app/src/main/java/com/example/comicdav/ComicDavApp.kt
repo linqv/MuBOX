@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
+import com.example.comicdav.core.model.settings.VideoSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.historyThumbnailStableKey
@@ -68,7 +70,9 @@ internal fun ComicDavApp(container: AppContainer) {
     val downloadState by downloadCoordinator.state.collectAsState()
     val downloadProgress = downloadState.activeProgress
     val loadedAppSettings by appSettingsStore.settings.collectAsState(initial = null)
-    val appSettings = loadedAppSettings ?: AppSettings(videoResumeEnabled = false)
+    val appSettings = loadedAppSettings ?: AppSettings(
+        video = VideoSettings(videoResumeEnabled = false),
+    )
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     val videoDownloadRecords by videoDownloadStore.records.collectAsState(initial = emptyList())
     val watchHistory by container.watchHistoryRepository.history.collectAsState(initial = emptyList())
@@ -137,7 +141,7 @@ internal fun ComicDavApp(container: AppContainer) {
     ReaderOrientationEffects(
         activity = context as? Activity,
         lifecycleOwner = lifecycleOwner,
-        screenRotationLockEnabled = appSettings.screenRotationLockEnabled,
+        screenRotationLockEnabled = appSettings.appearance.screenRotationLockEnabled,
         readerOpenState = ui.readerOpenState,
         readerLandscapeModeState = ui.readerLandscapeModeState,
         readerLandscapeOrientationLockedState = ui.readerLandscapeOrientationLockedState,
@@ -145,31 +149,31 @@ internal fun ComicDavApp(container: AppContainer) {
         configurationOrientation = configuration.orientation,
     )
 
-    LaunchedEffect(appSettings.readerLoggingMode) {
-        container.diagnostics.setVerbosity(appSettings.readerLoggingMode.toDiagnosticVerbosity())
-        if (!appSettings.loggingEnabled) {
+    LaunchedEffect(appSettings.reader.readerLoggingMode) {
+        container.diagnostics.setVerbosity(appSettings.reader.readerLoggingMode.toDiagnosticVerbosity())
+        if (appSettings.reader.readerLoggingMode == ReaderLoggingMode.OFF) {
             container.diagnostics.clearAdditionalSink()
         }
     }
 
-    LaunchedEffect(appSettings.pageImageCacheEnabled, appSettings.diskCacheLimitMb) {
+    LaunchedEffect(appSettings.storage.pageImageCacheEnabled, appSettings.storage.diskCacheLimitMb) {
         cacheActions.applyReaderPageCacheSettings(
-            pageImageCacheEnabled = appSettings.pageImageCacheEnabled,
-            diskCacheLimitMb = appSettings.diskCacheLimitMb,
+            pageImageCacheEnabled = appSettings.storage.pageImageCacheEnabled,
+            diskCacheLimitMb = appSettings.storage.diskCacheLimitMb,
         )
     }
 
     // Prune only after the stored settings have loaded; the placeholder defaults above
     // (90 days / 200 records) must never drive deletion for users who chose looser limits.
     LaunchedEffect(
-        loadedAppSettings?.historyRetentionDays,
-        loadedAppSettings?.historyMaxRecords,
+        loadedAppSettings?.history?.historyRetentionDays,
+        loadedAppSettings?.history?.historyMaxRecords,
         historyAdditionRevision,
     ) {
         val historySettings = loadedAppSettings ?: return@LaunchedEffect
         cacheActions.pruneHistory(
-            retentionDays = historySettings.historyRetentionDays,
-            maxRecords = historySettings.historyMaxRecords,
+            retentionDays = historySettings.history.historyRetentionDays,
+            maxRecords = historySettings.history.historyMaxRecords,
         )
     }
 
@@ -203,7 +207,7 @@ internal fun ComicDavApp(container: AppContainer) {
         }
     }
 
-    ComicDavTheme(palette = appSettings.colorPalette) {
+    ComicDavTheme(palette = appSettings.appearance.colorPalette) {
         MuBoxSystemBarAppearance()
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -339,7 +343,7 @@ internal fun ComicDavApp(container: AppContainer) {
                                     downloadActions = downloadActions,
                                     onChooseLocalDirectory = activityLaunchers.chooseLocalDirectory,
                                     onSelectionChange = { selection -> ui.selection = selection },
-                                    gridVideoThumbnailsEnabled = appSettings.gridVideoThumbnailsEnabled,
+                                    gridVideoThumbnailsEnabled = appSettings.video.gridVideoThumbnailsEnabled,
                                     modifier = contentModifier,
                                 )
                                 AppTab.HOME -> {
@@ -355,8 +359,8 @@ internal fun ComicDavApp(container: AppContainer) {
                                         videoLibraryMessage = videoLibraryUiState.error
                                             ?: videoLibraryUiState.message,
                                         videoLibraryMessageIsError = videoLibraryUiState.error != null,
-                                        coversEnabled = appSettings.libraryCoversEnabled,
-                                        thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
+                                        coversEnabled = appSettings.appearance.libraryCoversEnabled,
+                                        thumbnailsEnabled = appSettings.video.videoLibraryThumbnailsEnabled,
                                         isExtractingThumbnails =
                                             videoLibraryUiState.isExtractingThumbnails,
                                         videoThumbnailArtworkRevisions =
@@ -398,7 +402,7 @@ internal fun ComicDavApp(container: AppContainer) {
                                                 onSelectItem = selectLibraryItem,
                                                 onOpenDirectories = openSourcesTab,
                                                 onDismissMessage = dismissLibraryMessage,
-                                                coversEnabled = appSettings.libraryCoversEnabled,
+                                                coversEnabled = appSettings.appearance.libraryCoversEnabled,
                                                 selectedItemId = ui.selectedLibraryItem?.item?.id,
                                                 navigationIcon = {
                                                     IconButton(onClick = onBack) {
@@ -419,7 +423,7 @@ internal fun ComicDavApp(container: AppContainer) {
                                                 onSelectItem = selectVideoLibraryItem,
                                                 onOpenDirectories = openSourcesTab,
                                                 onDismissMessage = dismissVideoLibraryMessage,
-                                                thumbnailsEnabled = appSettings.videoLibraryThumbnailsEnabled,
+                                                thumbnailsEnabled = appSettings.video.videoLibraryThumbnailsEnabled,
                                                 selectedItemId = ui.selectedVideoLibraryItem?.item?.id,
                                                 navigationIcon = {
                                                     IconButton(onClick = onBack) {

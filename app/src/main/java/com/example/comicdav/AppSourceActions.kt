@@ -102,9 +102,6 @@ internal class AppSourceActions(
             displayName = decodeWebDavPathForDisplay(state.currentPath),
             accountId = currentWebDavAccountId(),
             path = state.currentPath,
-            baseUrl = state.baseUrl,
-            username = state.username,
-            password = state.password,
         )
         callbacks.setAddingWebDavPath(false)
     }
@@ -124,18 +121,12 @@ internal class AppSourceActions(
                 displayName = displayName,
                 accountId = accountId,
                 path = state.currentPath,
-                baseUrl = state.baseUrl,
-                username = username,
-                password = password,
             )
         } else {
             fileDirectoryViewModel.addWebDavDirectory(
                 displayName = displayName,
                 accountId = accountId,
                 path = "/",
-                baseUrl = state.baseUrl,
-                username = username,
-                password = password,
             )
         }
         resetWebDavNavigationState()

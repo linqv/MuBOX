@@ -50,7 +50,7 @@ internal fun rememberAppActionGraph(
         scope = scope,
         dataFolderStore = container.dataFolderStore,
         diagnostics = container.diagnostics,
-        loggingEnabled = settings.readerLoggingMode != ReaderLoggingMode.OFF,
+        loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
         onDataFolderSelected = ui::onDataFolderSelected,
         onLogFolderSelected = { uriText -> ui.logFolderUriText = uriText },
         onLocalDirectorySelected = sourceActions::addLocalDirectory,

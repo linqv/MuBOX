@@ -90,14 +90,10 @@ class FileDirectoryViewModel(
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
     fun addWebDavDirectory(
         displayName: String,
         accountId: String,
         path: String,
-        baseUrl: String = "",
-        username: String = "",
-        password: String = "",
     ) {
         viewModelScope.launch {
             runCatching {
@@ -238,15 +234,11 @@ class FileDirectoryViewModel(
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
     fun updateWebDavDirectory(
         id: Long,
         displayName: String,
         accountId: String,
         path: String,
-        baseUrl: String,
-        username: String,
-        password: String,
     ) {
         viewModelScope.launch {
             runCatching {

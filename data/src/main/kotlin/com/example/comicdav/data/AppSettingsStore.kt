@@ -115,21 +115,9 @@ class AppSettingsStore(
             historyMaxRecords = coerceHistoryMaxRecords(preferences[HISTORY_MAX_RECORDS] ?: 200),
         )
 
-    suspend fun updateReaderSettings(settings: ReaderSettings) {
-        dataStore.edit { preferences ->
-            preferences.writeReaderSettings(settings)
-        }
-    }
-
     suspend fun updateReaderSettings(transform: (ReaderSettings) -> ReaderSettings) {
         dataStore.edit { preferences ->
             preferences.writeReaderSettings(transform(readerSettingsFrom(preferences)))
-        }
-    }
-
-    suspend fun updateAppearanceSettings(settings: AppearanceSettings) {
-        dataStore.edit { preferences ->
-            preferences.writeAppearanceSettings(settings)
         }
     }
 
@@ -139,33 +127,15 @@ class AppSettingsStore(
         }
     }
 
-    suspend fun updateStorageSettings(settings: StorageSettings) {
-        dataStore.edit { preferences ->
-            preferences.writeStorageSettings(settings)
-        }
-    }
-
     suspend fun updateStorageSettings(transform: (StorageSettings) -> StorageSettings) {
         dataStore.edit { preferences ->
             preferences.writeStorageSettings(transform(storageSettingsFrom(preferences)))
         }
     }
 
-    suspend fun updateVideoSettings(settings: VideoSettings) {
-        dataStore.edit { preferences ->
-            preferences.writeVideoSettings(settings)
-        }
-    }
-
     suspend fun updateVideoSettings(transform: (VideoSettings) -> VideoSettings) {
         dataStore.edit { preferences ->
             preferences.writeVideoSettings(transform(videoSettingsFrom(preferences)))
-        }
-    }
-
-    suspend fun updateHistorySettings(settings: HistorySettings) {
-        dataStore.edit { preferences ->
-            preferences.writeHistorySettings(settings)
         }
     }
 
@@ -223,191 +193,6 @@ class AppSettingsStore(
     private fun MutablePreferences.writeHistorySettings(settings: HistorySettings) {
         this[HISTORY_RETENTION_DAYS] = coerceHistoryRetentionDays(settings.historyRetentionDays)
         this[HISTORY_MAX_RECORDS] = coerceHistoryMaxRecords(settings.historyMaxRecords)
-    }
-
-    suspend fun updateReadingDirection(readingDirection: ReadingDirection) {
-        dataStore.edit { preferences ->
-            preferences[READING_DIRECTION] = readingDirection.name
-        }
-    }
-
-    suspend fun updateLoggingEnabled(enabled: Boolean) {
-        updateReaderLoggingMode(if (enabled) ReaderLoggingMode.SUMMARY else ReaderLoggingMode.OFF)
-    }
-
-    suspend fun updateReaderLoggingMode(mode: ReaderLoggingMode) {
-        dataStore.edit { preferences ->
-            preferences[READER_LOGGING_MODE] = mode.name
-            preferences[LOGGING_ENABLED] = mode != ReaderLoggingMode.OFF
-        }
-    }
-
-    suspend fun updateColorPalette(colorPalette: AppColorPalette) {
-        dataStore.edit { preferences ->
-            preferences[COLOR_PALETTE] = colorPalette.name
-        }
-    }
-
-    suspend fun updateAvifImagesEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[AVIF_IMAGES_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateAutoPageEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_PAGE_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateAutoPageSpeedMillis(speedMillis: Int) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_PAGE_SPEED_MILLIS] = speedMillis
-        }
-    }
-
-    suspend fun updateScreenRotationLockEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[SCREEN_ROTATION_LOCK_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVolumeKeysTurnPagesEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateReaderPinchZoomEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[READER_PINCH_ZOOM_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updatePageImageCacheEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[PAGE_IMAGE_CACHE_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateDiskCacheLimitMb(limitMb: Int) {
-        dataStore.edit { preferences ->
-            preferences[DISK_CACHE_LIMIT_MB] = coerceDiskCacheLimitMb(limitMb)
-        }
-    }
-
-    suspend fun updateWebDavPrefetchPageCount(pageCount: Int) {
-        dataStore.edit { preferences ->
-            preferences[WEB_DAV_PREFETCH_PAGE_COUNT] = coerceWebDavPrefetchPageCount(pageCount)
-        }
-    }
-
-    suspend fun updateLibraryCoversEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[LIBRARY_COVERS_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVideoResumeEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_RESUME_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVideoSeekOptimizationEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_SEEK_OPTIMIZATION_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVideoForwardPrefetchMode(mode: VideoForwardPrefetchMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_FORWARD_PREFETCH_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateVideoProxyDiagnosticsMode(mode: VideoProxyDiagnosticsMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_PROXY_DIAGNOSTICS_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateVideoPlayerProxyDebugInfoEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVideoOutputMode(mode: VideoOutputMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_OUTPUT_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateGpuApiMode(mode: GpuApiMode) {
-        dataStore.edit { preferences ->
-            preferences[GPU_API_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateAnime4KProfile(profile: Anime4KProfile) {
-        dataStore.edit { preferences ->
-            preferences[ANIME4K_PROFILE] = profile.name
-        }
-    }
-
-    suspend fun updateVideoDecoderMode(mode: VideoDecoderMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_DECODER_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateMpvProfileMode(mode: MpvProfileMode) {
-        dataStore.edit { preferences ->
-            preferences[MPV_PROFILE_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateVideoControlsAutoHideMillis(millis: Int) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_CONTROLS_AUTO_HIDE_MILLIS] = coerceVideoControlsAutoHideMillis(millis)
-        }
-    }
-
-    suspend fun updateVideoPlayerOrientationMode(mode: VideoPlayerOrientationMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_PLAYER_ORIENTATION_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateVideoLibraryThumbnailsEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_LIBRARY_THUMBNAILS_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateGridVideoThumbnailsEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[GRID_VIDEO_THUMBNAILS_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateVideoBackgroundMode(mode: VideoBackgroundMode) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_BACKGROUND_MODE] = mode.name
-        }
-    }
-
-    suspend fun updateHistoryRetentionDays(days: Int) {
-        dataStore.edit { preferences ->
-            preferences[HISTORY_RETENTION_DAYS] = coerceHistoryRetentionDays(days)
-        }
-    }
-
-    suspend fun updateHistoryMaxRecords(maxRecords: Int) {
-        dataStore.edit { preferences ->
-            preferences[HISTORY_MAX_RECORDS] = coerceHistoryMaxRecords(maxRecords)
-        }
     }
 
     private companion object {

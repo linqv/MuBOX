@@ -2,6 +2,7 @@ package com.example.comicdav
 
 import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.data.AppSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -46,7 +47,7 @@ internal class AppReaderActions(
     }
 
     fun chooseLogFolder() {
-        if (settings.loggingEnabled) {
+        if (settings.reader.readerLoggingMode != ReaderLoggingMode.OFF) {
             activityLaunchers.chooseLogFolder()
         }
     }
@@ -66,7 +67,9 @@ internal class AppReaderActions(
 
     fun updateAutoPageEnabled(enabled: Boolean) {
         scope.launch {
-            appSettingsStore.updateAutoPageEnabled(enabled)
+            appSettingsStore.updateReaderSettings { reader ->
+                reader.copy(autoPageEnabled = enabled)
+            }
         }
     }
 

@@ -57,46 +57,6 @@ fun rememberMuBoxColors(): MuBoxColors {
 }
 
 @Composable
-fun MuBoxPageHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    trailing: @Composable RowScope.() -> Unit = {},
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.muted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        trailing()
-    }
-}
-
-@Composable
 fun MuBoxMessagePanel(
     text: String,
     modifier: Modifier = Modifier,
@@ -357,55 +317,6 @@ fun MuBoxMediaTypeIcon(
     }
 }
 
-@Composable
-fun MuBoxSettingsGroup(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    val shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .muBoxGradientBorder(colors = colors, shape = shape),
-        shape = shape,
-        color = colors.panel,
-        contentColor = colors.text,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.muted,
-                fontWeight = FontWeight.SemiBold,
-            )
-            content()
-        }
-    }
-}
-
-@Composable
-fun MuBoxPlayerPanel(
-    modifier: Modifier = Modifier,
-    color: Color? = null,
-    borderColor: Color? = null,
-    content: @Composable () -> Unit,
-) {
-    val colors = rememberMuBoxColors()
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(MuBoxMetrics.PlayerPanelCornerDp),
-        color = color ?: colors.playerSheet,
-        contentColor = colors.overlayText,
-        border = BorderStroke(1.dp, borderColor ?: colors.playerProgressTrack),
-        content = content,
-    )
-}
-
 private data class MuBoxIconColors(
     val container: Color,
     val content: Color,
@@ -548,24 +459,5 @@ fun MuBoxSwitchRow(
             }
         }
         androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-fun MuBoxPropertyRow(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    val colors = rememberMuBoxColors()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = MuBoxMetrics.BoxedListRowMinHeightDp)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = colors.text)
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.muted)
     }
 }
