@@ -5,9 +5,9 @@ import org.junit.Test
 
 class ReaderScreenTest {
     @Test
-    fun topBarActionsExposeLandscapeBeforeLogAndClose() {
+    fun topBarActionsExposeLandscapeBeforeClose() {
         assertEquals(
-            listOf("横屏", "日志", "关闭"),
+            listOf("横屏", "关闭"),
             readerTopBarActionLabels(readerLandscapeModeEnabled = false),
         )
     }
@@ -15,7 +15,7 @@ class ReaderScreenTest {
     @Test
     fun topBarActionsExposeExitLandscapeWhenEnabled() {
         assertEquals(
-            listOf("退出横屏", "锁定方向", "日志", "关闭"),
+            listOf("退出横屏", "锁定方向", "关闭"),
             readerTopBarActionLabels(readerLandscapeModeEnabled = true),
         )
     }
@@ -23,7 +23,7 @@ class ReaderScreenTest {
     @Test
     fun topBarActionsExposeUnlockWhenLandscapeOrientationIsLocked() {
         assertEquals(
-            listOf("退出横屏", "解锁方向", "日志", "关闭"),
+            listOf("退出横屏", "解锁方向", "关闭"),
             readerTopBarActionLabels(
                 readerLandscapeModeEnabled = true,
                 readerLandscapeOrientationLocked = true,

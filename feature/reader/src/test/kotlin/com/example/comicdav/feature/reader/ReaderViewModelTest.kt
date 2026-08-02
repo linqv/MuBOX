@@ -2,8 +2,7 @@ package com.example.comicdav.feature.reader
 
 import com.example.comicdav.CollectingReaderLogSink
 import com.example.comicdav.MainDispatcherRule
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
-import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
+import com.example.comicdav.core.diagnostics.ExceptionDiagnostics
 import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.history.WatchHistoryEntry
@@ -42,7 +41,6 @@ class ReaderViewModelTest {
         return ReaderViewModel(
             ioDispatcher = dispatcher,
             diagnosticLog = diagnosticLog,
-            elapsedRealtimeMs = { testScheduler.currentTime },
         )
     }
 
@@ -123,9 +121,8 @@ class ReaderViewModelTest {
     @Test
     fun pagePrefetchCancellationWrappedByEngineErrorDoesNotLogFailure() = runTest {
         val sink = CollectingReaderLogSink()
-        val diagnostics = ConfigurableDiagnostics(
-            defaultSink = sink,
-            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        val diagnostics = ExceptionDiagnostics(
+            sink = sink,
         )
         val session = RecordingComicSession(
             pageCount = 4,
@@ -145,43 +142,6 @@ class ReaderViewModelTest {
         runCurrent()
 
         assertFalse(sink.lines.any { it.contains("prefetch_failed") })
-    }
-
-    @Test
-    fun viewModelsUseInjectedDiagnosticsWithoutCrossTalk() = runTest {
-        val firstSink = CollectingReaderLogSink()
-        val secondSink = CollectingReaderLogSink()
-        val firstViewModel = createTestViewModel(
-            ConfigurableDiagnostics(
-                defaultSink = firstSink,
-                initialVerbosity = DiagnosticVerbosity.SUMMARY,
-            ),
-        )
-        val secondViewModel = createTestViewModel(
-            ConfigurableDiagnostics(
-                defaultSink = secondSink,
-                initialVerbosity = DiagnosticVerbosity.SUMMARY,
-            ),
-        )
-
-        firstViewModel.openExistingSession(
-            openedSession = RecordingComicSession(pageCount = 1, forwardPrefetchPageCount = 0),
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "first-reader",
-        )
-        secondViewModel.openExistingSession(
-            openedSession = RecordingComicSession(pageCount = 1, forwardPrefetchPageCount = 0),
-            cacheDir = temp.root,
-            initialPage = 0,
-            comicKey = "second-reader",
-        )
-        runCurrent()
-
-        assertTrue(firstSink.lines.any { it.contains("key=first-reader") })
-        assertFalse(firstSink.lines.any { it.contains("key=second-reader") })
-        assertTrue(secondSink.lines.any { it.contains("key=second-reader") })
-        assertFalse(secondSink.lines.any { it.contains("key=first-reader") })
     }
 
     @Test

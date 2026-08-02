@@ -29,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.settings.VideoSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
@@ -132,9 +131,6 @@ internal fun ComicDavApp(container: AppContainer) {
     }
     LaunchedEffect(dataFolderStore) {
         ui.dataFolderUriText = dataFolderStore.loadFolderUri()
-        if (ui.logFolderUriText.isNullOrBlank()) {
-            ui.logFolderUriText = ui.dataFolderUriText
-        }
         ui.isDataFolderLoading = false
     }
 
@@ -149,12 +145,6 @@ internal fun ComicDavApp(container: AppContainer) {
         configurationOrientation = configuration.orientation,
     )
 
-    LaunchedEffect(appSettings.reader.readerLoggingMode) {
-        container.diagnostics.setVerbosity(appSettings.reader.readerLoggingMode.toDiagnosticVerbosity())
-        if (appSettings.reader.readerLoggingMode == ReaderLoggingMode.OFF) {
-            container.diagnostics.clearAdditionalSink()
-        }
-    }
 
     LaunchedEffect(appSettings.storage.pageImageCacheEnabled, appSettings.storage.diskCacheLimitMb) {
         cacheActions.applyReaderPageCacheSettings(
@@ -233,7 +223,6 @@ internal fun ComicDavApp(container: AppContainer) {
                         readerContent = {
                             ReaderRoute(
                                 readerUiState = readerViewModel.uiState,
-                                diagnostics = container.diagnostics,
                                 localOpenError = ui.localOpenError,
                                 downloadProgress = downloadProgress,
                                 appSettings = appSettings,
@@ -244,10 +233,6 @@ internal fun ComicDavApp(container: AppContainer) {
                                     readerActions::changeLandscapeOrientationLocked,
                                 onPageChanged = readerViewModel::selectPage,
                                 onPageDemanded = readerViewModel::reportPageDemand,
-                                onImageLoadStarted = readerViewModel::reportImageLoadStarted,
-                                onImageLoadSucceeded = readerViewModel::reportImageLoadSucceeded,
-                                onImageLoadFailed = readerViewModel::reportImageLoadFailed,
-                                onChooseLogFile = readerActions::chooseLogFolder,
                                 onCancelLoading = readerActions::cancelLoading,
                                 onClose = readerActions::close,
                                 onAutoPageEnabledChange = readerActions::updateAutoPageEnabled,

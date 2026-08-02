@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.example.comicdav.core.model.settings.AppSettings
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import kotlinx.coroutines.CoroutineScope
 
 internal data class AppActionGraph(
@@ -50,9 +49,7 @@ internal fun rememberAppActionGraph(
         scope = scope,
         dataFolderStore = container.dataFolderStore,
         diagnostics = container.diagnostics,
-        loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
         onDataFolderSelected = ui::onDataFolderSelected,
-        onLogFolderSelected = { uriText -> ui.logFolderUriText = uriText },
         onLocalDirectorySelected = sourceActions::addLocalDirectory,
         onVideoPlayerClosed = { ui.forceMainPortraitState.value = true },
     )
@@ -77,7 +74,6 @@ internal fun rememberAppActionGraph(
         viewModels,
         ui,
         ui.dataFolderUriText,
-        ui.logFolderUriText,
         launchers,
         sourceActions,
         cacheActions,
@@ -98,7 +94,6 @@ internal fun rememberAppActionGraph(
             scope = scope,
             settings = settings,
             appSettingsStore = container.appSettingsStore,
-            diagnostics = container.diagnostics,
             activityLaunchers = launchers,
             viewModels = viewModels,
             callbacks = AppReaderActionCallbacks(
@@ -160,7 +155,6 @@ internal fun rememberAppActionGraph(
             context = context,
             scope = scope,
             settings = settings,
-            logFolderUri = ui.logFolderUriText,
             container = container,
             viewModels = viewModels,
             webDavResolver = webDavResolver,

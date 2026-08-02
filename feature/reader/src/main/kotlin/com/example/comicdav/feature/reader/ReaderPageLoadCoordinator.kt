@@ -1,8 +1,5 @@
 package com.example.comicdav.feature.reader
 
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
-import com.example.comicdav.core.diagnostics.Diagnostics
-import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.ports.ComicReaderSession
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -30,10 +27,7 @@ internal fun ReaderSessionDescriptor.pageLoadContext(): ReaderPageLoadContext =
 internal class ReaderPageLoadCoordinator(
     private val ioDispatcher: CoroutineDispatcher,
     private val sessionGate: ReaderSessionGenerationGate,
-    private val diagnostics: ReaderDiagnosticsTracker,
-    private val elapsedRealtimeMs: () -> Long,
     private val prunePageCache: (cacheDir: File, protectedFile: File, maxBytes: Long) -> Unit,
-    private val diagnosticLog: Diagnostics = NoopDiagnostics,
 ) {
     @Volatile
     private var pageCacheMaxBytes: Long = ReaderPageCache.DEFAULT_MAX_BYTES
@@ -62,7 +56,6 @@ internal class ReaderPageLoadCoordinator(
             .forEach { index ->
                 currentCoroutineContext().ensureActive()
                 ensureCurrent(context.generation)
-                val loadStartedAtMs = elapsedRealtimeMs()
                 var pageCacheFileToPrune: File? = null
                 val coroutineContext = currentCoroutineContext()
                 val output = sessionGate.withSessionLock {
@@ -80,44 +73,10 @@ internal class ReaderPageLoadCoordinator(
                     }
                     if (cacheEnabled && outputFile.isFile && outputFile.length() > 0L) {
                         outputFile.setLastModified(System.currentTimeMillis())
-                        val durationMs = (elapsedRealtimeMs() - loadStartedAtMs).coerceAtLeast(0L)
-                        diagnosticLog.detail(DiagnosticCategory.PAGE_LOAD) {
-                            "load_page_cache_hit page=$index reason=$reason " +
-                                "durationMs=$durationMs fileSize=${outputFile.length()}"
-                        }
-                        diagnostics.recordPageLoadTiming(
-                            pageIndex = index,
-                            reason = reason,
-                            cacheHit = true,
-                            loadStartedAtMs = loadStartedAtMs,
-                            fileReadyAtMs = elapsedRealtimeMs(),
-                            extractMs = 0L,
-                            fileSize = outputFile.length(),
-                        )
                         outputFile
                     } else {
-                        val extractStartedAtMs = elapsedRealtimeMs()
-                        diagnosticLog.detail(DiagnosticCategory.PAGE_LOAD) {
-                            "load_page_extract_start page=$index reason=$reason"
-                        }
                         val loadedFile = session.loadPageToFile(index, outputFile)
                         loadedFile.setLastModified(System.currentTimeMillis())
-                        val readyAtMs = elapsedRealtimeMs()
-                        val extractMs = (readyAtMs - extractStartedAtMs).coerceAtLeast(0L)
-                        val durationMs = (readyAtMs - loadStartedAtMs).coerceAtLeast(0L)
-                        diagnosticLog.detail(DiagnosticCategory.PAGE_LOAD) {
-                            "load_page_extract_done page=$index reason=$reason " +
-                                "durationMs=$durationMs extractMs=$extractMs fileSize=${loadedFile.length()}"
-                        }
-                        diagnostics.recordPageLoadTiming(
-                            pageIndex = index,
-                            reason = reason,
-                            cacheHit = false,
-                            loadStartedAtMs = loadStartedAtMs,
-                            fileReadyAtMs = readyAtMs,
-                            extractMs = extractMs,
-                            fileSize = loadedFile.length(),
-                        )
                         if (cacheEnabled) {
                             pageCacheFileToPrune = loadedFile
                         }

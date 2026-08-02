@@ -6,14 +6,13 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.data.AppDataFolderStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal data class AppActivityLaunchers(
     val chooseDataFolder: () -> Unit,
-    val chooseLogFolder: () -> Unit,
     val chooseLocalDirectory: () -> Unit,
     val openVideoPlayer: (Intent) -> Unit,
 )
@@ -23,10 +22,8 @@ internal fun rememberAppActivityLaunchers(
     context: Context,
     scope: CoroutineScope,
     dataFolderStore: AppDataFolderStore,
-    diagnostics: ConfigurableDiagnostics,
-    loggingEnabled: Boolean,
+    diagnostics: Diagnostics,
     onDataFolderSelected: (String) -> Unit,
-    onLogFolderSelected: (String) -> Unit,
     onLocalDirectorySelected: (displayName: String, treeUri: String) -> Unit,
     onVideoPlayerClosed: () -> Unit,
 ): AppActivityLaunchers {
@@ -38,20 +35,8 @@ internal fun rememberAppActivityLaunchers(
             onDataFolderSelected(uri.toString())
         }
     }
-    val logFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) {
-            diagnostics.event("log_folder_cancelled")
-            return@rememberLauncherForActivityResult
-        }
-        takePersistableTreePermission(context, uri, diagnostics, "log_folder_permission_failed")
-        saveReaderLogFolderUri(context, uri)
-        onLogFolderSelected(uri.toString())
-        startReaderLogFile(context, uri.toString(), scope, diagnostics, loggingEnabled)
-        diagnostics.event("log_folder_selected uri=$uri")
-    }
     val localDirectoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        diagnostics.event("local_directory_selected uri=$uri")
         takePersistableTreePermission(context, uri, diagnostics, "local_directory_permission_failed")
         onLocalDirectorySelected(queryDirectoryDisplayName(context, uri), uri.toString())
     }
@@ -61,7 +46,6 @@ internal fun rememberAppActivityLaunchers(
 
     return AppActivityLaunchers(
         chooseDataFolder = { dataFolderPicker.launch(null) },
-        chooseLogFolder = { logFolderPicker.launch(null) },
         chooseLocalDirectory = { localDirectoryPicker.launch(null) },
         openVideoPlayer = videoPlayerLauncher::launch,
     )
@@ -70,7 +54,7 @@ internal fun rememberAppActivityLaunchers(
 private fun takePersistableTreePermission(
     context: Context,
     uri: Uri,
-    diagnostics: ConfigurableDiagnostics,
+    diagnostics: Diagnostics,
     failureEvent: String,
 ) {
     val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION

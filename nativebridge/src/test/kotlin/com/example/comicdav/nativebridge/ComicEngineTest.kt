@@ -1,6 +1,5 @@
 package com.example.comicdav.nativebridge
 
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
 import com.example.comicdav.core.ports.PlannedRemoteRange
 import com.example.comicdav.core.ports.RangeProvider
 import java.io.File
@@ -100,26 +99,6 @@ class ComicEngineTest {
         assertEquals(
             RemoteOpenCall(4, 100, cacheDir.absolutePath, "comic-key", "etag-1", true),
             native.remoteOpenCalls.single(),
-        )
-    }
-
-    @Test
-    fun openLocalFdReportsNativeOpenAndPageCountTiming() {
-        val native = FakeComicNative(openHandle = 12, pageCount = 5)
-        val elapsedTimes = mutableListOf(10L, 35L, 42L)
-        val diagnosticSink = CollectingDiagnosticSink()
-        val engine = ComicEngine(
-            native = native,
-            diagnostics = ConfigurableDiagnostics(defaultSink = diagnosticSink),
-            elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
-        )
-
-        val session = engine.openLocalFd(fd = 11, size = 2048, format = "zip")
-
-        assertEquals(5, session.pageCount)
-        assertEquals(
-            listOf("native_open_local_fd_done format=zip sizeBytes=2048 nativeOpenMs=25 pageCountMs=7 pageCount=5"),
-            diagnosticSink.lines.map { it.substringAfter("category=LOCAL_FILE ") },
         )
     }
 

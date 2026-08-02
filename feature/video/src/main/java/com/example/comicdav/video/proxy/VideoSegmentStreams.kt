@@ -93,7 +93,6 @@ internal class SegmentCachingInputStream(
     private val firstByteOffset: Long,
     private val segmentBytes: Long,
     private val cache: VideoRangeMemoryCache,
-    private val diagnostics: VideoProxyDiagnostics,
 ) : InputStream() {
     private var nextOffset = firstByteOffset
     private var segmentIndex = firstByteOffset / segmentBytes
@@ -173,12 +172,7 @@ internal class SegmentCachingInputStream(
 
     private fun storeSegment() {
         val bytes = segmentBuffer.toByteArray()
-        val stored = cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
-        diagnostics.detail {
-            "stream_cache_store stream=${diagnostics.streamId(request.streamId)} " +
-                "segment=$segmentIndex range=$segmentStart-${segmentStart + bytes.size - 1L} " +
-                "stored=$stored cache_bytes=${cache.totalBytes()}"
-        }
+        cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
     }
 
     private fun advanceSegment() {

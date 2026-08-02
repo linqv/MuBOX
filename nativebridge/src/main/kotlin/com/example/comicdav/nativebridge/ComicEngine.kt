@@ -1,17 +1,12 @@
 package com.example.comicdav.nativebridge
 
 import androidx.annotation.WorkerThread
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
-import com.example.comicdav.core.diagnostics.Diagnostics
-import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.PlannedRemoteRange
 import java.io.File
 
 class ComicEngine(
     private val native: ComicNativeFacade = ComicNative,
-    private val diagnostics: Diagnostics = NoopDiagnostics,
-    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     @WorkerThread
     fun openLocal(path: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
@@ -26,18 +21,8 @@ class ComicEngine(
         format: String,
         avifImagesEnabled: Boolean = false,
     ): ComicReaderSession {
-        val nativeOpenStartMs = elapsedRealtimeMs()
         val handle = native.openLocalFd(fd, size, format, avifImagesEnabled)
-        val nativeOpenEndMs = elapsedRealtimeMs()
-        return openChecked(
-            handle = handle,
-            nativeOpenDiagnostics = NativeOpenDiagnostics(
-                format = format,
-                sizeBytes = size,
-                nativeOpenMs = nativeOpenEndMs - nativeOpenStartMs,
-                pageCountStartMs = nativeOpenEndMs,
-            ),
-        )
+        return openChecked(handle)
     }
 
     // Note: openRemote registers a RangeProvider whose readRange callback is invoked
@@ -72,7 +57,6 @@ class ComicEngine(
         handle: Long,
         rangeProviderFileId: Long? = null,
         onClose: () -> Unit = {},
-        nativeOpenDiagnostics: NativeOpenDiagnostics? = null,
         forwardPrefetchPageCount: Int = 4,
     ) : ComicReaderSession {
         if (handle == 0L) {
@@ -81,23 +65,10 @@ class ComicEngine(
         }
 
         val pageCount = native.pageCount(handle)
-        val pageCountMs = nativeOpenDiagnostics?.let {
-            elapsedRealtimeMs() - it.pageCountStartMs
-        }
         if (pageCount < 0) {
             native.close(handle)
             onClose()
             throw nativeException()
-        }
-
-        if (nativeOpenDiagnostics != null) {
-            diagnostics.summary(DiagnosticCategory.LOCAL_FILE) {
-                "native_open_local_fd_done format=${nativeOpenDiagnostics.format} " +
-                    "sizeBytes=${nativeOpenDiagnostics.sizeBytes} " +
-                    "nativeOpenMs=${nativeOpenDiagnostics.nativeOpenMs} " +
-                    "pageCountMs=$pageCountMs " +
-                    "pageCount=$pageCount"
-            }
         }
 
         return ComicSession(
@@ -113,13 +84,6 @@ class ComicEngine(
     private fun nativeException(): ComicNativeException {
         return ComicNativeException(native.lastErrorMessage().ifBlank { "Native comic operation failed" })
     }
-
-    private data class NativeOpenDiagnostics(
-        val format: String,
-        val sizeBytes: Long,
-        val nativeOpenMs: Long,
-        val pageCountStartMs: Long,
-    )
 }
 
 class ComicSession internal constructor(

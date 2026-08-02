@@ -28,7 +28,6 @@ internal class AppVideoPlayerDependencies(
             VideoProxySettings(
                 seekOptimizationEnabled = settings.video.videoSeekOptimizationEnabled,
                 forwardPrefetchMode = settings.video.videoForwardPrefetchMode,
-                diagnosticsMode = settings.video.videoProxyDiagnosticsMode,
             )
         }
     }

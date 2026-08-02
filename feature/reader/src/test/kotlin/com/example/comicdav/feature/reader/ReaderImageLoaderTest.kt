@@ -90,14 +90,14 @@ class ReaderImageLoaderTest {
     @Test
     fun topBarActionsIncludeLandscapeScaleButtonOnlyWhenVisible() {
         assertEquals(
-            listOf("横屏", ComicDavCopy.readerLog, ComicDavCopy.readerClose),
+            listOf("横屏", ComicDavCopy.readerClose),
             readerTopBarActionLabels(
                 readerLandscapeModeEnabled = false,
                 showLandscapeScaleButton = false,
             ),
         )
         assertEquals(
-            listOf("横屏", "填充", ComicDavCopy.readerLog, ComicDavCopy.readerClose),
+            listOf("横屏", "填充", ComicDavCopy.readerClose),
             readerTopBarActionLabels(
                 readerLandscapeModeEnabled = false,
                 showLandscapeScaleButton = true,

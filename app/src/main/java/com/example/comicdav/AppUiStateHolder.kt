@@ -26,7 +26,6 @@ internal class AppUiStateHolder(
     webDavActionMessageState: MutableState<String?>,
     cacheAnalysisState: MutableState<ComicCacheAnalysis>,
     cacheActionMessageState: MutableState<String?>,
-    logFolderUriTextState: MutableState<String?>,
     dataFolderUriTextState: MutableState<String?>,
     isDataFolderLoadingState: MutableState<Boolean>,
 ) {
@@ -39,7 +38,6 @@ internal class AppUiStateHolder(
     var webDavActionMessage by webDavActionMessageState
     var cacheAnalysis by cacheAnalysisState
     var cacheActionMessage by cacheActionMessageState
-    var logFolderUriText by logFolderUriTextState
     var dataFolderUriText by dataFolderUriTextState
     var isDataFolderLoading by isDataFolderLoadingState
 
@@ -76,9 +74,6 @@ internal class AppUiStateHolder(
 
     fun onDataFolderSelected(uriText: String) {
         dataFolderUriText = uriText
-        if (logFolderUriText.isNullOrBlank()) {
-            logFolderUriText = uriText
-        }
     }
 }
 
@@ -97,7 +92,6 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
     val webDavActionMessageState = remember { mutableStateOf<String?>(null) }
     val cacheAnalysisState = remember { mutableStateOf(ComicCacheAnalysis()) }
     val cacheActionMessageState = remember { mutableStateOf<String?>(null) }
-    val logFolderUriTextState = rememberSaveable { mutableStateOf(loadReaderLogFolderUri(context)) }
     val dataFolderUriTextState = rememberSaveable { mutableStateOf<String?>(null) }
     val isDataFolderLoadingState = remember { mutableStateOf(true) }
 
@@ -115,7 +109,6 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
         webDavActionMessageState,
         cacheAnalysisState,
         cacheActionMessageState,
-        logFolderUriTextState,
         dataFolderUriTextState,
         isDataFolderLoadingState,
     ) {
@@ -133,7 +126,6 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
             webDavActionMessageState = webDavActionMessageState,
             cacheAnalysisState = cacheAnalysisState,
             cacheActionMessageState = cacheActionMessageState,
-            logFolderUriTextState = logFolderUriTextState,
             dataFolderUriTextState = dataFolderUriTextState,
             isDataFolderLoadingState = isDataFolderLoadingState,
         )

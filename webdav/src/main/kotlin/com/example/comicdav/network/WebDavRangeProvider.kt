@@ -1,9 +1,6 @@
 package com.example.comicdav.network
 
 import com.example.comicdav.core.remote.WebDavClient
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
-import com.example.comicdav.core.diagnostics.Diagnostics
-import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.ports.RangeProvider
 import java.io.Closeable
 import java.io.IOException
@@ -21,8 +18,6 @@ class WebDavRangeProvider(
     private val size: Long,
     private val readAheadBytes: Long = DEFAULT_READ_AHEAD_BYTES,
     private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
-    private val diagnostics: Diagnostics = NoopDiagnostics,
-    private val logDiagnostic: (((() -> String) -> Unit))? = null,
 ) : RangeProvider {
     private val lock = Any()
     private val cache = RangeWindowCache(maxCacheBytes)
@@ -39,11 +34,6 @@ class WebDavRangeProvider(
             cache.find(start, endInclusive)
         }
         if (cached != null) {
-            emitDiagnostic {
-                "range_cache_hit path=$path start=$start end=$endInclusive " +
-                    "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive} " +
-                    "bytes=${cached.bytes.size}"
-            }
             return cached.bytes
         }
 
@@ -65,11 +55,6 @@ class WebDavRangeProvider(
                 if (decision.inFlight.owner != InFlightOwner.Prefetch || isClosed()) {
                     throw error
                 }
-                emitDiagnostic {
-                    "range_inflight_join_fallback path=$path start=$start end=$endInclusive " +
-                        "windowStart=${decision.inFlight.start} windowEnd=${decision.inFlight.endInclusive} " +
-                        "owner=${decision.inFlight.owner.logValue} error=${error::class.simpleName}"
-                }
                 fetchReadRange(start, endInclusive, expandedEnd)
             }
         }
@@ -86,7 +71,6 @@ class WebDavRangeProvider(
             checkOpenLocked()
             FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand)).fetch
         }
-        emitDiagnostic { "range_cache_miss path=$path start=$start end=$endInclusive expandedEnd=$expandedEnd" }
         val bytes = try {
             readNetworkRange(fetch)
         } catch (error: Throwable) {
@@ -95,39 +79,13 @@ class WebDavRangeProvider(
             throw error
         }
         throwIfCancelled(fetch)
-        val postFetch = synchronized(lock) {
-            val storeDecision = storeReadRange(fetch, start, endInclusive, bytes)
-            val result = cache.find(start, endInclusive)?.bytes
+        val result = synchronized(lock) {
+            storeReadRange(fetch, start, endInclusive, bytes)
+            cache.find(start, endInclusive)?.bytes
                 ?: bytes.copyOfRange(0, (endInclusive - start + 1).toInt())
-            PostFetchResult(
-                bytes = result,
-                storeResult = storeDecision.storeResult,
-                storeDiagnostic = storeDecision.diagnostic,
-                cacheBytes = cache.totalBytes(),
-                windowCount = cache.windowCount(),
-            )
         }
         completeInFlight(fetch, bytes)
-        val storeDiagnostic = postFetch.storeDiagnostic
-        emitDiagnostic {
-            "range_cache_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
-                "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
-                "evictionMode=${postFetch.storeResult.evictionMode} " +
-                "protectedCount=${storeDiagnostic.protectedStats.count} " +
-                "protectedBytes=${storeDiagnostic.protectedStats.bytes} " +
-                "readAheadStore=${storeDiagnostic.readAheadStore} " +
-                "readAheadReason=${storeDiagnostic.readAheadReason ?: "none"} " +
-                "storeStart=${storeDiagnostic.storeStart} storeEnd=${storeDiagnostic.storeEndInclusive} " +
-                "storeBytes=${storeDiagnostic.storeBytes} " +
-                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
-        }
-        postFetch.storeResult.evicted.forEach { evicted ->
-            emitDiagnostic {
-                "range_cache_evict path=$path start=${evicted.start} end=${evicted.endInclusive} " +
-                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
-            }
-        }
-        return postFetch.bytes
+        return result
     }
 
     override fun isRangeCached(start: Long, endInclusive: Long): Boolean =
@@ -139,16 +97,7 @@ class WebDavRangeProvider(
         val cached = synchronized(lock) {
             cache.find(start, endInclusive)
         }
-        if (cached == null) {
-            emitDiagnostic { "range_cache_only_miss path=$path start=$start end=$endInclusive" }
-            return null
-        }
-        emitDiagnostic {
-            "range_cache_only_hit path=$path start=$start end=$endInclusive " +
-                "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive} " +
-                "bytes=${cached.bytes.size}"
-        }
-        return cached.bytes
+        return cached?.bytes
     }
 
     override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
@@ -161,26 +110,16 @@ class WebDavRangeProvider(
         priority: Int,
         protectedRanges: List<LongRange>,
     ): Boolean {
-        if (start >= size) {
-            emitDiagnostic { "range_prefetch_skip path=$path start=$start end=$endInclusive reason=past_eof" }
-            return false
-        }
+        if (start >= size) return false
         val clampedEnd = endInclusive.coerceAtMost(size - 1)
         val rememberedProtectedRanges = normalizeProtectedRanges(protectedRanges)
-        val protectedStats = protectedStats(rememberedProtectedRanges)
         val cached = synchronized(lock) {
             if (rememberedProtectedRanges.isNotEmpty()) {
                 latestProtectedRanges = rememberedProtectedRanges
             }
             cache.find(start, clampedEnd)
         }
-        if (cached != null) {
-            emitDiagnostic {
-                "range_prefetch_hit path=$path start=$start end=$clampedEnd " +
-                    "windowStart=${cached.windowStart} windowEnd=${cached.windowEndInclusive}"
-            }
-            return true
-        }
+        if (cached != null) return true
 
         val decision = synchronized(lock) {
             checkOpenLocked()
@@ -196,7 +135,6 @@ class WebDavRangeProvider(
         }
         val fetch = (decision as FetchDecision.Fetch).fetch
 
-        emitDiagnostic { "range_prefetch_start path=$path start=${fetch.start} end=${fetch.endInclusive}" }
         val bytes = try {
             readNetworkRange(fetch)
         } catch (error: Throwable) {
@@ -205,40 +143,11 @@ class WebDavRangeProvider(
             throw error
         }
         throwIfCancelled(fetch)
-        val postFetch = synchronized(lock) {
-            val storeDecision = storePrefetchRange(fetch, bytes, priority, rememberedProtectedRanges)
-            PostFetchResult(
-                bytes = bytes,
-                storeResult = storeDecision.storeResult,
-                storeDiagnostic = StoreDiagnostic(
-                    protectedStats = protectedStats,
-                    readAheadStore = READ_AHEAD_STORE_NONE,
-                    readAheadReason = null,
-                    storeStart = fetch.start,
-                    storeEndInclusive = fetch.endInclusive,
-                    storeBytes = bytes.size,
-                    fallbackReason = storeDecision.fallbackReason,
-                ),
-                cacheBytes = cache.totalBytes(),
-                windowCount = cache.windowCount(),
-            )
+        val stored = synchronized(lock) {
+            storePrefetchRange(fetch, bytes, priority, rememberedProtectedRanges).stored
         }
         completeInFlight(fetch, bytes)
-        emitDiagnostic {
-            "range_prefetch_store path=$path start=${fetch.start} end=${fetch.endInclusive} bytes=${bytes.size} " +
-                "stored=${postFetch.storeResult.stored} reason=${postFetch.storeResult.skippedReason ?: "none"} " +
-                "priority=$priority evictionMode=${postFetch.storeResult.evictionMode} " +
-                "protectedCount=${protectedStats.count} protectedBytes=${protectedStats.bytes} " +
-                "fallbackReason=${postFetch.storeDiagnostic.fallbackReason ?: "none"} " +
-                "windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
-        }
-        postFetch.storeResult.evicted.forEach { evicted ->
-            emitDiagnostic {
-                "range_cache_evict path=$path start=${evicted.start} end=${evicted.endInclusive} " +
-                    "bytes=${evicted.bytes} windows=${postFetch.windowCount} cacheBytes=${postFetch.cacheBytes}"
-            }
-        }
-        return postFetch.storeResult.stored
+        return stored
     }
 
     override fun cancelPrefetches() {
@@ -254,18 +163,15 @@ class WebDavRangeProvider(
         bytes: ByteArray,
         priority: Int,
         protectedRanges: List<LongRange>,
-    ): PrefetchStoreDecision {
+    ): RangeWindowCache.StoreResult {
         val protectedResult = cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
         if (
             priority <= LOW_PRIORITY_PREFETCH_PRIORITY &&
             protectedResult.skippedReason == "protected_capacity"
         ) {
-            return PrefetchStoreDecision(
-                storeResult = cache.store(fetch.start, fetch.endInclusive, bytes),
-                fallbackReason = protectedResult.skippedReason,
-            )
+            return cache.store(fetch.start, fetch.endInclusive, bytes)
         }
-        return PrefetchStoreDecision(storeResult = protectedResult)
+        return protectedResult
     }
 
     private fun coveringInFlight(start: Long, endInclusive: Long): InFlightRange? =
@@ -312,10 +218,6 @@ class WebDavRangeProvider(
     }
 
     private fun awaitInFlight(inFlight: InFlightRange, start: Long, endInclusive: Long): ByteArray {
-        emitDiagnostic {
-            "range_inflight_join path=$path start=$start end=$endInclusive " +
-                "windowStart=${inFlight.start} windowEnd=${inFlight.endInclusive} owner=${inFlight.owner.logValue}"
-        }
         val bytes = runBlocking { inFlight.deferred.await() }
         return inFlight.slice(bytes, start, endInclusive)
     }
@@ -408,31 +310,16 @@ class WebDavRangeProvider(
         requestStart: Long,
         requestEndInclusive: Long,
         bytes: ByteArray,
-    ): StoreDecision {
+    ) {
         val hasReadAhead = fetch.endInclusive > requestEndInclusive
         val protectedRanges = if (hasReadAhead) latestProtectedRanges else emptyList()
-        val protectedStats = protectedStats(protectedRanges)
         val expandedResult = if (protectedRanges.isNotEmpty()) {
             cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
         } else {
             cache.store(fetch.start, fetch.endInclusive, bytes)
         }
         if (!hasReadAhead || expandedResult.stored) {
-            return StoreDecision(
-                storeResult = expandedResult,
-                diagnostic = StoreDiagnostic(
-                    protectedStats = protectedStats,
-                    readAheadStore = if (hasReadAhead && expandedResult.stored) {
-                        READ_AHEAD_STORE_EXPANDED
-                    } else {
-                        READ_AHEAD_STORE_NONE
-                    },
-                    readAheadReason = null,
-                    storeStart = fetch.start,
-                    storeEndInclusive = fetch.endInclusive,
-                    storeBytes = bytes.size,
-                ),
-            )
+            return
         }
 
         val requestedByteCount = (requestEndInclusive - requestStart + 1).toInt()
@@ -443,47 +330,13 @@ class WebDavRangeProvider(
             cache.store(fetch.start, requestEndInclusive, requestedBytes)
         }
         if (requestedResult.stored) {
-            return StoreDecision(
-                storeResult = requestedResult,
-                diagnostic = StoreDiagnostic(
-                    protectedStats = protectedStats,
-                    readAheadStore = READ_AHEAD_STORE_TRIMMED_TO_REQUEST,
-                    readAheadReason = expandedResult.skippedReason,
-                    storeStart = fetch.start,
-                    storeEndInclusive = requestEndInclusive,
-                    storeBytes = requestedBytes.size,
-                ),
-            )
+            return
         }
 
         if (requestedResult.skippedReason == "protected_capacity") {
             val priorityResult = cache.store(fetch.start, requestEndInclusive, requestedBytes)
-            if (priorityResult.stored) {
-                return StoreDecision(
-                    storeResult = priorityResult,
-                    diagnostic = StoreDiagnostic(
-                        protectedStats = protectedStats,
-                        readAheadStore = READ_AHEAD_STORE_TRIMMED_TO_REQUEST,
-                        readAheadReason = requestedResult.skippedReason,
-                        storeStart = fetch.start,
-                        storeEndInclusive = requestEndInclusive,
-                        storeBytes = requestedBytes.size,
-                    ),
-                )
-            }
+            if (priorityResult.stored) return
         }
-
-        return StoreDecision(
-            storeResult = requestedResult,
-            diagnostic = StoreDiagnostic(
-                protectedStats = protectedStats,
-                readAheadStore = READ_AHEAD_STORE_SKIPPED,
-                readAheadReason = requestedResult.skippedReason ?: expandedResult.skippedReason,
-                storeStart = fetch.start,
-                storeEndInclusive = requestEndInclusive,
-                storeBytes = requestedBytes.size,
-            ),
-        )
     }
 
     private fun normalizeProtectedRanges(ranges: List<LongRange>): List<LongRange> {
@@ -511,16 +364,6 @@ class WebDavRangeProvider(
         return merged
     }
 
-    private fun protectedStats(ranges: List<LongRange>): ProtectedStats =
-        ProtectedStats(
-            count = ranges.size,
-            bytes = ranges.sumOf { range -> range.last - range.first + 1 },
-        )
-
-    private fun emitDiagnostic(event: () -> String) {
-        logDiagnostic?.invoke(event) ?: diagnostics.detail(DiagnosticCategory.RANGE_CACHE, event)
-    }
-
     private data class InFlightRange(
         val start: Long,
         val endInclusive: Long,
@@ -543,9 +386,9 @@ class WebDavRangeProvider(
         val deferred: CompletableDeferred<ByteArray>,
     )
 
-    private enum class InFlightOwner(val logValue: String) {
-        Demand("demand"),
-        Prefetch("prefetch"),
+    private enum class InFlightOwner {
+        Demand,
+        Prefetch,
     }
 
     private sealed class FetchDecision {
@@ -553,46 +396,9 @@ class WebDavRangeProvider(
         data class Fetch(val fetch: RegisteredFetch) : FetchDecision()
     }
 
-    private data class PostFetchResult(
-        val bytes: ByteArray,
-        val storeResult: RangeWindowCache.StoreResult,
-        val storeDiagnostic: StoreDiagnostic,
-        val cacheBytes: Long,
-        val windowCount: Int,
-    )
-
-    private data class StoreDecision(
-        val storeResult: RangeWindowCache.StoreResult,
-        val diagnostic: StoreDiagnostic,
-    )
-
-    private data class PrefetchStoreDecision(
-        val storeResult: RangeWindowCache.StoreResult,
-        val fallbackReason: String? = null,
-    )
-
-    private data class StoreDiagnostic(
-        val protectedStats: ProtectedStats,
-        val readAheadStore: String,
-        val readAheadReason: String?,
-        val storeStart: Long,
-        val storeEndInclusive: Long,
-        val storeBytes: Int,
-        val fallbackReason: String? = null,
-    )
-
-    private data class ProtectedStats(
-        val count: Int,
-        val bytes: Long,
-    )
-
     private companion object {
         const val DEFAULT_READ_AHEAD_BYTES = 4L * 1024L * 1024L
         const val DEFAULT_MAX_CACHE_BYTES = 64L * 1024L * 1024L
         const val LOW_PRIORITY_PREFETCH_PRIORITY = 2
-        const val READ_AHEAD_STORE_NONE = "none"
-        const val READ_AHEAD_STORE_EXPANDED = "expanded"
-        const val READ_AHEAD_STORE_TRIMMED_TO_REQUEST = "trimmed_to_request"
-        const val READ_AHEAD_STORE_SKIPPED = "skipped"
     }
 }

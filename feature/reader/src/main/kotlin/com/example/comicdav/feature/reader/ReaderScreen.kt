@@ -1,8 +1,5 @@
 package com.example.comicdav.feature.reader
 
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
-import com.example.comicdav.core.diagnostics.Diagnostics
-import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.background
@@ -102,13 +99,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @Composable
 fun ReaderScreen(
     uiState: ReaderUiState,
-    diagnostics: Diagnostics = NoopDiagnostics,
     onPageChanged: (Int) -> Unit,
     onPageDemanded: (Int, String) -> Unit,
-    onImageLoadStarted: (Int) -> Unit,
-    onImageLoadSucceeded: (Int) -> Unit,
-    onImageLoadFailed: (Int) -> Unit,
-    onChooseLogFile: () -> Unit,
     loadingProgress: ReaderLoadingProgress? = null,
     onCancelLoading: (() -> Unit)? = null,
     onClose: () -> Unit,
@@ -133,7 +125,6 @@ fun ReaderScreen(
             uiState.error != null -> {
                 ReaderErrorState(
                     message = uiState.error,
-                    onChooseLogFile = onChooseLogFile,
                     onClose = onClose,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -144,7 +135,6 @@ fun ReaderScreen(
                     isLoading = uiState.isLoading,
                     loadingProgress = loadingProgress,
                     onCancelLoading = onCancelLoading,
-                    onChooseLogFile = onChooseLogFile,
                     onClose = onClose,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -225,7 +215,6 @@ fun ReaderScreen(
                 LaunchedEffect(volumeKeysTurnPages) {
                     if (volumeKeysTurnPages) {
                         runCatching { focusRequester.requestFocus() }
-                        diagnostics.event("reader_volume_key_turn_pages_enabled")
                     }
                 }
                 LaunchedEffect(pagerState, isContinuousVertical) {
@@ -238,7 +227,6 @@ fun ReaderScreen(
                     }
                         .reportableReaderPageChanges()
                         .collect { page ->
-                            diagnostics.detail(DiagnosticCategory.UI) { "pager_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }
@@ -257,7 +245,6 @@ fun ReaderScreen(
                         }
                         .distinctUntilChanged()
                         .collect { snapshot ->
-                            diagnostics.detail(DiagnosticCategory.UI) { formatPagerSnapshot(snapshot) }
                             reportablePagerDemandPages(snapshot).forEach { demand ->
                                 onPageDemanded(demand.page, demand.source)
                             }
@@ -275,7 +262,6 @@ fun ReaderScreen(
                         .distinctUntilChanged()
                         .collect { page ->
                             if (page == null) return@collect
-                            diagnostics.detail(DiagnosticCategory.UI) { "continuous_scroll_report_page page=$page" }
                             onPageChanged(page)
                         }
                 }
@@ -390,9 +376,6 @@ fun ReaderScreen(
                                         ReaderImagePage(
                                             page = page,
                                             pageFile = uiState.pageFiles[page],
-                                            onImageLoadStarted = onImageLoadStarted,
-                                            onImageLoadSucceeded = onImageLoadSucceeded,
-                                            onImageLoadFailed = onImageLoadFailed,
                                             fillWidth = true,
                                             readerViewportSize = readerViewportSize,
                                             landscapeScaleMode = readerLandscapeScaleMode,
@@ -409,9 +392,6 @@ fun ReaderScreen(
                                     ReaderImagePage(
                                         page = page,
                                         pageFile = uiState.pageFiles[page],
-                                        onImageLoadStarted = onImageLoadStarted,
-                                        onImageLoadSucceeded = onImageLoadSucceeded,
-                                        onImageLoadFailed = onImageLoadFailed,
                                     )
                                 }
                             } else {
@@ -425,9 +405,6 @@ fun ReaderScreen(
                                     ReaderImagePage(
                                         page = page,
                                         pageFile = uiState.pageFiles[page],
-                                        onImageLoadStarted = onImageLoadStarted,
-                                        onImageLoadSucceeded = onImageLoadSucceeded,
-                                        onImageLoadFailed = onImageLoadFailed,
                                     )
                                 }
                             }
@@ -456,7 +433,6 @@ fun ReaderScreen(
                         onReaderLandscapeModeChange = onReaderLandscapeModeChange,
                         onReaderLandscapeOrientationLockedChange = onReaderLandscapeOrientationLockedChange,
                         onReaderLandscapeScaleModeChange = { readerLandscapeScaleMode = it },
-                        onChooseLogFile = onChooseLogFile,
                         onClose = onClose,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
@@ -658,9 +634,6 @@ private fun Modifier.readerZoomTransform(
 private fun ReaderImagePage(
     page: Int,
     pageFile: java.io.File?,
-    onImageLoadStarted: (Int) -> Unit,
-    onImageLoadSucceeded: (Int) -> Unit,
-    onImageLoadFailed: (Int) -> Unit,
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
     readerViewportSize: IntSize = IntSize.Zero,
@@ -742,7 +715,6 @@ private fun ReaderImagePage(
                 onLoading = {
                     continuousImageReady = false
                     imageSize = null
-                    onImageLoadStarted(page)
                 },
                 onSuccess = { success ->
                     continuousImageReady = true
@@ -750,12 +722,10 @@ private fun ReaderImagePage(
                         width = success.result.image.width,
                         height = success.result.image.height,
                     )
-                    onImageLoadSucceeded(page)
                 },
                 onError = {
                     continuousImageReady = false
                     imageSize = null
-                    onImageLoadFailed(page)
                 },
             )
         }
@@ -807,7 +777,6 @@ internal fun readerTopBarActionLabels(
     if (showLandscapeScaleButton) {
         add(readerLandscapeScaleButtonLabel(readerLandscapeScaleMode))
     }
-    add(ComicDavCopy.readerLog)
     add(ComicDavCopy.readerClose)
 }
 
@@ -823,7 +792,6 @@ private fun ReaderTopBar(
     onReaderLandscapeModeChange: (Boolean) -> Unit = {},
     onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
     onReaderLandscapeScaleModeChange: (ReaderLandscapeScaleMode) -> Unit = {},
-    onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -894,7 +862,6 @@ private fun ReaderTopBar(
                 },
             )
         }
-        ReaderChromeButton(text = ComicDavCopy.readerLog, onClick = onChooseLogFile)
         ReaderChromeButton(text = ComicDavCopy.readerClose, onClick = onClose)
     }
 }
@@ -1037,7 +1004,6 @@ private fun ReaderEmptyOrLoadingState(
     isLoading: Boolean,
     loadingProgress: ReaderLoadingProgress?,
     onCancelLoading: (() -> Unit)?,
-    onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1048,7 +1014,6 @@ private fun ReaderEmptyOrLoadingState(
         ReaderTopBar(
             title = if (isLoading) ComicDavCopy.readerLoading else "未打开漫画",
             subtitle = null,
-            onChooseLogFile = onChooseLogFile,
             onClose = onClose,
             modifier = Modifier.align(Alignment.TopCenter),
         )
@@ -1183,7 +1148,6 @@ private fun ReaderEmptyOrLoadingState(
 @Composable
 private fun ReaderErrorState(
     message: String,
-    onChooseLogFile: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1194,7 +1158,6 @@ private fun ReaderErrorState(
         ReaderTopBar(
             title = ComicDavCopy.readerError,
             subtitle = null,
-            onChooseLogFile = onChooseLogFile,
             onClose = onClose,
             modifier = Modifier.align(Alignment.TopCenter),
         )

@@ -1,6 +1,7 @@
 package com.example.comicdav.feature.settings
 
 import com.example.comicdav.core.model.settings.AppColorPalette
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -123,6 +124,13 @@ class SettingsScreenTest {
         assertFalse(rootRows.contains("MPV Profile"))
         assertTrue(rootRows.contains("配色方案"))
         assertTrue(rootRows.contains("屏幕旋转锁定"))
+        assertTrue(rootRows.contains("异常日志等级"))
+    }
+
+    @Test
+    fun diagnosticLogLevelOffersExplicitAllLogsOffChoice() {
+        assertEquals("关闭全部日志", DiagnosticLogLevel.OFF.settingsLabel())
+        assertEquals("异常与崩溃", DiagnosticLogLevel.ERROR.settingsLabel())
     }
 
     @Test
@@ -143,7 +151,6 @@ class SettingsScreenTest {
                 "音量键翻页",
                 "双指缩放",
                 "WebDAV 预取页数",
-                "诊断日志",
                 "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
@@ -163,7 +170,6 @@ class SettingsScreenTest {
                 "后台行为",
                 "WebDAV 视频 seek 优化",
                 "向前预读",
-                "视频代理诊断日志",
                 "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",

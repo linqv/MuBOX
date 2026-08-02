@@ -1,5 +1,8 @@
 package com.example.comicdav.video.proxy
 
+import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.remote.ContentRange
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.core.remote.WebDavClient
@@ -39,6 +42,7 @@ class MuBoxVideoProxy(
     private val maxRequestsPerConnection: Int = DEFAULT_MAX_REQUESTS_PER_CONNECTION,
     private val maxConcurrentConnections: Int = DEFAULT_MAX_CONCURRENT_CONNECTIONS,
     private val memoryCacheMaxBytes: Long = VideoPlaybackMemoryBudget.current().proxyBytes,
+    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val serverSocketFactory: (host: String, port: Int) -> ServerSocket = { host, port ->
         ServerSocket().apply {
             bind(InetSocketAddress(InetAddress.getByName(host), port), 50)
@@ -61,6 +65,7 @@ class MuBoxVideoProxy(
         coroutineScope = proxyScope,
         cache = VideoRangeMemoryCache(maxBytes = memoryCacheMaxBytes),
         statsSink = statsStore,
+        diagnostics = diagnostics,
     )
     private val closed = AtomicBoolean(false)
     private val startMutex = Mutex()
@@ -178,8 +183,8 @@ class MuBoxVideoProxy(
                     handleConnection(client)
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: IOException) {
-                    logClientDisconnect(error)
+                } catch (_: IOException) {
+                    // Client disconnects are routine during seeks.
                 } catch (error: Exception) {
                     logConnectionFailure(error)
                 } finally {
@@ -349,10 +354,6 @@ class MuBoxVideoProxy(
                         registerCancellation = requestCancellation::add,
                     )
                 }.getOrElse { error ->
-                    VideoProxyDiagnostics(request.proxySettings.diagnosticsMode).summary {
-                        "fallback stream=${VideoProxyDiagnostics.redactedStreamId(request.streamId)} reason=optimized_range_failed " +
-                            "error=${error.javaClass.simpleName}"
-                    }
                     logProxyFailure("GET optimized stream", request, error)
                     client.openRangeStream(
                         path = request.remotePath,
@@ -539,27 +540,19 @@ class MuBoxVideoProxy(
         }
 
     private fun logProxyFailure(operation: String, entry: VideoStreamRequest, error: Throwable) {
-        val message = error.message
-            ?.let(VideoProxyDiagnostics::redactCredentials)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { ": $it" }
-            .orEmpty()
-        System.err.println(
-            "Video proxy $operation failed stream=${VideoProxyDiagnostics.redactedStreamId(entry.streamId)} " +
-                "error=${error.javaClass.simpleName}$message",
+        diagnostics.error(
+            DiagnosticCategory.VIDEO,
+            "video_proxy_failed operation=$operation stream=${VideoProxyDiagnostics.redactedStreamId(entry.streamId)}",
+            error,
         )
     }
 
-    private fun logClientDisconnect(error: IOException) {
-        System.err.println("Video proxy client disconnected: ${error.message ?: error::class.java.simpleName}")
-    }
-
     private fun logAcceptFailure(error: IOException) {
-        System.err.println("Video proxy accept failed: ${error.message ?: error::class.java.simpleName}")
+        diagnostics.error(DiagnosticCategory.VIDEO, "video_proxy_accept_failed", error)
     }
 
     private fun logConnectionFailure(error: Throwable) {
-        System.err.println("Video proxy connection failed: ${error.message ?: error::class.java.simpleName}")
+        diagnostics.error(DiagnosticCategory.VIDEO, "video_proxy_connection_failed", error)
     }
 
     override fun close() {

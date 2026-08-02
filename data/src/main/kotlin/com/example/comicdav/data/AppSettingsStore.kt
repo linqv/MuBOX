@@ -11,10 +11,11 @@ import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.AppearanceSettings
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
+import com.example.comicdav.core.model.settings.DiagnosticsSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.HistorySettings
 import com.example.comicdav.core.model.settings.MpvProfileMode
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.settings.ReaderSettings
 import com.example.comicdav.core.model.settings.ReadingDirection
 import com.example.comicdav.core.model.settings.StorageSettings
@@ -23,7 +24,6 @@ import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoSettings
 import com.example.comicdav.core.model.settings.anime4KProfileFromLegacy
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
@@ -42,18 +42,13 @@ class AppSettingsStore(
             storage = storageSettingsFrom(preferences),
             video = videoSettingsFrom(preferences),
             history = historySettingsFrom(preferences),
+            diagnostics = diagnosticsSettingsFrom(preferences),
         )
 
     private fun readerSettingsFrom(preferences: Preferences): ReaderSettings =
         ReaderSettings(
             readingDirection = preferences[READING_DIRECTION]
                 .toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
-            readerLoggingMode = preferences[READER_LOGGING_MODE].toEnumOrNull<ReaderLoggingMode>()
-                ?: if (preferences[LOGGING_ENABLED] == false) {
-                    ReaderLoggingMode.OFF
-                } else {
-                    ReaderLoggingMode.SUMMARY
-                },
             avifImagesEnabled = preferences[AVIF_IMAGES_ENABLED] ?: false,
             autoPageEnabled = preferences[AUTO_PAGE_ENABLED] ?: false,
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
@@ -85,8 +80,6 @@ class AppSettingsStore(
             videoSeekOptimizationEnabled = preferences[VIDEO_SEEK_OPTIMIZATION_ENABLED] ?: true,
             videoForwardPrefetchMode = preferences[VIDEO_FORWARD_PREFETCH_MODE]
                 .toEnumOrDefault(VideoForwardPrefetchMode.STANDARD),
-            videoProxyDiagnosticsMode = preferences[VIDEO_PROXY_DIAGNOSTICS_MODE]
-                .toEnumOrDefault(VideoProxyDiagnosticsMode.OFF),
             videoPlayerProxyDebugInfoEnabled = preferences[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] ?: false,
             videoOutputMode = preferences[VIDEO_OUTPUT_MODE].toEnumOrDefault(VideoOutputMode.AUTO),
             gpuApiMode = preferences[GPU_API_MODE].toEnumOrDefault(GpuApiMode.AUTO),
@@ -114,6 +107,23 @@ class AppSettingsStore(
             historyRetentionDays = coerceHistoryRetentionDays(preferences[HISTORY_RETENTION_DAYS] ?: 90),
             historyMaxRecords = coerceHistoryMaxRecords(preferences[HISTORY_MAX_RECORDS] ?: 200),
         )
+
+    private fun diagnosticsSettingsFrom(preferences: Preferences): DiagnosticsSettings =
+        DiagnosticsSettings(
+            logLevel = preferences[DIAGNOSTIC_LOG_LEVEL].toEnumOrNull<DiagnosticLogLevel>()
+                ?: legacyDiagnosticLogLevel(preferences),
+        )
+
+    private fun legacyDiagnosticLogLevel(preferences: Preferences): DiagnosticLogLevel =
+        when (preferences[LEGACY_READER_LOGGING_MODE]) {
+            "OFF" -> DiagnosticLogLevel.OFF
+            "SUMMARY", "DETAIL" -> DiagnosticLogLevel.ERROR
+            else -> if (preferences[LEGACY_LOGGING_ENABLED] == false) {
+                DiagnosticLogLevel.OFF
+            } else {
+                DiagnosticLogLevel.ERROR
+            }
+        }
 
     suspend fun updateReaderSettings(transform: (ReaderSettings) -> ReaderSettings) {
         dataStore.edit { preferences ->
@@ -145,10 +155,14 @@ class AppSettingsStore(
         }
     }
 
+    suspend fun updateDiagnosticsSettings(transform: (DiagnosticsSettings) -> DiagnosticsSettings) {
+        dataStore.edit { preferences ->
+            preferences.writeDiagnosticsSettings(transform(diagnosticsSettingsFrom(preferences)))
+        }
+    }
+
     private fun MutablePreferences.writeReaderSettings(settings: ReaderSettings) {
         this[READING_DIRECTION] = settings.readingDirection.name
-        this[READER_LOGGING_MODE] = settings.readerLoggingMode.name
-        this[LOGGING_ENABLED] = settings.readerLoggingMode != ReaderLoggingMode.OFF
         this[AVIF_IMAGES_ENABLED] = settings.avifImagesEnabled
         this[AUTO_PAGE_ENABLED] = settings.autoPageEnabled
         this[AUTO_PAGE_SPEED_MILLIS] = settings.autoPageSpeedMillis
@@ -174,7 +188,6 @@ class AppSettingsStore(
         this[VIDEO_RESUME_ENABLED] = settings.videoResumeEnabled
         this[VIDEO_SEEK_OPTIMIZATION_ENABLED] = settings.videoSeekOptimizationEnabled
         this[VIDEO_FORWARD_PREFETCH_MODE] = settings.videoForwardPrefetchMode.name
-        this[VIDEO_PROXY_DIAGNOSTICS_MODE] = settings.videoProxyDiagnosticsMode.name
         this[VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED] = settings.videoPlayerProxyDebugInfoEnabled
         this[VIDEO_OUTPUT_MODE] = settings.videoOutputMode.name
         this[GPU_API_MODE] = settings.gpuApiMode.name
@@ -195,10 +208,12 @@ class AppSettingsStore(
         this[HISTORY_MAX_RECORDS] = coerceHistoryMaxRecords(settings.historyMaxRecords)
     }
 
+    private fun MutablePreferences.writeDiagnosticsSettings(settings: DiagnosticsSettings) {
+        this[DIAGNOSTIC_LOG_LEVEL] = settings.logLevel.name
+    }
+
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
-        val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
-        val READER_LOGGING_MODE = stringPreferencesKey("reader_logging_mode")
         val COLOR_PALETTE = stringPreferencesKey("color_palette")
         val AVIF_IMAGES_ENABLED = booleanPreferencesKey("avif_images_enabled")
         val AUTO_PAGE_ENABLED = booleanPreferencesKey("auto_page_enabled")
@@ -213,7 +228,6 @@ class AppSettingsStore(
         val VIDEO_RESUME_ENABLED = booleanPreferencesKey("video_resume_enabled")
         val VIDEO_SEEK_OPTIMIZATION_ENABLED = booleanPreferencesKey("video_seek_optimization_enabled")
         val VIDEO_FORWARD_PREFETCH_MODE = stringPreferencesKey("video_forward_prefetch_mode")
-        val VIDEO_PROXY_DIAGNOSTICS_MODE = stringPreferencesKey("video_proxy_diagnostics_mode")
         val VIDEO_PLAYER_PROXY_DEBUG_INFO_ENABLED = booleanPreferencesKey("video_player_proxy_debug_info_enabled")
         val VIDEO_OUTPUT_MODE = stringPreferencesKey("video_output_mode")
         val GPU_API_MODE = stringPreferencesKey("gpu_api_mode")
@@ -231,6 +245,10 @@ class AppSettingsStore(
         val VIDEO_LIBRARY_THUMBNAILS_ENABLED = booleanPreferencesKey("video_library_thumbnails_enabled")
         val HISTORY_RETENTION_DAYS = intPreferencesKey("history_retention_days")
         val HISTORY_MAX_RECORDS = intPreferencesKey("history_max_records")
+        val DIAGNOSTIC_LOG_LEVEL = stringPreferencesKey("diagnostic_log_level")
+        // Read-only legacy keys keep an existing OFF choice across the logging refactor.
+        val LEGACY_LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
+        val LEGACY_READER_LOGGING_MODE = stringPreferencesKey("reader_logging_mode")
     }
 }
 

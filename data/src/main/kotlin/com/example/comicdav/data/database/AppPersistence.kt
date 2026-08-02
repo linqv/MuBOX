@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.core.ports.FileDirectoryCatalog
 import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrator
+import com.example.comicdav.data.filedirectory.FileDirectoryCredentialMigrationResult
 import com.example.comicdav.data.filedirectory.FileDirectoryRepository
 import com.example.comicdav.data.history.WatchHistoryRepository
 import com.example.comicdav.core.ports.WatchHistoryGateway
@@ -25,13 +26,12 @@ class AppPersistence internal constructor(
     suspend fun migrateLegacyFileDirectoryCredentials(
         accountStore: WebDavAccountStore,
         cipher: CredentialCipher,
-    ) {
+    ): FileDirectoryCredentialMigrationResult =
         FileDirectoryCredentialMigrator(
             dao = database.fileDirectoryDao(),
             accountStore = accountStore,
             cipher = cipher,
         ).migrateLegacyCredentials()
-    }
 }
 
 fun createAppPersistence(context: Context): AppPersistence {

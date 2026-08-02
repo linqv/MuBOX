@@ -8,10 +8,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppearanceSettings
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
+import com.example.comicdav.core.model.settings.DiagnosticsSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.HistorySettings
 import com.example.comicdav.core.model.settings.MpvProfileMode
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.settings.ReaderSettings
 import com.example.comicdav.core.model.settings.ReadingDirection
 import com.example.comicdav.core.model.settings.StorageSettings
@@ -20,7 +21,6 @@ import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
@@ -37,19 +37,60 @@ class AppSettingsStoreTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun defaultsEnableVideoSeekOptimizationWithStandardPrefetchAndDiagnosticsOff() = runTest {
+    fun defaultsEnableVideoSeekOptimizationWithStandardPrefetch() = runTest {
         val store = createStore("defaults.preferences_pb")
 
         val settings = store.settings.first()
 
         assertTrue(settings.video.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.STANDARD, settings.video.videoForwardPrefetchMode)
-        assertEquals(VideoProxyDiagnosticsMode.OFF, settings.video.videoProxyDiagnosticsMode)
         assertFalse(settings.video.videoPlayerProxyDebugInfoEnabled)
         assertEquals(MpvProfileMode.FAST, settings.video.mpvProfileMode)
         assertTrue(settings.video.gridVideoThumbnailsEnabled)
         assertEquals(90, settings.history.historyRetentionDays)
         assertEquals(200, settings.history.historyMaxRecords)
+        assertEquals(DiagnosticLogLevel.ERROR, settings.diagnostics.logLevel)
+    }
+
+    @Test
+    fun diagnosticLogLevelCanDisableAllLogsAndBeReadBack() = runTest {
+        val store = createStore("diagnostic_log_level.preferences_pb")
+
+        store.updateDiagnosticsSettings { DiagnosticsSettings(DiagnosticLogLevel.OFF) }
+
+        assertEquals(DiagnosticLogLevel.OFF, store.settings.first().diagnostics.logLevel)
+    }
+
+    @Test
+    fun legacyReaderLoggingOffMigratesToAllLogsOff() = runTest {
+        val preferencesFile = temporaryFolder.newFile("legacy_reader_logging_off.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        dataStore.edit { preferences ->
+            preferences[stringPreferencesKey("reader_logging_mode")] = "OFF"
+        }
+
+        val settings = AppSettingsStore(dataStore).settings.first()
+
+        assertEquals(DiagnosticLogLevel.OFF, settings.diagnostics.logLevel)
+    }
+
+    @Test
+    fun legacyDisabledLoggingFlagMigratesToAllLogsOff() = runTest {
+        val preferencesFile = temporaryFolder.newFile("legacy_logging_flag_off.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        dataStore.edit { preferences ->
+            preferences[booleanPreferencesKey("logging_enabled")] = false
+        }
+
+        val settings = AppSettingsStore(dataStore).settings.first()
+
+        assertEquals(DiagnosticLogLevel.OFF, settings.diagnostics.logLevel)
     }
 
     @Test
@@ -60,7 +101,6 @@ class AppSettingsStoreTest {
             video.copy(
                 videoSeekOptimizationEnabled = false,
                 videoForwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE,
-                videoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.DETAIL,
                 videoPlayerProxyDebugInfoEnabled = true,
             )
         }
@@ -69,7 +109,6 @@ class AppSettingsStoreTest {
 
         assertFalse(settings.video.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.AGGRESSIVE, settings.video.videoForwardPrefetchMode)
-        assertEquals(VideoProxyDiagnosticsMode.DETAIL, settings.video.videoProxyDiagnosticsMode)
         assertTrue(settings.video.videoPlayerProxyDebugInfoEnabled)
     }
 
@@ -159,6 +198,7 @@ class AppSettingsStoreTest {
         store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 3072) }
         store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
         store.updateHistorySettings { HistorySettings(historyMaxRecords = 500) }
+        store.updateDiagnosticsSettings { DiagnosticsSettings(DiagnosticLogLevel.OFF) }
 
         val preferences = dataStore.data.first()
         assertEquals(
@@ -169,6 +209,7 @@ class AppSettingsStoreTest {
         assertEquals(3072, preferences[intPreferencesKey("disk_cache_limit_gb")])
         assertEquals(false, preferences[booleanPreferencesKey("video_resume_enabled")])
         assertEquals(500, preferences[intPreferencesKey("history_max_records")])
+        assertEquals("OFF", preferences[stringPreferencesKey("diagnostic_log_level")])
     }
 
     @Test
@@ -252,7 +293,6 @@ class AppSettingsStoreTest {
         val store = createStore("reader_group.preferences_pb")
         val reader = ReaderSettings(
             readingDirection = ReadingDirection.RIGHT_TO_LEFT,
-            readerLoggingMode = ReaderLoggingMode.DETAIL,
             avifImagesEnabled = true,
             autoPageEnabled = true,
             autoPageSpeedMillis = 12_000,
@@ -300,7 +340,6 @@ class AppSettingsStoreTest {
             videoResumeEnabled = false,
             videoSeekOptimizationEnabled = false,
             videoForwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE,
-            videoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.DETAIL,
             videoPlayerProxyDebugInfoEnabled = true,
             videoOutputMode = VideoOutputMode.GPU_NEXT,
             gpuApiMode = GpuApiMode.VULKAN,
@@ -333,6 +372,16 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun diagnosticsSettingsArePersistedAsOneGroup() = runTest {
+        val store = createStore("diagnostics_group.preferences_pb")
+        val diagnostics = DiagnosticsSettings(logLevel = DiagnosticLogLevel.OFF)
+
+        store.updateDiagnosticsSettings { diagnostics }
+
+        assertEquals(diagnostics, store.settings.first().diagnostics)
+    }
+
+    @Test
     fun updatingOneGroupDoesNotOverwriteOtherGroups() = runTest {
         val store = createStore("group_isolation.preferences_pb")
         store.updateReaderSettings { ReaderSettings(autoPageEnabled = true) }
@@ -340,6 +389,7 @@ class AppSettingsStoreTest {
         store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 2048) }
         store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
         store.updateHistorySettings { HistorySettings(historyRetentionDays = 180) }
+        store.updateDiagnosticsSettings { DiagnosticsSettings(DiagnosticLogLevel.OFF) }
         val before = store.settings.first()
 
         store.updateReaderSettings { before.reader.copy(readerPinchZoomEnabled = true) }
@@ -350,6 +400,7 @@ class AppSettingsStoreTest {
         assertEquals(before.storage, after.storage)
         assertEquals(before.video, after.video)
         assertEquals(before.history, after.history)
+        assertEquals(before.diagnostics, after.diagnostics)
     }
 
     private fun TestScope.createStore(fileName: String): AppSettingsStore {

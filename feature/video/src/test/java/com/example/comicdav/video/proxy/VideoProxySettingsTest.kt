@@ -1,7 +1,6 @@
 package com.example.comicdav.video.proxy
 
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,13 +9,12 @@ import org.junit.Test
 
 class VideoProxySettingsTest {
     @Test
-    fun defaultSettingsEnableSeekOptimizationWithStandardPrefetchAndDiagnosticsOff() {
+    fun defaultSettingsEnableSeekOptimizationWithStandardPrefetch() {
         val settings = VideoProxySettings.DEFAULT
 
         assertTrue(settings.seekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.STANDARD, settings.forwardPrefetchMode)
         assertEquals(1, settings.forwardPrefetchMode.segmentCount)
-        assertEquals(VideoProxyDiagnosticsMode.OFF, settings.diagnosticsMode)
     }
 
     @Test

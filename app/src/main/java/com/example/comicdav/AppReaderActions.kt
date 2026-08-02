@@ -1,8 +1,6 @@
 package com.example.comicdav
 
-import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.model.settings.AppSettings
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.data.AppSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -20,7 +18,6 @@ internal class AppReaderActions(
     private val scope: CoroutineScope,
     private val settings: AppSettings,
     private val appSettingsStore: AppSettingsStore,
-    private val diagnostics: Diagnostics,
     private val activityLaunchers: AppActivityLaunchers,
     private val viewModels: AppViewModels,
     private val callbacks: AppReaderActionCallbacks,
@@ -46,12 +43,6 @@ internal class AppReaderActions(
         callbacks.setLandscapeOrientationLocked(locked)
     }
 
-    fun chooseLogFolder() {
-        if (settings.reader.readerLoggingMode != ReaderLoggingMode.OFF) {
-            activityLaunchers.chooseLogFolder()
-        }
-    }
-
     fun cancelLoading() {
         closeReader(event = "reader_open_cancel")
     }
@@ -74,7 +65,6 @@ internal class AppReaderActions(
     }
 
     private fun closeReader(event: String) {
-        diagnostics.event(event)
         val shouldRestoreMainPortrait = callbacks.isLandscapeModeEnabled()
         viewModels.reader.closeReader()
         callbacks.setLandscapeModeEnabled(readerLandscapeModeAfterReaderClosed())

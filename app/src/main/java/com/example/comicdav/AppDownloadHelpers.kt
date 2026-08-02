@@ -68,7 +68,7 @@ internal suspend fun deleteDownloadDocumentAndShouldRemoveRecord(
         onSuccess = { deleted ->
             if (!deleted) {
                 documentStillResolvable = downloadDocumentStillResolvable(context, uri, diagnostics)
-                diagnostics.event("${diagnosticName}_returned_false uri=$uri resolvable=$documentStillResolvable")
+                diagnostics.error("${diagnosticName}_returned_false uri=$uri resolvable=$documentStillResolvable")
             }
             deleted
         },

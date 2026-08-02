@@ -7,7 +7,6 @@ import com.example.comicdav.core.model.history.WatchHistoryMetadata
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.AppSettings
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.transfer.DownloadRecord
 import com.example.comicdav.core.model.library.LibraryItemWithSources
 import com.example.comicdav.core.model.library.SourceType
@@ -35,7 +34,6 @@ internal class AppComicActions(
     private val context: Context,
     private val scope: CoroutineScope,
     private val settings: AppSettings,
-    private val logFolderUri: String?,
     private val container: AppContainer,
     private val viewModels: AppViewModels,
     private val webDavResolver: AppWebDavResolver,
@@ -289,14 +287,6 @@ internal class AppComicActions(
         callbacks.setError(null)
         callbacks.setActionMessage(null)
         callbacks.setReaderOpen(true)
-        startReaderLogFile(
-            context = context,
-            folderUriText = logFolderUri,
-            scope = scope,
-            diagnostics = container.diagnostics,
-            loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
-        )
-        container.diagnostics.event("open_remote_start path=$remotePath size=${size ?: -1}")
         val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         readerViewModel.openRemote(
             cacheDir = context.cacheDir,
@@ -406,13 +396,6 @@ internal class AppComicActions(
         onOpened: () -> Unit = {},
         onFailure: (Throwable) -> Unit,
     ) {
-        startReaderLogFile(
-            context = context,
-            folderUriText = logFolderUri,
-            scope = scope,
-            diagnostics = container.diagnostics,
-            loggingEnabled = settings.reader.readerLoggingMode != ReaderLoggingMode.OFF,
-        )
         val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         scope.launch {
             runCatching {
@@ -423,7 +406,6 @@ internal class AppComicActions(
                 onSuccess = { session ->
                     callbacks.setError(null)
                     onOpened()
-                    container.diagnostics.event("$readyEvent fileName=$fileName")
                     readerViewModel.openExistingSession(
                         openedSession = session,
                         cacheDir = context.cacheDir,

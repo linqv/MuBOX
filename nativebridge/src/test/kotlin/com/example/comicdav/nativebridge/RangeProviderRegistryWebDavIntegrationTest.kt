@@ -65,7 +65,6 @@ class RangeProviderRegistryWebDavIntegrationTest {
             path = "/books/book.cbz",
             size = bytes.size.toLong(),
             readAheadBytes = 0,
-            logDiagnostic = {},
         )
         val fileId = RangeProviderRegistry.register(provider)
 

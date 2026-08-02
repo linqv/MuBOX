@@ -20,15 +20,13 @@ enum class AppColorPalette {
     HIGH_CONTRAST,
 }
 
-enum class ReaderLoggingMode {
+enum class DiagnosticLogLevel {
     OFF,
-    SUMMARY,
-    DETAIL,
+    ERROR,
 }
 
 data class ReaderSettings(
     val readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
-    val readerLoggingMode: ReaderLoggingMode = ReaderLoggingMode.SUMMARY,
     val avifImagesEnabled: Boolean = false,
     val autoPageEnabled: Boolean = false,
     val autoPageSpeedMillis: Int = 5_000,
@@ -52,7 +50,6 @@ data class VideoSettings(
     val videoResumeEnabled: Boolean = true,
     val videoSeekOptimizationEnabled: Boolean = true,
     val videoForwardPrefetchMode: VideoForwardPrefetchMode = VideoForwardPrefetchMode.STANDARD,
-    val videoProxyDiagnosticsMode: VideoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.OFF,
     val videoPlayerProxyDebugInfoEnabled: Boolean = false,
     val videoOutputMode: VideoOutputMode = VideoOutputMode.AUTO,
     val gpuApiMode: GpuApiMode = GpuApiMode.AUTO,
@@ -71,10 +68,15 @@ data class HistorySettings(
     val historyMaxRecords: Int = 200,
 )
 
+data class DiagnosticsSettings(
+    val logLevel: DiagnosticLogLevel = DiagnosticLogLevel.ERROR,
+)
+
 data class AppSettings(
     val reader: ReaderSettings = ReaderSettings(),
     val appearance: AppearanceSettings = AppearanceSettings(),
     val storage: StorageSettings = StorageSettings(),
     val video: VideoSettings = VideoSettings(),
     val history: HistorySettings = HistorySettings(),
+    val diagnostics: DiagnosticsSettings = DiagnosticsSettings(),
 )

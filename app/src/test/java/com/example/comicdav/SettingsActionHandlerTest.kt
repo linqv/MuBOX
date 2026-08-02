@@ -7,10 +7,11 @@ import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppearanceSettings
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
+import com.example.comicdav.core.model.settings.DiagnosticsSettings
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.HistorySettings
 import com.example.comicdav.core.model.settings.MpvProfileMode
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.settings.ReaderSettings
 import com.example.comicdav.core.model.settings.ReadingDirection
 import com.example.comicdav.core.model.settings.StorageSettings
@@ -19,7 +20,6 @@ import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoSettings
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.core.model.cache.ComicCacheCategory
@@ -44,7 +44,6 @@ class SettingsActionHandlerTest {
         val store = createStore("settings_action_dispatch.preferences_pb")
         val reader = ReaderSettings(
             readingDirection = ReadingDirection.VERTICAL_CONTINUOUS,
-            readerLoggingMode = ReaderLoggingMode.DETAIL,
             avifImagesEnabled = true,
             autoPageEnabled = true,
             autoPageSpeedMillis = 12_000,
@@ -65,7 +64,6 @@ class SettingsActionHandlerTest {
             videoResumeEnabled = false,
             videoSeekOptimizationEnabled = false,
             videoForwardPrefetchMode = VideoForwardPrefetchMode.AGGRESSIVE,
-            videoProxyDiagnosticsMode = VideoProxyDiagnosticsMode.DETAIL,
             videoPlayerProxyDebugInfoEnabled = true,
             videoOutputMode = VideoOutputMode.GPU_NEXT,
             gpuApiMode = GpuApiMode.VULKAN,
@@ -82,12 +80,14 @@ class SettingsActionHandlerTest {
             historyRetentionDays = 180,
             historyMaxRecords = 500,
         )
+        val diagnostics = DiagnosticsSettings(logLevel = DiagnosticLogLevel.OFF)
         val actions = listOf(
             SettingsAction.UpdateReader { reader },
             SettingsAction.UpdateAppearance { appearance },
             SettingsAction.UpdateStorage { storage },
             SettingsAction.UpdateVideo { video },
             SettingsAction.UpdateHistory { history },
+            SettingsAction.UpdateDiagnostics { diagnostics },
         )
         val handler = SettingsActionHandler(
             appSettingsStore = store,
@@ -105,6 +105,7 @@ class SettingsActionHandlerTest {
         assertEquals(storage, settings.storage)
         assertEquals(video, settings.video)
         assertEquals(history, settings.history)
+        assertEquals(diagnostics, settings.diagnostics)
     }
 
     @Test

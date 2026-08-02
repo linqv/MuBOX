@@ -659,34 +659,7 @@ class OkHttpWebDavClientTest {
     }
 
     @Test
-    fun detailDiagnosticsLogNetworkPhaseDurations() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Length", "3")
-                .setBody("abc"),
-        )
-        val logs = mutableListOf<String>()
-        val client = testClient(
-            baseUrl = server.url("/dav/").toString(),
-            diagnostics = recordingDiagnostics(detailLogs = logs),
-        )
-
-        client.head("/movie.mp4")
-
-        val complete = logs.single { it.contains("event=complete") }
-        assertTrue(complete.contains("operation=HEAD"))
-        assertTrue(complete.contains("pathId=webdav:"))
-        assertTrue(complete.contains("dnsMs="))
-        assertTrue(complete.contains("connectMs="))
-        assertTrue(complete.contains("tlsMs="))
-        assertTrue(complete.contains("responseMs="))
-        assertTrue(complete.contains("bodyMs="))
-        assertTrue(complete.contains("totalMs="))
-    }
-
-    @Test
-    fun failureDiagnosticsLogSanitizedCurlCommand() = runTest {
+    fun failureDiagnosticsExcludeCredentialsAndResourcePath() = runTest {
         server.enqueue(MockResponse().setResponseCode(401))
         val logs = mutableListOf<String>()
         val client = testClient(
@@ -706,14 +679,14 @@ class OkHttpWebDavClientTest {
 
         assertTrue(result.exceptionOrNull() is WebDavException.HttpStatus)
         val combined = logs.joinToString("\n")
-        assertTrue(combined.contains("event=failure"))
+        assertTrue(combined.contains("webdav_request_failed"))
         assertTrue(combined.contains("operation=HEAD"))
-        assertTrue(combined.contains("curl="))
+        assertFalse(combined.contains("curl="))
         assertTrue(doesNotContainAuthorization(combined))
         assertFalse(combined.contains(Credentials.basic("alice", "secret")))
         assertFalse(combined.contains("url-user:url-password@"))
         assertFalse(combined.contains("token=open-sesame"))
-        assertTrue(combined.contains("token=%3Credacted%3E") || combined.contains("token=<redacted>"))
+        assertFalse(combined.contains("/private/movie.mp4"))
         assertFalse(result.exceptionOrNull()?.message.orEmpty().contains("url-user:url-password@"))
         assertFalse(result.exceptionOrNull()?.message.orEmpty().contains("token=open-sesame"))
     }
@@ -783,12 +756,10 @@ class OkHttpWebDavClientTest {
     }
 
     private fun recordingDiagnostics(
-        detailLogs: MutableList<String> = mutableListOf(),
         failureLogs: MutableList<String> = mutableListOf(),
     ): WebDavNetworkDiagnostics =
         WebDavNetworkDiagnostics(
-            logDetail = { event -> detailLogs += event() },
-            logFailure = { message, _ -> failureLogs += message },
+            recordFailure = { message, _ -> failureLogs += message },
         )
 
     private fun String.toResponseBody(): ResponseBody =

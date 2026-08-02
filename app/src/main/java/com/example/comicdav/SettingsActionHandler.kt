@@ -27,6 +27,8 @@ internal class SettingsActionHandler(
                 scope.launch { appSettingsStore.updateVideoSettings(action.transform) }
             is SettingsAction.UpdateHistory ->
                 scope.launch { appSettingsStore.updateHistorySettings(action.transform) }
+            is SettingsAction.UpdateDiagnostics ->
+                scope.launch { appSettingsStore.updateDiagnosticsSettings(action.transform) }
             is SettingsAction.DeleteHistoryEntry -> onDeleteHistoryEntry(action.entry)
             SettingsAction.ClearHistory -> onClearHistory()
             is SettingsAction.ClearCacheCategory -> onClearCacheCategory(action.category)

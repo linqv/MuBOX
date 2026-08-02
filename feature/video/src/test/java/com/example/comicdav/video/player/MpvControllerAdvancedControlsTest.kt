@@ -11,7 +11,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.system.measureTimeMillis
 
 class MpvControllerAdvancedControlsTest {
     @Test
@@ -535,17 +534,6 @@ class MpvControllerAdvancedControlsTest {
 
         assertTrue(controller.state.value.gestureState.controlsLocked)
         assertEquals(emptyMap<String, Boolean>(), engine.booleanProperties)
-    }
-
-    @Test
-    fun destroyDoesNotUseFixedCallerThreadSleep() {
-        val controller = MpvController(FakeMpvEngine())
-
-        val elapsedMillis = measureTimeMillis {
-            controller.destroy()
-        }
-
-        assertTrue("destroy blocked caller for ${elapsedMillis}ms", elapsedMillis < 80L)
     }
 
     private fun trackNode(

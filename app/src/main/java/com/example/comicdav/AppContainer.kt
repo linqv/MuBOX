@@ -2,7 +2,8 @@ package com.example.comicdav
 
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.data.AppDataFolderStore
 import com.example.comicdav.data.AppSettingsStore
 import com.example.comicdav.data.ComicDownloadCache
@@ -13,7 +14,6 @@ import com.example.comicdav.data.WebDavAccountStore
 import com.example.comicdav.data.database.createAppPersistence
 import com.example.comicdav.feature.filedirectory.AndroidLocalDirectoryReader
 import com.example.comicdav.feature.reader.LocalComicOpener
-import com.example.comicdav.infrastructure.diagnostics.AndroidLogcatDiagnosticSink
 import com.example.comicdav.infrastructure.library.WebDavLibraryCoverExtractor
 import com.example.comicdav.nativebridge.ComicEngine
 import com.example.comicdav.feature.videolibrary.VideoThumbnailExtractor
@@ -38,8 +38,10 @@ internal val Context.downloadRecordsDataStore by preferencesDataStore(name = "do
 internal val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
 internal val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
 
-internal class AppContainer(context: Context) {
-    val diagnostics = ConfigurableDiagnostics(defaultSink = AndroidLogcatDiagnosticSink())
+internal class AppContainer(
+    context: Context,
+    val diagnostics: Diagnostics,
+) {
 
     val credentialCipher: CredentialCipher = AndroidKeystoreCredentialCipher()
 
@@ -56,21 +58,19 @@ internal class AppContainer(context: Context) {
     val localComicOpener = LocalComicOpener(
         context = context.applicationContext,
         openSession = { fd, size, format, avifImagesEnabled ->
-            ComicEngine(diagnostics = diagnostics).openLocalFd(
+            ComicEngine().openLocalFd(
                 fd = fd,
                 size = size,
                 format = format.nativeName,
                 avifImagesEnabled = avifImagesEnabled,
             )
         },
-        diagnostics = diagnostics,
     )
 
     val remoteCache = ComicDownloadCache(File(context.cacheDir, "remote-comics"))
     val coverExtractor = WebDavLibraryCoverExtractor(
         appCacheDir = context.cacheDir,
         remoteCacheDir = remoteCache.cacheDir,
-        diagnostics = diagnostics,
     )
     val videoThumbnailExtractor = VideoThumbnailExtractor(
         cacheDir = context.cacheDir,
@@ -81,7 +81,7 @@ internal class AppContainer(context: Context) {
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
     val videoPlaybackStateStore = VideoPlaybackStateStore(context.videoPlaybackStateDataStore)
-    val videoProxyManager = VideoProxyManager()
+    val videoProxyManager = VideoProxyManager(diagnostics)
     val webDavClientProvider = WebDavClientProvider(
         loadCredentials = { accountId ->
             webDavAccountStore.loadAccount(accountId)?.let { account ->
@@ -113,7 +113,7 @@ internal class AppContainer(context: Context) {
             diagnostics = diagnostics,
         )
 
-    fun openLocalComicSession(path: String) = ComicEngine(diagnostics = diagnostics).openLocal(path)
+    fun openLocalComicSession(path: String) = ComicEngine().openLocal(path)
     val downloadRecordStore = DownloadRecordStore(context.downloadRecordsDataStore)
     val videoDownloadStore = VideoDownloadStore(context.videoDownloadRecordsDataStore)
 
@@ -122,17 +122,25 @@ internal class AppContainer(context: Context) {
             webDavAccountStore.migratePlaintextPasswords()
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            diagnostics.error(DiagnosticCategory.STORAGE, "plaintext_password_migration_failed", error)
             // The account migration is idempotent and will be attempted again next process start.
         }
         try {
-            appPersistence.migrateLegacyFileDirectoryCredentials(
+            val result = appPersistence.migrateLegacyFileDirectoryCredentials(
                 accountStore = webDavAccountStore,
                 cipher = credentialCipher,
             )
+            if (!result.isComplete) {
+                diagnostics.error(
+                    DiagnosticCategory.STORAGE,
+                    "legacy_directory_credential_migration_incomplete failedSourceIds=${result.failedSourceIds}",
+                )
+            }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            diagnostics.error(DiagnosticCategory.STORAGE, "legacy_directory_credential_migration_failed", error)
             // Legacy fields remain intact, so the idempotent migration can retry next process start.
         }
     }

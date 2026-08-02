@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.comicdav.core.diagnostics.DiagnosticCategory
 import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.history.WatchHistoryEntry
@@ -44,23 +43,17 @@ class ReaderViewModel(
     prunePageCache: (cacheDir: File, protectedFile: File, maxBytes: Long) -> Unit = { cacheDir, protectedFile, maxBytes ->
         ReaderPageCache.prune(cacheDir, protectedFile, maxBytes)
     },
-    private val elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ViewModel() {
     var uiState by mutableStateOf(ReaderUiState())
         private set
 
-    private val diagnostics = ReaderDiagnosticsTracker(elapsedRealtimeMs)
     private var historyMetadata: WatchHistoryMetadata? = null
     private val sessionCoordinator = ReaderSessionCoordinator(
         ioDispatcher = ioDispatcher,
-        diagnosticLog = diagnosticLog,
     )
     private val pageLoadCoordinator = ReaderPageLoadCoordinator(
         ioDispatcher = ioDispatcher,
         sessionGate = sessionCoordinator,
-        diagnostics = diagnostics,
-        diagnosticLog = diagnosticLog,
-        elapsedRealtimeMs = elapsedRealtimeMs,
         prunePageCache = prunePageCache,
     )
     private val prefetchCoordinator = ReaderPrefetchCoordinator(
@@ -68,7 +61,6 @@ class ReaderViewModel(
         ioDispatcher = ioDispatcher,
         sessionCoordinator = sessionCoordinator,
         pageLoadCoordinator = pageLoadCoordinator,
-        diagnostics = diagnostics,
         diagnosticLog = diagnosticLog,
         pageFiles = { uiState.pageFiles },
         onPageFilesLoaded = { files ->
@@ -93,7 +85,6 @@ class ReaderViewModel(
     ) {
         closeCurrentSession()
         this.historyMetadata = historyMetadata
-        diagnostics.reset()
         val pageCacheKey = comicKey ?: "local-${path.hashCode()}"
         val opening = requireNotNull(
             sessionCoordinator.beginOpening(
@@ -102,9 +93,6 @@ class ReaderViewModel(
                 pageCacheKey = pageCacheKey,
                 readerKeyBase = pageCacheKey,
             ),
-        )
-        diagnosticLog.event(
-            "open_local_start initialPage=$initialPage generation=${opening.generation} key=${opening.readerKey}",
         )
         uiState = ReaderUiState(isLoading = true, readerKey = opening.readerKey)
         viewModelScope.launch {
@@ -129,9 +117,6 @@ class ReaderViewModel(
                         pageFiles = opened.files,
                         readerKey = opening.readerKey,
                     )
-                    diagnosticLog.event(
-                        "open_local_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
-                    )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, opening.generation)
                     prefetchCoordinator.prefetchNeighbors(opened.currentPage)
                     saveHistory(opened.currentPage, opened.session.pageCount)
@@ -154,7 +139,6 @@ class ReaderViewModel(
     ) {
         closeCurrentSession()
         this.historyMetadata = historyMetadata
-        diagnostics.reset()
         startOpenedSession(
             openedSession = openedSession,
             cacheDir = cacheDir,
@@ -184,7 +168,6 @@ class ReaderViewModel(
             sessionCoordinator.closeSessionAsync(openedSession)
             return
         }
-        diagnosticLog.event("open_session_start initialPage=$initialPage generation=$openGeneration key=$comicKey")
         uiState = ReaderUiState(isLoading = true, readerKey = opening.readerKey)
         viewModelScope.launch {
             runCatching {
@@ -204,9 +187,6 @@ class ReaderViewModel(
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
                         readerKey = opening.readerKey,
-                    )
-                    diagnosticLog.event(
-                        "open_session_success pageCount=${opened.session.pageCount} current=${opened.currentPage} files=${opened.files.keys.sorted()}",
                     )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, openGeneration)
                     prefetchCoordinator.prefetchNeighbors(opened.currentPage)
@@ -228,10 +208,7 @@ class ReaderViewModel(
     ) {
         closeCurrentSession()
         this.historyMetadata = historyMetadata
-        diagnostics.reset()
         val openGeneration = sessionCoordinator.generation
-        val remoteOpenStartedAtMs = elapsedRealtimeMs()
-        diagnosticLog.event("open_remote_start generation=$openGeneration")
         uiState = ReaderUiState(isLoading = true)
         val job = viewModelScope.launch {
             runCatching {
@@ -239,21 +216,12 @@ class ReaderViewModel(
             }.fold(
                 onSuccess = { result ->
                     if (!sessionCoordinator.isCurrent(openGeneration)) {
-                        diagnosticLog.event(
-                            "open_remote_stale_result generation=$openGeneration active=${sessionCoordinator.generation}",
-                        )
                         sessionCoordinator.closeSessionAsync(result.session)
                         return@fold
                     }
                     sessionCoordinator.clearRemoteOpen(currentCoroutineContext()[Job])
                     this@ReaderViewModel.historyMetadata =
                         this@ReaderViewModel.historyMetadata?.copy(mediaKey = result.comicKey)
-                    val remoteDurationMs = (elapsedRealtimeMs() - remoteOpenStartedAtMs).coerceAtLeast(0L)
-                    diagnostics.recordRemoteOpenDuration(remoteDurationMs)
-                    diagnosticLog.event(
-                        "open_remote_result key=${result.comicKey} initialPage=${result.initialPage} " +
-                            "fileSize=${result.localFile.length()} durationMs=$remoteDurationMs",
-                    )
                     startOpenedSession(
                         openedSession = result.session,
                         cacheDir = cacheDir,
@@ -276,21 +244,16 @@ class ReaderViewModel(
     fun selectPage(pageIndex: Int) {
         val activeReader = sessionCoordinator.activeSession
         if (activeReader == null) {
-            diagnosticLog.event("select_page_ignored_no_session page=$pageIndex")
             return
         }
         val activeSession = activeReader.session
         val opening = activeReader.descriptor
         if (pageIndex !in 0 until activeSession.pageCount) {
-            diagnosticLog.event("select_page_ignored_out_of_range page=$pageIndex pageCount=${activeSession.pageCount}")
             return
         }
 
         reportPageDemand(pageIndex, "select_page")
         val existingFile = uiState.pageFiles[pageIndex]
-        diagnosticLog.event(
-            "select_page page=$pageIndex previous=${uiState.currentPage} cached=${existingFile != null} pageCount=${activeSession.pageCount}",
-        )
         uiState = uiState.copy(
             currentPage = pageIndex,
             isLoading = existingFile == null,
@@ -299,7 +262,6 @@ class ReaderViewModel(
         if (existingFile != null) {
             prefetchCoordinator.updateViewport(activeSession, pageIndex, opening.generation)
             saveProgress(pageIndex)
-            diagnosticLog.event("select_page_cached page=$pageIndex fileSize=${existingFile.length()}")
             prefetchCoordinator.prefetchNeighbors(pageIndex, reason = "select_page")
             return
         }
@@ -323,7 +285,6 @@ class ReaderViewModel(
                     )
                     prefetchCoordinator.updateViewport(activeSession, pageIndex, loadGeneration)
                     saveProgress(pageIndex)
-                    diagnosticLog.event("select_page_loaded page=$pageIndex files=${files.keys.sorted()}")
                     prefetchCoordinator.prefetchNeighbors(pageIndex)
                 },
                 onFailure = { error ->
@@ -339,7 +300,6 @@ class ReaderViewModel(
     }
 
     fun closeReader() {
-        diagnosticLog.event("close_reader")
         closeCurrentSession()
         uiState = ReaderUiState()
     }
@@ -351,15 +311,6 @@ class ReaderViewModel(
 
     private fun closeCurrentSession() {
         sessionCoordinator.closeCurrentSession(
-            beforeRemoteCancellation = { activeSession ->
-                if (activeSession != null) {
-                    diagnostics.localSessionSummary()?.let { summary ->
-                        diagnosticLog.summary(DiagnosticCategory.SESSION) {
-                            summary.formatLocalSessionSummary()
-                        }
-                    }
-                }
-            },
             cancelDependentWork = {
                 prefetchCoordinator.cancelSessionWork(uiState.currentPage)
             },
@@ -368,9 +319,6 @@ class ReaderViewModel(
 
     fun reportPageDemand(pageIndex: Int, source: String) {
         val ready = uiState.pageFiles[pageIndex] != null
-        diagnosticLog.detail(DiagnosticCategory.UI) {
-            "page_demand page=$pageIndex source=$source ready=$ready"
-        }
         if (pageIndex !in 0 until uiState.pageCount) return
         if (ready) {
             val activeReader = sessionCoordinator.activeSession
@@ -383,33 +331,10 @@ class ReaderViewModel(
         if (source == "pager_target") {
             prefetchCoordinator.prefetchDemandRanges(pageIndex, source)
         }
-
-        diagnostics.recordPageDemand(pageIndex, source)
     }
 
     private fun String.shouldAdvancePrefetchOnDemand(): Boolean =
         this == "pager_current" || this == "pager_target" || this == "continuous_visible"
-
-    fun reportImageLoadStarted(pageIndex: Int) {
-        diagnostics.recordImageLoadStarted(pageIndex)
-        diagnosticLog.detail(DiagnosticCategory.IMAGE) { "image_load_start page=$pageIndex" }
-    }
-
-    fun reportImageLoadSucceeded(pageIndex: Int) {
-        val completedAtMs = elapsedRealtimeMs()
-        val imageRenderMs = diagnostics.imageRenderDuration(pageIndex, completedAtMs)
-        diagnosticLog.detail(DiagnosticCategory.IMAGE) {
-            "image_load_success page=$pageIndex durationMs=${imageRenderMs ?: "unknown"}"
-        }
-        diagnostics.firstImageAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
-            ?.let(diagnosticLog::event)
-        diagnostics.pageNotReadyAnalysisIfNeeded(pageIndex, completedAtMs, imageRenderMs)
-            ?.let(diagnosticLog::event)
-    }
-
-    fun reportImageLoadFailed(pageIndex: Int) {
-        diagnosticLog.detail(DiagnosticCategory.IMAGE) { "image_load_failed page=$pageIndex" }
-    }
 
     private fun saveProgress(pageIndex: Int) {
         sessionCoordinator.currentComicKey?.let { key ->
@@ -439,15 +364,6 @@ class ReaderViewModel(
         val currentPage: Int,
         val files: Map<Int, File>,
     )
-
-    private fun LocalSessionPerformanceSummary.formatLocalSessionSummary(): String =
-        "local_session_summary pagesLoaded=$pagesLoaded " +
-            "cacheHits=$cacheHits cacheMisses=$cacheMisses " +
-            "totalOutputBytes=$totalOutputBytes largestOutputBytes=$largestOutputBytes " +
-            "slowestPage=$slowestPage slowestPageMs=$slowestPageMs " +
-            "slowestPageExtractMs=$slowestPageExtractMs " +
-            "slowestPageQueueOrWaitMs=$slowestPageQueueOrWaitMs " +
-            "slowestPageReason=$slowestPageReason"
 
     private companion object {
         const val LOAD_REASON_INITIAL = "initial"

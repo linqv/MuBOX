@@ -31,15 +31,6 @@ class PackageDependencyRulesTest {
     }
 
     @Test
-    fun readerDiagnosticsDoNotUseAGlobalBridge() {
-        assertNoReferences(
-            paths = sourceFiles.map(SourceFile::relativePath),
-            forbidden = setOf("ReaderDiagnosticLog"),
-            message = "Reader production code must receive core Diagnostics explicitly instead of using a global bridge.",
-        )
-    }
-
-    @Test
     fun videoActionFacadeStaysAThinOrchestrationBoundary() {
         assertNoReferences(
             paths = setOf(APP_VIDEO_ACTIONS_PATH),

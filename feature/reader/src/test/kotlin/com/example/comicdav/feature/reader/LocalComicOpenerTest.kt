@@ -68,34 +68,6 @@ class LocalComicOpenerTest {
     }
 
     @Test
-    fun openerReportsArchiveOpenDiagnosticsWithoutRawFileName() {
-        val archive = temp.newFile("Secret Book.cbz").apply {
-            writeBytes(ByteArray(64) { 9 })
-        }
-        val elapsedTimes = mutableListOf(100L, 115L, 160L)
-        val diagnosticLines = mutableListOf<String>()
-        val opener = LocalComicOpener(
-            context = ApplicationProvider.getApplicationContext(),
-            openSession = { _, _, _, _ -> FakeReaderSession(pageCount = 3) },
-            logDiagnostic = { event -> diagnosticLines += event() },
-            elapsedRealtimeMs = { elapsedTimes.removeAt(0) },
-        )
-
-        opener.open(Uri.fromFile(archive), archive.name)
-
-        val line = diagnosticLines.single()
-        assertTrue(line.contains("local_open_done"))
-        assertTrue(line.contains("engine=native-archive"))
-        assertTrue(line.contains("format=ZIP"))
-        assertTrue(line.contains("sizeBytes=64"))
-        assertTrue(line.contains("descriptorOpenMs=15"))
-        assertTrue(line.contains("openSessionMs=45"))
-        assertTrue(line.contains("pageCount=3"))
-        assertTrue(line.contains("fileExt=cbz"))
-        assertFalse(line.contains("Secret Book.cbz"))
-    }
-
-    @Test
     fun openerPassesDocumentDescriptorAndFormatToDocumentFactory() {
         val document = temp.newFile("book.pdf").apply {
             writeBytes(ByteArray(1024) { 8 })

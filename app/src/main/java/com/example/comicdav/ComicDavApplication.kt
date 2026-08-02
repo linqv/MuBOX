@@ -1,19 +1,29 @@
 package com.example.comicdav
 
 import android.app.Application
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
 import com.example.comicdav.video.VideoPlaybackMemoryBudget
+import com.example.comicdav.infrastructure.diagnostics.createAppDiagnostics
 import com.example.comicdav.video.player.VideoPlayerDependencies
 import com.example.comicdav.video.player.VideoPlayerDependenciesOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class ComicDavApplication : Application(), VideoPlayerDependenciesOwner {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
+    private var processCrashLogger: ProcessCrashLogger? = null
+    private val diagnostics by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        createAppDiagnostics(this)
+    }
 
     internal val appContainer: AppContainer by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        AppContainer(this)
+        AppContainer(this, diagnostics)
     }
 
     override val videoPlayerDependencies: VideoPlayerDependencies
@@ -21,12 +31,43 @@ class ComicDavApplication : Application(), VideoPlayerDependenciesOwner {
 
     override fun onCreate() {
         super.onCreate()
+        installProcessCrashLogger()
         VideoPlaybackMemoryBudget.configure(this)
-        appContainer.startBackgroundMigrations(applicationScope)
+        observeDiagnosticLogLevel()
     }
 
     override fun onTerminate() {
+        val installed = processCrashLogger
+        if (installed != null && Thread.getDefaultUncaughtExceptionHandler() === installed) {
+            Thread.setDefaultUncaughtExceptionHandler(previousCrashHandler)
+        }
+        processCrashLogger = null
+        previousCrashHandler = null
         applicationScope.cancel()
         super.onTerminate()
+    }
+
+    private fun installProcessCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        val logger = ProcessCrashLogger(diagnostics, previous)
+        previousCrashHandler = previous
+        processCrashLogger = logger
+        Thread.setDefaultUncaughtExceptionHandler(logger)
+    }
+
+    private fun observeDiagnosticLogLevel() {
+        applicationScope.launch {
+            var migrationsStarted = false
+            appContainer.appSettingsStore.settings
+                .map { settings -> settings.diagnostics.logLevel }
+                .distinctUntilChanged()
+                .collect { level ->
+                    diagnostics.setEnabled(level != DiagnosticLogLevel.OFF)
+                    if (!migrationsStarted) {
+                        migrationsStarted = true
+                        appContainer.startBackgroundMigrations(applicationScope)
+                    }
+                }
+        }
     }
 }

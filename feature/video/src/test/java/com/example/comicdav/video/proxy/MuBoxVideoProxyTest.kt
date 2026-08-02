@@ -1,7 +1,11 @@
 package com.example.comicdav.video.proxy
 
+import com.example.comicdav.core.diagnostics.ExceptionDiagnostics
+import com.example.comicdav.core.diagnostics.DiagnosticSeverity
+import com.example.comicdav.core.diagnostics.DiagnosticSink
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.core.remote.ContentRange
 import com.example.comicdav.core.remote.RemoteFileInfo
@@ -15,7 +19,6 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.io.PrintStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -433,29 +436,22 @@ class MuBoxVideoProxyTest {
     }
 
     @Test
-    fun optimizedRangeFailureEmitsSummaryDiagnosticFallback() = runTest {
-        val originalErr = System.err
-        val errorBytes = ByteArrayOutputStream()
-        System.setErr(PrintStream(errorBytes))
-        try {
-            val bytes = ByteArray((256 * 1024) + 2) { (it % 251).toByte() }
-            val client = optimizedRangeFailingClient(bytes)
-            val url = startProxy(
-                client = client,
-                size = bytes.size.toLong(),
-                proxySettings = VideoProxySettings.DEFAULT.copy(
-                    diagnosticsMode = VideoProxyDiagnosticsMode.SUMMARY,
-                ),
-            )
+    fun optimizedRangeFailureLogsSanitizedException() = runTest {
+        val sink = CollectingDiagnosticSink()
+        val bytes = ByteArray((256 * 1024) + 2) { (it % 251).toByte() }
+        val client = optimizedRangeFailingClient(bytes)
+        val url = startProxy(
+            client = client,
+            size = bytes.size.toLong(),
+            proxySettings = VideoProxySettings.DEFAULT,
+            diagnostics = ExceptionDiagnostics(sink),
+        )
 
-            val response = httpRequest(url, method = "GET", range = "bytes=0-${256 * 1024}")
+        val response = httpRequest(url, method = "GET", range = "bytes=0-${256 * 1024}")
 
-            assertEquals(206, response.code)
-        } finally {
-            System.setErr(originalErr)
-        }
-        val logs = errorBytes.toString(Charsets.UTF_8.name())
-        assertTrue(logs.contains("video_proxy fallback"))
+        assertEquals(206, response.code)
+        val logs = sink.lines.joinToString("\n")
+        assertTrue(logs.contains("video_proxy_failed operation=GET optimized stream"))
         assertFalse(logs.contains("/video.mp4"))
     }
 
@@ -901,28 +897,23 @@ class MuBoxVideoProxyTest {
 
     @Test
     fun proxyFailureLogRedactsSensitiveDetails() = runTest {
-        val originalErr = System.err
-        val errorBytes = ByteArrayOutputStream()
-        System.setErr(PrintStream(errorBytes))
-        try {
-            val client = failingClient(
-                streamError = WebDavException.Network(
-                    "failed https://user:pass@example.test/video.mp4?token=abc Authorization: Bearer secret",
-                ),
-            )
-            val url = startProxy(
-                client = client,
-                size = 10L,
-                remotePath = "/private/password-hunter2/movie.mp4",
-            )
+        val sink = CollectingDiagnosticSink()
+        val client = failingClient(
+            streamError = WebDavException.Network(
+                "failed https://user:pass@example.test/video.mp4?token=abc Authorization: Bearer secret",
+            ),
+        )
+        val url = startProxy(
+            client = client,
+            size = 10L,
+            remotePath = "/private/password-hunter2/movie.mp4",
+            diagnostics = ExceptionDiagnostics(sink),
+        )
 
-            val response = httpRequest(url, method = "GET", range = "bytes=0-2")
+        val response = httpRequest(url, method = "GET", range = "bytes=0-2")
 
-            assertEquals(502, response.code)
-        } finally {
-            System.setErr(originalErr)
-        }
-        val logs = errorBytes.toString(Charsets.UTF_8.name())
+        assertEquals(502, response.code)
+        val logs = sink.lines.joinToString("\n")
         assertFalse(logs.contains("/private/password-hunter2/movie.mp4"))
         assertFalse(logs.contains("user:pass"))
         assertFalse(logs.contains("token=abc"))
@@ -1121,11 +1112,13 @@ class MuBoxVideoProxyTest {
         mimeType: String = "video/mp4",
         proxySettings: VideoProxySettings = VideoProxySettings.DEFAULT,
         remotePath: String = "/video.mp4",
+        diagnostics: Diagnostics = NoopDiagnostics,
     ): String {
         val localProxy = MuBoxVideoProxy(
             clientProvider = { client },
             coroutineScope = scope,
             portRange = 0..0,
+            diagnostics = diagnostics,
         )
         proxy = localProxy
         localProxy.start()
@@ -1141,6 +1134,14 @@ class MuBoxVideoProxyTest {
             ),
             proxySettings = proxySettings,
         )
+    }
+
+    private class CollectingDiagnosticSink : DiagnosticSink {
+        val lines = CopyOnWriteArrayList<String>()
+
+        override fun log(severity: DiagnosticSeverity, line: String) {
+            lines += line
+        }
     }
 
     private fun MuBoxVideoProxy.serverSocketForTest(): ServerSocket {

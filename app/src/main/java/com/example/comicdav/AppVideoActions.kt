@@ -577,5 +577,4 @@ internal fun AppSettings.toVideoProxySettings(): VideoProxySettings =
     VideoProxySettings(
         seekOptimizationEnabled = video.videoSeekOptimizationEnabled,
         forwardPrefetchMode = video.videoForwardPrefetchMode,
-        diagnosticsMode = video.videoProxyDiagnosticsMode,
     )

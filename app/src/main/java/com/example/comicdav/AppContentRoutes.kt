@@ -2,7 +2,6 @@ package com.example.comicdav
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.comicdav.core.diagnostics.Diagnostics
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.data.AppSettingsStore
@@ -27,7 +26,6 @@ import kotlinx.coroutines.CoroutineScope
 @Composable
 internal fun ReaderRoute(
     readerUiState: ReaderUiState,
-    diagnostics: Diagnostics,
     localOpenError: String?,
     downloadProgress: com.example.comicdav.core.model.transfer.TransferProgress?,
     appSettings: AppSettings,
@@ -37,10 +35,6 @@ internal fun ReaderRoute(
     onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
     onPageChanged: (Int) -> Unit,
     onPageDemanded: (Int, String) -> Unit,
-    onImageLoadStarted: (Int) -> Unit,
-    onImageLoadSucceeded: (Int) -> Unit,
-    onImageLoadFailed: (Int) -> Unit,
-    onChooseLogFile: () -> Unit,
     onCancelLoading: () -> Unit,
     onClose: () -> Unit,
     onAutoPageEnabledChange: (Boolean) -> Unit,
@@ -48,13 +42,8 @@ internal fun ReaderRoute(
 ) {
     ReaderScreen(
         uiState = readerUiState.copy(error = readerUiState.error ?: localOpenError),
-        diagnostics = diagnostics,
         onPageChanged = onPageChanged,
         onPageDemanded = onPageDemanded,
-        onImageLoadStarted = onImageLoadStarted,
-        onImageLoadSucceeded = onImageLoadSucceeded,
-        onImageLoadFailed = onImageLoadFailed,
-        onChooseLogFile = onChooseLogFile,
         loadingProgress = downloadProgress?.toReaderLoadingProgress(),
         onCancelLoading = onCancelLoading,
         onClose = onClose,

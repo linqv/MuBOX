@@ -40,6 +40,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:diagnostics"))
     api(project(":core:model"))
     implementation(project(":ui"))
 

@@ -1,5 +1,7 @@
 package com.example.comicdav.video.proxy
 
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.media.WebDavSubtitleOpenRequest
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
 import com.example.comicdav.core.remote.WebDavClientFactory
@@ -14,7 +16,9 @@ import kotlinx.coroutines.cancel
  * Owns one aggregate proxy/cache lifecycle. A manager may be shared by playback and thumbnail
  * consumers so all active streams stay under one memory-cache budget.
  */
-class VideoProxyManager : Closeable {
+class VideoProxyManager(
+    private val diagnostics: Diagnostics = NoopDiagnostics,
+) : Closeable {
     private val lifecycleLock = Any()
     private var activeStreams = 0
     private var closed = false
@@ -99,6 +103,7 @@ class VideoProxyManager : Closeable {
             activeStreams += 1
             proxy ?: MuBoxVideoProxy(
                 coroutineScope = scope ?: newScope().also { scope = it },
+                diagnostics = diagnostics,
             ).also { proxy = it }
         }
 

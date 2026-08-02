@@ -1,8 +1,8 @@
 package com.example.comicdav.infrastructure.reader
 
-import com.example.comicdav.core.diagnostics.ConfigurableDiagnostics
+import com.example.comicdav.core.diagnostics.ExceptionDiagnostics
 import com.example.comicdav.core.diagnostics.DiagnosticSink
-import com.example.comicdav.core.diagnostics.DiagnosticVerbosity
+import com.example.comicdav.core.diagnostics.DiagnosticSeverity
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.ReadingProgressGateway
 import com.example.comicdav.core.remote.RemoteFileInfo
@@ -132,9 +132,8 @@ class OpenComicUseCaseRangeTest {
             bytes = byteArrayOf(1, 2, 3, 4),
         )
         val sink = CollectingReaderLogSink()
-        val diagnostics = ConfigurableDiagnostics(
-            defaultSink = sink,
-            initialVerbosity = DiagnosticVerbosity.SUMMARY,
+        val diagnostics = ExceptionDiagnostics(
+            sink = sink,
         )
         val useCase = OpenComicUseCase(
             accountId = "account",
@@ -353,11 +352,11 @@ class OpenComicUseCaseRangeTest {
     private class CollectingReaderLogSink : DiagnosticSink {
         val lines = mutableListOf<String>()
 
-        override fun log(line: String) {
+        override fun log(severity: DiagnosticSeverity, line: String) {
             lines += line
         }
 
-        override fun logBlocking(line: String) {
+        override fun logBlocking(severity: DiagnosticSeverity, line: String) {
             lines += line
         }
     }

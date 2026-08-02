@@ -126,7 +126,7 @@ class GradleModuleDependencyRulesTest {
                 ":core:diagnostics",
                 ":ui",
             ),
-            ":feature:video" to setOf(":core:model", ":ui"),
+            ":feature:video" to setOf(":core:model", ":core:diagnostics", ":ui"),
             ":feature:downloads" to setOf(":core:model", ":ui"),
             ":feature:settings" to setOf(":core:model", ":ui"),
             ":feature:video-library" to setOf(":core:model", ":ui"),

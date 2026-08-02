@@ -33,7 +33,7 @@ class OpenComicUseCase(
             avifImagesEnabled,
             webDavPrefetchPageCount,
         ->
-        ComicEngine(diagnostics = diagnostics).openRemote(
+        ComicEngine().openRemote(
             fileId = fileId,
             size = size,
             cacheDir = cacheDir,
@@ -82,7 +82,7 @@ class OpenComicUseCase(
     ): OpenComicResult {
         cache.cacheDir.mkdirs()
         val fileId = RangeProviderRegistry.register(
-            WebDavRangeProvider(client, remotePath, info.size, diagnostics = diagnostics),
+            WebDavRangeProvider(client, remotePath, info.size),
         )
         return try {
             // open() dispatches the full preparation path to IO before reaching this worker-thread call.

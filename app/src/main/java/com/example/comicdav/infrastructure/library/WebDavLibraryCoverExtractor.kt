@@ -1,7 +1,5 @@
 package com.example.comicdav.infrastructure.library
 
-import com.example.comicdav.core.diagnostics.Diagnostics
-import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.model.media.readerImageFormatCacheKey
 import com.example.comicdav.core.ports.ComicReaderSession
 import com.example.comicdav.core.ports.RemoteRangeComicSessionFactory
@@ -19,7 +17,6 @@ import kotlinx.coroutines.withContext
 class WebDavLibraryCoverExtractor(
     private val appCacheDir: File,
     private val remoteCacheDir: File,
-    private val diagnostics: Diagnostics = NoopDiagnostics,
     private val openRemoteSession: RemoteRangeComicSessionFactory = {
             fileId,
             size,
@@ -29,7 +26,7 @@ class WebDavLibraryCoverExtractor(
             avifImagesEnabled,
             webDavPrefetchPageCount,
         ->
-        ComicEngine(diagnostics = diagnostics).openRemote(
+        ComicEngine().openRemote(
             fileId = fileId,
             size = size,
             cacheDir = cacheDir,
@@ -63,7 +60,7 @@ class WebDavLibraryCoverExtractor(
         }
 
         val fileId = RangeProviderRegistry.register(
-            WebDavRangeProvider(client, remotePath, info.size, diagnostics = diagnostics),
+            WebDavRangeProvider(client, remotePath, info.size),
         )
         var session: ComicReaderSession? = null
         val tmpFile = File(coverFile.parentFile, "${coverFile.name}.tmp")

@@ -47,16 +47,15 @@ import androidx.compose.ui.unit.dp
 import com.example.comicdav.core.model.settings.Anime4KProfile
 import com.example.comicdav.core.model.settings.AppColorPalette
 import com.example.comicdav.core.model.settings.AppSettings
+import com.example.comicdav.core.model.settings.DiagnosticLogLevel
 import com.example.comicdav.core.model.settings.GpuApiMode
 import com.example.comicdav.core.model.settings.MpvProfileMode
-import com.example.comicdav.core.model.settings.ReaderLoggingMode
 import com.example.comicdav.core.model.settings.ReadingDirection
 import com.example.comicdav.core.model.settings.VideoBackgroundMode
 import com.example.comicdav.core.model.settings.VideoDecoderMode
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
 import com.example.comicdav.core.model.settings.VideoOutputMode
 import com.example.comicdav.core.model.settings.VideoPlayerOrientationMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.settings.playerControlAutoHideOptionsMillis
 import com.example.comicdav.core.model.cache.ComicCacheAnalysis
@@ -104,7 +103,7 @@ internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
     listOf(
         SettingsGroupLayout(
             title = "通用",
-            rows = listOf("配色方案", "屏幕旋转锁定"),
+            rows = listOf("配色方案", "屏幕旋转锁定", "异常日志等级"),
         ),
         SettingsGroupLayout(
             title = "内容设置",
@@ -137,7 +136,6 @@ internal fun comicSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "音量键翻页",
                 "双指缩放",
                 "WebDAV 预取页数",
-                "诊断日志",
                 "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
@@ -155,7 +153,6 @@ internal fun videoSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "后台行为",
                 "WebDAV 视频 seek 优化",
                 "向前预读",
-                "视频代理诊断日志",
                 "播放信息显示代理/Range 调试信息",
                 "视频输出 (VO)",
                 "GPU API",
@@ -193,9 +190,6 @@ fun SettingsScreen(
                 settings = settings,
                 onReadingDirectionChange = {
                     onAction(SettingsAction.UpdateReader { current -> current.copy(readingDirection = it) })
-                },
-                onReaderLoggingModeChange = {
-                    onAction(SettingsAction.UpdateReader { current -> current.copy(readerLoggingMode = it) })
                 },
                 onAutoPageEnabledChange = {
                     onAction(SettingsAction.UpdateReader { current -> current.copy(autoPageEnabled = it) })
@@ -237,9 +231,6 @@ fun SettingsScreen(
                 },
                 onVideoForwardPrefetchModeChange = {
                     onAction(SettingsAction.UpdateVideo { current -> current.copy(videoForwardPrefetchMode = it) })
-                },
-                onVideoProxyDiagnosticsModeChange = {
-                    onAction(SettingsAction.UpdateVideo { current -> current.copy(videoProxyDiagnosticsMode = it) })
                 },
                 onVideoPlayerProxyDebugInfoEnabledChange = {
                     onAction(
@@ -332,6 +323,17 @@ fun SettingsScreen(
                 },
                 subtitle = "锁定当前屏幕方向",
             )
+            DropdownRow(
+                title = "异常日志等级",
+                selected = settings.diagnostics.logLevel,
+                options = DiagnosticLogLevel.entries,
+                label = DiagnosticLogLevel::settingsLabel,
+                onSelected = {
+                    onAction(
+                        SettingsAction.UpdateDiagnostics { current -> current.copy(logLevel = it) },
+                    )
+                },
+            )
         }
 
         MuBoxBoxedList(
@@ -348,7 +350,7 @@ fun SettingsScreen(
             MuBoxActionRow(
                 title = "漫画设置",
                 onClick = { currentPage = SettingsPage.COMIC },
-                subtitle = "阅读方向、翻页、预取、封面和诊断",
+                subtitle = "阅读方向、翻页、预取和封面",
                 trailing = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
             )
             MuBoxActionRow(
@@ -614,11 +616,16 @@ internal fun historyRetentionLabel(days: Int): String =
 
 internal fun historyMaxRecordsLabel(maxRecords: Int): String = "$maxRecords 条"
 
+internal fun DiagnosticLogLevel.settingsLabel(): String =
+    when (this) {
+        DiagnosticLogLevel.OFF -> "关闭全部日志"
+        DiagnosticLogLevel.ERROR -> "异常与崩溃"
+    }
+
 @Composable
 private fun ComicSettingsPage(
     settings: AppSettings,
     onReadingDirectionChange: (ReadingDirection) -> Unit,
-    onReaderLoggingModeChange: (ReaderLoggingMode) -> Unit,
     onAutoPageEnabledChange: (Boolean) -> Unit,
     onAutoPageSpeedChange: (Int) -> Unit,
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
@@ -675,13 +682,6 @@ private fun ComicSettingsPage(
                 label = ::webDavPrefetchPageCountLabel,
                 onSelected = onWebDavPrefetchPageCountChange,
             )
-            ChoiceRow(
-                title = "诊断日志",
-                options = ReaderLoggingMode.entries,
-                selected = settings.reader.readerLoggingMode,
-                label = ReaderLoggingMode::label,
-                onSelected = onReaderLoggingModeChange,
-            )
             MuBoxSwitchRow(
                 title = "AVIF 图片",
                 checked = settings.reader.avifImagesEnabled,
@@ -715,7 +715,6 @@ private fun VideoSettingsPage(
     onVideoBackgroundModeChange: (VideoBackgroundMode) -> Unit,
     onVideoSeekOptimizationEnabledChange: (Boolean) -> Unit,
     onVideoForwardPrefetchModeChange: (VideoForwardPrefetchMode) -> Unit,
-    onVideoProxyDiagnosticsModeChange: (VideoProxyDiagnosticsMode) -> Unit,
     onVideoPlayerProxyDebugInfoEnabledChange: (Boolean) -> Unit,
     onVideoOutputModeChange: (VideoOutputMode) -> Unit,
     onGpuApiModeChange: (GpuApiMode) -> Unit,
@@ -774,13 +773,6 @@ private fun VideoSettingsPage(
                 options = VideoForwardPrefetchMode.entries,
                 label = VideoForwardPrefetchMode::label,
                 onSelected = onVideoForwardPrefetchModeChange,
-            )
-            DropdownRow(
-                title = "视频代理诊断日志",
-                selected = settings.video.videoProxyDiagnosticsMode,
-                options = VideoProxyDiagnosticsMode.entries,
-                label = VideoProxyDiagnosticsMode::label,
-                onSelected = onVideoProxyDiagnosticsModeChange,
             )
             MuBoxSwitchRow(
                 title = "播放信息显示代理/Range 调试信息",
@@ -904,25 +896,11 @@ internal fun AppColorPalette.settingsLabel(): String = when (this) {
     AppColorPalette.HIGH_CONTRAST -> "高对比"
 }
 
-private fun ReaderLoggingMode.label(): String =
-    when (this) {
-        ReaderLoggingMode.OFF -> "关闭"
-        ReaderLoggingMode.SUMMARY -> "摘要"
-        ReaderLoggingMode.DETAIL -> "详细"
-    }
-
 private fun VideoForwardPrefetchMode.label(): String =
     when (this) {
         VideoForwardPrefetchMode.OFF -> "关闭"
         VideoForwardPrefetchMode.STANDARD -> "标准"
         VideoForwardPrefetchMode.AGGRESSIVE -> "积极"
-    }
-
-private fun VideoProxyDiagnosticsMode.label(): String =
-    when (this) {
-        VideoProxyDiagnosticsMode.OFF -> "关闭"
-        VideoProxyDiagnosticsMode.SUMMARY -> "摘要"
-        VideoProxyDiagnosticsMode.DETAIL -> "详细"
     }
 
 private fun anime4kProfileLabel(profile: Anime4KProfile): String =

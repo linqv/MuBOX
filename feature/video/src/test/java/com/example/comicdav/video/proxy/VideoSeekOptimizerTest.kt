@@ -1,7 +1,6 @@
 package com.example.comicdav.video.proxy
 
 import com.example.comicdav.core.model.settings.VideoForwardPrefetchMode
-import com.example.comicdav.core.model.settings.VideoProxyDiagnosticsMode
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.core.remote.ContentRange
 import com.example.comicdav.core.remote.RemoteFileInfo
@@ -499,27 +498,6 @@ class VideoSeekOptimizerTest {
             job.cancelAndJoin()
             optimizer.close()
         }
-    }
-
-    @Test
-    fun diagnosticsAreGatedAndUseRedactedStreamIds() {
-        val offMessages = mutableListOf<String>()
-        val off = VideoProxyDiagnostics(VideoProxyDiagnosticsMode.OFF, sink = offMessages::add)
-        off.summary { "cache_hit stream=${off.streamId("secret-stream")}" }
-        off.detail { "detail" }
-        assertEquals(emptyList<String>(), offMessages)
-
-        val summaryMessages = mutableListOf<String>()
-        val summary = VideoProxyDiagnostics(VideoProxyDiagnosticsMode.SUMMARY, sink = summaryMessages::add)
-        val redactedStreamId = summary.streamId("secret-stream")
-        summary.summary { "cache_hit stream=$redactedStreamId" }
-        summary.detail { "range=0-7" }
-
-        assertEquals(1, summaryMessages.size)
-        assertTrue(summaryMessages.single().contains("cache_hit"))
-        assertTrue(summaryMessages.single().contains(redactedStreamId))
-        assertFalse(summaryMessages.single().contains("secret-stream"))
-        assertFalse(redactedStreamId.contains("secret-stream"))
     }
 
     private fun numberedBytes(size: Int): ByteArray =

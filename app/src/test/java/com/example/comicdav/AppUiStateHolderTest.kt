@@ -33,25 +33,15 @@ class AppUiStateHolderTest {
     }
 
     @Test
-    fun choosingFirstDataFolderAlsoSuppliesDefaultLogFolder() {
+    fun choosingDataFolderUpdatesDataLocation() {
         val ui = stateHolder()
 
         ui.onDataFolderSelected("content://documents/mubox")
 
         assertEquals("content://documents/mubox", ui.dataFolderUriText)
-        assertEquals("content://documents/mubox", ui.logFolderUriText)
     }
 
-    @Test
-    fun choosingDataFolderDoesNotReplaceExplicitLogFolder() {
-        val ui = stateHolder(logFolderUriText = "content://documents/logs")
-
-        ui.onDataFolderSelected("content://documents/mubox")
-
-        assertEquals("content://documents/logs", ui.logFolderUriText)
-    }
-
-    private fun stateHolder(logFolderUriText: String? = null) = AppUiStateHolder(
+    private fun stateHolder() = AppUiStateHolder(
         readerOpenState = mutableStateOf(false),
         readerLandscapeModeState = mutableStateOf(false),
         readerLandscapeOrientationLockedState = mutableStateOf(false),
@@ -65,7 +55,6 @@ class AppUiStateHolderTest {
         webDavActionMessageState = mutableStateOf<String?>(null),
         cacheAnalysisState = mutableStateOf(ComicCacheAnalysis()),
         cacheActionMessageState = mutableStateOf<String?>(null),
-        logFolderUriTextState = mutableStateOf(logFolderUriText),
         dataFolderUriTextState = mutableStateOf<String?>(null),
         isDataFolderLoadingState = mutableStateOf(true),
     )

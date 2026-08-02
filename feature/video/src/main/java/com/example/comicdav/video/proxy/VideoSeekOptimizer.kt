@@ -1,5 +1,8 @@
 package com.example.comicdav.video.proxy
 
+import com.example.comicdav.core.diagnostics.DiagnosticCategory
+import com.example.comicdav.core.diagnostics.Diagnostics
+import com.example.comicdav.core.diagnostics.NoopDiagnostics
 import com.example.comicdav.core.remote.ContentRange
 import com.example.comicdav.core.remote.WebDavClient
 import com.example.comicdav.core.remote.WebDavStreamResponse
@@ -26,6 +29,7 @@ internal class VideoSeekOptimizer(
     private val smallRangeDirectThresholdBytes: Long =
         (segmentBytes / 8L).coerceAtMost(DEFAULT_SMALL_RANGE_DIRECT_THRESHOLD_BYTES),
     private val statsSink: VideoProxyStatsSink = VideoProxyStatsSink.Noop,
+    private val diagnostics: Diagnostics = NoopDiagnostics,
 ) : Closeable {
     init {
         require(segmentBytes > 0L) { "segmentBytes must be positive" }
@@ -59,7 +63,6 @@ internal class VideoSeekOptimizer(
             return openDirectRange(client, request, totalSize, start, endInclusive, registerCancellation)
         }
 
-        val diagnostics = VideoProxyDiagnostics(settings.diagnosticsMode)
         val firstSegmentIndex = segmentIndexFor(start)
         val lastSegmentIndex = segmentIndexFor(endInclusive)
         val requestedBytes = checkedRequestedByteCount(start, endInclusive)
@@ -77,7 +80,6 @@ internal class VideoSeekOptimizer(
                         request = request,
                         totalSize = totalSize,
                         segmentIndex = firstSegmentIndex,
-                        diagnostics = diagnostics,
                         waiterKind = SegmentWaiterKind.FOREGROUND,
                     )
                     val slice = segment.sliceReference(start, endInclusive)
@@ -90,11 +92,6 @@ internal class VideoSeekOptimizer(
                         totalSize = totalSize,
                         close = {},
                     )
-                }
-                diagnostics.summary { "small_range_direct stream=${diagnostics.streamId(request.streamId)}" }
-                diagnostics.detail {
-                    "small_range_direct stream=${diagnostics.streamId(request.streamId)} " +
-                        "range=$start-$endInclusive threshold=$smallRangeDirectThresholdBytes"
                 }
                 statsSink.updateDiagnosticMessage(request.streamId, "small_range_direct range=$start-$endInclusive")
                 val directResponse = client.openRangeStream(
@@ -110,7 +107,6 @@ internal class VideoSeekOptimizer(
                         request = request,
                         totalSize = totalSize,
                         segmentIndex = firstSegmentIndex,
-                        diagnostics = diagnostics,
                         generation = foregroundGeneration,
                     )
                 }
@@ -120,7 +116,7 @@ internal class VideoSeekOptimizer(
 
         val slices = ArrayList<VideoRangeMemoryCache.SegmentSlice>()
         for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
-            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics)
+            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice)
             if (cachedSlice != null) {
                 slices += cachedSlice
             } else {
@@ -129,7 +125,6 @@ internal class VideoSeekOptimizer(
                     request = request,
                     totalSize = totalSize,
                     segmentIndex = segmentSlice.segmentIndex,
-                    diagnostics = diagnostics,
                     waiterKind = SegmentWaiterKind.FOREGROUND,
                 )
                 slices += segment.sliceReference(segmentSlice.sliceStart, segmentSlice.sliceEnd)
@@ -142,7 +137,6 @@ internal class VideoSeekOptimizer(
             totalSize = totalSize,
             highestSegmentIndex = lastSegmentIndex,
             settings = settings,
-            diagnostics = diagnostics,
             generation = foregroundGeneration,
         )
 
@@ -181,7 +175,6 @@ internal class VideoSeekOptimizer(
             )
         }
 
-        val diagnostics = VideoProxyDiagnostics(settings.diagnosticsMode)
         val firstSegmentIndex = segmentIndexFor(start)
         val lastSegmentIndex = segmentIndexFor(endInclusive)
         val foregroundSegments = segmentIndexesBetween(firstSegmentIndex, lastSegmentIndex)
@@ -195,7 +188,6 @@ internal class VideoSeekOptimizer(
             totalSize = totalSize,
             start = start,
             endInclusive = endInclusive,
-            diagnostics = diagnostics,
         )?.let { cachedResponse ->
             schedulePrefetchSegments(
                 client = client,
@@ -208,16 +200,11 @@ internal class VideoSeekOptimizer(
                     totalSize = totalSize,
                     settings = settings,
                 ),
-                diagnostics = diagnostics,
                 generation = foregroundGeneration,
             )
             return cachedResponse
         }
 
-        diagnostics.summary { "open_ended_direct stream=${diagnostics.streamId(request.streamId)}" }
-        diagnostics.detail {
-            "open_ended_direct stream=${diagnostics.streamId(request.streamId)} range=$start-$endInclusive"
-        }
         statsSink.updateDiagnosticMessage(request.streamId, "open_ended_direct range=$start-$endInclusive")
         val directResponse = client.openRangeStream(
             path = request.remotePath,
@@ -230,7 +217,6 @@ internal class VideoSeekOptimizer(
             request = request,
             totalSize = totalSize,
             start = start,
-            diagnostics = diagnostics,
         )
         schedulePrefetchSegments(
             client = client,
@@ -243,7 +229,6 @@ internal class VideoSeekOptimizer(
                 totalSize = totalSize,
                 settings = settings,
             ),
-            diagnostics = diagnostics,
             generation = foregroundGeneration,
         )
         return cachingResponse
@@ -277,12 +262,11 @@ internal class VideoSeekOptimizer(
         totalSize: Long,
         start: Long,
         endInclusive: Long,
-        diagnostics: VideoProxyDiagnostics,
     ): WebDavStreamResponse? {
         val requestedBytes = checkedRequestedByteCount(start, endInclusive)
         val slices = ArrayList<VideoRangeMemoryCache.SegmentSlice>()
         for (segmentSlice in segmentSlices(totalSize, start, endInclusive)) {
-            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice, diagnostics) ?: return null
+            val cachedSlice = cachedSegmentSliceOrNull(request, segmentSlice) ?: return null
             slices += cachedSlice
         }
         return WebDavStreamResponse(
@@ -321,7 +305,6 @@ internal class VideoSeekOptimizer(
     private fun cachedSegmentSliceOrNull(
         request: VideoStreamRequest,
         segmentSlice: RequestedSegmentSlice,
-        diagnostics: VideoProxyDiagnostics,
     ): VideoRangeMemoryCache.SegmentSlice? {
         val cachedSlice = cache.getSegmentSliceReference(
             streamId = request.streamId,
@@ -329,13 +312,7 @@ internal class VideoSeekOptimizer(
             start = segmentSlice.sliceStart,
             endInclusive = segmentSlice.sliceEnd,
         ) ?: return null
-        diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
         statsSink.incrementCacheHit(request.streamId)
-        diagnostics.detail {
-            "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
-                "segment=${segmentSlice.segmentIndex} range=${segmentSlice.segmentStart}-${segmentSlice.segmentEnd} " +
-                "cache_bytes=${cache.totalBytes()}"
-        }
         return cachedSlice
     }
 
@@ -368,7 +345,6 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         totalSize: Long,
         start: Long,
-        diagnostics: VideoProxyDiagnostics,
     ): WebDavStreamResponse {
         val upstreamClose = close
         val cachingStream = SegmentCachingInputStream(
@@ -378,7 +354,6 @@ internal class VideoSeekOptimizer(
             firstByteOffset = start,
             segmentBytes = segmentBytes,
             cache = cache,
-            diagnostics = diagnostics,
         )
         return copy(
             stream = cachingStream,
@@ -432,34 +407,22 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         totalSize: Long,
         segmentIndex: Long,
-        diagnostics: VideoProxyDiagnostics,
         waiterKind: SegmentWaiterKind,
     ): VideoRangeMemoryCache.Segment {
         cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
-            diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
             statsSink.incrementCacheHit(request.streamId)
-            diagnostics.detail {
-                "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
-                    "segment=$segmentIndex range=${segment.start}-${segment.endInclusive} cache_bytes=${cache.totalBytes()}"
-            }
             return segment
         }
 
-        diagnostics.summary { "cache_miss stream=${diagnostics.streamId(request.streamId)}" }
-        diagnostics.detail { "cache_miss stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex" }
-
-        val created = AtomicBoolean(false)
         val key = VideoSegmentKey(request.streamId, segmentIndex)
         var createdEntry: InFlightSegment? = null
         val inFlightSegment = inFlight.computeIfAbsent(key) {
-            created.set(true)
             val deferred = coroutineScope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 fetchSegment(
                     client = client,
                     request = request,
                     totalSize = totalSize,
                     segmentIndex = segmentIndex,
-                    diagnostics = diagnostics,
                 )
             }
             InFlightSegment(deferred).also { newEntry ->
@@ -471,11 +434,6 @@ internal class VideoSeekOptimizer(
                 inFlight.remove(key, newEntry)
             }
             newEntry.deferred.start()
-        }
-
-        if (!created.get()) {
-            diagnostics.summary { "inflight_join stream=${diagnostics.streamId(request.streamId)}" }
-            diagnostics.detail { "inflight_join stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex" }
         }
 
         inFlightSegment.increment(waiterKind)
@@ -491,28 +449,16 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         totalSize: Long,
         segmentIndex: Long,
-        diagnostics: VideoProxyDiagnostics,
     ): VideoRangeMemoryCache.Segment {
         cache.getSegmentReference(request.streamId, segmentIndex)?.let { segment ->
-            diagnostics.summary { "cache_hit stream=${diagnostics.streamId(request.streamId)}" }
             statsSink.incrementCacheHit(request.streamId)
-            diagnostics.detail {
-                "cache_hit stream=${diagnostics.streamId(request.streamId)} " +
-                    "segment=$segmentIndex range=${segment.start}-${segment.endInclusive} cache_bytes=${cache.totalBytes()}"
-            }
             return segment
         }
 
         val segmentStart = segmentIndex * segmentBytes
         val segmentEnd = (segmentStart + segmentBytes - 1L).coerceAtMost(totalSize - 1L)
         val expectedBytes = segmentEnd - segmentStart + 1L
-        val startedAt = System.nanoTime()
-        diagnostics.summary { "remote_fetch stream=${diagnostics.streamId(request.streamId)}" }
         statsSink.updateDiagnosticMessage(request.streamId, "remote_fetch segment=$segmentIndex range=$segmentStart-$segmentEnd")
-        diagnostics.detail {
-            "remote_fetch stream=${diagnostics.streamId(request.streamId)} " +
-                "segment=$segmentIndex range=$segmentStart-$segmentEnd"
-        }
 
         val key = VideoSegmentKey(request.streamId, segmentIndex)
         var requestCloseable: Closeable? = null
@@ -540,12 +486,7 @@ internal class VideoSeekOptimizer(
                 start = segmentStart,
                 bytes = bytes,
             )
-            val stored = cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
-            val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L
-            diagnostics.detail {
-                "remote_fetch_complete stream=${diagnostics.streamId(request.streamId)} " +
-                    "segment=$segmentIndex elapsed_ms=$elapsedMillis stored=$stored cache_bytes=${cache.totalBytes()}"
-            }
+            cache.putOwnedSegment(request.streamId, segmentIndex, segmentStart, bytes)
             return segment
         } finally {
             removeActiveResponse(key, responseCloseable)
@@ -559,7 +500,6 @@ internal class VideoSeekOptimizer(
         totalSize: Long,
         highestSegmentIndex: Long,
         settings: VideoProxySettings,
-        diagnostics: VideoProxyDiagnostics,
         generation: Long,
     ) {
         val segmentCount = settings.forwardPrefetchMode.segmentCount
@@ -570,23 +510,15 @@ internal class VideoSeekOptimizer(
             val segmentIndex = highestSegmentIndex + offset
             val segmentStart = segmentIndex * segmentBytes
             if (segmentStart >= totalSize) {
-                diagnostics.detail {
-                    "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
-                        "segment=$segmentIndex reason=end_of_stream"
-                }
                 continue
             }
             val key = VideoSegmentKey(request.streamId, segmentIndex)
             if (cache.containsSegment(request.streamId, segmentIndex)) {
-                diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=cache_hit" }
                 prefetchCoordinator.publishStateIfCurrent(request.streamId, generation, "skipped cache_hit")
-                diagnostics.detail { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex reason=cache_hit" }
                 continue
             }
             if (inFlight.containsKey(key)) {
-                diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=inflight" }
                 prefetchCoordinator.publishStateIfCurrent(request.streamId, generation, "skipped inflight")
-                diagnostics.detail { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} segment=$segmentIndex reason=inflight" }
                 continue
             }
             segmentIndexes += segmentIndex
@@ -597,7 +529,6 @@ internal class VideoSeekOptimizer(
             request = request,
             totalSize = totalSize,
             segmentIndexes = segmentIndexes,
-            diagnostics = diagnostics,
             generation = generation,
         )
     }
@@ -607,7 +538,6 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         totalSize: Long,
         segmentIndex: Long,
-        diagnostics: VideoProxyDiagnostics,
         generation: Long,
     ) {
         if (closed.get()) return
@@ -618,7 +548,6 @@ internal class VideoSeekOptimizer(
             request = request,
             totalSize = totalSize,
             segmentIndexes = listOf(segmentIndex),
-            diagnostics = diagnostics,
             generation = generation,
         )
     }
@@ -628,7 +557,6 @@ internal class VideoSeekOptimizer(
         request: VideoStreamRequest,
         totalSize: Long,
         segmentIndexes: List<Long>,
-        diagnostics: VideoProxyDiagnostics,
         generation: Long,
     ) {
         if (segmentIndexes.isEmpty() || closed.get()) return
@@ -642,31 +570,21 @@ internal class VideoSeekOptimizer(
                     if (!prefetchCoordinator.isCurrentGeneration(request.streamId, generation)) return@launch
                     val key = VideoSegmentKey(request.streamId, segmentIndex)
                     if (cache.containsSegment(request.streamId, segmentIndex)) {
-                        diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=cache_hit" }
                         prefetchCoordinator.publishStateIfCurrent(
                             request.streamId,
                             generation,
                             "skipped cache_hit",
                             job,
                         )
-                        diagnostics.detail {
-                            "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
-                                "segment=$segmentIndex reason=cache_hit"
-                        }
                         continue
                     }
                     if (inFlight.containsKey(key)) {
-                        diagnostics.summary { "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} reason=inflight" }
                         prefetchCoordinator.publishStateIfCurrent(
                             request.streamId,
                             generation,
                             "skipped inflight",
                             job,
                         )
-                        diagnostics.detail {
-                            "prefetch_skipped stream=${diagnostics.streamId(request.streamId)} " +
-                                "segment=$segmentIndex reason=inflight"
-                        }
                         continue
                     }
                     getOrFetchSegment(
@@ -674,7 +592,6 @@ internal class VideoSeekOptimizer(
                         request = request,
                         totalSize = totalSize,
                         segmentIndex = segmentIndex,
-                        diagnostics = diagnostics,
                         waiterKind = SegmentWaiterKind.PREFETCH,
                     )
                 }
@@ -682,40 +599,27 @@ internal class VideoSeekOptimizer(
                     segmentIndexes.all { segmentIndex -> cache.containsSegment(request.streamId, segmentIndex) }
                 ) {
                     val completedSegments = segmentIndexes.joinToString(",")
-                    if (
-                        prefetchCoordinator.finishJob(
-                            streamId = request.streamId,
-                            generation = generation,
-                            job = job,
-                            finalState = "completed $completedSegments",
-                        )
-                    ) {
-                        diagnostics.detail {
-                            "prefetch_completed stream=${diagnostics.streamId(request.streamId)} " +
-                                "segments=$completedSegments"
-                        }
-                    }
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                if (
                     prefetchCoordinator.finishJob(
                         streamId = request.streamId,
                         generation = generation,
                         job = job,
-                        finalState = "failed ${error.javaClass.simpleName}",
+                        finalState = "completed $completedSegments",
                     )
-                ) {
-                    diagnostics.summary {
-                        "prefetch_failed stream=${diagnostics.streamId(request.streamId)} " +
-                            "error=${error.message ?: error::class.java.simpleName}"
-                    }
-                    diagnostics.detail {
-                        "prefetch_failed stream=${diagnostics.streamId(request.streamId)} " +
-                            "error=${error.message ?: error::class.java.simpleName}"
-                    }
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                diagnostics.error(
+                    DiagnosticCategory.VIDEO,
+                    "video_proxy_prefetch_failed stream=${VideoProxyDiagnostics.redactedStreamId(request.streamId)}",
+                    error,
+                )
+                prefetchCoordinator.finishJob(
+                    streamId = request.streamId,
+                    generation = generation,
+                    job = job,
+                    finalState = "failed ${error.javaClass.simpleName}",
+                )
             } finally {
                 prefetchCoordinator.unregisterJob(request.streamId, generation, job)
             }
@@ -731,11 +635,6 @@ internal class VideoSeekOptimizer(
                 "scheduled $scheduledSegments",
             )
         ) {
-            diagnostics.summary { "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)}" }
-            diagnostics.detail {
-                "prefetch_scheduled stream=${diagnostics.streamId(request.streamId)} " +
-                    "segments=$scheduledSegments"
-            }
             job.start()
         } else {
             job.cancel()

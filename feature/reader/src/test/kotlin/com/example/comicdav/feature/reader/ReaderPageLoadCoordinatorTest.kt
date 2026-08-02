@@ -24,8 +24,6 @@ class ReaderPageLoadCoordinatorTest {
         val coordinator = ReaderPageLoadCoordinator(
             ioDispatcher = StandardTestDispatcher(testScheduler),
             sessionGate = gate,
-            diagnostics = ReaderDiagnosticsTracker { testScheduler.currentTime },
-            elapsedRealtimeMs = { testScheduler.currentTime },
             prunePageCache = { _, protectedFile, _ -> prunedFiles += protectedFile },
         )
         val context = pageLoadContext(generation = 4, cacheDir = temp.root)
@@ -53,8 +51,6 @@ class ReaderPageLoadCoordinatorTest {
         val coordinator = ReaderPageLoadCoordinator(
             ioDispatcher = StandardTestDispatcher(testScheduler),
             sessionGate = gate,
-            diagnostics = ReaderDiagnosticsTracker { testScheduler.currentTime },
-            elapsedRealtimeMs = { testScheduler.currentTime },
             prunePageCache = { _, _, maxBytes -> pruneBudgets += maxBytes },
         )
         coordinator.updatePageCacheMaxBytes(-10L)
@@ -77,8 +73,6 @@ class ReaderPageLoadCoordinatorTest {
         val coordinator = ReaderPageLoadCoordinator(
             ioDispatcher = StandardTestDispatcher(testScheduler),
             sessionGate = gate,
-            diagnostics = ReaderDiagnosticsTracker { testScheduler.currentTime },
-            elapsedRealtimeMs = { testScheduler.currentTime },
             prunePageCache = { _, _, _ -> },
         )
         val session = PageLoadRecordingSession(pageCount = 1)

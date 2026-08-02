@@ -12,6 +12,7 @@ class AppSettingsTest {
             storage = StorageSettings(diskCacheLimitMb = 3072),
             video = VideoSettings(videoResumeEnabled = false),
             history = HistorySettings(historyMaxRecords = 500),
+            diagnostics = DiagnosticsSettings(logLevel = DiagnosticLogLevel.OFF),
         )
 
         val updated = original.copy(
@@ -23,5 +24,6 @@ class AppSettingsTest {
         assertEquals(original.storage, updated.storage)
         assertEquals(original.video, updated.video)
         assertEquals(original.history, updated.history)
+        assertEquals(original.diagnostics, updated.diagnostics)
     }
 }
