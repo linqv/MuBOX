@@ -26,6 +26,8 @@ class RoomDomainBoundaryContractTest {
         val fileDirectoryEntities = sourceFile("filedirectory/FileDirectoryEntities.kt").readText()
         val libraryEntities = sourceFile("library/LibraryEntities.kt").readText()
         val videoEntities = sourceFile("videolibrary/VideoLibraryEntities.kt").readText()
+        val downloadEntities = sourceFile("download/DownloadRecordEntities.kt").readText()
+        val playbackEntity = sourceFile("playback/PlaybackPositionEntity.kt").readText()
 
         assertTrue(fileDirectoryEntities.contains("internal data class FileDirectorySourceEntity("))
         assertTrue(fileDirectoryEntities.contains("internal class FileDirectoryTypeConverters"))
@@ -39,6 +41,9 @@ class RoomDomainBoundaryContractTest {
         assertTrue(videoEntities.contains("internal data class WebDavVideoSourceEntity("))
         assertTrue(videoEntities.contains("internal data class VideoLibraryItemRelation("))
         assertTrue(videoEntities.contains("internal class VideoLibraryTypeConverters"))
+        assertTrue(downloadEntities.contains("internal data class DownloadRecordEntity("))
+        assertTrue(downloadEntities.contains("internal data class VideoDownloadRecordEntity("))
+        assertTrue(playbackEntity.contains("internal data class PlaybackPositionEntity("))
     }
 
     @Test
@@ -50,6 +55,9 @@ class RoomDomainBoundaryContractTest {
             "library/LibraryRepository.kt" to "class LibraryRepository internal constructor(",
             "videolibrary/VideoLibraryDao.kt" to "internal abstract class VideoLibraryDao",
             "videolibrary/VideoLibraryRepository.kt" to "class VideoLibraryRepository internal constructor(",
+            "download/DownloadRecordDaos.kt" to "internal interface DownloadRecordDao",
+            "playback/PlaybackPositionDao.kt" to "internal interface PlaybackPositionDao",
+            "playback/PlaybackPositionRepository.kt" to "internal class PlaybackPositionRepository(",
         )
 
         expectedDeclarations.forEach { (relativePath, declaration) ->

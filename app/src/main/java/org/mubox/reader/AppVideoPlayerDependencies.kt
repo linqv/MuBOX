@@ -17,7 +17,7 @@ internal class AppVideoPlayerDependencies(
     private val settingsStore: AppSettingsStore,
     private val webDavClientFactories: AppWebDavPlaybackClientFactories,
     private val historyRepository: WatchHistoryGateway,
-    private val legacyPlaybackStateStore: VideoPlaybackStateStore,
+    private val playbackStateStore: VideoPlaybackStateStore,
     private val proxyManager: VideoProxyManager,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : VideoPlayerDependencies {
@@ -36,14 +36,14 @@ internal class AppVideoPlayerDependencies(
         webDavClientFactories.load(accountId)
 
     override suspend fun loadPlaybackPosition(playbackKey: String?): Long =
-        legacyPlaybackStateStore.loadPosition(playbackKey)
+        playbackStateStore.loadPosition(playbackKey)
 
     override suspend fun savePlaybackPosition(
         playbackKey: String?,
         positionMillis: Long,
         durationMillis: Long,
     ) {
-        legacyPlaybackStateStore.savePosition(playbackKey, positionMillis, durationMillis)
+        playbackStateStore.savePosition(playbackKey, positionMillis, durationMillis)
     }
 
     override suspend fun recordWatchHistory(

@@ -128,6 +128,10 @@ android {
     }
 }
 
+composeCompiler {
+    includeComposeMappingFile = false
+}
+
 tasks.register<CheckReleaseSigning>("checkReleaseSigning") {
     missingEntries.set(releaseSigningMissing.sorted())
     releaseStorePath.set(

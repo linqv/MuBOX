@@ -1,49 +1,33 @@
 package org.mubox.reader.data
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.room.withTransaction
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
 import org.mubox.reader.core.ports.VideoDownloadGateway
+import org.mubox.reader.data.database.AppDatabase
+import org.mubox.reader.data.download.VideoDownloadRecordDao
+import org.mubox.reader.data.download.VideoDownloadRecordEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class VideoDownloadStore(
-    private val dataStore: DataStore<Preferences>,
+internal class VideoDownloadStore(
+    private val database: AppDatabase,
+    private val dao: VideoDownloadRecordDao,
     private val maxRecords: Int = DEFAULT_MAX_RECORDS,
 ) : VideoDownloadGateway {
-    override val records: Flow<List<VideoDownloadRecord>> = dataStore.data.map { preferences ->
-        preferences[VIDEO_DOWNLOAD_RECORDS]
-            .orEmpty()
-            .lineSequence()
-            .mapNotNull(::decodeVideoDownloadRecord)
-            .toList()
-    }
+    override val records: Flow<List<VideoDownloadRecord>> =
+        dao.observeAll().map { records -> records.map(VideoDownloadRecordEntity::toModel) }
 
     override suspend fun addRecord(record: VideoDownloadRecord) {
-        dataStore.edit { preferences ->
-            val existing = preferences[VIDEO_DOWNLOAD_RECORDS]
-                .orEmpty()
-                .lineSequence()
-                .mapNotNull(::decodeVideoDownloadRecord)
-                .filterNot { it.accountId == record.accountId && it.remotePath == record.remotePath }
-                .toList()
-            preferences[VIDEO_DOWNLOAD_RECORDS] = (listOf(record) + existing)
-                .take(maxRecords.coerceAtLeast(1))
-                .joinToString(separator = "\n", transform = ::encodeVideoDownloadRecord)
+        database.withTransaction {
+            dao.upsert(record.toEntity())
+            dao.findOverflow(maxRecords.coerceAtLeast(1)).forEach { key ->
+                dao.delete(key.accountId, key.remotePath)
+            }
         }
     }
 
     override suspend fun removeRecord(record: VideoDownloadRecord) {
-        dataStore.edit { preferences ->
-            preferences[VIDEO_DOWNLOAD_RECORDS] = preferences[VIDEO_DOWNLOAD_RECORDS]
-                .orEmpty()
-                .lineSequence()
-                .mapNotNull(::decodeVideoDownloadRecord)
-                .filterNot { it.accountId == record.accountId && it.remotePath == record.remotePath }
-                .joinToString(separator = "\n", transform = ::encodeVideoDownloadRecord)
-        }
+        dao.delete(record.accountId, record.remotePath)
     }
 
     private companion object {
@@ -51,30 +35,22 @@ class VideoDownloadStore(
     }
 }
 
-internal val VIDEO_DOWNLOAD_RECORDS = stringPreferencesKey("video_download_records")
-
-internal fun encodeVideoDownloadRecord(record: VideoDownloadRecord): String =
-    listOf(
-        record.fileName.sanitizeVideoDownloadRecordField(),
-        record.accountId.sanitizeVideoDownloadRecordField(),
-        record.remotePath.sanitizeVideoDownloadRecordField(),
-        record.localUri.sanitizeVideoDownloadRecordField(),
-        record.sizeBytes.toString(),
-        record.downloadedAtMillis.toString(),
-    ).joinToString(separator = "\t")
-
-internal fun decodeVideoDownloadRecord(raw: String): VideoDownloadRecord? {
-    val parts = raw.split('\t')
-    if (parts.size != 6) return null
-    return VideoDownloadRecord(
-        fileName = parts[0],
-        accountId = parts[1],
-        remotePath = parts[2],
-        localUri = parts[3],
-        sizeBytes = parts[4].toLongOrNull() ?: return null,
-        downloadedAtMillis = parts[5].toLongOrNull() ?: return null,
+internal fun VideoDownloadRecord.toEntity(): VideoDownloadRecordEntity =
+    VideoDownloadRecordEntity(
+        fileName = fileName,
+        accountId = accountId,
+        remotePath = remotePath,
+        localUri = localUri,
+        sizeBytes = sizeBytes,
+        downloadedAtMillis = downloadedAtMillis,
     )
-}
 
-private fun String.sanitizeVideoDownloadRecordField(): String =
-    replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
+private fun VideoDownloadRecordEntity.toModel(): VideoDownloadRecord =
+    VideoDownloadRecord(
+        fileName = fileName,
+        accountId = accountId,
+        remotePath = remotePath,
+        localUri = localUri,
+        sizeBytes = sizeBytes,
+        downloadedAtMillis = downloadedAtMillis,
+    )

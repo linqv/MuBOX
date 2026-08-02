@@ -7,6 +7,10 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import org.mubox.reader.data.download.DownloadRecordDao
+import org.mubox.reader.data.download.DownloadRecordEntity
+import org.mubox.reader.data.download.VideoDownloadRecordDao
+import org.mubox.reader.data.download.VideoDownloadRecordEntity
 import org.mubox.reader.data.filedirectory.FileDirectoryDao
 import org.mubox.reader.data.filedirectory.FileDirectorySourceEntity
 import org.mubox.reader.data.filedirectory.FileDirectoryTypeConverters
@@ -17,6 +21,8 @@ import org.mubox.reader.data.library.LibraryItemEntity
 import org.mubox.reader.data.library.LibraryTypeConverters
 import org.mubox.reader.data.library.LocalComicSourceEntity
 import org.mubox.reader.data.library.WebDavComicSourceEntity
+import org.mubox.reader.data.playback.PlaybackPositionDao
+import org.mubox.reader.data.playback.PlaybackPositionEntity
 import org.mubox.reader.data.videolibrary.LocalVideoSourceEntity
 import org.mubox.reader.data.videolibrary.VideoLibraryDao
 import org.mubox.reader.data.videolibrary.VideoLibraryItemEntity
@@ -35,8 +41,11 @@ internal const val APP_DATABASE_NAME = "mubox-library.db"
         LocalVideoSourceEntity::class,
         WebDavVideoSourceEntity::class,
         WatchHistoryEntity::class,
+        DownloadRecordEntity::class,
+        VideoDownloadRecordEntity::class,
+        PlaybackPositionEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(LibraryTypeConverters::class, FileDirectoryTypeConverters::class, VideoLibraryTypeConverters::class)
@@ -45,6 +54,9 @@ internal abstract class AppDatabase : RoomDatabase() {
     abstract fun fileDirectoryDao(): FileDirectoryDao
     abstract fun videoLibraryDao(): VideoLibraryDao
     abstract fun watchHistoryDao(): WatchHistoryDao
+    abstract fun downloadRecordDao(): DownloadRecordDao
+    abstract fun videoDownloadRecordDao(): VideoDownloadRecordDao
+    abstract fun playbackPositionDao(): PlaybackPositionDao
 }
 
 internal fun createAppDatabase(
@@ -56,7 +68,14 @@ internal fun createAppDatabase(
         AppDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        .addMigrations(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+        )
         .build()
 }
 
@@ -200,6 +219,54 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
                 `total` INTEGER NOT NULL,
                 `lastWatchedAt` INTEGER NOT NULL,
                 PRIMARY KEY(`mediaKey`)
+            )
+            """.trimIndent(),
+        )
+    }
+}
+
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `download_records` (
+                `fileName` TEXT NOT NULL,
+                `remotePath` TEXT NOT NULL,
+                `sizeBytes` INTEGER NOT NULL,
+                `downloadedAtMillis` INTEGER NOT NULL,
+                `accountId` TEXT,
+                `localUri` TEXT,
+                PRIMARY KEY(`remotePath`, `fileName`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_download_records_downloadedAtMillis` " +
+                "ON `download_records` (`downloadedAtMillis`)",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `video_download_records` (
+                `fileName` TEXT NOT NULL,
+                `accountId` TEXT NOT NULL,
+                `remotePath` TEXT NOT NULL,
+                `localUri` TEXT NOT NULL,
+                `sizeBytes` INTEGER NOT NULL,
+                `downloadedAtMillis` INTEGER NOT NULL,
+                PRIMARY KEY(`accountId`, `remotePath`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_video_download_records_downloadedAtMillis` " +
+                "ON `video_download_records` (`downloadedAtMillis`)",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `playback_positions` (
+                `playbackKeyHash` TEXT NOT NULL,
+                `positionMillis` INTEGER NOT NULL,
+                PRIMARY KEY(`playbackKeyHash`)
             )
             """.trimIndent(),
         )

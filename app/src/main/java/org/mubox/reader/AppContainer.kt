@@ -7,9 +7,7 @@ import org.mubox.reader.core.diagnostics.Diagnostics
 import org.mubox.reader.data.AppDataFolderStore
 import org.mubox.reader.data.AppSettingsStore
 import org.mubox.reader.data.ComicDownloadCache
-import org.mubox.reader.data.DownloadRecordStore
 import org.mubox.reader.data.ReadingProgressStore
-import org.mubox.reader.data.VideoDownloadStore
 import org.mubox.reader.data.WebDavAccountStore
 import org.mubox.reader.data.database.createAppPersistence
 import org.mubox.reader.feature.filedirectory.AndroidLocalDirectoryReader
@@ -34,9 +32,6 @@ internal val Context.readingProgressDataStore by preferencesDataStore(name = "re
 internal val Context.appDataFolderDataStore by preferencesDataStore(name = "app_data_folder")
 internal val Context.appSettingsDataStore by preferencesDataStore(name = "app_settings")
 internal val Context.webDavAccountDataStore by preferencesDataStore(name = "webdav_accounts")
-internal val Context.downloadRecordsDataStore by preferencesDataStore(name = "download_records")
-internal val Context.videoDownloadRecordsDataStore by preferencesDataStore(name = "video_download_records")
-internal val Context.videoPlaybackStateDataStore by preferencesDataStore(name = "video_playback_state")
 
 internal class AppContainer(
     context: Context,
@@ -80,7 +75,7 @@ internal class AppContainer(
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)
     val dataFolderStore = AppDataFolderStore(context.appDataFolderDataStore)
     val appSettingsStore = AppSettingsStore(context.appSettingsDataStore)
-    val videoPlaybackStateStore = VideoPlaybackStateStore(context.videoPlaybackStateDataStore)
+    val videoPlaybackStateStore = VideoPlaybackStateStore(appPersistence.playbackPositionRepository)
     val videoProxyManager = VideoProxyManager(diagnostics)
     val webDavClientProvider = WebDavClientProvider(
         loadCredentials = { accountId ->
@@ -101,7 +96,7 @@ internal class AppContainer(
         settingsStore = appSettingsStore,
         webDavClientFactories = webDavPlaybackClientFactories,
         historyRepository = watchHistoryRepository,
-        legacyPlaybackStateStore = videoPlaybackStateStore,
+        playbackStateStore = videoPlaybackStateStore,
         proxyManager = videoProxyManager,
     )
 
@@ -114,8 +109,8 @@ internal class AppContainer(
         )
 
     fun openLocalComicSession(path: String) = ComicEngine().openLocal(path)
-    val downloadRecordStore = DownloadRecordStore(context.downloadRecordsDataStore)
-    val videoDownloadStore = VideoDownloadStore(context.videoDownloadRecordsDataStore)
+    val downloadRecordStore = appPersistence.downloadRecordRepository
+    val videoDownloadStore = appPersistence.videoDownloadRepository
 
     fun startBackgroundMigrations(scope: CoroutineScope): Job = scope.launch {
         try {

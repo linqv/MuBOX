@@ -32,11 +32,16 @@ class AppDatabaseMigrationTest {
             val library = database.libraryDao().getLibrary()
             val directories = database.fileDirectoryDao().observeSources().first()
             val history = database.watchHistoryDao().observeAll().first()
+            val downloadRecords = database.downloadRecordDao().observeAll().first()
+            val videoDownloadRecords = database.videoDownloadRecordDao().observeAll().first()
 
             assertEquals(1, library.size)
             assertEquals("Chapter 01", library.single().item.displayName)
             assertTrue(directories.isEmpty())
             assertTrue(history.isEmpty())
+            assertTrue(downloadRecords.isEmpty())
+            assertTrue(videoDownloadRecords.isEmpty())
+            assertEquals(null, database.playbackPositionDao().load("missing"))
 
             val directoryId = database.fileDirectoryDao().insertSource(
                 FileDirectorySourceEntity(

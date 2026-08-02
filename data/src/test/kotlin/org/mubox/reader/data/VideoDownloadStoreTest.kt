@@ -1,44 +1,52 @@
 package org.mubox.reader.data
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
+import org.mubox.reader.data.database.AppDatabase
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class VideoDownloadStoreTest {
-    @get:Rule
-    val temporaryFolder = TemporaryFolder()
+    private lateinit var database: AppDatabase
 
-    @Test
-    fun encodeDecodeRoundTripPreservesAllVideoDownloadFields() {
-        val record = VideoDownloadRecord(
-            fileName = "movie.mp4",
-            accountId = "account-1",
-            remotePath = "/videos/movie.mp4",
-            localUri = "file:///storage/MuBOX/videos/movie.mp4",
-            sizeBytes = 1234L,
-            downloadedAtMillis = 5678L,
-        )
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+    }
 
-        assertEquals(record, decodeVideoDownloadRecord(encodeVideoDownloadRecord(record)))
+    @After
+    fun tearDown() {
+        database.close()
     }
 
     @Test
     fun addRecordPreservesAllVideoDownloadFields() = runTest {
-        val store = createStore("video-downloads.preferences_pb")
-        val record = VideoDownloadRecord(
-            fileName = "movie.mp4",
-            accountId = "account-1",
-            remotePath = "/videos/movie.mp4",
-            localUri = "file:///storage/MuBOX/videos/movie.mp4",
-            sizeBytes = 1234L,
-            downloadedAtMillis = 5678L,
+        val store = store()
+        val record = record()
+
+        store.addRecord(record)
+
+        assertEquals(listOf(record), store.records.first())
+    }
+
+    @Test
+    fun preservesTabsAndNewlinesInVideoDownloadFields() = runTest {
+        val store = store()
+        val record = record().copy(
+            fileName = "movie\tpart\n1.mp4",
+            accountId = "account\t1",
+            remotePath = "/videos/line\n1.mp4",
+            localUri = "file:///storage/MuBOX/videos/line\n1.mp4",
         )
 
         store.addRecord(record)
@@ -48,15 +56,8 @@ class VideoDownloadStoreTest {
 
     @Test
     fun addRecordReplacesMatchingAccountAndRemotePath() = runTest {
-        val store = createStore("video-download-replace.preferences_pb")
-        val first = VideoDownloadRecord(
-            fileName = "old.mp4",
-            accountId = "account-1",
-            remotePath = "/videos/movie.mp4",
-            localUri = "file:///storage/MuBOX/videos/old.mp4",
-            sizeBytes = 10L,
-            downloadedAtMillis = 20L,
-        )
+        val store = store()
+        val first = record()
         val replacement = first.copy(
             fileName = "new.mp4",
             localUri = "file:///storage/MuBOX/videos/new.mp4",
@@ -72,15 +73,8 @@ class VideoDownloadStoreTest {
 
     @Test
     fun removeRecordRemovesMatchingAccountAndRemotePathOnly() = runTest {
-        val store = createStore("video-download-remove.preferences_pb")
-        val target = VideoDownloadRecord(
-            fileName = "movie.mp4",
-            accountId = "account-1",
-            remotePath = "/videos/movie.mp4",
-            localUri = "file:///storage/MuBOX/videos/movie.mp4",
-            sizeBytes = 1234L,
-            downloadedAtMillis = 5678L,
-        )
+        val store = store()
+        val target = record()
         val other = target.copy(
             accountId = "account-2",
             localUri = "file:///storage/MuBOX/videos/other.mp4",
@@ -94,16 +88,34 @@ class VideoDownloadStoreTest {
     }
 
     @Test
-    fun malformedStoredLinesAreIgnored() = runTest {
-        assertTrue(decodeVideoDownloadRecord("movie.mp4\taccount\t/path\tfile:///tmp/movie.mp4\tbad-size\t100") == null)
+    fun trimsOnlyRecordsBeyondConfiguredLimit() = runTest {
+        val store = store(maxRecords = 2)
+        store.addRecord(record(path = "/videos/old.mp4", downloadedAtMillis = 10L))
+        store.addRecord(record(path = "/videos/middle.mp4", downloadedAtMillis = 20L))
+        store.addRecord(record(path = "/videos/new.mp4", downloadedAtMillis = 30L))
+
+        assertEquals(
+            listOf("/videos/new.mp4", "/videos/middle.mp4"),
+            store.records.first().map { it.remotePath },
+        )
     }
 
-    private fun TestScope.createStore(fileName: String): VideoDownloadStore {
-        val preferencesFile = temporaryFolder.newFile(fileName)
-        val dataStore = PreferenceDataStoreFactory.create(
-            scope = backgroundScope,
-            produceFile = { preferencesFile },
+    private fun store(maxRecords: Int = 20): VideoDownloadStore =
+        VideoDownloadStore(
+            database = database,
+            dao = database.videoDownloadRecordDao(),
+            maxRecords = maxRecords,
         )
-        return VideoDownloadStore(dataStore)
-    }
+
+    private fun record(
+        path: String = "/videos/movie.mp4",
+        downloadedAtMillis: Long = 5678L,
+    ): VideoDownloadRecord = VideoDownloadRecord(
+        fileName = path.substringAfterLast('/'),
+        accountId = "account-1",
+        remotePath = path,
+        localUri = "file:///storage/MuBOX/videos/${path.substringAfterLast('/')}",
+        sizeBytes = 1234L,
+        downloadedAtMillis = downloadedAtMillis,
+    )
 }

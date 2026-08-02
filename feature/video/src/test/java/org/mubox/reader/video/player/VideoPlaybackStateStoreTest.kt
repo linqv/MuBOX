@@ -1,32 +1,14 @@
 package org.mubox.reader.video.player
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import java.io.File
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import org.mubox.reader.core.ports.PlaybackPositionGateway
 import kotlinx.coroutines.test.runTest
-import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 class VideoPlaybackStateStoreTest {
-    @get:Rule
-    val temporaryFolder = TemporaryFolder()
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    @After
-    fun tearDown() {
-        scope.cancel()
-    }
-
     @Test
     fun storesAndLoadsPlaybackPositionByStableKey() = runTest {
-        val store = store("positions.preferences_pb")
+        val store = store()
 
         store.savePosition(playbackKey = "local|movie", positionMillis = 123_000L, durationMillis = 600_000L)
 
@@ -36,7 +18,7 @@ class VideoPlaybackStateStoreTest {
 
     @Test
     fun clearsPlaybackPositionNearEndOfVideo() = runTest {
-        val store = store("near_end.preferences_pb")
+        val store = store()
         store.savePosition(playbackKey = "webdav|movie", positionMillis = 123_000L, durationMillis = 600_000L)
 
         store.savePosition(playbackKey = "webdav|movie", positionMillis = 599_500L, durationMillis = 600_000L)
@@ -46,7 +28,7 @@ class VideoPlaybackStateStoreTest {
 
     @Test
     fun clearAllRemovesEveryResumePosition() = runTest {
-        val store = store("clear_all.preferences_pb")
+        val store = store()
         store.savePosition("video-1", 10_000L, 60_000L)
         store.savePosition("video-2", 20_000L, 60_000L)
 
@@ -75,10 +57,23 @@ class VideoPlaybackStateStoreTest {
         assertEquals("webdav|account|/video/1.mkv|10|etag|20", webDavKey)
     }
 
-    private fun store(fileName: String): VideoPlaybackStateStore =
-        VideoPlaybackStateStore(
-            PreferenceDataStoreFactory.create(scope = scope) {
-                File(temporaryFolder.root, fileName)
-            },
-        )
+    private fun store(): VideoPlaybackStateStore = VideoPlaybackStateStore(InMemoryPlaybackPositions())
+}
+
+private class InMemoryPlaybackPositions : PlaybackPositionGateway {
+    private val positions = mutableMapOf<String, Long>()
+
+    override suspend fun loadPosition(playbackKey: String): Long = positions[playbackKey] ?: 0L
+
+    override suspend fun savePosition(playbackKey: String, positionMillis: Long) {
+        positions[playbackKey] = positionMillis
+    }
+
+    override suspend fun deletePosition(playbackKey: String) {
+        positions.remove(playbackKey)
+    }
+
+    override suspend fun clear() {
+        positions.clear()
+    }
 }

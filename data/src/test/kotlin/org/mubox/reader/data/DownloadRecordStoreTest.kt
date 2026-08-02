@@ -1,51 +1,45 @@
 package org.mubox.reader.data
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.stringPreferencesKey
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import org.mubox.reader.core.model.transfer.DownloadRecord
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import org.mubox.reader.data.database.AppDatabase
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class DownloadRecordStoreTest {
-    @get:Rule
-    val temp = TemporaryFolder()
+    private lateinit var database: AppDatabase
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+    }
 
     @Test
     fun startsWithNoRecords() = runTest {
-        val store = DownloadRecordStore(dataStore("download-records-empty.preferences_pb"))
-
-        assertEquals(emptyList<DownloadRecord>(), store.records.first())
+        assertEquals(emptyList<DownloadRecord>(), store().records.first())
     }
 
     @Test
     fun keepsNewestDownloadRecordsFirst() = runTest {
-        val store = DownloadRecordStore(dataStore("download-records.preferences_pb"))
+        val store = store()
 
-        store.addRecord(
-            DownloadRecord(
-                fileName = "chapter-1.cbz",
-                remotePath = "/books/chapter-1.cbz",
-                sizeBytes = 1024,
-                downloadedAtMillis = 10,
-            ),
-        )
-        store.addRecord(
-            DownloadRecord(
-                fileName = "chapter-2.cbz",
-                remotePath = "/books/chapter-2.cbz",
-                sizeBytes = 2048,
-                downloadedAtMillis = 20,
-            ),
-        )
+        store.addRecord(record("chapter-1.cbz", 10L))
+        store.addRecord(record("chapter-2.cbz", 20L))
 
         assertEquals(
             listOf("chapter-2.cbz", "chapter-1.cbz"),
@@ -54,39 +48,15 @@ class DownloadRecordStoreTest {
     }
 
     @Test
-    fun storesRecordsWithStablePreferenceKey() = runTest {
-        val dataStore = dataStore("download-records-key.preferences_pb")
-        val store = DownloadRecordStore(dataStore)
-
-        store.addRecord(
-            DownloadRecord(
-                fileName = "demo.cbz",
-                remotePath = "/books/demo.cbz",
-                sizeBytes = 4096,
-                downloadedAtMillis = 123,
-                accountId = "https://example.test/dav|lin",
-                localUri = "content://downloads/root/demo.cbz",
-            ),
-        )
-
-        val rawRecords = dataStore.data.first()[stringPreferencesKey("download_records")].orEmpty()
-
-        assertEquals(
-            "demo.cbz\t/books/demo.cbz\t4096\t123\thttps://example.test/dav|lin\tcontent://downloads/root/demo.cbz",
-            rawRecords,
-        )
-    }
-
-    @Test
-    fun addRecordPreservesLocalUri() = runTest {
-        val store = DownloadRecordStore(dataStore("download-records-local-uri.preferences_pb"))
+    fun preservesTabsAndNewlinesInStructuredFields() = runTest {
+        val store = store()
         val record = DownloadRecord(
-            fileName = "demo.cbz",
-            remotePath = "/books/demo.cbz",
-            sizeBytes = 4096,
-            downloadedAtMillis = 123,
-            accountId = "account-1",
-            localUri = "content://downloads/root/demo.cbz",
+            fileName = "demo\tchapter\n01.cbz",
+            remotePath = "/books/line\nwith\ttabs.cbz",
+            sizeBytes = 4096L,
+            downloadedAtMillis = 123L,
+            accountId = "account\t1",
+            localUri = "content://downloads/root/line\n01.cbz",
         )
 
         store.addRecord(record)
@@ -95,41 +65,61 @@ class DownloadRecordStoreTest {
     }
 
     @Test
+    fun addRecordReplacesMatchingRemotePathAndFileName() = runTest {
+        val store = store()
+        val original = record("same.cbz", 10L)
+        val replacement = original.copy(
+            sizeBytes = 8192L,
+            downloadedAtMillis = 30L,
+            localUri = "content://downloads/replacement.cbz",
+        )
+
+        store.addRecord(original)
+        store.addRecord(replacement)
+
+        assertEquals(listOf(replacement), store.records.first())
+    }
+
+    @Test
     fun removesSelectedDownloadRecord() = runTest {
-        val store = DownloadRecordStore(dataStore("download-records-remove.preferences_pb"))
-        store.addRecord(
-            DownloadRecord(
-                fileName = "keep.cbz",
-                remotePath = "/books/keep.cbz",
-                sizeBytes = 1024,
-                downloadedAtMillis = 10,
-            ),
-        )
-        store.addRecord(
-            DownloadRecord(
-                fileName = "remove.cbz",
-                remotePath = "/books/remove.cbz",
-                sizeBytes = 2048,
-                downloadedAtMillis = 20,
-            ),
-        )
+        val store = store()
+        val keep = record("keep.cbz", 10L)
+        val remove = record("remove.cbz", 20L)
+        store.addRecord(keep)
+        store.addRecord(remove)
 
-        store.removeRecord(
-            DownloadRecord(
-                fileName = "remove.cbz",
-                remotePath = "/books/remove.cbz",
-                sizeBytes = 2048,
-                downloadedAtMillis = 20,
-            ),
-        )
+        store.removeRecord(remove)
 
-        assertEquals(listOf("keep.cbz"), store.records.first().map { it.fileName })
+        assertEquals(listOf(keep), store.records.first())
     }
 
-    private fun TestScope.dataStore(fileName: String): DataStore<Preferences> {
-        return PreferenceDataStoreFactory.create(
-            scope = backgroundScope,
-            produceFile = { temp.newFile(fileName) },
+    @Test
+    fun trimsOnlyRecordsBeyondConfiguredLimit() = runTest {
+        val store = store(maxRecords = 2)
+        store.addRecord(record("old.cbz", 10L))
+        store.addRecord(record("middle.cbz", 20L))
+        store.addRecord(record("new.cbz", 30L))
+
+        assertEquals(
+            listOf("new.cbz", "middle.cbz"),
+            store.records.first().map { it.fileName },
         )
     }
+
+    private fun store(maxRecords: Int = 20): DownloadRecordStore =
+        DownloadRecordStore(
+            database = database,
+            dao = database.downloadRecordDao(),
+            maxRecords = maxRecords,
+        )
+
+    private fun record(fileName: String, downloadedAtMillis: Long): DownloadRecord =
+        DownloadRecord(
+            fileName = fileName,
+            remotePath = "/books/$fileName",
+            sizeBytes = 1024L,
+            downloadedAtMillis = downloadedAtMillis,
+            accountId = "account-1",
+            localUri = "content://downloads/$fileName",
+        )
 }
