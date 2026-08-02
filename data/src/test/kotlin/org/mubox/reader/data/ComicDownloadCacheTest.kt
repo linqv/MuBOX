@@ -133,7 +133,7 @@ class ComicDownloadCacheTest {
     }
 
     @Test
-    fun clearDeletesDownloadIndexAndNativePagesForKeyOnly() {
+    fun clearDeletesDownloadFileIndexAndTmpForKeyOnly() {
         val cache = ComicDownloadCache(temp.root)
         val key = ComicCacheKey("book")
         val download = temp.root.resolve("book.cbz").apply { writeBytes(ByteArray(3)) }
@@ -142,6 +142,7 @@ class ComicDownloadCacheTest {
             parentFile?.mkdirs()
             writeBytes(ByteArray(7))
         }
+        // The native engine never writes this directory, so clear() must leave it alone.
         val nativePagesDir = temp.root.resolve("book/pages").apply { mkdirs() }
         val nativePage = nativePagesDir.resolve("page-0.jpg").apply { writeBytes(ByteArray(13)) }
         val similarlyPrefixed = temp.root.resolve("book-extra.cbz").apply {
@@ -150,12 +151,12 @@ class ComicDownloadCacheTest {
 
         val bytesDeleted = cache.clear(key)
 
-        assertEquals(28L, bytesDeleted)
+        assertEquals(15L, bytesDeleted)
         assertFalse(download.exists())
         assertFalse(temporary.exists())
         assertFalse(index.exists())
-        assertFalse(nativePage.exists())
-        assertFalse(nativePagesDir.exists())
+        assertTrue(nativePage.exists())
+        assertTrue(nativePagesDir.exists())
         assertTrue(similarlyPrefixed.exists())
     }
 
