@@ -16,7 +16,6 @@ typealias OpenLocalFdSessionFactory = (
     fd: Int,
     size: Long,
     format: LocalArchiveFormat,
-    avifImagesEnabled: Boolean,
 ) -> ComicReaderSession
 
 typealias OpenLocalDocumentSessionFactory = (
@@ -34,13 +33,13 @@ class LocalComicOpener(
     },
 ) {
     @WorkerThread
-    fun open(uri: Uri, fileName: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
+    fun open(uri: Uri, fileName: String): ComicReaderSession {
         localArchiveFormatForFileName(fileName)?.let { format ->
             val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
                 ?: error("无法读取所选文件")
             val size = descriptor.statSize.takeIf { it > 0L } ?: 0L
             val fd = descriptor.detachFd()
-            return openSession(fd, size, format, avifImagesEnabled)
+            return openSession(fd, size, format)
         }
 
         localDocumentFormatForFileName(fileName)?.let { format ->

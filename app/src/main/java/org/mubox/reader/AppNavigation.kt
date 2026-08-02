@@ -589,8 +589,3 @@ internal fun org.mubox.reader.core.model.cache.ComicCacheCategory.cacheLabel(): 
         org.mubox.reader.core.model.cache.ComicCacheCategory.EXTERNAL_CACHE -> "外部缓存"
         org.mubox.reader.core.model.cache.ComicCacheCategory.OTHER -> "其他缓存"
     }
-
-internal fun effectiveAvifImagesEnabled(
-    settingEnabled: Boolean,
-    sdkInt: Int = android.os.Build.VERSION.SDK_INT,
-): Boolean = settingEnabled && sdkInt >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE

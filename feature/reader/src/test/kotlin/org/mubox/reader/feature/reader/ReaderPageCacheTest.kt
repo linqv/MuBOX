@@ -1,6 +1,5 @@
 package org.mubox.reader.feature.reader
 
-import org.mubox.reader.core.model.media.readerImageFormatCacheKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,24 +27,12 @@ class ReaderPageCacheTest {
     }
 
     @Test
-    fun pageCacheKeyOnlyAddsAvifVariantWhenAvifIsEnabled() {
-        assertTrue(readerImageFormatCacheKey("book-key", avifImagesEnabled = false) == "book-key")
-        assertTrue(readerImageFormatCacheKey("book-key", avifImagesEnabled = true) == "book-key-avif")
-    }
-
-    @Test
-    fun clearComicPagesRemovesPersistentAndTransientVariantsWithoutPrefixMatches() {
+    fun clearComicPagesRemovesPersistentAndTransientPagesWithoutPrefixMatches() {
         val persistent = ReaderPageCache.pageFile(temp.root, "book", 0).apply {
             writeBytes(ByteArray(2))
         }
-        val avif = ReaderPageCache.pageFile(temp.root, "book-avif", 0).apply {
-            writeBytes(ByteArray(3))
-        }
         val transient = ReaderPageCache.transientPageFile(temp.root, "book#12", 0).apply {
             writeBytes(ByteArray(5))
-        }
-        val transientAvif = ReaderPageCache.transientPageFile(temp.root, "book-avif#12", 0).apply {
-            writeBytes(ByteArray(7))
         }
         val similarlyPrefixed = ReaderPageCache.transientPageFile(temp.root, "book-extra#12", 0).apply {
             writeBytes(ByteArray(11))
@@ -53,11 +40,9 @@ class ReaderPageCacheTest {
 
         val bytesDeleted = ReaderPageCache.clearComicPages(temp.root, "book")
 
-        assertEquals(17L, bytesDeleted)
+        assertEquals(7L, bytesDeleted)
         assertFalse(persistent.exists())
-        assertFalse(avif.exists())
         assertFalse(transient.exists())
-        assertFalse(transientAvif.exists())
         assertTrue(similarlyPrefixed.exists())
     }
 }

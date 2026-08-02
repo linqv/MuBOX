@@ -3,7 +3,6 @@ package org.mubox.reader.infrastructure.reader
 import org.mubox.reader.core.diagnostics.DiagnosticCategory
 import org.mubox.reader.core.diagnostics.Diagnostics
 import org.mubox.reader.core.diagnostics.NoopDiagnostics
-import org.mubox.reader.core.model.media.readerImageFormatCacheKey
 import org.mubox.reader.core.ports.ReadingProgressGateway
 import org.mubox.reader.core.ports.RemoteRangeComicSessionFactory
 import org.mubox.reader.core.remote.RemoteFileInfo
@@ -30,7 +29,6 @@ class OpenComicUseCase(
             cacheDir,
             comicKey,
             validator,
-            avifImagesEnabled,
             webDavPrefetchPageCount,
         ->
         ComicEngine().openRemote(
@@ -39,11 +37,9 @@ class OpenComicUseCase(
             cacheDir = cacheDir,
             comicKey = comicKey,
             validator = validator,
-            avifImagesEnabled = avifImagesEnabled,
             webDavPrefetchPageCount = webDavPrefetchPageCount,
         )
     },
-    private val avifImagesEnabled: Boolean = false,
     private val webDavPrefetchPageCount: Int = 4,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -92,13 +88,12 @@ class OpenComicUseCase(
                 cache.cacheDir,
                 key.value,
                 info.validator(),
-                avifImagesEnabled,
                 webDavPrefetchPageCount,
             )
             val initialPage = progressStore.loadPage(key.value).coerceIn(0, (session.pageCount - 1).coerceAtLeast(0))
             OpenComicResult(
                 comicKey = key.value,
-                pageCacheKey = readerImageFormatCacheKey(key.value, avifImagesEnabled),
+                pageCacheKey = key.value,
                 localFile = cache.cacheDir.resolve("${key.value}.remote"),
                 session = session,
                 initialPage = initialPage,

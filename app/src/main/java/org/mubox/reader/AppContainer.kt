@@ -52,12 +52,11 @@ internal class AppContainer(
     val localDirectoryReader = AndroidLocalDirectoryReader(context.applicationContext)
     val localComicOpener = LocalComicOpener(
         context = context.applicationContext,
-        openSession = { fd, size, format, avifImagesEnabled ->
+        openSession = { fd, size, format ->
             ComicEngine().openLocalFd(
                 fd = fd,
                 size = size,
                 format = format.nativeName,
-                avifImagesEnabled = avifImagesEnabled,
             )
         },
     )

@@ -6,11 +6,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-use crate::cbz::{CbzIndex, open_cbz_with_options};
-use crate::image::ImageFormatOptions;
+use crate::cbz::{CbzIndex, open_cbz};
 use crate::zip::RangeReader;
 
-pub const INDEX_CACHE_VERSION: u32 = 2;
+pub const INDEX_CACHE_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexCacheKey {
@@ -25,8 +24,6 @@ struct CachedIndex {
     comic_key: String,
     file_size: u64,
     validator: String,
-    #[serde(default)]
-    avif: bool,
     index: CbzIndex,
 }
 
@@ -36,19 +33,10 @@ struct CachedIndexRef<'a> {
     comic_key: &'a str,
     file_size: u64,
     validator: &'a str,
-    avif: bool,
     index: &'a CbzIndex,
 }
 
 pub fn load_index_cache(cache_dir: &Path, key: &IndexCacheKey) -> Result<Option<CbzIndex>> {
-    load_index_cache_with_options(cache_dir, key, ImageFormatOptions::default())
-}
-
-pub fn load_index_cache_with_options(
-    cache_dir: &Path,
-    key: &IndexCacheKey,
-    options: ImageFormatOptions,
-) -> Result<Option<CbzIndex>> {
     let path = index_cache_file(cache_dir, &key.comic_key);
     if !path.is_file() {
         return Ok(None);
@@ -60,7 +48,6 @@ pub fn load_index_cache_with_options(
         && cached.comic_key == key.comic_key
         && cached.file_size == key.file_size
         && cached.validator == key.validator
-        && cached.avif == options.avif
     {
         Ok(Some(cached.index))
     } else {
@@ -69,15 +56,6 @@ pub fn load_index_cache_with_options(
 }
 
 pub fn store_index_cache(cache_dir: &Path, key: &IndexCacheKey, index: &CbzIndex) -> Result<()> {
-    store_index_cache_with_options(cache_dir, key, ImageFormatOptions::default(), index)
-}
-
-pub fn store_index_cache_with_options(
-    cache_dir: &Path,
-    key: &IndexCacheKey,
-    options: ImageFormatOptions,
-    index: &CbzIndex,
-) -> Result<()> {
     let path = index_cache_file(cache_dir, &key.comic_key);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -87,7 +65,6 @@ pub fn store_index_cache_with_options(
         comic_key: &key.comic_key,
         file_size: key.file_size,
         validator: &key.validator,
-        avif: options.avif,
         index,
     };
     atomic_write(&path, &serde_json::to_vec(&cached)?)?;
@@ -99,20 +76,11 @@ pub fn open_cbz_with_index_cache(
     cache_dir: &Path,
     key: &IndexCacheKey,
 ) -> Result<CbzIndex> {
-    open_cbz_with_index_cache_options(reader, cache_dir, key, ImageFormatOptions::default())
-}
-
-pub fn open_cbz_with_index_cache_options(
-    reader: &impl RangeReader,
-    cache_dir: &Path,
-    key: &IndexCacheKey,
-    options: ImageFormatOptions,
-) -> Result<CbzIndex> {
-    if let Some(index) = load_index_cache_with_options(cache_dir, key, options)? {
+    if let Some(index) = load_index_cache(cache_dir, key)? {
         return Ok(index);
     }
-    let index = open_cbz_with_options(reader, options)?;
-    store_index_cache_with_options(cache_dir, key, options, &index)?;
+    let index = open_cbz(reader)?;
+    store_index_cache(cache_dir, key, &index)?;
     Ok(index)
 }
 
@@ -148,7 +116,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn old_index_cache_without_avif_field_is_ignored() {
+    fn old_index_cache_version_is_ignored() {
         let temp = TempDir::new().unwrap();
         let key = IndexCacheKey {
             comic_key: "comic-a".to_string(),
@@ -159,8 +127,7 @@ mod tests {
         let path = index_cache_file(temp.path(), &key.comic_key);
         let old_json = fs::read_to_string(&path)
             .unwrap()
-            .replace("\"version\":2", "\"version\":1")
-            .replace(",\"avif\":false", "");
+            .replace("\"version\":3", "\"version\":2");
         fs::write(path, old_json).unwrap();
 
         let loaded = load_index_cache(temp.path(), &key).unwrap();

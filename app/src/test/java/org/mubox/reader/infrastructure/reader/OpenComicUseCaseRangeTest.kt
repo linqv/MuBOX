@@ -38,14 +38,13 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 1),
-            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, avifImagesEnabled, webDavPrefetchPageCount ->
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
                 remoteOpens += RemoteOpenCall(
                     fileId,
                     size,
                     cacheDir.absolutePath,
                     comicKey,
                     validator,
-                    avifImagesEnabled,
                     webDavPrefetchPageCount,
                 )
                 FakeReaderSession(pageCount = 3)
@@ -61,7 +60,6 @@ class OpenComicUseCaseRangeTest {
         assertTrue(remoteOpens.single().fileId > 0)
         assertTrue(File(remoteOpens.single().cacheDir).isDirectory)
         assertEquals("\"v1\"", remoteOpens.single().validator)
-        assertEquals(false, remoteOpens.single().avifImagesEnabled)
         assertEquals(6, remoteOpens.single().webDavPrefetchPageCount)
         assertNull(client.downloadedPath)
     }
@@ -83,7 +81,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
+            openRemoteSession = { _, _, _, _, _, _ -> FakeReaderSession(pageCount = 3) },
         )
 
         val result = useCase.open(client, "/books/book.cbz", knownInfo = knownInfo)
@@ -104,14 +102,13 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, avifImagesEnabled, webDavPrefetchPageCount ->
+            openRemoteSession = { fileId, size, cacheDir, comicKey, validator, webDavPrefetchPageCount ->
                 remoteOpens += RemoteOpenCall(
                     fileId,
                     size,
                     cacheDir.absolutePath,
                     comicKey,
                     validator,
-                    avifImagesEnabled,
                     webDavPrefetchPageCount,
                 )
                 FakeReaderSession(pageCount = 3)
@@ -140,7 +137,7 @@ class OpenComicUseCaseRangeTest {
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
             diagnostics = diagnostics,
-            openRemoteSession = { _, _, _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
+            openRemoteSession = { _, _, _, _, _, _ -> throw WebDavException.RangeNotSupported() },
         )
 
         try {
@@ -168,7 +165,7 @@ class OpenComicUseCaseRangeTest {
             accountId = "account",
             cache = ComicDownloadCache(temp.root),
             progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _, _, _ -> throw CancellationException("reader closed") },
+            openRemoteSession = { _, _, _, _, _, _ -> throw CancellationException("reader closed") },
         )
 
         try {
@@ -198,7 +195,7 @@ class OpenComicUseCaseRangeTest {
                 cache = ComicDownloadCache(temp.root),
                 progressStore = FakeProgressStore(savedPage = 0),
                 ioDispatcher = ioDispatcher,
-                openRemoteSession = { _, _, _, _, _, _, _ ->
+                openRemoteSession = { _, _, _, _, _, _ ->
                     openThreads += Thread.currentThread().name
                     FakeReaderSession(pageCount = 1)
                 },
@@ -260,7 +257,7 @@ class OpenComicUseCaseRangeTest {
                 cache = ComicDownloadCache(cacheDir),
                 progressStore = progressStore,
                 ioDispatcher = ioDispatcher,
-                openRemoteSession = { fileId, _, _, _, _, _, _ ->
+                openRemoteSession = { fileId, _, _, _, _, _ ->
                     registeredFileId = fileId
                     stages += "native-open" to Thread.currentThread().name
                     FakeReaderSession(pageCount = 1)
@@ -283,29 +280,6 @@ class OpenComicUseCaseRangeTest {
             ioDispatcher.close()
             executor.shutdownNow()
         }
-    }
-
-    @Test
-    fun avifImageSupportFlagIsPassedToRemoteSession() = runTest {
-        val client = FakeWebDavClient(
-            info = RemoteFileInfo("/books/book.cbz", size = 4, etag = "\"v1\"", lastModified = null, supportsRange = true),
-            bytes = byteArrayOf(1, 2, 3, 4),
-        )
-        val avifFlags = mutableListOf<Boolean>()
-        val useCase = OpenComicUseCase(
-            accountId = "account",
-            cache = ComicDownloadCache(temp.root),
-            progressStore = FakeProgressStore(savedPage = 0),
-            openRemoteSession = { _, _, _, _, _, avifImagesEnabled, _ ->
-                avifFlags += avifImagesEnabled
-                FakeReaderSession(pageCount = 1)
-            },
-            avifImagesEnabled = true,
-        )
-
-        useCase.open(client, "/books/book.cbz")
-
-        assertEquals(listOf(true), avifFlags)
     }
 
     private class FakeProgressStore(private val savedPage: Int) : ReadingProgressGateway {
@@ -345,7 +319,6 @@ class OpenComicUseCaseRangeTest {
         val cacheDir: String,
         val comicKey: String,
         val validator: String,
-        val avifImagesEnabled: Boolean,
         val webDavPrefetchPageCount: Int,
     )
 

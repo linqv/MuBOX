@@ -13,7 +13,6 @@ import org.mubox.reader.core.model.library.SourceType
 import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
 import org.mubox.reader.infrastructure.reader.OpenComicUseCase
 import org.mubox.reader.feature.reader.localComicCacheKey
-import org.mubox.reader.core.model.media.readerImageFormatCacheKey
 import org.mubox.reader.core.remote.RemoteFileInfo
 import org.mubox.reader.core.remote.WebDavItem
 import kotlinx.coroutines.CoroutineScope
@@ -156,7 +155,6 @@ internal class AppComicActions(
                             client = client,
                             accountId = accountId,
                             remotePath = item.path,
-                            avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                             knownInfo = item.toKnownRemoteFileInfo(),
                         )
                     }.onFailure { error ->
@@ -222,7 +220,6 @@ internal class AppComicActions(
                     client = client,
                     accountId = source.accountId,
                     remotePath = source.remotePath,
-                    avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled),
                     knownInfo = source.size?.let { knownSize ->
                         RemoteFileInfo(
                             path = source.remotePath,
@@ -287,7 +284,6 @@ internal class AppComicActions(
         callbacks.setError(null)
         callbacks.setActionMessage(null)
         callbacks.setReaderOpen(true)
-        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         readerViewModel.openRemote(
             cacheDir = context.cacheDir,
             historyMetadata = comicHistoryMetadata(
@@ -306,7 +302,6 @@ internal class AppComicActions(
                 cache = container.remoteCache,
                 progressStore = container.progressStore,
                 diagnostics = container.diagnostics,
-                avifImagesEnabled = avifImagesEnabled,
                 webDavPrefetchPageCount = settings.storage.webDavPrefetchPageCount,
             ).open(
                 client = client,
@@ -396,11 +391,10 @@ internal class AppComicActions(
         onOpened: () -> Unit = {},
         onFailure: (Throwable) -> Unit,
     ) {
-        val avifImagesEnabled = effectiveAvifImagesEnabled(settings.reader.avifImagesEnabled)
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    container.localComicOpener.open(uri, fileName, avifImagesEnabled = avifImagesEnabled)
+                    container.localComicOpener.open(uri, fileName)
                 }
             }.fold(
                 onSuccess = { session ->
@@ -411,7 +405,7 @@ internal class AppComicActions(
                         cacheDir = context.cacheDir,
                         initialPage = container.progressStore.loadPage(comicKey),
                         comicKey = comicKey,
-                        pageCacheKey = readerImageFormatCacheKey(comicKey, avifImagesEnabled),
+                        pageCacheKey = comicKey,
                         historyMetadata = comicHistoryMetadata(
                             mediaKey = comicKey,
                             title = fileName,

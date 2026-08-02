@@ -1,7 +1,6 @@
 package org.mubox.reader.feature.reader
 
 import org.mubox.reader.core.io.FileLruPruner
-import org.mubox.reader.core.model.media.readerImageFormatCacheKey
 import java.io.File
 
 internal object ReaderPageCache {
@@ -27,10 +26,7 @@ internal object ReaderPageCache {
     }
 
     fun clearComicPages(cacheDir: File, comicKey: String): Long {
-        val pageCacheKeys = setOf(
-            readerImageFormatCacheKey(comicKey, avifImagesEnabled = false),
-            readerImageFormatCacheKey(comicKey, avifImagesEnabled = true),
-        ).mapTo(mutableSetOf(), ::safeCacheKey)
+        val pageCacheKeys = setOf(safeCacheKey(comicKey))
         val persistentTargets = pageCacheKeys.map { safeKey ->
             File(cacheDir, "mubox-reader-pages/$safeKey")
         }

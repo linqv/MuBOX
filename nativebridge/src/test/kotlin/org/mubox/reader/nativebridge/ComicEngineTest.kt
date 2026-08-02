@@ -68,38 +68,18 @@ class ComicEngineTest {
         )
 
         assertEquals(
-            RemoteOpenCall(4, 100, cacheDir.absolutePath, "comic-key", "etag-1", false),
+            RemoteOpenCall(4, 100, cacheDir.absolutePath, "comic-key", "etag-1"),
             native.remoteOpenCalls.single(),
         )
     }
 
     @Test
-    fun openLocalFdPassesAvifFlagToNative() {
+    fun openLocalFdPassesArchiveIdentityToNative() {
         val native = FakeComicNative(openHandle = 12, pageCount = 1)
 
-        ComicEngine(native).openLocalFd(fd = 11, size = 2048, format = "zip", avifImagesEnabled = true)
+        ComicEngine(native).openLocalFd(fd = 11, size = 2048, format = "zip")
 
-        assertEquals(LocalFdOpenCall(11, 2048, "zip", true), native.localFdOpenCalls.single())
-    }
-
-    @Test
-    fun openRemotePassesAvifFlagToNative() {
-        val native = FakeComicNative(openHandle = 9, pageCount = 1)
-        val cacheDir = temp.newFolder("remote-avif-cache")
-
-        ComicEngine(native).openRemote(
-            fileId = 4,
-            size = 100,
-            cacheDir = cacheDir,
-            comicKey = "comic-key",
-            validator = "etag-1",
-            avifImagesEnabled = true,
-        )
-
-        assertEquals(
-            RemoteOpenCall(4, 100, cacheDir.absolutePath, "comic-key", "etag-1", true),
-            native.remoteOpenCalls.single(),
-        )
+        assertEquals(LocalFdOpenCall(11, 2048, "zip"), native.localFdOpenCalls.single())
     }
 
     @Test
@@ -341,10 +321,10 @@ class ComicEngineTest {
         val viewportCalls = mutableListOf<ViewportCall>()
         val plannedRangeCalls = mutableListOf<PlannedRangeCall>()
 
-        override fun openLocal(path: String, avifImagesEnabled: Boolean): Long = openHandle
+        override fun openLocal(path: String): Long = openHandle
 
-        override fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long {
-            localFdOpenCalls += LocalFdOpenCall(fd, size, format, avifImagesEnabled)
+        override fun openLocalFd(fd: Int, size: Long, format: String): Long {
+            localFdOpenCalls += LocalFdOpenCall(fd, size, format)
             return openHandle
         }
 
@@ -354,9 +334,8 @@ class ComicEngineTest {
             cacheDir: String,
             comicKey: String,
             validator: String,
-            avifImagesEnabled: Boolean,
         ): Long {
-            remoteOpenCalls += RemoteOpenCall(fileId, size, cacheDir, comicKey, validator, avifImagesEnabled)
+            remoteOpenCalls += RemoteOpenCall(fileId, size, cacheDir, comicKey, validator)
             return openHandle
         }
 
@@ -431,7 +410,6 @@ class ComicEngineTest {
         val fd: Int,
         val size: Long,
         val format: String,
-        val avifImagesEnabled: Boolean,
     )
 
     private data class RemoteOpenCall(
@@ -440,7 +418,6 @@ class ComicEngineTest {
         val cacheDir: String,
         val comicKey: String,
         val validator: String,
-        val avifImagesEnabled: Boolean,
     )
 
     private data class ViewportCall(

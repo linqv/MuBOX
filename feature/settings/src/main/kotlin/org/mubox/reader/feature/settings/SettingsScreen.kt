@@ -136,7 +136,6 @@ internal fun comicSettingsGroupLayout(): List<SettingsGroupLayout> =
                 "音量键翻页",
                 "双指缩放",
                 "WebDAV 预取页数",
-                "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
                 "翻页速度",
@@ -205,9 +204,6 @@ fun SettingsScreen(
                 },
                 onWebDavPrefetchPageCountChange = {
                     onAction(SettingsAction.UpdateStorage { current -> current.copy(webDavPrefetchPageCount = it) })
-                },
-                onAvifImagesEnabledChange = {
-                    onAction(SettingsAction.UpdateReader { current -> current.copy(avifImagesEnabled = it) })
                 },
                 onLibraryCoversEnabledChange = {
                     onAction(SettingsAction.UpdateAppearance { current -> current.copy(libraryCoversEnabled = it) })
@@ -631,7 +627,6 @@ private fun ComicSettingsPage(
     onVolumeKeysTurnPagesChange: (Boolean) -> Unit,
     onReaderPinchZoomEnabledChange: (Boolean) -> Unit,
     onWebDavPrefetchPageCountChange: (Int) -> Unit,
-    onAvifImagesEnabledChange: (Boolean) -> Unit,
     onLibraryCoversEnabledChange: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -681,12 +676,6 @@ private fun ComicSettingsPage(
                 options = SupportedWebDavPrefetchPageCounts,
                 label = ::webDavPrefetchPageCountLabel,
                 onSelected = onWebDavPrefetchPageCountChange,
-            )
-            MuBoxSwitchRow(
-                title = "AVIF 图片",
-                checked = settings.reader.avifImagesEnabled,
-                onCheckedChange = onAvifImagesEnabledChange,
-                subtitle = "需要 Android 14+；旧系统会忽略这个开关",
             )
             MuBoxSwitchRow(
                 title = "书架封面",

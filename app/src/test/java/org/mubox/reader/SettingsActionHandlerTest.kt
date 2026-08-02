@@ -44,7 +44,6 @@ class SettingsActionHandlerTest {
         val store = createStore("settings_action_dispatch.preferences_pb")
         val reader = ReaderSettings(
             readingDirection = ReadingDirection.VERTICAL_CONTINUOUS,
-            avifImagesEnabled = true,
             autoPageEnabled = true,
             autoPageSpeedMillis = 12_000,
             volumeKeysTurnPagesEnabled = true,

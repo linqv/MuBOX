@@ -9,8 +9,8 @@ class ComicEngine(
     private val native: ComicNativeFacade = ComicNative,
 ) {
     @WorkerThread
-    fun openLocal(path: String, avifImagesEnabled: Boolean = false): ComicReaderSession {
-        val handle = native.openLocal(path, avifImagesEnabled)
+    fun openLocal(path: String): ComicReaderSession {
+        val handle = native.openLocal(path)
         return openChecked(handle)
     }
 
@@ -19,9 +19,8 @@ class ComicEngine(
         fd: Int,
         size: Long,
         format: String,
-        avifImagesEnabled: Boolean = false,
     ): ComicReaderSession {
-        val handle = native.openLocalFd(fd, size, format, avifImagesEnabled)
+        val handle = native.openLocalFd(fd, size, format)
         return openChecked(handle)
     }
 
@@ -34,7 +33,6 @@ class ComicEngine(
         cacheDir: File,
         comicKey: String,
         validator: String,
-        avifImagesEnabled: Boolean = false,
         webDavPrefetchPageCount: Int = 4,
     ): ComicReaderSession {
         val handle = native.openRemote(
@@ -43,7 +41,6 @@ class ComicEngine(
             cacheDir.absolutePath,
             comicKey,
             validator,
-            avifImagesEnabled,
         )
         return openChecked(
             handle = handle,

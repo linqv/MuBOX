@@ -374,13 +374,6 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun avifReaderSupportRequiresSettingAndAndroid14OrNewer() {
-        assertEquals(false, effectiveAvifImagesEnabled(settingEnabled = false, sdkInt = 34))
-        assertEquals(false, effectiveAvifImagesEnabled(settingEnabled = true, sdkInt = 33))
-        assertEquals(true, effectiveAvifImagesEnabled(settingEnabled = true, sdkInt = 34))
-    }
-
-    @Test
     fun downloadProgressThrottlerCoalescesSmallFrequentUpdates() {
         val throttler = DownloadProgressThrottler(
             minIntervalMillis = 250L,

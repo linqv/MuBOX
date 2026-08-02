@@ -1,9 +1,7 @@
 use comic_core::cache::index_cache::{
-    IndexCacheKey, load_index_cache, load_index_cache_with_options, open_cbz_with_index_cache,
-    store_index_cache, store_index_cache_with_options,
+    IndexCacheKey, load_index_cache, open_cbz_with_index_cache, store_index_cache,
 };
 use comic_core::cbz::{CbzIndex, CbzPageEntry};
-use comic_core::image::ImageFormatOptions;
 use comic_core::scheduler::prefetch::{
     NetworkClass, plan_prefetch, plan_prefetch_with_forward_window,
 };
@@ -46,30 +44,6 @@ fn changed_size_invalidates_index_cache() {
     store_index_cache(temp.path(), &original, &sample_index()).unwrap();
 
     assert_eq!(None, load_index_cache(temp.path(), &changed).unwrap());
-}
-
-#[test]
-fn changed_image_format_options_invalidate_index_cache() {
-    let temp = TempDir::new().unwrap();
-    let key = IndexCacheKey {
-        comic_key: "comic-a".to_string(),
-        file_size: 123,
-        validator: "etag-1".to_string(),
-    };
-    let index = sample_index();
-    store_index_cache_with_options(
-        temp.path(),
-        &key,
-        ImageFormatOptions { avif: false },
-        &index,
-    )
-    .unwrap();
-
-    let loaded =
-        load_index_cache_with_options(temp.path(), &key, ImageFormatOptions { avif: true })
-            .unwrap();
-
-    assert_eq!(None, loaded);
 }
 
 #[test]

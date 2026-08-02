@@ -7,13 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::archive::{ArchiveFormat, LocalArchiveSession, open_local_archive_fd_with_options};
-use crate::cache::index_cache::{
-    IndexCacheKey, open_cbz_with_index_cache_options, store_index_cache_with_options,
-};
-use crate::cbz::{CbzIndex, CbzPageEntry, open_cbz_with_options};
+use crate::archive::{ArchiveFormat, LocalArchiveSession, open_local_archive_fd};
+use crate::cache::index_cache::{IndexCacheKey, open_cbz_with_index_cache, store_index_cache};
+use crate::cbz::{CbzIndex, CbzPageEntry, open_cbz};
 use crate::error::ComicCoreError;
-use crate::image::ImageFormatOptions;
 use crate::remote::jni_range_reader::JniRangeReader;
 use crate::scheduler::prefetch::{NetworkClass, plan_prefetch_with_forward_window};
 use crate::scheduler::range_planner::{
@@ -39,7 +36,7 @@ impl Drop for CbzSession {
         let (Some(cache), SessionKind::Zip { index, .. }) = (&self.index_cache, &self.kind) else {
             return;
         };
-        let _ = store_index_cache_with_options(&cache.cache_dir, &cache.key, cache.options, index);
+        let _ = store_index_cache(&cache.cache_dir, &cache.key, index);
     }
 }
 
@@ -54,7 +51,6 @@ struct SessionDiagnostics {
 struct SessionIndexCache {
     cache_dir: PathBuf,
     key: IndexCacheKey,
-    options: ImageFormatOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -122,9 +118,9 @@ static SESSIONS: Lazy<Mutex<HashMap<ComicHandle, SharedSession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 const MAX_SESSIONS: usize = 256;
 
-pub(crate) fn open_local_path(path: &Path, options: ImageFormatOptions) -> Result<ComicHandle> {
+pub(crate) fn open_local_path(path: &Path) -> Result<ComicHandle> {
     let reader = FileRangeReader::open(path)?;
-    let index = open_cbz_with_options(&reader, options)?;
+    let index = open_cbz(&reader)?;
     insert_session(
         SessionKind::Zip {
             reader: SessionReader::Local(reader),
@@ -140,24 +136,19 @@ pub(crate) fn open_remote_reader(
     comic_key: String,
     file_size: u64,
     validator: String,
-    options: ImageFormatOptions,
 ) -> Result<ComicHandle> {
     let key = IndexCacheKey {
         comic_key,
         file_size,
         validator,
     };
-    let index = open_cbz_with_index_cache_options(&reader, &cache_dir, &key, options)?;
+    let index = open_cbz_with_index_cache(&reader, &cache_dir, &key)?;
     insert_session(
         SessionKind::Zip {
             reader: SessionReader::Remote(reader),
             index,
         },
-        Some(SessionIndexCache {
-            cache_dir,
-            key,
-            options,
-        }),
+        Some(SessionIndexCache { cache_dir, key }),
     )
 }
 
@@ -165,9 +156,8 @@ pub(crate) fn open_local_fd(
     fd: i32,
     size_hint: Option<u64>,
     format: ArchiveFormat,
-    options: ImageFormatOptions,
 ) -> Result<ComicHandle> {
-    let archive = open_local_archive_fd_with_options(fd, size_hint, format, options)?;
+    let archive = open_local_archive_fd(fd, size_hint, format)?;
     insert_session(SessionKind::LocalArchive(Box::new(archive)), None)
 }
 
@@ -439,7 +429,6 @@ mod tests {
     };
     use super::{close_session, insert_session, load_page_to_file, page_count};
     use crate::cache::index_cache::{IndexCacheKey, load_index_cache};
-    use crate::image::ImageFormatOptions;
     use crate::zip::RangeReader;
     use anyhow::Result;
     use std::sync::{Mutex, mpsc};
@@ -485,7 +474,6 @@ mod tests {
             index_cache: Some(SessionIndexCache {
                 cache_dir: temp.path().to_path_buf(),
                 key: key.clone(),
-                options: ImageFormatOptions::default(),
             }),
             index_cache_dirty: true,
         };

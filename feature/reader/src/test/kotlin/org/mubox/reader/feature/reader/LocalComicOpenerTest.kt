@@ -28,12 +28,11 @@ class LocalComicOpenerTest {
         val calls = mutableListOf<OpenLocalFdCall>()
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
-            openSession = { fd, size, format, avifImagesEnabled ->
+            openSession = { fd, size, format ->
                 calls += OpenLocalFdCall(
                     fd = fd,
                     size = size,
                     format = format,
-                    avifImagesEnabled = avifImagesEnabled,
                 )
                 FakeReaderSession(pageCount = 1)
             },
@@ -44,27 +43,7 @@ class LocalComicOpenerTest {
         assertEquals(1, session.pageCount)
         assertEquals(listOf(LocalArchiveFormat.Tar), calls.map { it.format })
         assertEquals(listOf(archive.length()), calls.map { it.size })
-        assertEquals(listOf(false), calls.map { it.avifImagesEnabled })
         assertTrue(calls.single().fd > 0)
-    }
-
-    @Test
-    fun openerPassesAvifOptionToArchiveSessionFactory() {
-        val archive = temp.newFile("book.cbz").apply {
-            writeBytes(ByteArray(128) { 4 })
-        }
-        val calls = mutableListOf<OpenLocalFdCall>()
-        val opener = LocalComicOpener(
-            context = ApplicationProvider.getApplicationContext(),
-            openSession = { fd, size, format, avifImagesEnabled ->
-                calls += OpenLocalFdCall(fd, size, format, avifImagesEnabled)
-                FakeReaderSession(pageCount = 1)
-            },
-        )
-
-        opener.open(Uri.fromFile(archive), archive.name, avifImagesEnabled = true)
-
-        assertEquals(true, calls.single().avifImagesEnabled)
     }
 
     @Test
@@ -76,12 +55,11 @@ class LocalComicOpenerTest {
         val archiveCalls = mutableListOf<OpenLocalFdCall>()
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
-            openSession = { fd, size, format, avifImagesEnabled ->
+            openSession = { fd, size, format ->
                 archiveCalls += OpenLocalFdCall(
                     fd = fd,
                     size = size,
                     format = format,
-                    avifImagesEnabled = avifImagesEnabled,
                 )
                 FakeReaderSession(pageCount = 1)
             },
@@ -108,7 +86,7 @@ class LocalComicOpenerTest {
     fun openerRejectsUnsupportedLocalComicExtensionBeforeOpeningAnySession() {
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
-            openSession = { _, _, _, _ -> error("archive factory should not be called") },
+            openSession = { _, _, _ -> error("archive factory should not be called") },
             openDocumentSession = { _, _, _ -> error("document factory should not be called") },
         )
 
@@ -123,7 +101,6 @@ class LocalComicOpenerTest {
         val fd: Int,
         val size: Long,
         val format: LocalArchiveFormat,
-        val avifImagesEnabled: Boolean,
     )
 
     private data class OpenLocalDocumentCall(

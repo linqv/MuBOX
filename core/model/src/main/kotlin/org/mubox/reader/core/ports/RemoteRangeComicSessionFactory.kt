@@ -8,6 +8,5 @@ typealias RemoteRangeComicSessionFactory = (
     cacheDir: File,
     comicKey: String,
     validator: String,
-    avifImagesEnabled: Boolean,
     webDavPrefetchPageCount: Int,
 ) -> ComicReaderSession

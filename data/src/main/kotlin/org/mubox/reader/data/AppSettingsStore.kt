@@ -49,7 +49,6 @@ class AppSettingsStore(
         ReaderSettings(
             readingDirection = preferences[READING_DIRECTION]
                 .toEnumOrDefault(ReadingDirection.LEFT_TO_RIGHT),
-            avifImagesEnabled = preferences[AVIF_IMAGES_ENABLED] ?: false,
             autoPageEnabled = preferences[AUTO_PAGE_ENABLED] ?: false,
             autoPageSpeedMillis = preferences[AUTO_PAGE_SPEED_MILLIS] ?: 5_000,
             volumeKeysTurnPagesEnabled = preferences[VOLUME_KEYS_TURN_PAGES_ENABLED] ?: false,
@@ -163,7 +162,6 @@ class AppSettingsStore(
 
     private fun MutablePreferences.writeReaderSettings(settings: ReaderSettings) {
         this[READING_DIRECTION] = settings.readingDirection.name
-        this[AVIF_IMAGES_ENABLED] = settings.avifImagesEnabled
         this[AUTO_PAGE_ENABLED] = settings.autoPageEnabled
         this[AUTO_PAGE_SPEED_MILLIS] = settings.autoPageSpeedMillis
         this[VOLUME_KEYS_TURN_PAGES_ENABLED] = settings.volumeKeysTurnPagesEnabled
@@ -215,7 +213,6 @@ class AppSettingsStore(
     private companion object {
         val READING_DIRECTION = stringPreferencesKey("reading_direction")
         val COLOR_PALETTE = stringPreferencesKey("color_palette")
-        val AVIF_IMAGES_ENABLED = booleanPreferencesKey("avif_images_enabled")
         val AUTO_PAGE_ENABLED = booleanPreferencesKey("auto_page_enabled")
         val AUTO_PAGE_SPEED_MILLIS = intPreferencesKey("auto_page_speed_millis")
         val SCREEN_ROTATION_LOCK_ENABLED = booleanPreferencesKey("screen_rotation_lock_enabled")

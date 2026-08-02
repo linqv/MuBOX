@@ -26,13 +26,11 @@ class WebDavLibraryCoverExtractorTest {
         val session = FakeComicReaderSession()
         var openCalls = 0
         var requestedPrefetchPageCount = -1
-        var requestedAvifImagesEnabled = false
         val extractor = WebDavLibraryCoverExtractor(
             appCacheDir = cacheDir,
             remoteCacheDir = remoteCacheDir,
-            openRemoteSession = { _, _, _, _, _, avifImagesEnabled, webDavPrefetchPageCount ->
+            openRemoteSession = { _, _, _, _, _, webDavPrefetchPageCount ->
                 openCalls += 1
-                requestedAvifImagesEnabled = avifImagesEnabled
                 requestedPrefetchPageCount = webDavPrefetchPageCount
                 session
             },
@@ -42,7 +40,6 @@ class WebDavLibraryCoverExtractorTest {
             client = FakeWebDavClient(),
             accountId = "account-1",
             remotePath = "/books/book.cbz",
-            avifImagesEnabled = true,
             knownInfo = RemoteFileInfo(
                 path = "/books/book.cbz",
                 size = 123,
@@ -55,10 +52,8 @@ class WebDavLibraryCoverExtractorTest {
         val coverFile = File(requireNotNull(coverPath))
         assertTrue(coverFile.isFile)
         assertTrue(coverFile.absolutePath.contains("library-covers"))
-        assertTrue(coverFile.nameWithoutExtension.endsWith("-avif"))
         assertEquals("cover-0", coverFile.readText())
         assertEquals(0, requestedPrefetchPageCount)
-        assertEquals(true, requestedAvifImagesEnabled)
         assertEquals(listOf(0), session.loadedPages)
         assertTrue(session.closed)
 
@@ -66,7 +61,6 @@ class WebDavLibraryCoverExtractorTest {
             client = FakeWebDavClient(),
             accountId = "account-1",
             remotePath = "/books/book.cbz",
-            avifImagesEnabled = true,
             knownInfo = RemoteFileInfo(
                 path = "/books/book.cbz",
                 size = 123,
@@ -87,7 +81,7 @@ class WebDavLibraryCoverExtractorTest {
         val extractor = WebDavLibraryCoverExtractor(
             appCacheDir = cacheDir,
             remoteCacheDir = remoteCacheDir,
-            openRemoteSession = { _, _, _, _, _, _, _ ->
+            openRemoteSession = { _, _, _, _, _, _ ->
                 FakeComicReaderSession(pageCount = 0)
             },
         )
@@ -120,7 +114,7 @@ class WebDavLibraryCoverExtractorTest {
             val extractor = WebDavLibraryCoverExtractor(
                 appCacheDir = temporaryFolder.newFolder("dispatcher-cache"),
                 remoteCacheDir = temporaryFolder.newFolder("dispatcher-remote-cache"),
-                openRemoteSession = { _, _, _, _, _, _, _ ->
+                openRemoteSession = { _, _, _, _, _, _ ->
                     openThreads += Thread.currentThread().name
                     FakeComicReaderSession(pageCount = 1)
                 },

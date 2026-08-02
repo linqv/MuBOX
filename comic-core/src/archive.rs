@@ -9,9 +9,9 @@ use tempfile::{Builder as TempDirBuilder, NamedTempFile, TempDir};
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
 
-use crate::cbz::{CbzIndex, open_cbz_with_options};
+use crate::cbz::{CbzIndex, open_cbz};
 use crate::error::ComicCoreError;
-pub use crate::image::{ImageFormatOptions, is_supported_image};
+pub use crate::image::is_supported_image;
 use crate::sort::natural;
 use crate::zip::{FileRangeReader, RangeReader};
 
@@ -284,16 +284,7 @@ impl LocalArchiveSession {
 
 pub fn open_local_archive(path: &Path, format: ArchiveFormat) -> Result<LocalArchiveSession> {
     let file = File::open(path)?;
-    open_local_archive_file(file, None, format, ImageFormatOptions::default())
-}
-
-pub fn open_local_archive_with_options(
-    path: &Path,
-    format: ArchiveFormat,
-    options: ImageFormatOptions,
-) -> Result<LocalArchiveSession> {
-    let file = File::open(path)?;
-    open_local_archive_file(file, None, format, options)
+    open_local_archive_file(file, None, format)
 }
 
 #[cfg(unix)]
@@ -302,33 +293,22 @@ pub fn open_local_archive_fd(
     size_hint: Option<u64>,
     format: ArchiveFormat,
 ) -> Result<LocalArchiveSession> {
-    open_local_archive_fd_with_options(fd, size_hint, format, ImageFormatOptions::default())
-}
-
-#[cfg(unix)]
-pub fn open_local_archive_fd_with_options(
-    fd: i32,
-    size_hint: Option<u64>,
-    format: ArchiveFormat,
-    options: ImageFormatOptions,
-) -> Result<LocalArchiveSession> {
     if fd < 0 {
         return Err(anyhow!("invalid local archive file descriptor"));
     }
     let file = unsafe { File::from_raw_fd(fd) };
-    open_local_archive_file(file, size_hint, format, options)
+    open_local_archive_file(file, size_hint, format)
 }
 
 pub fn open_local_archive_file(
     file: File,
     size_hint: Option<u64>,
     format: ArchiveFormat,
-    options: ImageFormatOptions,
 ) -> Result<LocalArchiveSession> {
     match format {
         ArchiveFormat::Zip => {
             let reader = FileRangeReader::from_file(file, size_hint)?;
-            let index = open_cbz_with_options(&reader, options)?;
+            let index = open_cbz(&reader)?;
             Ok(LocalArchiveSession::Zip { reader, index })
         }
         ArchiveFormat::SevenZ => {
@@ -342,7 +322,7 @@ pub fn open_local_archive_file(
                 .files
                 .iter()
                 .filter(|entry| entry.has_stream() && !entry.is_directory())
-                .filter(|entry| is_supported_image(entry.name(), options))
+                .filter(|entry| is_supported_image(entry.name()))
                 .map(|entry| SevenZPageEntry {
                     name: entry.name().to_string(),
                     size: entry.size(),
@@ -361,7 +341,7 @@ pub fn open_local_archive_file(
         }
         ArchiveFormat::Tar => {
             let reader = FileRangeReader::from_file(file, size_hint)?;
-            let index = open_tar_with_options(&reader, options)?;
+            let index = open_tar(&reader)?;
             Ok(LocalArchiveSession::Tar { reader, index })
         }
     }
@@ -429,17 +409,15 @@ fn solid_cache_parent_for_output(output_path: &Path) -> Option<&Path> {
     output_path
         .ancestors()
         .find(|path| {
-            path.file_name()
-                .is_some_and(|name| name == "mubox-reader-pages" || name == "mubox-reader-pages-transient")
+            path.file_name().is_some_and(|name| {
+                name == "mubox-reader-pages" || name == "mubox-reader-pages-transient"
+            })
         })
         .and_then(Path::parent)
         .or_else(|| output_path.parent())
 }
 
-pub fn open_tar_with_options(
-    reader: &impl RangeReader,
-    options: ImageFormatOptions,
-) -> Result<TarIndex> {
+pub fn open_tar(reader: &impl RangeReader) -> Result<TarIndex> {
     let mut pages = Vec::new();
     let mut offset = 0u64;
     let size = reader.size()?;
@@ -463,7 +441,7 @@ pub fn open_tar_with_options(
         let name = pending_long_name
             .take()
             .unwrap_or_else(|| tar_entry_name(&header));
-        if (typeflag == 0 || typeflag == b'0') && is_supported_image(&name, options) {
+        if (typeflag == 0 || typeflag == b'0') && is_supported_image(&name) {
             pages.push(TarPageEntry {
                 name,
                 data_offset,
@@ -553,8 +531,6 @@ mod tests {
 
     #[test]
     fn supported_image_extensions_include_modern_reader_formats() {
-        let options = ImageFormatOptions { avif: true };
-
         for name in [
             "page.jpg",
             "page.jpeg",
@@ -564,25 +540,14 @@ mod tests {
             "page.bmp",
             "page.heif",
             "page.heic",
-            "page.avif",
         ] {
-            assert!(
-                is_supported_image(name, options),
-                "{name} should be supported"
-            );
+            assert!(is_supported_image(name), "{name} should be supported");
         }
     }
 
     #[test]
-    fn avif_extension_is_controlled_by_reader_option() {
-        assert!(!is_supported_image(
-            "page.avif",
-            ImageFormatOptions { avif: false },
-        ));
-        assert!(is_supported_image(
-            "page.avif",
-            ImageFormatOptions { avif: true },
-        ));
+    fn avif_extension_is_not_supported() {
+        assert!(!is_supported_image("page.avif"));
     }
 
     #[test]

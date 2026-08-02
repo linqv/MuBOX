@@ -1,7 +1,7 @@
 use anyhow::Result;
 use jni::objects::{JClass, JString};
 use jni::strings::JNIString;
-use jni::sys::{JNI_ERR, JNI_VERSION_1_6, jboolean, jint, jlong, jstring};
+use jni::sys::{JNI_ERR, JNI_VERSION_1_6, jint, jlong, jstring};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use std::os::raw::c_void;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,6 @@ use super::{
     last_error_message_string, set_last_error,
 };
 use crate::error::ComicCoreError;
-use crate::image::ImageFormatOptions;
 use crate::remote::jni_range_reader::JniRangeReader;
 use crate::session_registry::{
     ComicHandle, archive_format_from_name, close_session, forward_prefetch_window_from_i32,
@@ -56,17 +55,17 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
     let methods = [
         native_method(
             "openLocal",
-            "(Ljava/lang/String;Z)J",
+            "(Ljava/lang/String;)J",
             native_open_local as *const () as *mut c_void,
         ),
         native_method(
             "openRemote",
-            "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)J",
+            "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)J",
             native_open_remote as *const () as *mut c_void,
         ),
         native_method(
             "openLocalFd",
-            "(IJLjava/lang/String;Z)J",
+            "(IJLjava/lang/String;)J",
             native_open_local_fd as *const () as *mut c_void,
         ),
         native_method(
@@ -117,12 +116,8 @@ extern "system" fn native_open_local(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     path: JString<'_>,
-    avif_enabled: jboolean,
 ) -> jlong {
-    let options = image_format_options(avif_enabled);
-    match jstring_to_string(&mut env, &path)
-        .and_then(|path| open_local_path(Path::new(&path), options))
-    {
+    match jstring_to_string(&mut env, &path).and_then(|path| open_local_path(Path::new(&path))) {
         Ok(handle) => handle as jlong,
         Err(error) => {
             set_last_error(error);
@@ -139,7 +134,6 @@ extern "system" fn native_open_remote(
     cache_dir: JString<'_>,
     comic_key: JString<'_>,
     validator: JString<'_>,
-    avif_enabled: jboolean,
 ) -> jlong {
     if file_id <= 0 || size <= 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -148,7 +142,6 @@ extern "system" fn native_open_remote(
         return 0;
     }
 
-    let options = image_format_options(avif_enabled);
     match jstring_to_string(&mut env, &cache_dir).and_then(|cache_dir| {
         let comic_key = jstring_to_string(&mut env, &comic_key)?;
         let validator = jstring_to_string(&mut env, &validator)?;
@@ -160,7 +153,6 @@ extern "system" fn native_open_remote(
             comic_key,
             size as u64,
             validator,
-            options,
         )
     }) {
         Ok(handle) => handle as jlong,
@@ -177,13 +169,11 @@ extern "system" fn native_open_local_fd(
     fd: jint,
     size: jlong,
     format: JString<'_>,
-    avif_enabled: jboolean,
 ) -> jlong {
     let size_hint = if size > 0 { Some(size as u64) } else { None };
-    let options = image_format_options(avif_enabled);
     match jstring_to_string(&mut env, &format).and_then(|format| {
         let format = archive_format_from_name(&format)?;
-        open_local_fd(fd, size_hint, format, options)
+        open_local_fd(fd, size_hint, format)
     }) {
         Ok(handle) => handle as jlong,
         Err(error) => {
@@ -314,12 +304,6 @@ extern "system" fn native_last_error_message(env: JNIEnv<'_>, _class: JClass<'_>
     env.new_string(message)
         .map(|value| value.into_raw())
         .unwrap_or(std::ptr::null_mut())
-}
-
-fn image_format_options(avif_enabled: jboolean) -> ImageFormatOptions {
-    ImageFormatOptions {
-        avif: avif_enabled != 0,
-    }
 }
 
 fn jstring_to_string(env: &mut JNIEnv<'_>, value: &JString<'_>) -> Result<String> {

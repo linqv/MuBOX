@@ -5,9 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import coil3.request.CachePolicy
 import org.mubox.reader.ui.MuBoxCopy
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -22,30 +20,13 @@ class ReaderImageLoaderTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun platformReaderImageIncludesAvifByMimeType() {
-        assertTrue(isPlatformReaderImage("image/avif", ByteArray(0)))
-    }
-
-    @Test
-    fun readerImageRequestForcesReaderPlatformDecoder() {
+    fun readerImageRequestUsesCoilDecoderRegistry() {
         val request = readerImageRequest(
             context = ApplicationProvider.getApplicationContext(),
             pageFile = temp.newFile("page-1.img"),
         )
 
-        val decoderFactory = request.decoderFactory
-        assertNotNull(decoderFactory)
-        assertTrue(decoderFactory!!.javaClass.name.contains("PlatformReaderImageDecoder"))
-    }
-
-    @Test
-    fun platformReaderImageIncludesAvifByHeaderWithoutExtension() {
-        assertTrue(isPlatformReaderImage(null, avifHeader()))
-    }
-
-    @Test
-    fun platformReaderImageIncludesAvifByCompatibleBrandWithoutExtension() {
-        assertTrue(isPlatformReaderImage(null, avifCompatibleBrandHeader()))
+        assertNull(request.decoderFactory)
     }
 
     @Test
@@ -107,38 +88,6 @@ class ReaderImageLoaderTest {
     }
 
     @Test
-    fun platformReaderImageRejectsUnknownIsoBmffBrands() {
-        val header = byteArrayOf(
-            0x00, 0x00, 0x00, 0x18,
-            'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
-            'm'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(), '1'.code.toByte(),
-            0x00, 0x00, 0x00, 0x00,
-            'm'.code.toByte(), 'i'.code.toByte(), 'a'.code.toByte(), 'f'.code.toByte(),
-        )
-
-        assertFalse(isPlatformReaderImage(null, header))
-    }
-
-    @Test
-    fun detectsGifFromHeaderWhenCachedPageHasGenericExtension() {
-        assertTrue(isPlatformAnimatedReaderImage(mimeType = null, header = "GIF89a".encodeToByteArray()))
-    }
-
-    @Test
-    fun detectsWebpFromHeaderWhenCachedPageHasGenericExtension() {
-        val header = "RIFF\u0000\u0000\u0000\u0000WEBP".encodeToByteArray()
-
-        assertTrue(isPlatformAnimatedReaderImage(mimeType = null, header = header))
-    }
-
-    @Test
-    fun ignoresStaticImageHeaders() {
-        val header = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
-
-        assertFalse(isPlatformAnimatedReaderImage(mimeType = null, header = header))
-    }
-
-    @Test
     fun readerImageRequestsDoNotKeepDecodedPagesInCoilCaches() {
         val pageFile = temp.newFile("page-1.img")
 
@@ -151,23 +100,4 @@ class ReaderImageLoaderTest {
         assertEquals(CachePolicy.DISABLED, request.memoryCachePolicy)
         assertEquals(CachePolicy.DISABLED, request.diskCachePolicy)
     }
-
-    private fun avifHeader(): ByteArray =
-        byteArrayOf(
-            0x00, 0x00, 0x00, 0x18,
-            'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
-            'a'.code.toByte(), 'v'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(),
-            0x00, 0x00, 0x00, 0x00,
-            'a'.code.toByte(), 'v'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(),
-        )
-
-    private fun avifCompatibleBrandHeader(): ByteArray =
-        byteArrayOf(
-            0x00, 0x00, 0x00, 0x20,
-            'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
-            'm'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(), '1'.code.toByte(),
-            0x00, 0x00, 0x00, 0x00,
-            'a'.code.toByte(), 'v'.code.toByte(), 'i'.code.toByte(), 'f'.code.toByte(),
-            'm'.code.toByte(), 'i'.code.toByte(), 'a'.code.toByte(), 'f'.code.toByte(),
-        )
 }

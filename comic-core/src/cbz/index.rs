@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::error::ComicCoreError;
-use crate::image::{ImageFormatOptions, is_supported_image};
+use crate::image::is_supported_image;
 use crate::sort::natural;
 use crate::zip::RangeReader;
 use crate::zip::central_directory::parse_central_directory;
@@ -26,20 +26,13 @@ pub struct CbzIndex {
 }
 
 pub fn open_cbz(reader: &impl RangeReader) -> Result<CbzIndex> {
-    open_cbz_with_options(reader, ImageFormatOptions::default())
-}
-
-pub fn open_cbz_with_options(
-    reader: &impl RangeReader,
-    options: ImageFormatOptions,
-) -> Result<CbzIndex> {
     let eocd_search = find_eocd_search(reader)?;
     let eocd = &eocd_search.eocd;
     let central_directory = read_central_directory(reader, &eocd_search)?;
     let mut pages: Vec<CbzPageEntry> =
         parse_central_directory(&central_directory, eocd.total_entries)?
             .into_iter()
-            .filter(|entry| is_supported_image(&entry.name, options))
+            .filter(|entry| is_supported_image(&entry.name))
             .map(|entry| CbzPageEntry {
                 name: entry.name,
                 filename_len: entry.filename_len,

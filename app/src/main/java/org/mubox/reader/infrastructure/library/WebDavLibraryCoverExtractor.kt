@@ -1,6 +1,5 @@
 package org.mubox.reader.infrastructure.library
 
-import org.mubox.reader.core.model.media.readerImageFormatCacheKey
 import org.mubox.reader.core.ports.ComicReaderSession
 import org.mubox.reader.core.ports.RemoteRangeComicSessionFactory
 import org.mubox.reader.data.ComicCacheKey
@@ -23,7 +22,6 @@ class WebDavLibraryCoverExtractor(
             cacheDir,
             comicKey,
             validator,
-            avifImagesEnabled,
             webDavPrefetchPageCount,
         ->
         ComicEngine().openRemote(
@@ -32,7 +30,6 @@ class WebDavLibraryCoverExtractor(
             cacheDir = cacheDir,
             comicKey = comicKey,
             validator = validator,
-            avifImagesEnabled = avifImagesEnabled,
             webDavPrefetchPageCount = webDavPrefetchPageCount,
         )
     },
@@ -42,7 +39,6 @@ class WebDavLibraryCoverExtractor(
         client: WebDavClient,
         accountId: String,
         remotePath: String,
-        avifImagesEnabled: Boolean = false,
         knownInfo: RemoteFileInfo? = null,
     ): String? = withContext(ioDispatcher) { // Dispatched to IO for @WorkerThread native calls
         val info = knownInfo ?: client.head(remotePath)
@@ -53,7 +49,7 @@ class WebDavLibraryCoverExtractor(
             etag = info.etag,
             lastModified = info.lastModified,
         )
-        val coverFile = coverFile(cacheKey, avifImagesEnabled)
+        val coverFile = coverFile(cacheKey)
         if (coverFile.isFile && coverFile.length() > 0L) {
             coverFile.setLastModified(System.currentTimeMillis())
             return@withContext coverFile.absolutePath
@@ -71,7 +67,6 @@ class WebDavLibraryCoverExtractor(
                 remoteCacheDir,
                 cacheKey.value,
                 info.validator(),
-                avifImagesEnabled,
                 0,
             )
             if (session.pageCount <= 0) {
@@ -101,8 +96,8 @@ class WebDavLibraryCoverExtractor(
         }
     }
 
-    private fun coverFile(cacheKey: ComicCacheKey, avifImagesEnabled: Boolean): File =
-        File(appCacheDir, "library-covers/${readerImageFormatCacheKey(cacheKey.value, avifImagesEnabled)}.img")
+    private fun coverFile(cacheKey: ComicCacheKey): File =
+        File(appCacheDir, "library-covers/${cacheKey.value}.img")
 
     private fun RemoteFileInfo.validator(): String =
         etag ?: lastModified?.toString() ?: size.toString()

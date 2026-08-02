@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
     implementation(libs.coroutines.android)
     implementation(libs.mupdf)
 

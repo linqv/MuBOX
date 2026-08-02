@@ -151,7 +151,6 @@ class SettingsScreenTest {
                 "音量键翻页",
                 "双指缩放",
                 "WebDAV 预取页数",
-                "AVIF 图片",
                 "书架封面",
                 "启用自动翻页",
                 "翻页速度",

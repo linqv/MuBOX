@@ -238,17 +238,6 @@ class AppSettingsStoreTest {
     }
 
     @Test
-    fun avifImageSupportDefaultsOffAndCanBeUpdated() = runTest {
-        val store = createStore("avif_image_support.preferences_pb")
-
-        assertFalse(store.settings.first().reader.avifImagesEnabled)
-
-        store.updateReaderSettings { reader -> reader.copy(avifImagesEnabled = true) }
-
-        assertTrue(store.settings.first().reader.avifImagesEnabled)
-    }
-
-    @Test
     fun pageImageCacheDefaultsOnAndCanBeUpdated() = runTest {
         val store = createStore("page_image_cache_enabled.preferences_pb")
 
@@ -293,7 +282,6 @@ class AppSettingsStoreTest {
         val store = createStore("reader_group.preferences_pb")
         val reader = ReaderSettings(
             readingDirection = ReadingDirection.RIGHT_TO_LEFT,
-            avifImagesEnabled = true,
             autoPageEnabled = true,
             autoPageSpeedMillis = 12_000,
             volumeKeysTurnPagesEnabled = true,

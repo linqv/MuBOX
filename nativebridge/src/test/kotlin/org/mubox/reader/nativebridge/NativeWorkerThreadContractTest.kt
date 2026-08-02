@@ -123,9 +123,9 @@ class NativeWorkerThreadContractTest {
     }
 
     private object NoopComicNative : ComicNativeFacade {
-        override fun openLocal(path: String, avifImagesEnabled: Boolean): Long = 1
+        override fun openLocal(path: String): Long = 1
 
-        override fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long = 1
+        override fun openLocalFd(fd: Int, size: Long, format: String): Long = 1
 
         override fun openRemote(
             fileId: Long,
@@ -133,7 +133,6 @@ class NativeWorkerThreadContractTest {
             cacheDir: String,
             comicKey: String,
             validator: String,
-            avifImagesEnabled: Boolean,
         ): Long = 1
 
         override fun pageCount(handle: Long): Int = 1

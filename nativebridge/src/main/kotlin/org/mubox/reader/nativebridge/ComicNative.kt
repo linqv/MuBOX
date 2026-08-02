@@ -3,15 +3,14 @@ package org.mubox.reader.nativebridge
 import androidx.annotation.WorkerThread
 
 interface ComicNativeFacade {
-    @WorkerThread fun openLocal(path: String, avifImagesEnabled: Boolean): Long
-    @WorkerThread fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long
+    @WorkerThread fun openLocal(path: String): Long
+    @WorkerThread fun openLocalFd(fd: Int, size: Long, format: String): Long
     @WorkerThread fun openRemote(
         fileId: Long,
         size: Long,
         cacheDir: String,
         comicKey: String,
         validator: String,
-        avifImagesEnabled: Boolean,
     ): Long
     fun pageCount(handle: Long): Int
     @WorkerThread fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int
@@ -28,10 +27,10 @@ object ComicNative : ComicNativeFacade {
     }
 
     @WorkerThread
-    external override fun openLocal(path: String, avifImagesEnabled: Boolean): Long
+    external override fun openLocal(path: String): Long
 
     @WorkerThread
-    external override fun openLocalFd(fd: Int, size: Long, format: String, avifImagesEnabled: Boolean): Long
+    external override fun openLocalFd(fd: Int, size: Long, format: String): Long
 
     @WorkerThread
     external override fun openRemote(
@@ -40,7 +39,6 @@ object ComicNative : ComicNativeFacade {
         cacheDir: String,
         comicKey: String,
         validator: String,
-        avifImagesEnabled: Boolean,
     ): Long
 
     external override fun pageCount(handle: Long): Int

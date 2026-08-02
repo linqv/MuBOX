@@ -27,7 +27,6 @@ enum class DiagnosticLogLevel {
 
 data class ReaderSettings(
     val readingDirection: ReadingDirection = ReadingDirection.LEFT_TO_RIGHT,
-    val avifImagesEnabled: Boolean = false,
     val autoPageEnabled: Boolean = false,
     val autoPageSpeedMillis: Int = 5_000,
     val volumeKeysTurnPagesEnabled: Boolean = false,
