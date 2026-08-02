@@ -1,12 +1,12 @@
 package org.mubox.reader.core.model.history
 
+import org.mubox.reader.core.crypto.sha256Hex
 import org.mubox.reader.core.model.library.LibraryItemWithSources
 import org.mubox.reader.core.model.media.fileDirectoryVideoThumbnailVersion
 import org.mubox.reader.core.model.media.videoThumbnailFile
 import org.mubox.reader.core.model.media.webDavVideoThumbnailStableKey
 import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
 import java.io.File
-import java.security.MessageDigest
 
 fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
     when (entry.mediaType) {
@@ -112,8 +112,3 @@ fun historyEntriesNeedingThumbnails(
             cacheDir = cacheDir,
         ) == null
     }
-
-private fun String.sha256Hex(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-}

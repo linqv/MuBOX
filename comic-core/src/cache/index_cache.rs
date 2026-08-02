@@ -1,10 +1,10 @@
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use tempfile::NamedTempFile;
 
 use crate::cbz::{CbzIndex, open_cbz_with_options};
 use crate::image::ImageFormatOptions;
@@ -39,8 +39,6 @@ struct CachedIndexRef<'a> {
     avif: bool,
     index: &'a CbzIndex,
 }
-
-static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(1);
 
 pub fn load_index_cache(cache_dir: &Path, key: &IndexCacheKey) -> Result<Option<CbzIndex>> {
     load_index_cache_with_options(cache_dir, key, ImageFormatOptions::default())
@@ -133,63 +131,11 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("index cache path has no parent"))?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| anyhow!("index cache path has no file name"))?
-        .to_string_lossy();
-
-    for _ in 0..100 {
-        let id = NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed);
-        let temp_path = parent.join(format!(".{file_name}.{}.{}.tmp", std::process::id(), id));
-        let mut file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
-        };
-        let mut pending = PendingTempFile::new(temp_path);
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(pending.path(), path)?;
-        pending.commit();
-        return Ok(());
-    }
-
-    Err(anyhow!("unable to allocate a unique index cache temp file"))
-}
-
-struct PendingTempFile {
-    path: PathBuf,
-    committed: bool,
-}
-
-impl PendingTempFile {
-    fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            committed: false,
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn commit(&mut self) {
-        self.committed = true;
-    }
-}
-
-impl Drop for PendingTempFile {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = fs::remove_file(&self.path);
-        }
-    }
+    let mut file = NamedTempFile::new_in(parent)?;
+    file.write_all(bytes)?;
+    file.as_file().sync_all()?;
+    file.persist(path)?;
+    Ok(())
 }
 
 #[cfg(test)]

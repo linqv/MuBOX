@@ -1,10 +1,10 @@
 package org.mubox.reader.data
 
+import org.mubox.reader.core.crypto.sha256Hex
 import org.mubox.reader.core.io.FileLruPruner
 
 import org.mubox.reader.core.remote.WebDavClient
 import java.io.File
-import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 
 @JvmInline
@@ -19,7 +19,7 @@ value class ComicCacheKey(val value: String) {
         ): ComicCacheKey {
             val version = etag ?: lastModified?.toString().orEmpty()
             val source = listOf(accountId, remotePath, size.toString(), version).joinToString(separator = "\u001F")
-            return ComicCacheKey(source.sha256())
+            return ComicCacheKey(source.sha256Hex())
         }
     }
 }
@@ -79,7 +79,6 @@ class ComicDownloadCache(
             cacheDir.resolve("${key.value}.cbz"),
             cacheDir.resolve("${key.value}.tmp"),
             indexCacheFile(key),
-            nativePageCacheDir(key),
         )
         return targets
             .distinctBy { target -> target.absolutePath }
@@ -87,11 +86,7 @@ class ComicDownloadCache(
     }
 
     internal fun indexCacheFile(key: ComicCacheKey): File =
-        cacheDir.resolve("index").resolve("${key.value.sha256()}.json")
-
-    // The native engine stores prefetched pages under <cacheDir>/<safe(comicKey)>/pages/.
-    private fun nativePageCacheDir(key: ComicCacheKey): File =
-        cacheDir.resolve(key.value.safePathSegment())
+        cacheDir.resolve("index").resolve("${key.value.sha256Hex()}.json")
 
     private companion object {
         const val DEFAULT_MAX_CACHE_BYTES = 512L * 1024L * 1024L
@@ -104,15 +99,3 @@ private fun File.deleteAndReturnBytes(): Long {
     val deleted = if (isDirectory) deleteRecursively() else delete()
     return if (deleted) bytes else 0L
 }
-
-private fun String.sha256(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-}
-
-// Mirrors safe_path_segment in comic-core so the native page cache directory is found.
-private fun String.safePathSegment(): String =
-    map { ch -> if (ch.isSafePathSegmentChar()) ch else '_' }.joinToString("")
-
-private fun Char.isSafePathSegmentChar(): Boolean =
-    this in 'A'..'Z' || this in 'a'..'z' || this in '0'..'9' || this == '.' || this == '_' || this == '-'

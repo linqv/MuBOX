@@ -5,13 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import org.mubox.reader.core.crypto.sha256Hex
 import org.mubox.reader.core.io.FileLruPruner
 import org.mubox.reader.core.model.media.VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY
 import org.mubox.reader.core.model.media.videoThumbnailFile
 import org.mubox.reader.core.model.media.videoThumbnailFileNameForStableKey
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -256,9 +256,4 @@ private class AndroidVideoThumbnailFrameProvider : VideoThumbnailFrameProvider {
 private fun MediaMetadataRetriever.embeddedCoverArt(): Bitmap? {
     val picture = runCatching { embeddedPicture }.getOrNull() ?: return null
     return runCatching { BitmapFactory.decodeByteArray(picture, 0, picture.size) }.getOrNull()
-}
-
-private fun String.sha256Hex(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
 }

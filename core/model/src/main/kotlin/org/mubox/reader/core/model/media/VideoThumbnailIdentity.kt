@@ -1,10 +1,10 @@
 package org.mubox.reader.core.model.media
 
+import org.mubox.reader.core.crypto.sha256Hex
 import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
 import org.mubox.reader.core.model.videolibrary.VideoSourceType
 import org.mubox.reader.core.remote.WebDavItem
 import java.io.File
-import java.security.MessageDigest
 
 const val VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY = "video-library-thumbnails"
 
@@ -169,8 +169,3 @@ fun resolvedVideoThumbnailPath(
             ?.let { stableKey -> videoThumbnailFile(cacheDir, stableKey) }
             ?.takeIf { it.isFile && it.length() > 0L }
             ?.absolutePath
-
-private fun String.sha256Hex(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-}

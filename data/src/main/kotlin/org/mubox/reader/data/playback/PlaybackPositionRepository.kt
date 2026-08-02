@@ -1,6 +1,6 @@
 package org.mubox.reader.data.playback
 
-import java.security.MessageDigest
+import org.mubox.reader.core.crypto.sha256Hex
 import org.mubox.reader.core.ports.PlaybackPositionGateway
 
 internal class PlaybackPositionRepository(
@@ -26,9 +26,4 @@ internal class PlaybackPositionRepository(
     override suspend fun clear() {
         dao.clear()
     }
-}
-
-internal fun String.sha256Hex(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
 }

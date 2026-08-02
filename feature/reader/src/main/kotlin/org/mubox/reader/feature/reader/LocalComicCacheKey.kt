@@ -1,6 +1,6 @@
 package org.mubox.reader.feature.reader
 
-import java.security.MessageDigest
+import org.mubox.reader.core.crypto.sha256Hex
 
 fun localComicCacheKey(
     prefix: String,
@@ -14,10 +14,5 @@ fun localComicCacheKey(
         size?.toString().orEmpty(),
         lastModified?.toString().orEmpty(),
     ).joinToString(separator = "\u001F")
-    return "$prefix-${source.sha256()}"
-}
-
-private fun String.sha256(): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    return "$prefix-${source.sha256Hex()}"
 }

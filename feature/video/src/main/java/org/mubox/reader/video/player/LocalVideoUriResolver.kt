@@ -4,10 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
+import org.mubox.reader.core.crypto.sha256Hex
 import java.io.FileOutputStream
 import java.io.File
-import java.security.MessageDigest
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class ManagedPlaybackUri(
@@ -126,11 +125,6 @@ internal class LocalVideoUriResolver(
     private fun String.safeCacheExtension(): String =
         replace(UnsafeExtensionChars, "")
             .trim('.', ' ')
-
-    private fun String.sha256Hex(): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte -> "%02x".format(Locale.ROOT, byte) }
-    }
 
     private companion object {
         val UnsafeFileNameChars = Regex("[^A-Za-z0-9._-]+")

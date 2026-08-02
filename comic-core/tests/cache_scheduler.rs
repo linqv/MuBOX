@@ -2,7 +2,6 @@ use comic_core::cache::index_cache::{
     IndexCacheKey, load_index_cache, load_index_cache_with_options, open_cbz_with_index_cache,
     store_index_cache, store_index_cache_with_options,
 };
-use comic_core::cache::page_cache::{enforce_lru_capacity, page_cache_file};
 use comic_core::cbz::{CbzIndex, CbzPageEntry};
 use comic_core::image::ImageFormatOptions;
 use comic_core::scheduler::prefetch::{
@@ -13,9 +12,6 @@ use comic_core::scheduler::range_planner::{
 };
 use comic_core::zip::RangeReader;
 use std::cell::Cell;
-use std::fs;
-use std::thread::sleep;
-use std::time::Duration;
 use tempfile::TempDir;
 
 #[test]
@@ -92,35 +88,6 @@ fn cached_index_is_loaded_without_range_reads() {
 
     assert_eq!(index, loaded);
     assert_eq!(0, reader.read_count());
-}
-
-#[test]
-fn page_cache_file_reuses_existing_page_without_range_read() {
-    let temp = TempDir::new().unwrap();
-    let path = page_cache_file(temp.path(), "comic-a", 2, "jpg").unwrap();
-    assert_eq!(temp.path().join("comic-a/pages/page-2.jpg"), path);
-    fs::write(&path, b"cached").unwrap();
-
-    let second = page_cache_file(temp.path(), "comic-a", 2, "jpg").unwrap();
-
-    assert_eq!(path, second);
-    assert_eq!(b"cached".to_vec(), fs::read(second).unwrap());
-}
-
-#[test]
-fn lru_removes_oldest_files_when_capacity_is_exceeded() {
-    let temp = TempDir::new().unwrap();
-    let old = page_cache_file(temp.path(), "comic-a", 0, "jpg").unwrap();
-    fs::write(&old, vec![1; 10]).unwrap();
-    sleep(Duration::from_millis(5));
-    let new = page_cache_file(temp.path(), "comic-a", 1, "jpg").unwrap();
-    fs::write(&new, vec![2; 10]).unwrap();
-
-    let removed = enforce_lru_capacity(temp.path(), 10).unwrap();
-
-    assert_eq!(1, removed);
-    assert!(!old.exists());
-    assert!(new.exists());
 }
 
 #[test]
