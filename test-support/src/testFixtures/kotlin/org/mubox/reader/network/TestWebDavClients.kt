@@ -12,7 +12,7 @@ import java.io.InputStream
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CompletableDeferred
 
-internal class RecordingWebDavClient(
+class RecordingWebDavClient(
     private val bytes: ByteArray,
 ) : WebDavClient {
     val rangeCalls = mutableListOf<Pair<Long, Long>>()
@@ -31,7 +31,7 @@ internal class RecordingWebDavClient(
         error("unused")
 }
 
-internal class TruncatedStreamingWebDavClient(
+class TruncatedStreamingWebDavClient(
     private val bytes: ByteArray,
 ) : WebDavClient {
     val rangeCalls = mutableListOf<Pair<Long, Long>>()
@@ -71,7 +71,7 @@ internal class TruncatedStreamingWebDavClient(
         error("unused")
 }
 
-internal class BlockingWebDavClient(
+class BlockingWebDavClient(
     private val bytes: ByteArray,
     private val release: CompletableDeferred<Unit>,
     private val firstReadStarted: CountDownLatch,
@@ -94,7 +94,7 @@ internal class BlockingWebDavClient(
         error("unused")
 }
 
-internal class BlockingFirstRangeWebDavClient(
+class BlockingFirstRangeWebDavClient(
     private val bytes: ByteArray,
     private val releaseFirstRead: CompletableDeferred<Unit>,
     private val firstReadStarted: CountDownLatch,
@@ -121,7 +121,7 @@ internal class BlockingFirstRangeWebDavClient(
         error("unused")
 }
 
-internal class FailingFirstRangeWebDavClient(
+class FailingFirstRangeWebDavClient(
     private val bytes: ByteArray,
     private val releaseFirstRead: CompletableDeferred<Unit>,
     private val firstReadStarted: CountDownLatch,
@@ -149,7 +149,7 @@ internal class FailingFirstRangeWebDavClient(
         error("unused")
 }
 
-internal class CancellableBlockingWebDavClient(
+class CancellableBlockingWebDavClient(
     private val bytes: ByteArray,
     private val readStarted: CountDownLatch,
     private val cancellationRegistered: CountDownLatch,
@@ -196,7 +196,7 @@ internal class CancellableBlockingWebDavClient(
         error("unused")
 }
 
-internal class BlockingTestInputStream(
+class BlockingTestInputStream(
     private val readStarted: CountDownLatch,
 ) : InputStream() {
     @Volatile

@@ -1,11 +1,7 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm")
-}
-
-kotlin {
-    jvmToolchain(17)
+    id("mubox.jvm.library")
 }
 
 dependencies {
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
 }

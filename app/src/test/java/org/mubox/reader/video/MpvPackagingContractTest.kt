@@ -18,9 +18,12 @@ class MpvPackagingContractTest {
         )
 
         val featureBuildScript = repositoryRoot.resolve("feature/video/build.gradle.kts").readText()
+        val versionCatalog = repositoryRoot.resolve("gradle/libs.versions.toml").readText()
+        assertTrue(featureBuildScript.contains("implementation(libs.mpv)"))
+        assertTrue(versionCatalog.contains("""mpv = "0.0.1""""))
         assertTrue(
-            featureBuildScript.contains(
-                """implementation("is.xyz.mpv:mpv-android-lib:0.0.1")""",
+            versionCatalog.contains(
+                """mpv = { module = "is.xyz.mpv:mpv-android-lib", version.ref = "mpv" }""",
             ),
         )
         assertTrue(

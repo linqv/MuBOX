@@ -1,4 +1,6 @@
 pluginManagement {
+    includeBuild("build-logic")
+
     repositories {
         maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
         google()
@@ -42,3 +44,4 @@ include(":feature:downloads")
 include(":feature:settings")
 include(":feature:video-library")
 include(":feature:webdav")
+include(":test-support")

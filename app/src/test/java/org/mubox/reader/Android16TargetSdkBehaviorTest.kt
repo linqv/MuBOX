@@ -11,11 +11,13 @@ class Android16TargetSdkBehaviorTest {
     @Test
     fun buildTargetsAndroid16Api36() {
         val buildScript = appBuildGradleFile().readText()
+        val versionCatalog = versionCatalogFile().readText()
+        val androidConvention = androidConventionFile().readText()
 
-        assertEquals(36, buildScript.gradleIntValue("compileAndroidSdk"))
-        assertEquals(36, buildScript.gradleIntValue("targetAndroidSdk"))
-        assertTrue(buildScript.contains("compileSdk = compileAndroidSdk"))
-        assertTrue(buildScript.contains("targetSdk = targetAndroidSdk"))
+        assertEquals(36, versionCatalog.versionCatalogInt("compileSdk"))
+        assertEquals(36, versionCatalog.versionCatalogInt("targetSdk"))
+        assertTrue(androidConvention.contains("compileSdk = libs.versionInt(\"compileSdk\")"))
+        assertTrue(buildScript.contains("targetSdk = libs.versions.targetSdk.get().toInt()"))
     }
 
     @Test
@@ -129,6 +131,17 @@ class Android16TargetSdkBehaviorTest {
             File("build.gradle.kts"),
         ).first { it.isFile && it.readText().contains("com.android.application") }
 
+    private fun versionCatalogFile(): File =
+        repositoryFile("gradle/libs.versions.toml")
+
+    private fun androidConventionFile(): File =
+        repositoryFile("build-logic/src/main/kotlin/org/mubox/gradle/MuboxAndroid.kt")
+
+    private fun repositoryFile(path: String): File =
+        generateSequence(File(".").canonicalFile, File::getParentFile)
+            .map { it.resolve(path) }
+            .first { it.isFile }
+
     private fun androidManifestFile(): File =
         listOf(
             File("app/src/main/AndroidManifest.xml"),
@@ -150,9 +163,9 @@ class Android16TargetSdkBehaviorTest {
             .filter { it.isFile && it.extension == "xml" }
             .toList()
 
-    private fun String.gradleIntValue(name: String): Int {
-        val match = Regex("""val\s+$name\s*=\s*(\d+)""").find(this)
-        return checkNotNull(match) { "Missing Gradle integer value for $name" }
+    private fun String.versionCatalogInt(name: String): Int {
+        val match = Regex("""(?m)^$name\s*=\s*"(\d+)"\s*$""").find(this)
+        return checkNotNull(match) { "Missing version catalog integer for $name" }
             .groupValues[1]
             .toInt()
     }

@@ -15,10 +15,15 @@ class VendoredAndroidDependencyContractTest {
         val appBuild = root.resolve("app/build.gradle.kts").readText()
         val readerBuild = root.resolve("feature/reader/build.gradle.kts").readText()
         val videoBuild = root.resolve("feature/video/build.gradle.kts").readText()
+        val versionCatalog = root.resolve("gradle/libs.versions.toml").readText()
 
         assertFalse("The app module must not reference feature AAR files.", appBuild.contains(".aar"))
-        assertTrue(readerBuild.contains("""implementation("com.artifex.mupdf:fitz:1.27.1")"""))
-        assertTrue(videoBuild.contains("""implementation("is.xyz.mpv:mpv-android-lib:0.0.1")"""))
+        assertTrue(readerBuild.contains("implementation(libs.mupdf)"))
+        assertTrue(videoBuild.contains("implementation(libs.mpv)"))
+        assertTrue(versionCatalog.contains("""mupdf = "1.27.1""""))
+        assertTrue(versionCatalog.contains("""mupdf = { module = "com.artifex.mupdf:fitz", version.ref = "mupdf" }"""))
+        assertTrue(versionCatalog.contains("""mpv = "0.0.1""""))
+        assertTrue(versionCatalog.contains("""mpv = { module = "is.xyz.mpv:mpv-android-lib", version.ref = "mpv" }"""))
         assertFalse(readerBuild.contains("app/libs"))
         assertFalse(videoBuild.contains("app/libs"))
     }

@@ -18,9 +18,10 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
+import org.mubox.gradle.MuboxAndroidExtension
 
 plugins {
-    id("com.android.library")
+    id("mubox.android.library")
 }
 
 data class RustAndroidTarget(
@@ -84,36 +85,20 @@ abstract class CompileRustAndroidLibrary @Inject constructor(
     }
 }
 
-val minAndroidSdk = 26
-val androidNdkVersion = "28.0.13004108"
+val muboxAndroid = extensions.getByType<MuboxAndroidExtension>()
+val minAndroidSdk = muboxAndroid.minSdk.get()
+val supportedTargetAbis = muboxAndroid.supportedAbis.get().toSet()
+val targetAbi = muboxAndroid.targetAbi.orNull
+val androidNdkVersion = libs.versions.ndk.get()
 val generatedRustJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/debug")
 val generatedRustReleaseJniLibs = layout.buildDirectory.dir("generated/rustJniLibs/release")
-val supportedTargetAbis = setOf("arm64-v8a", "x86_64")
-val targetAbiAliases = mapOf(
-    "arm64_v8a" to "arm64-v8a",
-)
-val rawTargetAbi = providers.gradleProperty("targetAbi").orNull?.trim()?.takeIf { it.isNotBlank() }
-fun normalizeTargetAbi(value: String): String = targetAbiAliases[value] ?: value
-val targetAbi = rawTargetAbi?.let(::normalizeTargetAbi)
-if (targetAbi != null && targetAbi !in supportedTargetAbis) {
-    throw GradleException(
-        "Unsupported targetAbi '$rawTargetAbi' (normalized to '$targetAbi'). " +
-            "Supported values: ${supportedTargetAbis.joinToString()}",
-    )
-}
 
 android {
     namespace = "org.mubox.reader.nativebridge"
-    compileSdk = 36
     ndkVersion = androidNdkVersion
 
     defaultConfig {
-        minSdk = minAndroidSdk
         consumerProguardFiles("consumer-rules.pro")
-
-        ndk {
-            abiFilters += targetAbi?.let(::listOf) ?: supportedTargetAbis
-        }
     }
 
     sourceSets {
@@ -122,17 +107,6 @@ android {
         }
         getByName("release") {
             jniLibs.directories.add(generatedRustReleaseJniLibs.get().asFile.absolutePath)
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
 }
@@ -242,8 +216,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:diagnostics"))
 
-    compileOnly("androidx.annotation:annotation:1.8.1")
+    compileOnly(libs.androidx.annotation)
     testImplementation(project(":webdav"))
-    testImplementation("androidx.annotation:annotation:1.8.1")
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.androidx.annotation)
+    testImplementation(libs.junit)
 }

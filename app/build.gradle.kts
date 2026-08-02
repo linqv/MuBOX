@@ -8,7 +8,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.plugin.compose")
+    id("mubox.android.compose")
 }
 
 abstract class CheckReleaseSigning : DefaultTask() {
@@ -35,22 +35,6 @@ abstract class CheckReleaseSigning : DefaultTask() {
     }
 }
 
-val compileAndroidSdk = 36
-val minAndroidSdk = 26
-val targetAndroidSdk = 36
-val supportedTargetAbis = setOf("arm64-v8a", "x86_64")
-val targetAbiAliases = mapOf(
-    "arm64_v8a" to "arm64-v8a",
-)
-val rawTargetAbi = providers.gradleProperty("targetAbi").orNull?.trim()?.takeIf { it.isNotBlank() }
-fun normalizeTargetAbi(value: String): String = targetAbiAliases[value] ?: value
-val targetAbi = rawTargetAbi?.let(::normalizeTargetAbi)
-if (targetAbi != null && targetAbi !in supportedTargetAbis) {
-    throw GradleException(
-        "Unsupported targetAbi '$rawTargetAbi' (normalized to '$targetAbi'). " +
-            "Supported values: ${supportedTargetAbis.joinToString()}",
-    )
-}
 val releaseSigningProperties = Properties().apply {
     val propertiesFile = rootProject.file("keystore.properties")
     if (propertiesFile.isFile) {
@@ -98,23 +82,13 @@ val hasReleaseSigning = releaseSigningMissing.isEmpty()
 
 android {
     namespace = "org.mubox.reader"
-    compileSdk = compileAndroidSdk
 
     defaultConfig {
         applicationId = "org.mubox.reader"
-        minSdk = minAndroidSdk
-        targetSdk = targetAndroidSdk
+        targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 3
         versionName = "1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ndk {
-            abiFilters += targetAbi?.let(::listOf) ?: listOf("arm64-v8a", "x86_64")
-        }
-    }
-
-    buildFeatures {
-        compose = true
     }
 
     packaging {
@@ -152,17 +126,6 @@ android {
             )
         }
     }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
 }
 
 tasks.register<CheckReleaseSigning>("checkReleaseSigning") {
@@ -184,6 +147,8 @@ tasks.matching {
 }
 
 dependencies {
+    testImplementation(testFixtures(project(":test-support")))
+
     implementation(project(":core:model"))
     implementation(project(":core:diagnostics"))
     implementation(project(":nativebridge"))
@@ -201,32 +166,29 @@ dependencies {
     implementation(project(":feature:video-library"))
     implementation(project(":feature:webdav"))
 
-    val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-    val okhttpBom = platform("com.squareup.okhttp3:okhttp-bom:5.3.2")
+    val okhttpBom = platform(libs.okhttp.bom)
     testImplementation(okhttpBom)
 
-    implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.coil.compose)
+    implementation(libs.coroutines.android)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("org.robolectric:robolectric:4.15.1")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.junit)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

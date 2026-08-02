@@ -9,7 +9,7 @@ import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MainDispatcherRule : TestWatcher() {
+public class MainDispatcherRule : TestWatcher() {
     fun set(dispatcher: TestDispatcher) {
         Dispatchers.setMain(dispatcher)
     }

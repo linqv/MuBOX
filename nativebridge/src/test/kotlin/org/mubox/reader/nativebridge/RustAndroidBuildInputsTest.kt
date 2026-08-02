@@ -24,13 +24,19 @@ class RustAndroidBuildInputsTest {
     }
 
     @Test
-    fun targetAbiPropertyNormalizesCommonArm64AliasBeforeFilteringNativeLibs() {
+    fun androidConventionNormalizesTargetAbiBeforeNativeBridgeFiltersRustTargets() {
         val buildScript = moduleBuildFile("nativebridge").readText()
+        val androidConvention = repositoryRoot
+            .resolve("build-logic/src/main/kotlin/org/mubox/gradle/MuboxAndroid.kt")
+            .readText()
 
-        assertTrue(buildScript.contains("normalizeTargetAbi"))
-        assertTrue(buildScript.contains("\"arm64_v8a\" to \"arm64-v8a\""))
-        assertTrue(buildScript.contains("rawTargetAbi"))
+        assertTrue(androidConvention.contains("targetAbiAliases"))
+        assertTrue(androidConvention.contains("\"arm64_v8a\" to \"arm64-v8a\""))
+        assertTrue(androidConvention.contains("rawTargetAbi"))
+        assertTrue(androidConvention.contains("Unsupported targetAbi"))
+        assertTrue(buildScript.contains("extensions.getByType<MuboxAndroidExtension>()"))
         assertTrue(buildScript.contains("supportedTargetAbis"))
+        assertTrue(buildScript.contains("targetAbi = muboxAndroid.targetAbi.orNull"))
     }
 
     private fun moduleBuildFile(module: String): File = File(repositoryRoot, "$module/build.gradle.kts")

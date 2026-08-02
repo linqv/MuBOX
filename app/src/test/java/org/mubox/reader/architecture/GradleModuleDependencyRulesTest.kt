@@ -135,11 +135,20 @@ class GradleModuleDependencyRulesTest {
                 ":ui:directory-listing",
                 ":ui",
             ),
+            ":test-support" to emptySet(),
         ).mapValues { (_, dependencies) -> dependencies.toSortedSet() }
 
         val approvedTestGraph: Map<String, Set<String>> = approvedGraph.keys.associateWith { module ->
             when (module) {
+                ":app",
+                ":feature:downloads",
+                ":feature:file-directory",
+                ":feature:library",
+                ":feature:reader",
+                ":feature:webdav",
+                ":webdav" -> sortedSetOf(":test-support")
                 ":nativebridge" -> sortedSetOf(":webdav")
+                ":test-support" -> sortedSetOf(":core:model")
                 else -> emptySet()
             }
         }

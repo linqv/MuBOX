@@ -1,7 +1,6 @@
 plugins {
-    id("com.android.application") version "9.2.0" apply false
-    id("com.android.library") version "9.2.0" apply false
-    id("com.google.devtools.ksp") version "2.3.10" apply false
-    id("org.jetbrains.kotlin.jvm") version "2.3.21" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.3.21" apply false
+    // Modules apply the rest via build-logic convention plugins
+    // (mubox.android.library, mubox.android.compose, mubox.jvm.library).
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.ksp) apply false
 }

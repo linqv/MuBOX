@@ -1,44 +1,22 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.plugin.compose")
+    id("mubox.android.library")
+    id("mubox.android.compose")
 }
 
 android {
     namespace = "org.mubox.reader.ui.directorylisting"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
 }
 
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":ui"))
 
-    val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
-    implementation(composeBom)
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui")
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.ui)
 
-    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
+    implementation(libs.coil.compose)
 
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
 }
