@@ -67,4 +67,24 @@ class VideoThumbnailIdentityTest {
             webDavBrowserVideoThumbnailVersion(validated, requestRevision = 2L),
         )
     }
+
+    @Test
+    fun webDavCacheIdentityIncludesTheAccount() {
+        val first = webDavVideoThumbnailStableKey(
+            accountId = "account-a",
+            remotePath = "/movie.mp4",
+            size = 100L,
+            etag = "v1",
+            lastModified = 200L,
+        )
+        val second = webDavVideoThumbnailStableKey(
+            accountId = "account-b",
+            remotePath = "/movie.mp4",
+            size = 100L,
+            etag = "v1",
+            lastModified = 200L,
+        )
+
+        assertNotEquals(first, second)
+    }
 }

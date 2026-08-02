@@ -34,14 +34,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import com.example.comicdav.core.model.media.resolvedVideoThumbnailPath
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.ui.MuBoxHeaderBar
 import com.example.comicdav.ui.MU_BOX_MEDIA_GRID_COLUMN_COUNT
@@ -137,6 +142,8 @@ fun VideoLibraryScreen(
                                     onClick = { onOpenItem(item) },
                                     onLongClick = { onSelectItem(item) },
                                     thumbnailsEnabled = thumbnailsEnabled,
+                                    artworkRevision =
+                                        state.thumbnailArtworkRevisions.videos[item.item.id] ?: 0L,
                                     isSelected = selectedItemId == item.item.id,
                                 )
                             }
@@ -207,10 +214,13 @@ private fun VideoLibraryCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     thumbnailsEnabled: Boolean,
+    artworkRevision: Long,
     isSelected: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
+    val context = LocalContext.current
+    val cacheDir = context.cacheDir
     val cardShape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     Column(
         modifier = modifier
@@ -243,13 +253,25 @@ private fun VideoLibraryCard(
                     .background(colors.raisedSurface),
                 contentAlignment = Alignment.Center,
             ) {
-                val thumbnailFile = item.item.thumbnailPath
+                val thumbnailFile = resolvedVideoThumbnailPath(item, cacheDir)
                     ?.takeIf { thumbnailsEnabled }
                     ?.let(::File)
-                    ?.takeIf { it.isFile }
-                if (thumbnailFile != null) {
+                val thumbnailModel = remember(context, thumbnailFile, artworkRevision) {
+                    thumbnailFile?.let { file ->
+                        if (artworkRevision == 0L) {
+                            file
+                        } else {
+                            ImageRequest.Builder(context)
+                                .data(file)
+                                .memoryCacheKey("${file.absolutePath}#extraction-$artworkRevision")
+                                .diskCachePolicy(CachePolicy.DISABLED)
+                                .build()
+                        }
+                    }
+                }
+                if (thumbnailModel != null) {
                     AsyncImage(
-                        model = thumbnailFile,
+                        model = thumbnailModel,
                         contentDescription = item.item.displayName,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,

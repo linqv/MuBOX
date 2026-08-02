@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 data class ThumbnailArtworkRevisions(
     val videos: Map<Long, Long> = emptyMap(),
     val history: Map<String, Long> = emptyMap(),
+    val sharedVideoArtwork: Long = 0L,
 )
 
 data class VideoLibraryUiState(
@@ -175,17 +176,31 @@ class VideoLibraryViewModel(
                 videos = revisions.videos + (
                     videoLibraryItemId to ((revisions.videos[videoLibraryItemId] ?: 0L) + 1L)
                     ),
+                sharedVideoArtwork = revisions.sharedVideoArtwork + 1L,
             ),
         )
     }
 
-    fun onHistoryThumbnailExtracted(mediaKey: String) {
+    fun onHistoryThumbnailExtracted(
+        mediaKey: String,
+        isVideo: Boolean = false,
+    ) {
         val revisions = uiState.thumbnailArtworkRevisions
         uiState = uiState.copy(
             thumbnailArtworkRevisions = revisions.copy(
                 history = revisions.history + (
                     mediaKey to ((revisions.history[mediaKey] ?: 0L) + 1L)
                     ),
+                sharedVideoArtwork = revisions.sharedVideoArtwork + if (isVideo) 1L else 0L,
+            ),
+        )
+    }
+
+    fun onSharedVideoThumbnailExtracted() {
+        val revisions = uiState.thumbnailArtworkRevisions
+        uiState = uiState.copy(
+            thumbnailArtworkRevisions = revisions.copy(
+                sharedVideoArtwork = revisions.sharedVideoArtwork + 1L,
             ),
         )
     }

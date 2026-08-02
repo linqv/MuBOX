@@ -90,6 +90,41 @@ class AppVideoLibraryCoordinatorTest {
         assertEquals(17L to "/cache/new.jpg", catalog.thumbnailUpdate)
         assertEquals(17L, catalog.removedId)
     }
+
+    @Test
+    fun browserSyncDelegatesFreshSourceMetadataWithTheThumbnail() = runTest {
+        val item = VideoLibraryItemWithSources(
+            item = VideoLibraryItem(
+                id = 23L,
+                title = "episode",
+                displayName = "episode",
+                sourceType = VideoSourceType.LOCAL,
+                addedAt = 1L,
+            ),
+            localSource = null,
+            webDavSource = null,
+        )
+        val source = MediaEntry(
+            name = "episode-renamed.mkv",
+            uri = "content://videos/episode.mkv",
+            isDirectory = false,
+            size = 84L,
+            lastModified = 300L,
+        )
+
+        coordinator.synchronizeLocalThumbnail(item, source, "/cache/current.jpg")
+
+        assertEquals(
+            LocalSync(
+                videoLibraryItemId = 23L,
+                fileName = "episode-renamed.mkv",
+                size = 84L,
+                lastModified = 300L,
+                thumbnailPath = "/cache/current.jpg",
+            ),
+            catalog.localSync,
+        )
+    }
 }
 
 private data class LocalAdd(
@@ -110,9 +145,18 @@ private data class WebDavAdd(
     val thumbnailPath: String?,
 )
 
+private data class LocalSync(
+    val videoLibraryItemId: Long,
+    val fileName: String,
+    val size: Long?,
+    val lastModified: Long?,
+    val thumbnailPath: String,
+)
+
 private class RecordingVideoLibraryCatalog : VideoLibraryCatalog {
     var localAdd: LocalAdd? = null
     var webDavAdd: WebDavAdd? = null
+    var localSync: LocalSync? = null
     var thumbnailUpdate: Pair<Long, String?>? = null
     var removedId: Long? = null
 
@@ -151,6 +195,25 @@ private class RecordingVideoLibraryCatalog : VideoLibraryCatalog {
     }
 
     override suspend fun markOpened(videoLibraryItemId: Long) = Unit
+
+    override suspend fun synchronizeLocalVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    ) {
+        localSync = LocalSync(videoLibraryItemId, fileName, size, lastModified, thumbnailPath)
+    }
+
+    override suspend fun synchronizeWebDavVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    ) = Unit
 
     override suspend fun updateThumbnailPath(
         videoLibraryItemId: Long,

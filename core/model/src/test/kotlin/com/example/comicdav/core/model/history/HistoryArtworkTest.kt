@@ -1,6 +1,7 @@
 package com.example.comicdav.core.model.history
 
-import java.io.File
+import com.example.comicdav.core.model.media.videoThumbnailFile
+import com.example.comicdav.core.model.media.webDavVideoThumbnailStableKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -48,6 +49,24 @@ class HistoryArtworkTest {
         assertTrue(
             historyThumbnailFile(temporaryFolder.root, first) !=
                 historyThumbnailFile(temporaryFolder.root, second),
+        )
+    }
+
+    @Test
+    fun videoHistoryUsesTheSameContentAddressedFileAsOtherVideoSurfaces() {
+        val entry = videoEntry(etag = "v1")
+        val sharedStableKey = webDavVideoThumbnailStableKey(
+            accountId = "account",
+            remotePath = "/history.mp4",
+            size = null,
+            etag = "v1",
+            lastModified = null,
+        )
+
+        assertEquals(sharedStableKey, historyThumbnailStableKey(entry))
+        assertEquals(
+            videoThumbnailFile(temporaryFolder.root, sharedStableKey),
+            historyThumbnailFile(temporaryFolder.root, entry),
         )
     }
 

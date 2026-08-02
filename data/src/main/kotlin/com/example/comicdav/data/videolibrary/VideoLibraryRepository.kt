@@ -17,7 +17,16 @@ class VideoLibraryRepository internal constructor(
         lastModified: Long?,
         thumbnailPath: String?,
     ): Long {
-        dao.findLocalVideoId(uri)?.let { return it }
+        dao.findLocalVideoId(uri)?.let { existingId ->
+            dao.synchronizeLocalVideoThumbnail(
+                videoLibraryItemId = existingId,
+                fileName = fileName,
+                size = size,
+                lastModified = lastModified,
+                thumbnailPath = thumbnailPath,
+            )
+            return existingId
+        }
         val title = titleFrom(fileName)
         return dao.insertLocalVideo(
             item = VideoLibraryItemEntity(
@@ -46,7 +55,17 @@ class VideoLibraryRepository internal constructor(
         lastModified: Long?,
         thumbnailPath: String?,
     ): Long {
-        dao.findWebDavVideoId(accountId, remotePath)?.let { return it }
+        dao.findWebDavVideoId(accountId, remotePath)?.let { existingId ->
+            dao.synchronizeWebDavVideoThumbnail(
+                videoLibraryItemId = existingId,
+                fileName = fileName,
+                size = size,
+                etag = etag,
+                lastModified = lastModified,
+                thumbnailPath = thumbnailPath,
+            )
+            return existingId
+        }
         val title = titleFrom(fileName)
         return dao.insertWebDavVideo(
             item = VideoLibraryItemEntity(
@@ -74,6 +93,40 @@ class VideoLibraryRepository internal constructor(
 
     override suspend fun markOpened(videoLibraryItemId: Long) {
         dao.updateLastOpened(videoLibraryItemId, clock())
+    }
+
+    override suspend fun synchronizeLocalVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    ) {
+        dao.synchronizeLocalVideoThumbnail(
+            videoLibraryItemId = videoLibraryItemId,
+            fileName = fileName,
+            size = size,
+            lastModified = lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    override suspend fun synchronizeWebDavVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    ) {
+        dao.synchronizeWebDavVideoThumbnail(
+            videoLibraryItemId = videoLibraryItemId,
+            fileName = fileName,
+            size = size,
+            etag = etag,
+            lastModified = lastModified,
+            thumbnailPath = thumbnailPath,
+        )
     }
 
     override suspend fun updateThumbnailPath(videoLibraryItemId: Long, thumbnailPath: String?) {

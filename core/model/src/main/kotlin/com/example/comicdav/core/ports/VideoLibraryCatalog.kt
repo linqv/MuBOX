@@ -25,6 +25,21 @@ interface VideoLibraryCatalog {
     ): Long
 
     suspend fun markOpened(videoLibraryItemId: Long)
+    suspend fun synchronizeLocalVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    )
+    suspend fun synchronizeWebDavVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+        thumbnailPath: String,
+    )
     suspend fun updateThumbnailPath(videoLibraryItemId: Long, thumbnailPath: String?)
     suspend fun removeVideo(videoLibraryItemId: Long)
 }

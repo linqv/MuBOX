@@ -20,8 +20,6 @@ internal data class AppVideoMediaServices(
     val localDirectoryReader: LocalDirectoryReader,
     val library: AppVideoLibraryCoordinator,
     val videoThumbnailExtractor: VideoThumbnailExtractor,
-    val browserVideoThumbnailExtractor: VideoThumbnailExtractor,
-    val historyThumbnailExtractor: VideoThumbnailExtractor,
     val localComicOpener: LocalComicOpener,
     val coverExtractor: WebDavLibraryCoverExtractor,
     val videoProxyManager: VideoProxyManager,

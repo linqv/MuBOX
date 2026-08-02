@@ -9,8 +9,8 @@ import com.example.comicdav.core.model.history.historyThumbnailFile
 import com.example.comicdav.core.model.history.historyThumbnailStableKey
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
 import com.example.comicdav.core.model.media.fileDirectoryVideoThumbnailVersion
-import com.example.comicdav.core.model.media.hasReliableWebDavVideoThumbnailVersion
 import com.example.comicdav.core.model.media.mimeTypeForMediaFileName
+import com.example.comicdav.core.model.media.webDavVideoThumbnailStableKey
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.remote.RemoteFileInfo
 import com.example.comicdav.feature.reader.LocalComicOpener
@@ -33,7 +33,6 @@ internal class AppVideoThumbnailLoader(
     private val context: Context,
     private val settings: AppSettings,
     private val videoThumbnailExtractor: VideoThumbnailExtractor,
-    private val historyThumbnailExtractor: VideoThumbnailExtractor,
     private val localComicOpener: LocalComicOpener,
     private val coverExtractor: WebDavLibraryCoverExtractor,
     private val webDavResolver: AppWebDavResolver,
@@ -44,14 +43,13 @@ internal class AppVideoThumbnailLoader(
         size: Long?,
         lastModified: Long?,
         forceRefresh: Boolean = false,
-        extractor: VideoThumbnailExtractor = videoThumbnailExtractor,
         stableKey: String = fileDirectoryVideoThumbnailVersion(
             uri = uri,
             size = size,
             lastModified = lastModified,
         ),
     ): String? =
-        extractor.extractFromContentUri(
+        videoThumbnailExtractor.extractFromContentUri(
             context = context,
             uri = Uri.parse(uri),
             stableKey = stableKey,
@@ -64,19 +62,17 @@ internal class AppVideoThumbnailLoader(
     ): String? =
         extractWebDav(
             request = request,
-            extractor = videoThumbnailExtractor,
             stableKey = webDavStableKey(request),
             forceRefresh = forceRefresh,
         )
 
     suspend fun extractWebDav(
         request: WebDavVideoOpenRequest,
-        extractor: VideoThumbnailExtractor,
         stableKey: String,
         forceRefresh: Boolean = false,
     ): String? {
         if (!forceRefresh) {
-            extractor.cachedThumbnailPath(stableKey)?.let { return it }
+            videoThumbnailExtractor.cachedThumbnailPath(stableKey)?.let { return it }
         }
         val clientFactory = webDavResolver.clientFactoryForPlayback(request.accountId)
             ?: error("缺少 WebDAV 账号，请重新连接后再提取缩略图")
@@ -86,25 +82,13 @@ internal class AppVideoThumbnailLoader(
             proxySettings = settings.toVideoProxySettings(),
         )
         return try {
-            extractor.extractFromUrl(
+            videoThumbnailExtractor.extractFromUrl(
                 url = session.url,
                 stableKey = stableKey,
                 forceRefresh = forceRefresh,
             )
         } finally {
             videoProxyManager.close(session)
-        }
-    }
-
-    fun webDavBrowserStableKey(
-        request: WebDavVideoOpenRequest,
-        requestRevision: Long,
-    ): String {
-        val stableKey = webDavStableKey(request)
-        return if (hasReliableWebDavVideoThumbnailVersion(request.etag, request.lastModified)) {
-            stableKey
-        } else {
-            "$stableKey:directory-revision:$requestRevision"
         }
     }
 
@@ -145,15 +129,20 @@ internal class AppVideoThumbnailLoader(
             WatchMediaType.COMIC -> extractHistoryComic(entry)
         }
 
-    private fun webDavStableKey(request: WebDavVideoOpenRequest): String =
-        "webdav:${request.accountId}:${request.remotePath}:${request.size ?: -1}:" +
-            "${request.etag.orEmpty()}:${request.lastModified ?: -1}"
+    fun webDavStableKey(request: WebDavVideoOpenRequest): String =
+        webDavVideoThumbnailStableKey(
+            accountId = request.accountId,
+            remotePath = request.remotePath,
+            size = request.size,
+            etag = request.etag,
+            lastModified = request.lastModified,
+        )
 
     private suspend fun extractHistoryVideo(entry: WatchHistoryEntry): String {
         val stableKey = historyThumbnailStableKey(entry)
         return when (entry.sourceType) {
             WatchSourceType.LOCAL ->
-                historyThumbnailExtractor.extractFromContentUri(
+                videoThumbnailExtractor.extractFromContentUri(
                     context = context,
                     uri = Uri.parse(entry.sourceLocator),
                     stableKey = stableKey,
@@ -170,7 +159,6 @@ internal class AppVideoThumbnailLoader(
                         lastModified = entry.lastModified,
                         mimeType = mimeTypeForMediaFileName(entry.displayTitle),
                     ),
-                    extractor = historyThumbnailExtractor,
                     stableKey = stableKey,
                 ) ?: error("未能提取历史视频缩略图")
             }

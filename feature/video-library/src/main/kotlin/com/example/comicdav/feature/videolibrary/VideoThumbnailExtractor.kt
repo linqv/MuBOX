@@ -6,6 +6,9 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.example.comicdav.core.io.FileLruPruner
+import com.example.comicdav.core.model.media.VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY
+import com.example.comicdav.core.model.media.videoThumbnailFile
+import com.example.comicdav.core.model.media.videoThumbnailFileNameForStableKey
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -30,15 +33,29 @@ class VideoThumbnailExtractor(
     private val cacheDir: File,
     private val frameProvider: VideoThumbnailFrameProvider = AndroidVideoThumbnailFrameProvider(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val cacheSubdirectory: String = "video-library-thumbnails",
     private val maxCacheBytes: Long? = null,
 ) {
     private val extractionLocks = Array(EXTRACTION_LOCK_STRIPE_COUNT) { Mutex() }
     private val protectedCacheFilesLock = Any()
     private val protectedCacheFiles = mutableSetOf<File>()
+    private val retainedCacheFiles = mutableSetOf<File>()
 
     init {
         require(maxCacheBytes == null || maxCacheBytes > 0L)
+    }
+
+    /** Keeps library and history artwork out of automatic LRU pruning. */
+    fun updateRetainedThumbnails(
+        stableKeys: Set<String>,
+        explicitFiles: Set<File> = emptySet(),
+    ) {
+        synchronized(protectedCacheFilesLock) {
+            retainedCacheFiles.clear()
+            stableKeys.mapTo(retainedCacheFiles) { stableKey ->
+                videoThumbnailFile(cacheDir, stableKey)
+            }
+            explicitFiles.mapTo(retainedCacheFiles) { file -> file.absoluteFile }
+        }
     }
 
     suspend fun extractFromContentUri(
@@ -77,8 +94,8 @@ class VideoThumbnailExtractor(
         withContext(ioDispatcher) {
             try {
                 extractionLock(stableKey).withLock {
-                    val thumbnailDir = cacheDir.resolve(cacheSubdirectory)
-                    val finalFile = thumbnailDir.resolve(thumbnailFileNameForStableKey(stableKey))
+                    val finalFile = videoThumbnailFile(cacheDir, stableKey)
+                    val thumbnailDir = requireNotNull(finalFile.parentFile)
                     val tmpFile = thumbnailDir.resolve("${finalFile.name}.tmp")
                     withProtectedCacheFiles(finalFile, tmpFile) {
                         cachedThumbnailPathLocked(stableKey)
@@ -110,8 +127,8 @@ class VideoThumbnailExtractor(
         stableKey: String,
         forceRefresh: Boolean,
     ): String? {
-        val thumbnailDir = cacheDir.resolve(cacheSubdirectory)
-        val finalFile = thumbnailDir.resolve(thumbnailFileNameForStableKey(stableKey))
+        val finalFile = videoThumbnailFile(cacheDir, stableKey)
+        val thumbnailDir = requireNotNull(finalFile.parentFile)
         val tmpFile = thumbnailDir.resolve("${finalFile.name}.tmp")
         return withProtectedCacheFiles(finalFile, tmpFile) {
             try {
@@ -149,22 +166,37 @@ class VideoThumbnailExtractor(
         }
     }
 
-    private fun cachedThumbnailPathLocked(stableKey: String): String? =
-        cacheDir
-            .resolve(cacheSubdirectory)
-            .resolve(thumbnailFileNameForStableKey(stableKey))
+    private fun cachedThumbnailPathLocked(stableKey: String): String? {
+        val sharedFile = videoThumbnailFile(cacheDir, stableKey)
+        if (sharedFile.isFile && sharedFile.length() > 0L) {
+            return cachedThumbnailResult(sharedFile)
+        }
+        val legacyBrowserFile = cacheDir
+            .resolve(VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY)
+            .resolve("browser")
+            .resolve(videoThumbnailFileNameForStableKey(stableKey))
+            .takeIf { it.isFile && it.length() > 0L }
+            ?: return null
+        sharedFile.parentFile?.mkdirs()
+        if (sharedFile.exists() && !sharedFile.delete()) return null
+        if (!legacyBrowserFile.renameTo(sharedFile)) {
+            legacyBrowserFile.copyTo(sharedFile, overwrite = true)
+            legacyBrowserFile.delete()
+        }
+        return sharedFile
             .takeIf { it.isFile && it.length() > 0L }
             ?.let(::cachedThumbnailResult)
+    }
 
     private fun cachedThumbnailResult(file: File): String {
         file.setLastModified(System.currentTimeMillis())
         val limit = maxCacheBytes
         if (limit != null) {
             val protectedFiles = synchronized(protectedCacheFilesLock) {
-                protectedCacheFiles.toSet()
+                protectedCacheFiles + retainedCacheFiles
             }
             FileLruPruner.prune(
-                root = cacheDir.resolve(cacheSubdirectory),
+                root = cacheDir.resolve(VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY),
                 maxBytes = limit,
                 protectedFiles = protectedFiles,
             )
@@ -224,22 +256,6 @@ private class AndroidVideoThumbnailFrameProvider : VideoThumbnailFrameProvider {
 private fun MediaMetadataRetriever.embeddedCoverArt(): Bitmap? {
     val picture = runCatching { embeddedPicture }.getOrNull() ?: return null
     return runCatching { BitmapFactory.decodeByteArray(picture, 0, picture.size) }.getOrNull()
-}
-
-internal fun thumbnailFileNameForStableKey(stableKey: String): String {
-    val readablePrefix = stableKey.sanitizeThumbnailKey().take(48)
-    val hash = stableKey.sha256Hex()
-    return if (readablePrefix.isBlank()) {
-        "$hash.jpg"
-    } else {
-        "$readablePrefix-$hash.jpg"
-    }
-}
-
-private fun String.sanitizeThumbnailKey(): String {
-    val sanitized = replace(Regex("[^A-Za-z0-9._-]"), "_")
-        .trim('_', '.', '-')
-    return sanitized.ifBlank { sha256Hex() }
 }
 
 private fun String.sha256Hex(): String {

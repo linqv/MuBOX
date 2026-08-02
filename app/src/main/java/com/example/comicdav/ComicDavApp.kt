@@ -31,13 +31,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
+import com.example.comicdav.core.model.history.historyThumbnailStableKey
 import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.media.videoThumbnailStableKey
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.feature.home.HomeScreen
 import com.example.comicdav.feature.downloads.DownloadsScreen
 import com.example.comicdav.feature.downloads.activeProgress
 import com.example.comicdav.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import com.example.comicdav.ui.ComicDavTheme
+import java.io.File
 
 @Composable
 internal fun ComicDavApp(container: AppContainer) {
@@ -69,6 +72,26 @@ internal fun ComicDavApp(container: AppContainer) {
     val downloadRecords by downloadRecordStore.records.collectAsState(initial = emptyList())
     val videoDownloadRecords by videoDownloadStore.records.collectAsState(initial = emptyList())
     val watchHistory by container.watchHistoryRepository.history.collectAsState(initial = emptyList())
+    val retainedVideoThumbnailStableKeys = remember(watchHistory, videoLibraryUiState.items) {
+        buildSet {
+            videoLibraryUiState.items.mapNotNullTo(this, ::videoThumbnailStableKey)
+            watchHistory
+                .asSequence()
+                .filter { entry -> entry.mediaType == WatchMediaType.VIDEO }
+                .mapTo(this, ::historyThumbnailStableKey)
+        }
+    }
+    val retainedVideoThumbnailFiles = remember(videoLibraryUiState.items) {
+        videoLibraryUiState.items.mapNotNullTo(mutableSetOf()) { item ->
+            item.item.thumbnailPath?.let(::File)?.absoluteFile
+        }
+    }
+    LaunchedEffect(retainedVideoThumbnailStableKeys, retainedVideoThumbnailFiles) {
+        container.videoThumbnailExtractor.updateRetainedThumbnails(
+            stableKeys = retainedVideoThumbnailStableKeys,
+            explicitFiles = retainedVideoThumbnailFiles,
+        )
+    }
     val historyMediaKeys = remember(watchHistory) {
         watchHistory.mapTo(linkedSetOf()) { entry -> entry.mediaKey }.toSet()
     }
@@ -340,6 +363,8 @@ internal fun ComicDavApp(container: AppContainer) {
                                             videoLibraryUiState.thumbnailArtworkRevisions.videos,
                                         historyThumbnailArtworkRevisions =
                                             videoLibraryUiState.thumbnailArtworkRevisions.history,
+                                        sharedVideoThumbnailArtworkRevision =
+                                            videoLibraryUiState.thumbnailArtworkRevisions.sharedVideoArtwork,
                                         thumbnailExtractionMessage =
                                             videoLibraryUiState.thumbnailExtractionMessage,
                                         thumbnailExtractionMessageIsError =

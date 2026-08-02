@@ -60,6 +60,58 @@ internal abstract class VideoLibraryDao {
     @Query("UPDATE video_library_items SET thumbnailPath = :thumbnailPath WHERE id = :videoLibraryItemId")
     abstract suspend fun updateThumbnailPath(videoLibraryItemId: Long, thumbnailPath: String?)
 
+    @Query(
+        "UPDATE local_video_sources SET fileName = :fileName, size = :size, " +
+            "lastModified = :lastModified WHERE videoLibraryItemId = :videoLibraryItemId",
+    )
+    abstract suspend fun updateLocalVideoSourceMetadata(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+    )
+
+    @Query(
+        "UPDATE webdav_video_sources SET fileName = :fileName, size = :size, etag = :etag, " +
+            "lastModified = :lastModified WHERE videoLibraryItemId = :videoLibraryItemId",
+    )
+    abstract suspend fun updateWebDavVideoSourceMetadata(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+    )
+
+    @Transaction
+    open suspend fun synchronizeLocalVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+        thumbnailPath: String?,
+    ) {
+        updateLocalVideoSourceMetadata(videoLibraryItemId, fileName, size, lastModified)
+        if (thumbnailPath != null) {
+            updateThumbnailPath(videoLibraryItemId, thumbnailPath)
+        }
+    }
+
+    @Transaction
+    open suspend fun synchronizeWebDavVideoThumbnail(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+        thumbnailPath: String?,
+    ) {
+        updateWebDavVideoSourceMetadata(videoLibraryItemId, fileName, size, etag, lastModified)
+        if (thumbnailPath != null) {
+            updateThumbnailPath(videoLibraryItemId, thumbnailPath)
+        }
+    }
+
     @Query("DELETE FROM video_library_items WHERE id = :videoLibraryItemId")
     abstract suspend fun deleteVideoLibraryItem(videoLibraryItemId: Long)
 }

@@ -53,10 +53,21 @@ class VideoLibraryRepositoryTest {
         val repository = VideoLibraryRepository(dao, clock = { 10L })
 
         val first = repository.addLocalVideo("content://video/1", "movie.mp4", 100L, 20L)
-        val second = repository.addLocalVideo("content://video/1", "movie.mp4", 100L, 20L)
+        val second = repository.addLocalVideo(
+            "content://video/1",
+            "renamed-movie.mp4",
+            120L,
+            30L,
+            "/cache/shared.jpg",
+        )
 
         assertEquals(first, second)
         assertEquals(1, dao.insertedItems)
+        assertEquals(listOf(first to "/cache/shared.jpg"), dao.updatedThumbnailPaths)
+        assertEquals(
+            listOf(LocalMetadataUpdate(first, "renamed-movie.mp4", 120L, 30L)),
+            dao.updatedLocalMetadata,
+        )
     }
 
     @Test
@@ -65,10 +76,23 @@ class VideoLibraryRepositoryTest {
         val repository = VideoLibraryRepository(dao, clock = { 10L })
 
         val first = repository.addWebDavVideo("account", "/encoded/movie.mp4", "movie.mp4", 100L, "etag", 20L)
-        val second = repository.addWebDavVideo("account", "/encoded/movie.mp4", "movie.mp4", 100L, "etag", 20L)
+        val second = repository.addWebDavVideo(
+            "account",
+            "/encoded/movie.mp4",
+            "renamed-movie.mp4",
+            120L,
+            "etag-v2",
+            30L,
+            "/cache/shared.jpg",
+        )
 
         assertEquals(first, second)
         assertEquals(1, dao.insertedItems)
+        assertEquals(listOf(first to "/cache/shared.jpg"), dao.updatedThumbnailPaths)
+        assertEquals(
+            listOf(WebDavMetadataUpdate(first, "renamed-movie.mp4", 120L, "etag-v2", 30L)),
+            dao.updatedWebDavMetadata,
+        )
     }
 
     @Test
@@ -96,6 +120,8 @@ private class FakeVideoLibraryDao : VideoLibraryDao() {
     var insertedItems: Int = 0
         private set
     val updatedThumbnailPaths = mutableListOf<Pair<Long, String?>>()
+    val updatedLocalMetadata = mutableListOf<LocalMetadataUpdate>()
+    val updatedWebDavMetadata = mutableListOf<WebDavMetadataUpdate>()
     val deletedItemIds = mutableListOf<Long>()
     private val items = MutableStateFlow<List<VideoLibraryItemRelation>>(emptyList())
     private val localIdsByUri = mutableMapOf<String, Long>()
@@ -134,7 +160,47 @@ private class FakeVideoLibraryDao : VideoLibraryDao() {
         updatedThumbnailPaths += videoLibraryItemId to thumbnailPath
     }
 
+    override suspend fun updateLocalVideoSourceMetadata(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        lastModified: Long?,
+    ) {
+        updatedLocalMetadata += LocalMetadataUpdate(videoLibraryItemId, fileName, size, lastModified)
+    }
+
+    override suspend fun updateWebDavVideoSourceMetadata(
+        videoLibraryItemId: Long,
+        fileName: String,
+        size: Long?,
+        etag: String?,
+        lastModified: Long?,
+    ) {
+        updatedWebDavMetadata += WebDavMetadataUpdate(
+            videoLibraryItemId,
+            fileName,
+            size,
+            etag,
+            lastModified,
+        )
+    }
+
     override suspend fun deleteVideoLibraryItem(videoLibraryItemId: Long) {
         deletedItemIds += videoLibraryItemId
     }
 }
+
+private data class LocalMetadataUpdate(
+    val videoLibraryItemId: Long,
+    val fileName: String,
+    val size: Long?,
+    val lastModified: Long?,
+)
+
+private data class WebDavMetadataUpdate(
+    val videoLibraryItemId: Long,
+    val fileName: String,
+    val size: Long?,
+    val etag: String?,
+    val lastModified: Long?,
+)

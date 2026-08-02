@@ -119,6 +119,21 @@ class VideoLibraryViewModelTest {
             1L,
             viewModel.uiState.thumbnailArtworkRevisions.videos[first.item.id],
         )
+        assertEquals(1L, viewModel.uiState.thumbnailArtworkRevisions.sharedVideoArtwork)
+    }
+
+    @Test
+    fun sharedVideoRevisionInvalidatesHistoryForEverySharedCacheWrite() {
+        val viewModel = VideoLibraryViewModel(FakeVideoLibraryCatalog())
+
+        viewModel.onHistoryThumbnailExtracted("video-history", isVideo = true)
+        viewModel.onSharedVideoThumbnailExtracted()
+
+        assertEquals(
+            1L,
+            viewModel.uiState.thumbnailArtworkRevisions.history["video-history"],
+        )
+        assertEquals(2L, viewModel.uiState.thumbnailArtworkRevisions.sharedVideoArtwork)
     }
 
     private fun videoLibraryItem(
@@ -166,6 +181,23 @@ class VideoLibraryViewModelTest {
         ): Long = 1L
 
         override suspend fun markOpened(videoLibraryItemId: Long) = Unit
+
+        override suspend fun synchronizeLocalVideoThumbnail(
+            videoLibraryItemId: Long,
+            fileName: String,
+            size: Long?,
+            lastModified: Long?,
+            thumbnailPath: String,
+        ) = Unit
+
+        override suspend fun synchronizeWebDavVideoThumbnail(
+            videoLibraryItemId: Long,
+            fileName: String,
+            size: Long?,
+            etag: String?,
+            lastModified: Long?,
+            thumbnailPath: String,
+        ) = Unit
 
         override suspend fun updateThumbnailPath(videoLibraryItemId: Long, thumbnailPath: String?) = Unit
 

@@ -1,37 +1,58 @@
 package com.example.comicdav.core.model.history
 
 import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.media.fileDirectoryVideoThumbnailVersion
+import com.example.comicdav.core.model.media.videoThumbnailFile
+import com.example.comicdav.core.model.media.webDavVideoThumbnailStableKey
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import java.io.File
 import java.security.MessageDigest
 
 fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
-    listOf(
-        "history",
-        entry.mediaType.name,
-        entry.mediaKey,
-        entry.sourceLocator,
-        entry.accountId.orEmpty(),
-        entry.size?.toString().orEmpty(),
-        entry.etag.orEmpty(),
-        entry.lastModified?.toString().orEmpty(),
-    ).joinToString(separator = "\u001F")
+    when (entry.mediaType) {
+        WatchMediaType.VIDEO -> when (entry.sourceType) {
+            WatchSourceType.LOCAL -> fileDirectoryVideoThumbnailVersion(
+                uri = entry.sourceLocator,
+                size = entry.size,
+                lastModified = entry.lastModified,
+            )
+            WatchSourceType.WEB_DAV -> webDavVideoThumbnailStableKey(
+                accountId = entry.accountId.orEmpty(),
+                remotePath = entry.sourceLocator,
+                size = entry.size,
+                etag = entry.etag,
+                lastModified = entry.lastModified,
+            )
+        }
+        WatchMediaType.COMIC -> listOf(
+            "history",
+            entry.mediaType.name,
+            entry.mediaKey,
+            entry.sourceLocator,
+            entry.accountId.orEmpty(),
+            entry.size?.toString().orEmpty(),
+            entry.etag.orEmpty(),
+            entry.lastModified?.toString().orEmpty(),
+        ).joinToString(separator = "\u001F")
+    }
 
 fun historyThumbnailFile(
     cacheDir: File,
     entry: WatchHistoryEntry,
 ): File {
     val stableKey = historyThumbnailStableKey(entry)
+    if (entry.mediaType == WatchMediaType.VIDEO) {
+        return videoThumbnailFile(cacheDir, stableKey)
+    }
     val readablePrefix = stableKey
         .replace(Regex("[^A-Za-z0-9._-]"), "_")
         .trim('_', '.', '-')
         .take(48)
     val hash = stableKey.sha256Hex()
-    val extension = if (entry.mediaType == WatchMediaType.VIDEO) "jpg" else "img"
     val fileName = if (readablePrefix.isBlank()) {
-        "$hash.$extension"
+        "$hash.img"
     } else {
-        "$readablePrefix-$hash.$extension"
+        "$readablePrefix-$hash.img"
     }
     return cacheDir.resolve("history-thumbnails").resolve(fileName)
 }
@@ -43,12 +64,20 @@ fun libraryArtworkPathForHistory(
 ): String? =
     when (entry.mediaType) {
         WatchMediaType.COMIC -> comics.firstOrNull { item ->
-            item.localSource?.uri == entry.sourceLocator ||
-                item.webDavSource?.remotePath == entry.sourceLocator
+            when (entry.sourceType) {
+                WatchSourceType.LOCAL -> item.localSource?.uri == entry.sourceLocator
+                WatchSourceType.WEB_DAV -> item.webDavSource?.let { source ->
+                    source.accountId == entry.accountId && source.remotePath == entry.sourceLocator
+                } == true
+            }
         }?.item?.coverPath
         WatchMediaType.VIDEO -> videos.firstOrNull { item ->
-            item.localSource?.uri == entry.sourceLocator ||
-                item.webDavSource?.remotePath == entry.sourceLocator
+            when (entry.sourceType) {
+                WatchSourceType.LOCAL -> item.localSource?.uri == entry.sourceLocator
+                WatchSourceType.WEB_DAV -> item.webDavSource?.let { source ->
+                    source.accountId == entry.accountId && source.remotePath == entry.sourceLocator
+                } == true
+            }
         }?.item?.thumbnailPath
     }
 

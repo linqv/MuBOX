@@ -5,6 +5,7 @@ import android.content.Intent
 import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.historyEntriesNeedingThumbnails
+import com.example.comicdav.core.model.history.historyThumbnailStableKey
 import com.example.comicdav.core.model.settings.AppSettings
 import com.example.comicdav.core.model.settings.VideoProxySettings
 import com.example.comicdav.core.model.transfer.VideoDownloadRecord
@@ -16,9 +17,14 @@ import com.example.comicdav.feature.filedirectory.FileDirectoryBrowserItem
 import com.example.comicdav.feature.webdav.mediaKind
 import com.example.comicdav.core.remote.WebDavItem
 import com.example.comicdav.core.model.media.fileDirectoryBrowserVideoThumbnailVersion
+import com.example.comicdav.core.model.media.fileDirectoryVideoThumbnailVersion
+import com.example.comicdav.core.model.media.hasReliableFileDirectoryVideoThumbnailVersion
+import com.example.comicdav.core.model.media.hasReliableWebDavVideoThumbnailVersion
 import com.example.comicdav.core.model.media.MediaKind
 import com.example.comicdav.core.model.media.WebDavVideoOpenRequest
 import com.example.comicdav.core.model.media.mimeTypeForMediaFileName
+import com.example.comicdav.core.model.media.resolvedVideoThumbnailPath
+import com.example.comicdav.core.model.media.videoThumbnailStableKey
 import com.example.comicdav.core.model.media.webDavBrowserVideoThumbnailVersion
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -63,7 +69,6 @@ internal class AppVideoActions(
         context = context,
         settings = settings,
         videoThumbnailExtractor = services.videoThumbnailExtractor,
-        historyThumbnailExtractor = services.historyThumbnailExtractor,
         localComicOpener = services.localComicOpener,
         coverExtractor = services.coverExtractor,
         webDavResolver = webDavResolver,
@@ -83,37 +88,42 @@ internal class AppVideoActions(
     suspend fun requestLocalBrowserVideoThumbnail(item: FileDirectoryBrowserItem) {
         if (!settings.gridVideoThumbnailsEnabled || item.mediaKind != MediaKind.Video) return
         val requestRevision = fileDirectoryViewModel.uiState.thumbnailRequestRevision
-        val stableKey = fileDirectoryBrowserVideoThumbnailVersion(
+        val version = fileDirectoryBrowserVideoThumbnailVersion(
             item = item,
             requestRevision = requestRevision,
         )
+        val stableKey = fileDirectoryVideoThumbnailVersion(item)
+        val requestKey = version
         if (
             shouldSkipBrowserThumbnailRequest(
-                failedRevision = failedBrowserThumbnailRequestRevisions[stableKey],
+                failedRevision = failedBrowserThumbnailRequestRevisions[requestKey],
                 requestRevision = requestRevision,
             )
         ) {
             return
         }
-        val thumbnailPath = browserThumbnailRequests.request(stableKey) {
+        val thumbnailPath = browserThumbnailRequests.request(requestKey) {
             thumbnailLoader.extractLocal(
                 uri = item.uri,
                 size = item.size,
                 lastModified = item.lastModified,
-                extractor = services.browserVideoThumbnailExtractor,
                 stableKey = stableKey,
+                forceRefresh = !hasReliableFileDirectoryVideoThumbnailVersion(item.lastModified),
             )
         }
         if (thumbnailPath == null) {
-            failedBrowserThumbnailRequestRevisions[stableKey] = requestRevision
+            failedBrowserThumbnailRequestRevisions[requestKey] = requestRevision
             return
         }
-        failedBrowserThumbnailRequestRevisions -= stableKey
+        failedBrowserThumbnailRequestRevisions -= requestKey
         fileDirectoryViewModel.onVideoThumbnailExtracted(
             uri = item.uri,
-            version = stableKey,
+            version = version,
             thumbnailPath = thumbnailPath,
         )
+        if (!syncLocalBrowserThumbnailWithVideoLibrary(item, thumbnailPath)) {
+            videoLibraryViewModel.onSharedVideoThumbnailExtracted()
+        }
     }
 
     suspend fun requestWebDavBrowserVideoThumbnail(item: WebDavItem) {
@@ -126,36 +136,46 @@ internal class AppVideoActions(
             item = item,
             requestRevision = requestRevision,
         )
-        val stableKey = thumbnailLoader.webDavBrowserStableKey(
-            request = request,
-            requestRevision = requestRevision,
-        )
+        val stableKey = thumbnailLoader.webDavStableKey(request)
+        val hasReliableVersion = hasReliableWebDavVideoThumbnailVersion(item.etag, item.lastModified)
+        val requestKey = if (hasReliableVersion) {
+            stableKey
+        } else {
+            "$stableKey:directory-revision:$requestRevision"
+        }
         if (
             shouldSkipBrowserThumbnailRequest(
-                failedRevision = failedBrowserThumbnailRequestRevisions[stableKey],
+                failedRevision = failedBrowserThumbnailRequestRevisions[requestKey],
                 requestRevision = requestRevision,
             )
         ) {
             return
         }
-        val thumbnailPath = browserThumbnailRequests.request(stableKey) {
+        val thumbnailPath = browserThumbnailRequests.request(requestKey) {
             thumbnailLoader.extractWebDav(
                 request = request,
-                extractor = services.browserVideoThumbnailExtractor,
                 stableKey = stableKey,
+                forceRefresh = !hasReliableVersion,
             )
         }
         if (thumbnailPath == null) {
-            failedBrowserThumbnailRequestRevisions[stableKey] = requestRevision
+            failedBrowserThumbnailRequestRevisions[requestKey] = requestRevision
             return
         }
-        failedBrowserThumbnailRequestRevisions -= stableKey
+        failedBrowserThumbnailRequestRevisions -= requestKey
         if (currentWebDavAccountId() == accountId) {
             webDavViewModel.onVideoThumbnailExtracted(
                 path = item.path,
                 version = version,
                 thumbnailPath = thumbnailPath,
             )
+        }
+        if (!syncWebDavBrowserThumbnailWithVideoLibrary(
+            accountId = accountId,
+            source = item,
+            thumbnailPath = thumbnailPath,
+        )) {
+            videoLibraryViewModel.onSharedVideoThumbnailExtracted()
         }
     }
 
@@ -242,11 +262,8 @@ internal class AppVideoActions(
     fun removeVideoLibraryItem(item: VideoLibraryItemWithSources) {
         scope.launch {
             runCatching {
-                item.item.thumbnailPath?.let { path ->
-                    withContext(Dispatchers.IO) {
-                        File(path).takeIf { it.isFile }?.delete()
-                    }
-                }
+                // The thumbnail is shared with the source grid and watch history.
+                // Removing only the library record must not invalidate those callers.
                 services.library.remove(item)
             }.fold(
                 onSuccess = {
@@ -301,14 +318,11 @@ internal class AppVideoActions(
         if (videoLibraryViewModel.uiState.isExtractingThumbnails) return
 
         val videoTargets = if (settings.videoLibraryThumbnailsEnabled) {
-            videoLibraryItemsNeedingThumbnails(videoLibraryItems)
+            videoLibraryItemsNeedingThumbnails(videoLibraryItems, context.cacheDir)
         } else {
             emptyList()
         }
-        val scheduledVideoLocators = videoTargets.mapNotNullTo(mutableSetOf()) { item ->
-            item.localSource?.uri ?: item.webDavSource?.remotePath
-        }
-        val historyTargets = historyEntriesNeedingThumbnails(
+        val historyCandidates = historyEntriesNeedingThumbnails(
             history = history,
             comics = libraryItems,
             videos = videoLibraryItems,
@@ -318,9 +332,12 @@ internal class AppVideoActions(
                 WatchMediaType.COMIC -> settings.libraryCoversEnabled
                 WatchMediaType.VIDEO -> settings.videoLibraryThumbnailsEnabled
             }
-            typeEnabled &&
-                !(entry.mediaType == WatchMediaType.VIDEO && entry.sourceLocator in scheduledVideoLocators)
+            typeEnabled
         }
+        val historyTargets = historyEntriesNotCoveredByVideoTargets(
+            entries = historyCandidates,
+            videoTargets = videoTargets,
+        )
         val targetCount = videoTargets.size + historyTargets.size
         if (targetCount == 0) {
             videoLibraryViewModel.showThumbnailExtractionResult(
@@ -360,7 +377,10 @@ internal class AppVideoActions(
                 historyTargets.forEach { entry ->
                     try {
                         thumbnailLoader.extractHistory(entry)
-                        videoLibraryViewModel.onHistoryThumbnailExtracted(entry.mediaKey)
+                        videoLibraryViewModel.onHistoryThumbnailExtracted(
+                            mediaKey = entry.mediaKey,
+                            isVideo = entry.mediaType == WatchMediaType.VIDEO,
+                        )
                         succeeded += 1
                     } catch (error: CancellationException) {
                         throw error
@@ -398,7 +418,7 @@ internal class AppVideoActions(
     fun deleteVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
         scope.launch {
             runCatching {
-                item.item.thumbnailPath?.let { path ->
+                resolvedVideoThumbnailPath(item, context.cacheDir)?.let { path ->
                     withContext(Dispatchers.IO) {
                         File(path).takeIf { it.isFile }?.delete()
                     }
@@ -418,6 +438,54 @@ internal class AppVideoActions(
 
     fun playVideoDownloadRecord(record: VideoDownloadRecord) =
         playbackActions.playVideoDownloadRecord(record)
+
+    private suspend fun syncLocalBrowserThumbnailWithVideoLibrary(
+        source: FileDirectoryBrowserItem,
+        thumbnailPath: String,
+    ): Boolean {
+        val libraryItem = videoLibraryViewModel.uiState.items.firstOrNull { candidate ->
+            candidate.localSource?.uri == source.uri
+        } ?: return false
+        return syncBrowserThumbnailWithVideoLibrary(libraryItem, thumbnailPath) {
+            services.library.synchronizeLocalThumbnail(libraryItem, source, thumbnailPath)
+        }
+    }
+
+    private suspend fun syncWebDavBrowserThumbnailWithVideoLibrary(
+        accountId: String,
+        source: WebDavItem,
+        thumbnailPath: String,
+    ): Boolean {
+        val libraryItem = videoLibraryViewModel.uiState.items.firstOrNull { candidate ->
+            candidate.webDavSource?.let { candidateSource ->
+                candidateSource.accountId == accountId && candidateSource.remotePath == source.path
+            } == true
+        } ?: return false
+        return syncBrowserThumbnailWithVideoLibrary(libraryItem, thumbnailPath) {
+            services.library.synchronizeWebDavThumbnail(libraryItem, source, thumbnailPath)
+        }
+    }
+
+    private suspend fun syncBrowserThumbnailWithVideoLibrary(
+        item: VideoLibraryItemWithSources,
+        thumbnailPath: String,
+        persist: suspend () -> Unit,
+    ): Boolean = try {
+        persist()
+        videoLibraryViewModel.onVideoThumbnailExtracted(
+            videoLibraryItemId = item.item.id,
+            thumbnailPath = thumbnailPath,
+        )
+        true
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        services.diagnostics.error(
+            "sync_browser_video_thumbnail_failed id=${item.item.id}",
+            error,
+        )
+        false
+    }
 
     private fun onVideoLibraryThumbnailRefreshed(
         item: VideoLibraryItemWithSources,
@@ -477,12 +545,28 @@ internal class AppVideoActions(
 
 internal fun videoLibraryItemsNeedingThumbnails(
     items: List<VideoLibraryItemWithSources>,
+    cacheDir: File? = null,
 ): List<VideoLibraryItemWithSources> =
     items.filter { item ->
-        item.item.thumbnailPath
-            ?.let(::File)
-            ?.isFile != true
+        if (cacheDir == null) {
+            item.item.thumbnailPath
+                ?.let(::File)
+                ?.isFile != true
+        } else {
+            resolvedVideoThumbnailPath(item, cacheDir) == null
+        }
     }
+
+internal fun historyEntriesNotCoveredByVideoTargets(
+    entries: List<WatchHistoryEntry>,
+    videoTargets: List<VideoLibraryItemWithSources>,
+): List<WatchHistoryEntry> {
+    val scheduledStableKeys = videoTargets.mapNotNullTo(mutableSetOf(), ::videoThumbnailStableKey)
+    return entries.filterNot { entry ->
+        entry.mediaType == WatchMediaType.VIDEO &&
+            historyThumbnailStableKey(entry) in scheduledStableKeys
+    }
+}
 
 internal fun shouldSkipBrowserThumbnailRequest(
     failedRevision: Long?,

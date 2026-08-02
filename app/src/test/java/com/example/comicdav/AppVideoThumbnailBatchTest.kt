@@ -5,9 +5,13 @@ import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.WatchSourceType
 import com.example.comicdav.core.model.history.historyEntriesNeedingThumbnails
 import com.example.comicdav.core.model.history.historyThumbnailFile
+import com.example.comicdav.core.model.media.fileDirectoryVideoThumbnailVersion
+import com.example.comicdav.core.model.media.videoThumbnailFile
+import com.example.comicdav.core.model.videolibrary.LocalVideoSource
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItem
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.core.model.videolibrary.VideoSourceType
+import com.example.comicdav.core.model.videolibrary.WebDavVideoSource
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -122,6 +126,59 @@ class AppVideoThumbnailBatchTest {
     }
 
     @Test
+    fun unifiedGridCacheSatisfiesVideoLibraryBatchLookup() {
+        val uri = "content://videos/shared.mp4"
+        val item = videoItem(id = 4L, thumbnailPath = null).copy(
+            localSource = LocalVideoSource(
+                videoLibraryItemId = 4L,
+                uri = uri,
+                fileName = "shared.mp4",
+                size = 100L,
+                lastModified = 200L,
+            ),
+        )
+        videoThumbnailFile(
+            temporaryFolder.root,
+            fileDirectoryVideoThumbnailVersion(uri, size = 100L, lastModified = 200L),
+        ).apply {
+            parentFile!!.mkdirs()
+            writeText("thumbnail from source grid")
+        }
+
+        assertEquals(
+            emptyList<VideoLibraryItemWithSources>(),
+            videoLibraryItemsNeedingThumbnails(listOf(item), temporaryFolder.root),
+        )
+    }
+
+    @Test
+    fun batchDeduplicationKeepsSameWebDavPathFromAnotherAccount() {
+        val videoTarget = webDavVideoItem(
+            id = 5L,
+            accountId = "account-a",
+            remotePath = "/movies/shared.mp4",
+        )
+        val coveredHistory = webDavHistoryEntry(
+            mediaKey = "history-a",
+            accountId = "account-a",
+            remotePath = "/movies/shared.mp4",
+        )
+        val otherAccountHistory = webDavHistoryEntry(
+            mediaKey = "history-b",
+            accountId = "account-b",
+            remotePath = "/movies/shared.mp4",
+        )
+
+        assertEquals(
+            listOf(otherAccountHistory),
+            historyEntriesNotCoveredByVideoTargets(
+                entries = listOf(coveredHistory, otherAccountHistory),
+                videoTargets = listOf(videoTarget),
+            ),
+        )
+    }
+
+    @Test
     fun historyExtractionTargetsDisappearWhenStableCacheFileExists() {
         val entry = WatchHistoryEntry(
             mediaKey = "video:history",
@@ -175,5 +232,51 @@ class AppVideoThumbnailBatchTest {
             ),
             localSource = null,
             webDavSource = null,
+        )
+
+    private fun webDavVideoItem(
+        id: Long,
+        accountId: String,
+        remotePath: String,
+    ): VideoLibraryItemWithSources =
+        VideoLibraryItemWithSources(
+            item = VideoLibraryItem(
+                id = id,
+                title = "video-$id",
+                displayName = "video-$id",
+                sourceType = VideoSourceType.WEBDAV,
+                thumbnailPath = null,
+                addedAt = 100L,
+            ),
+            localSource = null,
+            webDavSource = WebDavVideoSource(
+                videoLibraryItemId = id,
+                accountId = accountId,
+                remotePath = remotePath,
+                fileName = "shared.mp4",
+                size = 100L,
+                etag = "v1",
+                lastModified = 200L,
+            ),
+        )
+
+    private fun webDavHistoryEntry(
+        mediaKey: String,
+        accountId: String,
+        remotePath: String,
+    ): WatchHistoryEntry =
+        WatchHistoryEntry(
+            mediaKey = mediaKey,
+            mediaType = WatchMediaType.VIDEO,
+            title = "shared.mp4",
+            sourceType = WatchSourceType.WEB_DAV,
+            sourceLocator = remotePath,
+            accountId = accountId,
+            size = 100L,
+            etag = "v1",
+            lastModified = 200L,
+            progress = 1L,
+            total = 10L,
+            lastWatchedAt = 100L,
         )
 }

@@ -138,8 +138,6 @@ internal fun rememberAppActionGraph(
                 localDirectoryReader = container.localDirectoryReader,
                 library = AppVideoLibraryCoordinator(container.videoLibraryRepository),
                 videoThumbnailExtractor = container.videoThumbnailExtractor,
-                browserVideoThumbnailExtractor = container.browserVideoThumbnailExtractor,
-                historyThumbnailExtractor = container.historyThumbnailExtractor,
                 localComicOpener = container.localComicOpener,
                 coverExtractor = container.coverExtractor,
                 videoProxyManager = container.videoProxyManager,

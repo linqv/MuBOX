@@ -72,15 +72,9 @@ internal class AppContainer(context: Context) {
         remoteCacheDir = remoteCache.cacheDir,
         diagnostics = diagnostics,
     )
-    val videoThumbnailExtractor = VideoThumbnailExtractor(cacheDir = context.cacheDir)
-    val browserVideoThumbnailExtractor = VideoThumbnailExtractor(
+    val videoThumbnailExtractor = VideoThumbnailExtractor(
         cacheDir = context.cacheDir,
-        cacheSubdirectory = "video-library-thumbnails/browser",
         maxCacheBytes = 128L * 1024L * 1024L,
-    )
-    val historyThumbnailExtractor = VideoThumbnailExtractor(
-        cacheDir = context.cacheDir,
-        cacheSubdirectory = "history-thumbnails",
     )
 
     val progressStore = ReadingProgressStore(context.readingProgressDataStore)

@@ -448,13 +448,13 @@ fun SettingsScreen(
                 onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.LIBRARY_COVERS)) },
             )
             CacheActionRow(
-                title = "影视库缩略图缓存",
+                title = "视频缩略图缓存",
                 subtitle = formatCacheSize(cacheAnalysis.videoThumbnailsBytes),
                 enabled = cacheAnalysis.videoThumbnailsBytes > 0L,
                 onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.VIDEO_THUMBNAILS)) },
             )
             CacheActionRow(
-                title = "历史记录缩略图缓存",
+                title = "历史漫画封面缓存",
                 subtitle = formatCacheSize(cacheAnalysis.historyThumbnailsBytes),
                 enabled = cacheAnalysis.historyThumbnailsBytes > 0L,
                 onClear = { onAction(SettingsAction.ClearCacheCategory(ComicCacheCategory.HISTORY_THUMBNAILS)) },

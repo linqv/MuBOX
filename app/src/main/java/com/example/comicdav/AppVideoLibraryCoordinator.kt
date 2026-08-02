@@ -42,6 +42,35 @@ internal class AppVideoLibraryCoordinator(
         catalog.removeVideo(item.item.id)
     }
 
+    suspend fun synchronizeLocalThumbnail(
+        item: VideoLibraryItemWithSources,
+        source: FileDirectoryBrowserItem,
+        thumbnailPath: String,
+    ) {
+        catalog.synchronizeLocalVideoThumbnail(
+            videoLibraryItemId = item.item.id,
+            fileName = source.name,
+            size = source.size,
+            lastModified = source.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    suspend fun synchronizeWebDavThumbnail(
+        item: VideoLibraryItemWithSources,
+        source: WebDavItem,
+        thumbnailPath: String,
+    ) {
+        catalog.synchronizeWebDavVideoThumbnail(
+            videoLibraryItemId = item.item.id,
+            fileName = source.name,
+            size = source.size,
+            etag = source.etag,
+            lastModified = source.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
     suspend fun updateThumbnail(
         item: VideoLibraryItemWithSources,
         thumbnailPath: String?,

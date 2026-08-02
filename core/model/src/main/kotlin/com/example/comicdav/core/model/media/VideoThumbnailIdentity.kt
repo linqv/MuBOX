@@ -1,6 +1,12 @@
 package com.example.comicdav.core.model.media
 
+import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
+import com.example.comicdav.core.model.videolibrary.VideoSourceType
 import com.example.comicdav.core.remote.WebDavItem
+import java.io.File
+import java.security.MessageDigest
+
+const val VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY = "video-library-thumbnails"
 
 /**
  * Stable thumbnail identity shared by browsers, library actions, and cache writers.
@@ -21,6 +27,9 @@ fun fileDirectoryVideoThumbnailVersion(item: MediaEntry): String =
         lastModified = item.lastModified,
     )
 
+fun hasReliableFileDirectoryVideoThumbnailVersion(lastModified: Long?): Boolean =
+    (lastModified ?: 0L) > 0L
+
 fun fileDirectoryBrowserVideoThumbnailVersion(
     uri: String,
     size: Long?,
@@ -32,7 +41,7 @@ fun fileDirectoryBrowserVideoThumbnailVersion(
         size = size,
         lastModified = lastModified,
     )
-    return if (lastModified != null && lastModified > 0L) {
+    return if (hasReliableFileDirectoryVideoThumbnailVersion(lastModified)) {
         version
     } else {
         "$version:directory-revision:$requestRevision"
@@ -64,6 +73,14 @@ fun webDavVideoThumbnailVersion(item: WebDavItem): String =
         etag = item.etag,
         lastModified = item.lastModified,
     )
+
+fun webDavVideoThumbnailStableKey(
+    accountId: String,
+    remotePath: String,
+    size: Long?,
+    etag: String?,
+    lastModified: Long?,
+): String = "webdav:$accountId:$remotePath:${size ?: -1}:${etag.orEmpty()}:${lastModified ?: -1}"
 
 fun hasReliableWebDavVideoThumbnailVersion(
     etag: String?,
@@ -101,3 +118,59 @@ fun webDavBrowserVideoThumbnailVersion(
         lastModified = item.lastModified,
         requestRevision = requestRevision,
     )
+
+fun videoThumbnailStableKey(item: VideoLibraryItemWithSources): String? =
+    when (item.item.sourceType) {
+        VideoSourceType.LOCAL -> item.localSource?.let { source ->
+            fileDirectoryVideoThumbnailVersion(
+                uri = source.uri,
+                size = source.size,
+                lastModified = source.lastModified,
+            )
+        }
+        VideoSourceType.WEBDAV -> item.webDavSource?.let { source ->
+            webDavVideoThumbnailStableKey(
+                accountId = source.accountId,
+                remotePath = source.remotePath,
+                size = source.size,
+                etag = source.etag,
+                lastModified = source.lastModified,
+            )
+        }
+    }
+
+fun videoThumbnailFileNameForStableKey(stableKey: String): String {
+    val readablePrefix = stableKey
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .trim('_', '.', '-')
+        .take(48)
+    val hash = stableKey.sha256Hex()
+    return if (readablePrefix.isBlank()) {
+        "$hash.jpg"
+    } else {
+        "$readablePrefix-$hash.jpg"
+    }
+}
+
+fun videoThumbnailFile(cacheDir: File, stableKey: String): File =
+    cacheDir
+        .resolve(VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY)
+        .resolve(videoThumbnailFileNameForStableKey(stableKey))
+
+fun resolvedVideoThumbnailPath(
+    item: VideoLibraryItemWithSources,
+    cacheDir: File,
+): String? =
+    item.item.thumbnailPath
+        ?.let(::File)
+        ?.takeIf { it.isFile && it.length() > 0L }
+        ?.absolutePath
+        ?: videoThumbnailStableKey(item)
+            ?.let { stableKey -> videoThumbnailFile(cacheDir, stableKey) }
+            ?.takeIf { it.isFile && it.length() > 0L }
+            ?.absolutePath
+
+private fun String.sha256Hex(): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
+    return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+}

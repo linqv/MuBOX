@@ -43,6 +43,7 @@ import com.example.comicdav.core.model.history.WatchHistoryEntry
 import com.example.comicdav.core.model.history.WatchMediaType
 import com.example.comicdav.core.model.history.resolvedHistoryArtworkPath
 import com.example.comicdav.core.model.library.LibraryItemWithSources
+import com.example.comicdav.core.model.media.resolvedVideoThumbnailPath
 import com.example.comicdav.core.model.videolibrary.VideoLibraryItemWithSources
 import com.example.comicdav.ui.ComicDavCopy
 import com.example.comicdav.ui.MuBoxInlineMessage
@@ -56,6 +57,12 @@ import com.example.comicdav.ui.rememberMuBoxColors
 import java.io.File
 
 private const val HomePreviewItemCount = 10
+
+internal fun homeHistoryArtworkRevision(
+    entry: WatchHistoryEntry,
+    entryRevision: Long,
+    sharedVideoRevision: Long,
+): Long = entryRevision + if (entry.mediaType == WatchMediaType.VIDEO) sharedVideoRevision else 0L
 
 @Composable
 internal fun HomeRootContent(
@@ -71,6 +78,7 @@ internal fun HomeRootContent(
     isExtractingThumbnails: Boolean,
     videoThumbnailArtworkRevisions: Map<Long, Long>,
     historyThumbnailArtworkRevisions: Map<String, Long>,
+    sharedVideoThumbnailArtworkRevision: Long,
     thumbnailExtractionMessage: String?,
     thumbnailExtractionMessageIsError: Boolean,
     selectedLibraryItemId: Long?,
@@ -147,6 +155,7 @@ internal fun HomeRootContent(
                 coversEnabled = coversEnabled,
                 thumbnailsEnabled = thumbnailsEnabled,
                 historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
+                sharedVideoThumbnailArtworkRevision = sharedVideoThumbnailArtworkRevision,
                 onOpenEntry = onOpenHistoryEntry,
                 onOpenAll = onOpenAllHistory,
                 onOpenSources = onOpenSources,
@@ -252,6 +261,7 @@ private fun HomeHistorySection(
     coversEnabled: Boolean,
     thumbnailsEnabled: Boolean,
     historyThumbnailArtworkRevisions: Map<String, Long>,
+    sharedVideoThumbnailArtworkRevision: Long,
     onOpenEntry: (WatchHistoryEntry) -> Unit,
     onOpenAll: () -> Unit,
     onOpenSources: () -> Unit,
@@ -298,8 +308,11 @@ private fun HomeHistorySection(
                                 WatchMediaType.COMIC -> coversEnabled
                                 WatchMediaType.VIDEO -> thumbnailsEnabled
                             },
-                            artworkRevision =
-                                historyThumbnailArtworkRevisions[entry.mediaKey] ?: 0L,
+                            artworkRevision = homeHistoryArtworkRevision(
+                                entry = entry,
+                                entryRevision = historyThumbnailArtworkRevisions[entry.mediaKey] ?: 0L,
+                                sharedVideoRevision = sharedVideoThumbnailArtworkRevision,
+                            ),
                         ),
                         progress = entry.progressFraction,
                         layout = MuBoxPosterLayout.Recent,
@@ -374,6 +387,7 @@ private fun HomeVideoLibrarySection(
     onOpenAll: () -> Unit,
     onOpenSources: () -> Unit,
 ) {
+    val cacheDir = LocalContext.current.cacheDir
     MuBoxPanelSection(
         title = "影视库",
         actionText = if (items.isEmpty()) null else "查看全部",
@@ -400,7 +414,7 @@ private fun HomeVideoLibrarySection(
                         onClick = { onOpenItem(item) },
                         modifier = Modifier.width(96.dp),
                         coverModel = rememberHomeArtworkModel(
-                            path = item.item.thumbnailPath,
+                            path = resolvedVideoThumbnailPath(item, cacheDir),
                             enabled = thumbnailsEnabled,
                             artworkRevision =
                                 videoThumbnailArtworkRevisions[item.item.id] ?: 0L,

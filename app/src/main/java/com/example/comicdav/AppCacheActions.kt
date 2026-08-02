@@ -153,10 +153,13 @@ internal class AppCacheActions(
     }
 
     private fun deleteHistoryEntryCaches(entry: WatchHistoryEntry): Long {
+        // Video thumbnails are content-addressed and shared by the source grid,
+        // video library, and history. Removing one history row must not delete
+        // artwork that can still be referenced by either of the other surfaces.
+        if (entry.mediaType == WatchMediaType.VIDEO) return 0L
         val thumbnailFile = historyThumbnailFile(context.cacheDir, entry)
         val thumbnailBytes = thumbnailFile.length().takeIf { thumbnailFile.isFile } ?: 0L
         thumbnailFile.delete()
-        if (entry.mediaType != WatchMediaType.COMIC) return thumbnailBytes
         val readerPagesBytes = clearReaderPageCacheForComic(
             cacheDir = context.cacheDir,
             comicKey = entry.mediaKey,

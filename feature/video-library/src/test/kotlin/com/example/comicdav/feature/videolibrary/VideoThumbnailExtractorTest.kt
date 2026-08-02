@@ -1,6 +1,9 @@
 package com.example.comicdav.feature.videolibrary
 
 import android.graphics.Bitmap
+import com.example.comicdav.core.model.media.VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY
+import com.example.comicdav.core.model.media.videoThumbnailFile
+import com.example.comicdav.core.model.media.videoThumbnailFileNameForStableKey
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -44,8 +47,8 @@ class VideoThumbnailExtractorTest {
     fun thumbnailFileNameUsesFullStableKeyHashToAvoidPrefixCollisions() {
         val commonPrefix = "webdav:account:/very/long/path/".padEnd(140, 'a')
 
-        val first = thumbnailFileNameForStableKey("${commonPrefix}1")
-        val second = thumbnailFileNameForStableKey("${commonPrefix}2")
+        val first = videoThumbnailFileNameForStableKey("${commonPrefix}1")
+        val second = videoThumbnailFileNameForStableKey("${commonPrefix}2")
 
         assertNotEquals(first, second)
         assertTrue(first.endsWith(".jpg"))
@@ -56,9 +59,7 @@ class VideoThumbnailExtractorTest {
     fun existingThumbnailIsReusedWithoutDecodingVideoAgain() = runTest {
         val cacheDir = temporaryFolder.newFolder("cached-thumbnail")
         val stableKey = "local:movie"
-        val thumbnailFile = cacheDir
-            .resolve("video-library-thumbnails")
-            .resolve(thumbnailFileNameForStableKey(stableKey))
+        val thumbnailFile = videoThumbnailFile(cacheDir, stableKey)
             .apply {
                 parentFile?.mkdirs()
                 writeText("thumbnail")
@@ -85,9 +86,7 @@ class VideoThumbnailExtractorTest {
     fun cachedThumbnailPathCanBeCheckedBeforeOpeningTheMediaSource() = runTest {
         val cacheDir = temporaryFolder.newFolder("cached-thumbnail-preflight")
         val stableKey = "webdav:account:/movie.mp4"
-        val thumbnailFile = cacheDir
-            .resolve("video-library-thumbnails")
-            .resolve(thumbnailFileNameForStableKey(stableKey))
+        val thumbnailFile = videoThumbnailFile(cacheDir, stableKey)
             .apply {
                 parentFile?.mkdirs()
                 writeText("thumbnail")
@@ -105,12 +104,34 @@ class VideoThumbnailExtractorTest {
     }
 
     @Test
+    fun legacyBrowserThumbnailIsPromotedIntoTheUnifiedCache() = runTest {
+        val cacheDir = temporaryFolder.newFolder("legacy-browser-thumbnail")
+        val stableKey = "local:legacy-movie"
+        val legacyFile = cacheDir
+            .resolve(VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY)
+            .resolve("browser")
+            .resolve(videoThumbnailFileNameForStableKey(stableKey))
+            .apply {
+                parentFile!!.mkdirs()
+                writeText("legacy thumbnail")
+            }
+        val extractor = VideoThumbnailExtractor(
+            cacheDir = cacheDir,
+            frameProvider = { error("legacy cache should avoid decoding the video") },
+        )
+
+        val result = extractor.cachedThumbnailPath(stableKey)
+
+        assertEquals(videoThumbnailFile(cacheDir, stableKey).absolutePath, result)
+        assertTrue(File(requireNotNull(result)).isFile)
+        assertFalse(legacyFile.exists())
+    }
+
+    @Test
     fun forceRefreshDecodesVideoEvenWhenThumbnailIsCached() = runTest {
         val cacheDir = temporaryFolder.newFolder("force-refresh-thumbnail")
         val stableKey = "local:movie"
-        cacheDir
-            .resolve("video-library-thumbnails")
-            .resolve(thumbnailFileNameForStableKey(stableKey))
+        videoThumbnailFile(cacheDir, stableKey)
             .apply {
                 parentFile?.mkdirs()
                 writeText("old thumbnail")
@@ -137,42 +158,98 @@ class VideoThumbnailExtractorTest {
     }
 
     @Test
-    fun boundedBrowserCachePrunesOldFilesWithoutTouchingLibraryThumbnails() = runTest {
-        val cacheDir = temporaryFolder.newFolder("bounded-browser-thumbnails")
-        val browserSubdirectory = "video-library-thumbnails/browser"
-        val browserDir = cacheDir.resolve(browserSubdirectory).apply { mkdirs() }
-        val oldFile = browserDir
-            .resolve(thumbnailFileNameForStableKey("browser:old"))
+    fun boundedUnifiedCachePrunesOldThumbnailFiles() = runTest {
+        val cacheDir = temporaryFolder.newFolder("bounded-video-thumbnails")
+        val thumbnailDir = cacheDir.resolve(VIDEO_THUMBNAIL_CACHE_SUBDIRECTORY).apply { mkdirs() }
+        val oldFile = thumbnailDir
+            .resolve(videoThumbnailFileNameForStableKey("video:old"))
             .apply {
                 writeBytes(ByteArray(8))
                 setLastModified(1_000L)
             }
-        val currentFile = browserDir
-            .resolve(thumbnailFileNameForStableKey("browser:current"))
+        val currentFile = thumbnailDir
+            .resolve(videoThumbnailFileNameForStableKey("video:current"))
             .apply {
                 writeBytes(ByteArray(9))
                 setLastModified(2_000L)
             }
-        val libraryFile = cacheDir
-            .resolve("video-library-thumbnails/library.jpg")
-            .apply {
-                parentFile?.mkdirs()
-                writeBytes(ByteArray(8))
-            }
         val extractor = VideoThumbnailExtractor(
             cacheDir = cacheDir,
             frameProvider = { error("cached thumbnail should not be decoded") },
-            cacheSubdirectory = browserSubdirectory,
             maxCacheBytes = 9L,
         )
 
         assertEquals(
             currentFile.absolutePath,
-            extractor.cachedThumbnailPath("browser:current"),
+            extractor.cachedThumbnailPath("video:current"),
         )
         assertFalse(oldFile.exists())
         assertTrue(currentFile.isFile)
-        assertTrue(libraryFile.isFile)
+    }
+
+    @Test
+    fun boundedUnifiedCacheRetainsLibraryAndHistoryThumbnailKeys() = runTest {
+        val cacheDir = temporaryFolder.newFolder("retained-video-thumbnails")
+        val retainedKey = "video:retained"
+        val disposableKey = "video:disposable"
+        val currentKey = "video:current"
+        val retainedFile = videoThumbnailFile(cacheDir, retainedKey).apply {
+            parentFile!!.mkdirs()
+            writeBytes(ByteArray(8))
+            setLastModified(1_000L)
+        }
+        val disposableFile = videoThumbnailFile(cacheDir, disposableKey).apply {
+            writeBytes(ByteArray(8))
+            setLastModified(2_000L)
+        }
+        val currentFile = videoThumbnailFile(cacheDir, currentKey).apply {
+            writeBytes(ByteArray(9))
+            setLastModified(3_000L)
+        }
+        val extractor = VideoThumbnailExtractor(
+            cacheDir = cacheDir,
+            frameProvider = { error("cached thumbnail should not be decoded") },
+            maxCacheBytes = 17L,
+        )
+        extractor.updateRetainedThumbnails(setOf(retainedKey))
+
+        assertEquals(currentFile.absolutePath, extractor.cachedThumbnailPath(currentKey))
+        assertTrue(retainedFile.isFile)
+        assertFalse(disposableFile.exists())
+        assertTrue(currentFile.isFile)
+    }
+
+    @Test
+    fun boundedUnifiedCacheRetainsExplicitPersistedThumbnailPath() = runTest {
+        val cacheDir = temporaryFolder.newFolder("retained-explicit-video-thumbnail")
+        val persistedFile = videoThumbnailFile(cacheDir, "video:current-validator").apply {
+            parentFile!!.mkdirs()
+            writeBytes(ByteArray(8))
+            setLastModified(1_000L)
+        }
+        val disposableFile = videoThumbnailFile(cacheDir, "video:disposable").apply {
+            writeBytes(ByteArray(8))
+            setLastModified(2_000L)
+        }
+        val currentKey = "video:current"
+        val currentFile = videoThumbnailFile(cacheDir, currentKey).apply {
+            writeBytes(ByteArray(9))
+            setLastModified(3_000L)
+        }
+        val extractor = VideoThumbnailExtractor(
+            cacheDir = cacheDir,
+            frameProvider = { error("cached thumbnail should not be decoded") },
+            maxCacheBytes = 17L,
+        )
+        extractor.updateRetainedThumbnails(
+            stableKeys = setOf("video:stale-validator"),
+            explicitFiles = setOf(persistedFile),
+        )
+
+        assertEquals(currentFile.absolutePath, extractor.cachedThumbnailPath(currentKey))
+        assertTrue(persistedFile.isFile)
+        assertFalse(disposableFile.exists())
+        assertTrue(currentFile.isFile)
     }
 
     @Test
@@ -229,23 +306,22 @@ class VideoThumbnailExtractorTest {
     }
 
     @Test
-    fun customCacheSubdirectorySeparatesHistoryThumbnails() = runTest {
-        val cacheDir = temporaryFolder.newFolder("history-cache")
+    fun extractedVideoAlwaysUsesTheUnifiedCacheDirectory() = runTest {
+        val cacheDir = temporaryFolder.newFolder("unified-cache")
         val frame = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         val extractor = VideoThumbnailExtractor(
             cacheDir = cacheDir,
             frameProvider = { frame },
-            cacheSubdirectory = "history-thumbnails",
         )
+        val stableKey = "local:shared-video"
 
         val result = extractor.extractFromFile(
-            file = File("/tmp/history.mp4"),
-            stableKey = "history-key",
+            file = File("/tmp/shared.mp4"),
+            stableKey = stableKey,
         )
 
+        assertEquals(videoThumbnailFile(cacheDir, stableKey).absolutePath, result)
         assertTrue(File(requireNotNull(result)).isFile)
-        assertTrue(result.contains("/history-thumbnails/"))
-        assertFalse(cacheDir.resolve("video-library-thumbnails").exists())
         frame.recycle()
     }
 }
