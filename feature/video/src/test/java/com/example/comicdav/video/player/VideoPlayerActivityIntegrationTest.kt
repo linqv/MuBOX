@@ -204,7 +204,6 @@ class VideoPlayerActivityIntegrationTest {
         router.route("time-pos", 42.25)
         router.route("speed", 1.5)
         router.route("container-fps", 23.976)
-        router.route("display-fps", 60.0)
         router.route("aid", 7L)
         router.route("sid", 0L)
         router.route("hwdec", "mediacodec-copy")

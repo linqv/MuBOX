@@ -125,7 +125,6 @@ class ViewBackedMpvEngineTest {
                 "observe:sid=${MPVLib.MpvFormat.MPV_FORMAT_INT64}",
                 "observe:speed=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:container-fps=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
-                "observe:display-fps=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:volume=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:audio-delay=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:video-params=${MPVLib.MpvFormat.MPV_FORMAT_NODE}",

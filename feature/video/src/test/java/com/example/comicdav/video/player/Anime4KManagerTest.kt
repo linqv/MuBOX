@@ -110,17 +110,6 @@ class Anime4KManagerTest {
     }
 
     @Test
-    fun autoCanForceFastVariantWithoutChangingContentMode() {
-        assertEquals(
-            Anime4KPipeline.MODE_B_FAST,
-            selectAnime4KPipeline(
-                videoParams = VideoParams(width = 1280, height = 720, frameRate = 24.0),
-                forceFast = true,
-            ).pipeline,
-        )
-    }
-
-    @Test
     fun autoWaitsForDimensionsAndSkipsHdrOrHighResolutionSources() {
         assertTrue(selectAnime4KPipeline(VideoParams()).waitingForVideoParams)
 

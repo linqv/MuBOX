@@ -101,7 +101,6 @@ internal val mpvObservedPlaybackProperties: List<MpvObservedProperty> = listOf(
     MpvObservedProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_INT64),
     MpvObservedProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("container-fps", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
-    MpvObservedProperty("display-fps", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("volume", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("audio-delay", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("video-params", MPVLib.MpvFormat.MPV_FORMAT_NODE),

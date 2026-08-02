@@ -75,7 +75,6 @@ internal fun anime4kPipelineForProfile(profile: Anime4KProfile): Anime4KPipeline
 
 internal fun selectAnime4KPipeline(
     videoParams: VideoParams,
-    forceFast: Boolean = false,
 ): Anime4KAutoSelection {
     val width = videoParams.width
     val height = videoParams.height
@@ -94,8 +93,7 @@ internal fun selectAnime4KPipeline(
     }
 
     val useFastPipeline =
-        forceFast ||
-            videoParams.frameRate == null ||
+        videoParams.frameRate == null ||
             videoParams.frameRate > AUTO_ANIME4K_BALANCED_MAX_FPS
     val pipeline = when {
         sourceShortEdge >= AUTO_ANIME4K_MODE_A_MIN_HEIGHT ->
@@ -235,24 +233,6 @@ class Anime4KManager(context: Context) : Anime4KShaderProvider {
         destination.writeBytes(assetBytes)
     }
 }
-
-internal val Anime4KPipeline.isFastAutoPipeline: Boolean
-    get() = when (this) {
-        Anime4KPipeline.MODE_A_FAST,
-        Anime4KPipeline.MODE_B_FAST,
-        Anime4KPipeline.MODE_C_A_FAST,
-        -> true
-        else -> false
-    }
-
-internal val Anime4KPipeline.isBalancedAutoPipeline: Boolean
-    get() = when (this) {
-        Anime4KPipeline.MODE_A_BALANCED,
-        Anime4KPipeline.MODE_B_BALANCED,
-        Anime4KPipeline.MODE_C_A_BALANCED,
-        -> true
-        else -> false
-    }
 
 private fun String?.isHdrTransfer(): Boolean =
     this?.lowercase() in setOf("pq", "hlg")
