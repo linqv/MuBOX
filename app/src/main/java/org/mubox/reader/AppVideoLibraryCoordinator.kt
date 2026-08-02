@@ -1,0 +1,80 @@
+package org.mubox.reader
+
+import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
+import org.mubox.reader.core.ports.VideoLibraryCatalog
+import org.mubox.reader.core.remote.WebDavItem
+import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
+
+/** Maps app video commands onto the domain-facing video library port. */
+internal class AppVideoLibraryCoordinator(
+    private val catalog: VideoLibraryCatalog,
+) {
+    suspend fun addLocal(
+        item: FileDirectoryBrowserItem,
+        thumbnailPath: String?,
+    ) {
+        catalog.addLocalVideo(
+            uri = item.uri,
+            fileName = item.name,
+            size = item.size,
+            lastModified = item.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    suspend fun addWebDav(
+        accountId: String,
+        item: WebDavItem,
+        thumbnailPath: String?,
+    ) {
+        catalog.addWebDavVideo(
+            accountId = accountId,
+            remotePath = item.path,
+            fileName = item.name,
+            size = item.size,
+            etag = item.etag,
+            lastModified = item.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    suspend fun remove(item: VideoLibraryItemWithSources) {
+        catalog.removeVideo(item.item.id)
+    }
+
+    suspend fun synchronizeLocalThumbnail(
+        item: VideoLibraryItemWithSources,
+        source: FileDirectoryBrowserItem,
+        thumbnailPath: String,
+    ) {
+        catalog.synchronizeLocalVideoThumbnail(
+            videoLibraryItemId = item.item.id,
+            fileName = source.name,
+            size = source.size,
+            lastModified = source.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    suspend fun synchronizeWebDavThumbnail(
+        item: VideoLibraryItemWithSources,
+        source: WebDavItem,
+        thumbnailPath: String,
+    ) {
+        catalog.synchronizeWebDavVideoThumbnail(
+            videoLibraryItemId = item.item.id,
+            fileName = source.name,
+            size = source.size,
+            etag = source.etag,
+            lastModified = source.lastModified,
+            thumbnailPath = thumbnailPath,
+        )
+    }
+
+    suspend fun updateThumbnail(
+        item: VideoLibraryItemWithSources,
+        thumbnailPath: String?,
+    ) {
+        catalog.updateThumbnailPath(item.item.id, thumbnailPath)
+    }
+}

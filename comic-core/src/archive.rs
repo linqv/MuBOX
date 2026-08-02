@@ -430,7 +430,7 @@ fn solid_cache_parent_for_output(output_path: &Path) -> Option<&Path> {
         .ancestors()
         .find(|path| {
             path.file_name()
-                .is_some_and(|name| name == "comicdav-pages" || name == "comicdav-pages-transient")
+                .is_some_and(|name| name == "mubox-reader-pages" || name == "mubox-reader-pages-transient")
         })
         .and_then(Path::parent)
         .or_else(|| output_path.parent())
@@ -618,7 +618,7 @@ mod tests {
         let output_root = TempDir::new().unwrap();
         let output_path = output_root
             .path()
-            .join("comicdav-pages/test-key/page-0.img");
+            .join("mubox-reader-pages/test-key/page-0.img");
         let mut session = open_local_archive(archive.path(), ArchiveFormat::SevenZ).unwrap();
 
         assert!(
@@ -636,7 +636,7 @@ mod tests {
         };
         assert!(cache_path.is_dir());
         assert_eq!(cache_path.parent(), Some(output_root.path()));
-        assert!(!cache_path.starts_with(output_root.path().join("comicdav-pages")));
+        assert!(!cache_path.starts_with(output_root.path().join("mubox-reader-pages")));
 
         drop(session);
 

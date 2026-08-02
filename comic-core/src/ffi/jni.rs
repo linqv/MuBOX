@@ -52,7 +52,7 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut c_vo
 }
 
 fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
-    let class = env.find_class("com/example/comicdav/nativebridge/ComicNative")?;
+    let class = env.find_class("org/mubox/reader/nativebridge/ComicNative")?;
     let methods = [
         native_method(
             "openLocal",

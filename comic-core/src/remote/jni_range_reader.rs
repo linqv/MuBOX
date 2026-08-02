@@ -59,7 +59,7 @@ fn call_static_byte_array_method(
     end_inclusive: u64,
 ) -> Result<Option<Vec<u8>>> {
     let mut env = vm.attach_current_thread()?;
-    let class = env.find_class("com/example/comicdav/nativebridge/RangeProviderRegistry")?;
+    let class = env.find_class("org/mubox/reader/nativebridge/RangeProviderRegistry")?;
     let result = env.call_static_method(
         class,
         method_name,

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.comicdav.feature.webdav"
+    namespace = "org.mubox.reader.feature.webdav"
     compileSdk = 36
 
     defaultConfig {

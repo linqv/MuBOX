@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.comicdav.ui.directorylisting"
+    namespace = "org.mubox.reader.ui.directorylisting"
     compileSdk = 36
 
     defaultConfig {

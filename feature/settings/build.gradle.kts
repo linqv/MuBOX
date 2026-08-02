@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.comicdav.feature.settings"
+    namespace = "org.mubox.reader.feature.settings"
     compileSdk = 36
 
     defaultConfig {

@@ -103,7 +103,7 @@ if (targetAbi != null && targetAbi !in supportedTargetAbis) {
 }
 
 android {
-    namespace = "com.example.comicdav.nativebridge"
+    namespace = "org.mubox.reader.nativebridge"
     compileSdk = 36
     ndkVersion = androidNdkVersion
 

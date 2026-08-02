@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.comicdav.video"
+    namespace = "org.mubox.reader.video"
     compileSdk = 36
 
     defaultConfig {

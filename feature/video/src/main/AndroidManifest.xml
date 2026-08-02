@@ -1,11 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
-            android:name="com.example.comicdav.video.player.VideoPlayerActivity"
+            android:name="org.mubox.reader.video.player.VideoPlayerActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
         <service
-            android:name="com.example.comicdav.video.player.VideoPlaybackService"
+            android:name="org.mubox.reader.video.player.VideoPlaybackService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
     </application>
