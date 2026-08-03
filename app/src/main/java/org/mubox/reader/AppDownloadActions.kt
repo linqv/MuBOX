@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import org.mubox.reader.core.model.transfer.DownloadRecord
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
-import org.mubox.reader.core.model.library.LibraryItemWithSources
 import org.mubox.reader.core.model.transfer.ComicDownloadRequest
 import org.mubox.reader.core.model.transfer.DownloadMediaType
 import org.mubox.reader.core.model.transfer.DownloadOrigin
@@ -125,32 +124,6 @@ internal class AppDownloadActions(
             ),
             client = client,
         )
-    }
-
-    fun downloadLibraryWebDavComic(item: LibraryItemWithSources) {
-        val source = item.webDavSource ?: run {
-            libraryViewModel.showError("本地漫画无需下载")
-            return
-        }
-        val folderUri = dataFolderUri?.takeIf { it.isNotBlank() } ?: run {
-            libraryViewModel.showError("请先选择 MuBOX 数据文件夹，再下载漫画")
-            return
-        }
-        clearMessages()
-        coordinator.downloadComic(
-            request = ComicDownloadRequest(
-                folderUri = folderUri,
-                accountId = source.accountId,
-                remotePath = source.remotePath,
-                fileName = source.fileName,
-                size = source.size,
-                etag = source.etag,
-                lastModified = source.lastModified,
-                origin = DownloadOrigin.LIBRARY,
-            ),
-        ) {
-            container.webDavClientProvider.clientFor(source.accountId)
-        }
     }
 
     fun removeComicRecord(record: DownloadRecord) {

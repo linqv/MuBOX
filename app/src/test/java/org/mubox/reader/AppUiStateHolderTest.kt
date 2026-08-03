@@ -21,6 +21,7 @@ class AppUiStateHolderTest {
                 lastModified = 7L,
             ),
         )
+        ui.homeSelection = HomeSelection(historyKeys = setOf("history-1"))
         ui.localOpenError = "open failed"
         ui.webDavActionMessage = "saved"
 
@@ -28,6 +29,7 @@ class AppUiStateHolderTest {
 
         assertEquals(AppTab.SETTINGS, ui.selectedTab)
         assertEquals(AppSelection.None, ui.selection)
+        assertEquals(HomeSelection(), ui.homeSelection)
         assertNull(ui.localOpenError)
         assertNull(ui.webDavActionMessage)
     }
@@ -51,6 +53,7 @@ class AppUiStateHolderTest {
         editingWebDavSourceIdState = mutableStateOf<Long?>(null),
         selectedTabNameState = mutableStateOf(AppTab.SOURCES.name),
         selectionState = mutableStateOf(AppSelection.None),
+        homeSelectionState = mutableStateOf(HomeSelection()),
         localOpenErrorState = mutableStateOf<String?>(null),
         webDavActionMessageState = mutableStateOf<String?>(null),
         cacheAnalysisState = mutableStateOf(ComicCacheAnalysis()),

@@ -1,11 +1,5 @@
 package org.mubox.reader
 
-import org.mubox.reader.core.model.library.LibraryItem
-import org.mubox.reader.core.model.library.LibraryItemWithSources
-import org.mubox.reader.core.model.library.SourceType
-import org.mubox.reader.core.model.videolibrary.VideoLibraryItem
-import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
-import org.mubox.reader.core.model.videolibrary.VideoSourceType
 import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
 import org.mubox.reader.core.remote.WebDavItem
 import org.junit.Assert.assertEquals
@@ -33,28 +27,6 @@ class AppSelectionTest {
         uri = "content://videos/episode.mkv",
         isDirectory = false,
     )
-    private val libraryItem = LibraryItemWithSources(
-        item = LibraryItem(
-            id = 11L,
-            title = "Comic",
-            displayName = "Comic.cbz",
-            sourceType = SourceType.LOCAL,
-            addedAt = 1L,
-        ),
-        localSource = null,
-        webDavSource = null,
-    )
-    private val videoLibraryItem = VideoLibraryItemWithSources(
-        item = VideoLibraryItem(
-            id = 12L,
-            title = "Episode",
-            displayName = "Episode.mkv",
-            sourceType = VideoSourceType.LOCAL,
-            addedAt = 1L,
-        ),
-        localSource = null,
-        webDavSource = null,
-    )
 
     @Test
     fun eachSelectionVariantProjectsExactlyOneRouteValue() {
@@ -62,8 +34,6 @@ class AppSelectionTest {
             AppSelection.WebDavFile(webDavFile),
             AppSelection.DirectoryComic(directoryComic),
             AppSelection.DirectoryVideo(directoryVideo),
-            AppSelection.LibraryItem(libraryItem),
-            AppSelection.VideoLibraryItem(videoLibraryItem),
         )
 
         selections.forEach { selection ->
@@ -81,35 +51,60 @@ class AppSelectionTest {
         assertNull(selection.webDavFileOrNull)
         assertNull(selection.directoryComicOrNull)
         assertEquals(directoryVideo, selection.directoryVideoOrNull)
-        assertNull(selection.libraryItemOrNull)
-        assertNull(selection.videoLibraryItemOrNull)
     }
 
     @Test
     fun conditionalClearDoesNotEraseASelectionChosenAfterTheOperationStarted() {
         var selection: AppSelection = AppSelection.WebDavFile(webDavFile)
-        selection = AppSelection.LibraryItem(libraryItem)
+        selection = AppSelection.DirectoryComic(directoryComic)
 
         selection = selection.clearIf { it is AppSelection.WebDavFile }
 
-        assertEquals(libraryItem, selection.libraryItemOrNull)
+        assertEquals(directoryComic, selection.directoryComicOrNull)
         assertTrue(selection.isActive)
     }
 
     @Test
     fun clearRemovesEveryRouteProjection() {
-        val selection = AppSelection.VideoLibraryItem(videoLibraryItem).clear()
+        val selection = AppSelection.DirectoryVideo(directoryVideo).clear()
 
         assertEquals(AppSelection.None, selection)
         assertFalse(selection.isActive)
         selection.projectedValues().forEach(::assertNull)
     }
 
+    @Test
+    fun homeSelectionSupportsCrossGroupMultiSelect() {
+        val selection = HomeSelection()
+            .toggleHistory("history-1")
+            .toggleLibrary(11L)
+            .toggleVideoLibrary(12L)
+
+        assertTrue(selection.isActive)
+        assertEquals(3, selection.count)
+        assertEquals(setOf("history-1"), selection.historyKeys)
+        assertEquals(setOf(11L), selection.libraryItemIds)
+        assertEquals(setOf(12L), selection.videoLibraryItemIds)
+    }
+
+    @Test
+    fun homeSelectionToggleRemovesOnlyTheTappedItem() {
+        val selection = HomeSelection(
+            historyKeys = setOf("history-1"),
+            libraryItemIds = setOf(11L),
+            videoLibraryItemIds = setOf(12L),
+        ).toggleLibrary(11L)
+
+        assertTrue(selection.isActive)
+        assertEquals(2, selection.count)
+        assertTrue(selection.libraryItemIds.isEmpty())
+        assertEquals(setOf("history-1"), selection.historyKeys)
+        assertEquals(setOf(12L), selection.videoLibraryItemIds)
+    }
+
     private fun AppSelection.projectedValues(): List<Any?> = listOf(
         webDavFileOrNull,
         directoryComicOrNull,
         directoryVideoOrNull,
-        libraryItemOrNull,
-        videoLibraryItemOrNull,
     )
 }

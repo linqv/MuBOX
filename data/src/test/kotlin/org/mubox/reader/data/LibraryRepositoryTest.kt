@@ -191,18 +191,4 @@ class LibraryRepositoryTest {
         val library = repository.observeLibrary().first()
         assertEquals(listOf("keep"), library.map { it.item.title })
     }
-
-    @Test
-    fun updateCoverPathChangesExistingLibraryCover() = runTest {
-        val libraryItemId = repository.addWebDavComic(
-            accountId = "primary-webdav",
-            remotePath = "/library/cover.cbz",
-            fileName = "cover.cbz",
-        )
-
-        repository.updateCoverPath(libraryItemId, "/cache/library-covers/new-cover.img")
-
-        val library = repository.observeLibrary().first()
-        assertEquals("/cache/library-covers/new-cover.img", library.single().item.coverPath)
-    }
 }

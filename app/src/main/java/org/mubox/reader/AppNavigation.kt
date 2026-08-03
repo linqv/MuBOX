@@ -54,8 +54,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import org.mubox.reader.core.model.transfer.DownloadRecord
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
-import org.mubox.reader.core.model.library.LibraryItemWithSources
-import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
 import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
 import org.mubox.reader.core.remote.WebDavItem
 import org.mubox.reader.ui.MuBoxCopy
@@ -280,9 +278,6 @@ internal fun selectionActionLabelsForLocalVideo(): List<String> =
 internal fun selectionActionLabelsForWebDavVideo(): List<String> =
     listOf("加入影视库", "下载", "取消")
 
-internal fun selectionActionLabelsForVideoLibraryItem(): List<String> =
-    listOf("重新提取缩略图", "移除", "删除缩略图", "取消")
-
 internal fun appShellBackgroundColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).background
 
@@ -378,26 +373,26 @@ internal data class SelectionAction(
 )
 
 internal fun selectionBottomBar(
+    homeSelection: HomeSelection,
     selectedWebDavFile: WebDavItem?,
     selectedDirectoryComic: FileDirectoryBrowserItem?,
     selectedDirectoryVideo: FileDirectoryBrowserItem?,
-    selectedLibraryItem: LibraryItemWithSources?,
-    selectedVideoLibraryItem: VideoLibraryItemWithSources?,
     onDownloadWebDavFile: (WebDavItem) -> Unit,
     onDownloadWebDavVideo: (WebDavItem) -> Unit,
     onAddWebDavFileToLibrary: (WebDavItem) -> Unit,
     onAddWebDavVideoToVideoLibrary: (WebDavItem) -> Unit,
     onAddDirectoryComicToLibrary: (FileDirectoryBrowserItem) -> Unit,
     onAddDirectoryVideoToVideoLibrary: (FileDirectoryBrowserItem) -> Unit,
-    onRemoveLibraryItem: (LibraryItemWithSources) -> Unit,
-    onRefreshLibraryCover: (LibraryItemWithSources) -> Unit,
-    onDownloadLibraryItem: (LibraryItemWithSources) -> Unit,
-    onRemoveVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
-    onRefreshVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
-    onDeleteVideoLibraryThumbnail: (VideoLibraryItemWithSources) -> Unit,
+    onDeleteHomeSelection: () -> Unit,
     onCancel: () -> Unit,
 ): (@Composable () -> Unit)? {
     val actions = when {
+        homeSelection.isActive -> listOf(
+            SelectionAction("删除 ${homeSelection.count} 项", Icons.Filled.Delete) {
+                onDeleteHomeSelection()
+            },
+            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
+        )
         selectedWebDavFile != null -> when (mediaKindFor(name = selectedWebDavFile.name, isDirectory = selectedWebDavFile.isDirectory)) {
             MediaKind.Video -> listOf(
                 SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddWebDavVideoToVideoLibrary(selectedWebDavFile) },
@@ -416,27 +411,6 @@ internal fun selectionBottomBar(
         )
         selectedDirectoryVideo != null -> listOf(
             SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddDirectoryVideoToVideoLibrary(selectedDirectoryVideo) },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
-        selectedLibraryItem != null -> {
-            val isWebDav = selectedLibraryItem.webDavSource != null
-            listOf(
-                SelectionAction("移除", Icons.Filled.Delete) { onRemoveLibraryItem(selectedLibraryItem) },
-                SelectionAction("重新获取封面", Icons.Filled.Refresh, enabled = isWebDav) {
-                    onRefreshLibraryCover(selectedLibraryItem)
-                },
-                SelectionAction("下载", Icons.Filled.Download, enabled = isWebDav) {
-                    onDownloadLibraryItem(selectedLibraryItem)
-                },
-                SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-            )
-        }
-        selectedVideoLibraryItem != null -> listOf(
-            SelectionAction("重新提取缩略图", Icons.Filled.Refresh) {
-                onRefreshVideoLibraryThumbnail(selectedVideoLibraryItem)
-            },
-            SelectionAction("移除", Icons.Filled.Delete) { onRemoveVideoLibraryItem(selectedVideoLibraryItem) },
-            SelectionAction("删除缩略图", Icons.Filled.Delete) { onDeleteVideoLibraryThumbnail(selectedVideoLibraryItem) },
             SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
         )
         else -> return null
@@ -549,19 +523,6 @@ internal fun parentWebDavDirectoryPath(remotePath: String): String {
         withoutTrailingSlash.substring(0, slashIndex + 1)
     }
 }
-
-internal fun hasActiveAppSelection(
-    webDavFileSelected: Boolean,
-    directoryComicSelected: Boolean,
-    directoryVideoSelected: Boolean,
-    libraryItemSelected: Boolean,
-    videoLibraryItemSelected: Boolean,
-): Boolean =
-    webDavFileSelected ||
-        directoryComicSelected ||
-        directoryVideoSelected ||
-        libraryItemSelected ||
-        videoLibraryItemSelected
 
 internal fun parentDocumentUriForLocalVideo(videoUri: android.net.Uri): android.net.Uri? {
     return runCatching {

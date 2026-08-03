@@ -163,6 +163,7 @@ fun MuBoxPanelSection(
     title: String,
     modifier: Modifier = Modifier,
     actionText: String? = null,
+    actionIcon: ImageVector? = null,
     onAction: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -182,7 +183,7 @@ fun MuBoxPanelSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 40.dp)
+                    .heightIn(min = MuBoxMetrics.MinTouchTargetDp)
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -199,13 +200,22 @@ fun MuBoxPanelSection(
                 if (actionText != null && onAction != null) {
                     TextButton(
                         onClick = onAction,
-                        modifier = Modifier.heightIn(min = 40.dp),
+                        modifier = Modifier.heightIn(min = MuBoxMetrics.MinTouchTargetDp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             horizontal = 4.dp,
                             vertical = 0.dp,
                         ),
                         colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
                     ) {
+                        if (actionIcon != null) {
+                            Icon(
+                                imageVector = actionIcon,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .padding(end = 4.dp)
+                                    .size(18.dp),
+                            )
+                        }
                         Text(
                             text = actionText,
                             style = MaterialTheme.typography.labelLarge,

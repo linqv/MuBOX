@@ -2,6 +2,7 @@ package org.mubox.reader.feature.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,11 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.ImageSearch
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -29,12 +37,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.request.CachePolicy
@@ -57,6 +70,16 @@ import org.mubox.reader.ui.rememberMuBoxColors
 import java.io.File
 
 private const val HomePreviewItemCount = 10
+private const val HomeExpandedColumnCount = 3
+// 面板内卡片列的内边距与卡片间距：折叠预览行与展开网格共用同一套几何，
+// 保证两种状态下卡片大小一致（展开不被压缩）；内边距刻意缩小，
+// 让容器恰好完整放下 columns 张卡片。
+private val HomeGridHorizontalPadding = 4.dp
+private val HomeCardSpacing = 6.dp
+
+private val HomeFullSpan: LazyGridItemSpanScope.() -> GridItemSpan = {
+    GridItemSpan(maxLineSpan)
+}
 
 internal fun homeHistoryArtworkRevision(
     entry: WatchHistoryEntry,
@@ -81,27 +104,29 @@ internal fun HomeRootContent(
     sharedVideoThumbnailArtworkRevision: Long,
     thumbnailExtractionMessage: String?,
     thumbnailExtractionMessageIsError: Boolean,
-    selectedLibraryItemId: Long?,
-    selectedVideoLibraryItemId: Long?,
+    selectedHistoryKeys: Set<String>,
+    selectedLibraryItemIds: Set<Long>,
+    selectedVideoLibraryItemIds: Set<Long>,
     onOpenHistoryEntry: (WatchHistoryEntry) -> Unit,
     onOpenLibraryItem: (LibraryItemWithSources) -> Unit,
-    onSelectLibraryItem: (LibraryItemWithSources) -> Unit,
+    onToggleHistorySelection: (WatchHistoryEntry) -> Unit,
+    onToggleLibrarySelection: (LibraryItemWithSources) -> Unit,
     onOpenVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
-    onSelectVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit,
+    onToggleVideoLibrarySelection: (VideoLibraryItemWithSources) -> Unit,
     onDismissLibraryMessage: () -> Unit,
     onDismissVideoLibraryMessage: () -> Unit,
     onDismissThumbnailExtractionMessage: () -> Unit,
     onExtractThumbnails: () -> Unit,
     onOpenSources: () -> Unit,
-    onOpenAllHistory: () -> Unit,
-    onOpenFullLibrary: () -> Unit,
-    onOpenFullVideoLibrary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
     val thumbnailSnackbarHostState = remember { SnackbarHostState() }
-    // rememberScrollState 内部使用 rememberSaveable，进程重建后保留首页滚动位置（§5.3）。
-    val scrollState = rememberScrollState()
+    // LazyVerticalGrid 内部使用 rememberSaveable，进程重建后保留首页滚动位置（§5.3）。
+    val gridState = rememberLazyGridState()
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
+    var libraryExpanded by rememberSaveable { mutableStateOf(false) }
+    var videoLibraryExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(thumbnailExtractionMessage) {
         val message = thumbnailExtractionMessage ?: return@LaunchedEffect
@@ -115,40 +140,47 @@ internal fun HomeRootContent(
             .muBoxAppBackground(colors)
             .statusBarsPadding(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState),
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(HomeExpandedColumnCount),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            HomeTopBar(
-                isExtractingThumbnails = isExtractingThumbnails,
-                onExtractThumbnails = onExtractThumbnails,
-            )
-            if (libraryMessage != null) {
-                MuBoxInlineMessage(
-                    text = libraryMessage,
-                    isError = libraryMessageIsError,
-                    onDismiss = onDismissLibraryMessage,
-                    modifier = Modifier.padding(
-                        horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
-                        vertical = 4.dp,
-                    ),
+            item(span = HomeFullSpan, key = "topbar") {
+                HomeTopBar(
+                    isExtractingThumbnails = isExtractingThumbnails,
+                    onExtractThumbnails = onExtractThumbnails,
                 )
+            }
+            if (libraryMessage != null) {
+                item(span = HomeFullSpan, key = "library-message") {
+                    MuBoxInlineMessage(
+                        text = libraryMessage,
+                        isError = libraryMessageIsError,
+                        onDismiss = onDismissLibraryMessage,
+                        modifier = Modifier.padding(
+                            horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                            vertical = 4.dp,
+                        ),
+                    )
+                }
             }
             if (videoLibraryMessage != null) {
-                MuBoxInlineMessage(
-                    text = videoLibraryMessage,
-                    isError = videoLibraryMessageIsError,
-                    onDismiss = onDismissVideoLibraryMessage,
-                    modifier = Modifier.padding(
-                        horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
-                        vertical = 4.dp,
-                    ),
-                )
+                item(span = HomeFullSpan, key = "video-library-message") {
+                    MuBoxInlineMessage(
+                        text = videoLibraryMessage,
+                        isError = videoLibraryMessageIsError,
+                        onDismiss = onDismissVideoLibraryMessage,
+                        modifier = Modifier.padding(
+                            horizontal = MuBoxMetrics.PageHorizontalPaddingDp,
+                            vertical = 4.dp,
+                        ),
+                    )
+                }
             }
 
-            HomeHistorySection(
+            homeHistorySection(
                 history = history,
                 libraryItems = libraryItems,
                 videoLibraryItems = videoLibraryItems,
@@ -157,26 +189,37 @@ internal fun HomeRootContent(
                 historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
                 sharedVideoThumbnailArtworkRevision = sharedVideoThumbnailArtworkRevision,
                 onOpenEntry = onOpenHistoryEntry,
-                onOpenAll = onOpenAllHistory,
+                selectedKeys = selectedHistoryKeys,
+                selectionActive = selectedHistoryKeys.isNotEmpty() ||
+                    selectedLibraryItemIds.isNotEmpty() || selectedVideoLibraryItemIds.isNotEmpty(),
+                onToggleSelection = onToggleHistorySelection,
+                expanded = historyExpanded,
+                onToggleExpanded = { historyExpanded = !historyExpanded },
                 onOpenSources = onOpenSources,
             )
-            HomeLibrarySection(
+            homeLibrarySection(
                 items = libraryItems,
                 coversEnabled = coversEnabled,
-                selectedItemId = selectedLibraryItemId,
+                selectedItemIds = selectedLibraryItemIds,
+                selectionActive = selectedHistoryKeys.isNotEmpty() ||
+                    selectedLibraryItemIds.isNotEmpty() || selectedVideoLibraryItemIds.isNotEmpty(),
                 onOpenItem = onOpenLibraryItem,
-                onSelectItem = onSelectLibraryItem,
-                onOpenAll = onOpenFullLibrary,
+                onToggleSelection = onToggleLibrarySelection,
+                expanded = libraryExpanded,
+                onToggleExpanded = { libraryExpanded = !libraryExpanded },
                 onOpenSources = onOpenSources,
             )
-            HomeVideoLibrarySection(
+            homeVideoLibrarySection(
                 items = videoLibraryItems,
                 thumbnailsEnabled = thumbnailsEnabled,
                 videoThumbnailArtworkRevisions = videoThumbnailArtworkRevisions,
-                selectedItemId = selectedVideoLibraryItemId,
+                selectedItemIds = selectedVideoLibraryItemIds,
+                selectionActive = selectedHistoryKeys.isNotEmpty() ||
+                    selectedLibraryItemIds.isNotEmpty() || selectedVideoLibraryItemIds.isNotEmpty(),
                 onOpenItem = onOpenVideoLibraryItem,
-                onSelectItem = onSelectVideoLibraryItem,
-                onOpenAll = onOpenFullVideoLibrary,
+                onToggleSelection = onToggleVideoLibrarySelection,
+                expanded = videoLibraryExpanded,
+                onToggleExpanded = { videoLibraryExpanded = !videoLibraryExpanded },
                 onOpenSources = onOpenSources,
             )
         }
@@ -253,8 +296,7 @@ private fun HomeTopBar(
     }
 }
 
-@Composable
-private fun HomeHistorySection(
+private fun LazyGridScope.homeHistorySection(
     history: List<WatchHistoryEntry>,
     libraryItems: List<LibraryItemWithSources>,
     videoLibraryItems: List<VideoLibraryItemWithSources>,
@@ -263,173 +305,345 @@ private fun HomeHistorySection(
     historyThumbnailArtworkRevisions: Map<String, Long>,
     sharedVideoThumbnailArtworkRevision: Long,
     onOpenEntry: (WatchHistoryEntry) -> Unit,
-    onOpenAll: () -> Unit,
+    selectedKeys: Set<String>,
+    selectionActive: Boolean,
+    onToggleSelection: (WatchHistoryEntry) -> Unit,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onOpenSources: () -> Unit,
 ) {
-    val cacheDir = LocalContext.current.cacheDir
-    MuBoxPanelSection(
-        title = "最近记录",
-        actionText = if (history.isEmpty()) null else "查看全部",
-        onAction = if (history.isEmpty()) null else onOpenAll,
-    ) {
-        if (history.isEmpty()) {
-            HomeSectionEmpty(
-                text = "还没有观看记录",
-                actionText = "浏览来源",
-                onAction = onOpenSources,
-            )
-        } else {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+    if (history.isEmpty()) {
+        item(span = HomeFullSpan, key = "history") {
+            MuBoxPanelSection(title = "最近记录") {
+                HomeSectionEmpty(
+                    text = "还没有观看记录",
+                    actionText = "浏览来源",
+                    onAction = onOpenSources,
+                )
+            }
+        }
+        return
+    }
+    if (!expanded) {
+        item(span = HomeFullSpan, key = "history") {
+            val cacheDir = LocalContext.current.cacheDir
+            MuBoxPanelSection(
+                title = "最近记录",
+                actionText = "展开",
+                actionIcon = Icons.Filled.ExpandMore,
+                onAction = onToggleExpanded,
             ) {
-                items(
-                    items = history.take(HomePreviewItemCount),
-                    key = WatchHistoryEntry::mediaKey,
-                ) { entry ->
-                    val coverPath = resolvedHistoryArtworkPath(
-                        entry = entry,
-                        comics = libraryItems,
-                        videos = videoLibraryItems,
-                        cacheDir = cacheDir,
-                    )
-                    MuBoxMediaPosterCard(
-                        title = entry.displayTitle,
-                        mediaKind = when (entry.mediaType) {
-                            WatchMediaType.COMIC -> MuBoxPosterKind.Comic
-                            WatchMediaType.VIDEO -> MuBoxPosterKind.Video
-                        },
-                        onClick = { onOpenEntry(entry) },
-                        modifier = Modifier.width(108.dp),
-                        subtitle = homeHistoryProgressPercentLabel(entry),
-                        coverModel = rememberHomeArtworkModel(
-                            path = coverPath,
-                            enabled = when (entry.mediaType) {
-                                WatchMediaType.COMIC -> coversEnabled
-                                WatchMediaType.VIDEO -> thumbnailsEnabled
-                            },
-                            artworkRevision = homeHistoryArtworkRevision(
-                                entry = entry,
-                                entryRevision = historyThumbnailArtworkRevisions[entry.mediaKey] ?: 0L,
-                                sharedVideoRevision = sharedVideoThumbnailArtworkRevision,
-                            ),
-                        ),
-                        progress = entry.progressFraction,
-                        layout = MuBoxPosterLayout.Recent,
-                        coverAspectRatio = 0.75f,
-                    )
+                HomePreviewCardRow(columns = HomeExpandedColumnCount) { cardWidth ->
+                    items(
+                        items = history.take(HomePreviewItemCount),
+                        key = WatchHistoryEntry::mediaKey,
+                    ) { entry ->
+                        HomeHistoryCard(
+                            entry = entry,
+                            libraryItems = libraryItems,
+                            videoLibraryItems = videoLibraryItems,
+                            coversEnabled = coversEnabled,
+                            thumbnailsEnabled = thumbnailsEnabled,
+                            historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
+                            sharedVideoThumbnailArtworkRevision = sharedVideoThumbnailArtworkRevision,
+                            selected = entry.mediaKey in selectedKeys,
+                            selectionActive = selectionActive,
+                            onOpen = onOpenEntry,
+                            onToggleSelection = onToggleSelection,
+                            cacheDir = cacheDir,
+                            modifier = Modifier.width(cardWidth),
+                        )
+                    }
                 }
+            }
+        }
+        return
+    }
+    item(span = HomeFullSpan, key = "history") {
+        MuBoxPanelSection(
+            title = "最近记录",
+            actionText = "收起",
+            actionIcon = Icons.Filled.ExpandLess,
+            onAction = onToggleExpanded,
+        ) {
+            val cacheDir = LocalContext.current.cacheDir
+            HomeExpandedCardGrid(items = history, columns = HomeExpandedColumnCount) { entry, modifier ->
+                HomeHistoryCard(
+                    entry = entry,
+                    libraryItems = libraryItems,
+                    videoLibraryItems = videoLibraryItems,
+                    coversEnabled = coversEnabled,
+                    thumbnailsEnabled = thumbnailsEnabled,
+                    historyThumbnailArtworkRevisions = historyThumbnailArtworkRevisions,
+                    sharedVideoThumbnailArtworkRevision = sharedVideoThumbnailArtworkRevision,
+                    selected = entry.mediaKey in selectedKeys,
+                    selectionActive = selectionActive,
+                    onOpen = onOpenEntry,
+                    onToggleSelection = onToggleSelection,
+                    cacheDir = cacheDir,
+                    modifier = modifier,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeLibrarySection(
+private fun HomeHistoryCard(
+    entry: WatchHistoryEntry,
+    libraryItems: List<LibraryItemWithSources>,
+    videoLibraryItems: List<VideoLibraryItemWithSources>,
+    coversEnabled: Boolean,
+    thumbnailsEnabled: Boolean,
+    historyThumbnailArtworkRevisions: Map<String, Long>,
+    sharedVideoThumbnailArtworkRevision: Long,
+    selected: Boolean,
+    selectionActive: Boolean,
+    onOpen: (WatchHistoryEntry) -> Unit,
+    onToggleSelection: (WatchHistoryEntry) -> Unit,
+    cacheDir: File,
+    modifier: Modifier,
+) {
+    val coverPath = resolvedHistoryArtworkPath(
+        entry = entry,
+        comics = libraryItems,
+        videos = videoLibraryItems,
+        cacheDir = cacheDir,
+    )
+    MuBoxMediaPosterCard(
+        title = entry.displayTitle,
+        mediaKind = when (entry.mediaType) {
+            WatchMediaType.COMIC -> MuBoxPosterKind.Comic
+            WatchMediaType.VIDEO -> MuBoxPosterKind.Video
+        },
+        onClick = { if (selectionActive) onToggleSelection(entry) else onOpen(entry) },
+        modifier = modifier,
+        subtitle = homeHistoryProgressPercentLabel(entry),
+        coverModel = rememberHomeArtworkModel(
+            path = coverPath,
+            enabled = when (entry.mediaType) {
+                WatchMediaType.COMIC -> coversEnabled
+                WatchMediaType.VIDEO -> thumbnailsEnabled
+            },
+            artworkRevision = homeHistoryArtworkRevision(
+                entry = entry,
+                entryRevision = historyThumbnailArtworkRevisions[entry.mediaKey] ?: 0L,
+                sharedVideoRevision = sharedVideoThumbnailArtworkRevision,
+            ),
+        ),
+        progress = entry.progressFraction,
+        selected = selected,
+        layout = MuBoxPosterLayout.Recent,
+        coverAspectRatio = 0.75f,
+        onLongClick = { onToggleSelection(entry) },
+        onLongClickLabel = "选择记录",
+    )
+}
+
+private fun LazyGridScope.homeLibrarySection(
     items: List<LibraryItemWithSources>,
     coversEnabled: Boolean,
-    selectedItemId: Long?,
+    selectedItemIds: Set<Long>,
+    selectionActive: Boolean,
     onOpenItem: (LibraryItemWithSources) -> Unit,
-    onSelectItem: (LibraryItemWithSources) -> Unit,
-    onOpenAll: () -> Unit,
+    onToggleSelection: (LibraryItemWithSources) -> Unit,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onOpenSources: () -> Unit,
 ) {
-    MuBoxPanelSection(
-        title = "漫画书架",
-        actionText = if (items.isEmpty()) null else "查看全部",
-        onAction = if (items.isEmpty()) null else onOpenAll,
-    ) {
-        if (items.isEmpty()) {
-            HomeSectionEmpty(
-                text = MuBoxCopy.emptyLibraryTitle,
-                actionText = "从来源添加",
-                onAction = onOpenSources,
-            )
-        } else {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+    if (items.isEmpty()) {
+        item(span = HomeFullSpan, key = "library") {
+            MuBoxPanelSection(title = "漫画书架") {
+                HomeSectionEmpty(
+                    text = MuBoxCopy.emptyLibraryTitle,
+                    actionText = "从来源添加",
+                    onAction = onOpenSources,
+                )
+            }
+        }
+        return
+    }
+    if (!expanded) {
+        item(span = HomeFullSpan, key = "library") {
+            MuBoxPanelSection(
+                title = "漫画书架",
+                actionText = "展开",
+                actionIcon = Icons.Filled.ExpandMore,
+                onAction = onToggleExpanded,
             ) {
-                items(
-                    items = items.take(HomePreviewItemCount),
-                    key = { it.item.id },
-                ) { item ->
-                    MuBoxMediaPosterCard(
-                        title = item.item.displayName,
-                        mediaKind = MuBoxPosterKind.Comic,
-                        onClick = { onOpenItem(item) },
-                        modifier = Modifier.width(96.dp),
-                        coverModel = item.item.coverPath
-                            ?.takeIf { coversEnabled }
-                            ?.let(::File)
-                            ?.takeIf { it.isFile },
-                        selected = selectedItemId == item.item.id,
-                        layout = MuBoxPosterLayout.Cover,
-                        coverAspectRatio = 2f / 3f,
-                        showKindLabel = false,
-                        onLongClick = { onSelectItem(item) },
-                        onLongClickLabel = "书架操作",
-                    )
+                HomePreviewCardRow(columns = HomeExpandedColumnCount) { cardWidth ->
+                    items(items = items.take(HomePreviewItemCount), key = { it.item.id }) { item ->
+                        HomeLibraryCard(
+                            item = item,
+                            coversEnabled = coversEnabled,
+                            selected = item.item.id in selectedItemIds,
+                            selectionActive = selectionActive,
+                            onOpenItem = onOpenItem,
+                            onToggleSelection = onToggleSelection,
+                            modifier = Modifier.width(cardWidth),
+                        )
+                    }
                 }
+            }
+        }
+        return
+    }
+    item(span = HomeFullSpan, key = "library") {
+        MuBoxPanelSection(
+            title = "漫画书架",
+            actionText = "收起",
+            actionIcon = Icons.Filled.ExpandLess,
+            onAction = onToggleExpanded,
+        ) {
+            HomeExpandedCardGrid(items = items, columns = HomeExpandedColumnCount) { libraryItem, modifier ->
+                HomeLibraryCard(
+                    item = libraryItem,
+                    coversEnabled = coversEnabled,
+                    selected = libraryItem.item.id in selectedItemIds,
+                    selectionActive = selectionActive,
+                    onOpenItem = onOpenItem,
+                    onToggleSelection = onToggleSelection,
+                    modifier = modifier,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeVideoLibrarySection(
+private fun HomeLibraryCard(
+    item: LibraryItemWithSources,
+    coversEnabled: Boolean,
+    selected: Boolean,
+    selectionActive: Boolean,
+    onOpenItem: (LibraryItemWithSources) -> Unit,
+    onToggleSelection: (LibraryItemWithSources) -> Unit,
+    modifier: Modifier,
+) {
+    MuBoxMediaPosterCard(
+        title = item.item.displayName,
+        mediaKind = MuBoxPosterKind.Comic,
+        onClick = { if (selectionActive) onToggleSelection(item) else onOpenItem(item) },
+        modifier = modifier,
+        coverModel = item.item.coverPath
+            ?.takeIf { coversEnabled }
+            ?.let(::File)
+            ?.takeIf { it.isFile },
+        selected = selected,
+        layout = MuBoxPosterLayout.Cover,
+        coverAspectRatio = 2f / 3f,
+        showKindLabel = false,
+        onLongClick = { onToggleSelection(item) },
+        onLongClickLabel = "选择书架项目",
+    )
+}
+
+private fun LazyGridScope.homeVideoLibrarySection(
     items: List<VideoLibraryItemWithSources>,
     thumbnailsEnabled: Boolean,
     videoThumbnailArtworkRevisions: Map<Long, Long>,
-    selectedItemId: Long?,
+    selectedItemIds: Set<Long>,
+    selectionActive: Boolean,
     onOpenItem: (VideoLibraryItemWithSources) -> Unit,
-    onSelectItem: (VideoLibraryItemWithSources) -> Unit,
-    onOpenAll: () -> Unit,
+    onToggleSelection: (VideoLibraryItemWithSources) -> Unit,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onOpenSources: () -> Unit,
 ) {
-    val cacheDir = LocalContext.current.cacheDir
-    MuBoxPanelSection(
-        title = "影视库",
-        actionText = if (items.isEmpty()) null else "查看全部",
-        onAction = if (items.isEmpty()) null else onOpenAll,
-    ) {
-        if (items.isEmpty()) {
-            HomeSectionEmpty(
-                text = "影视库还是空的",
-                actionText = "从来源添加",
-                onAction = onOpenSources,
-            )
-        } else {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+    if (items.isEmpty()) {
+        item(span = HomeFullSpan, key = "video-library") {
+            MuBoxPanelSection(title = "影视库") {
+                HomeSectionEmpty(
+                    text = "影视库还是空的",
+                    actionText = "从来源添加",
+                    onAction = onOpenSources,
+                )
+            }
+        }
+        return
+    }
+    if (!expanded) {
+        item(span = HomeFullSpan, key = "video-library") {
+            val cacheDir = LocalContext.current.cacheDir
+            MuBoxPanelSection(
+                title = "影视库",
+                actionText = "展开",
+                actionIcon = Icons.Filled.ExpandMore,
+                onAction = onToggleExpanded,
             ) {
-                items(
-                    items = items.take(HomePreviewItemCount),
-                    key = { it.item.id },
-                ) { item ->
-                    MuBoxMediaPosterCard(
-                        title = item.item.displayName,
-                        mediaKind = MuBoxPosterKind.Video,
-                        onClick = { onOpenItem(item) },
-                        modifier = Modifier.width(96.dp),
-                        coverModel = rememberHomeArtworkModel(
-                            path = resolvedVideoThumbnailPath(item, cacheDir),
-                            enabled = thumbnailsEnabled,
-                            artworkRevision =
-                                videoThumbnailArtworkRevisions[item.item.id] ?: 0L,
-                        ),
-                        selected = selectedItemId == item.item.id,
-                        layout = MuBoxPosterLayout.Cover,
-                        coverAspectRatio = 2f / 3f,
-                        showKindLabel = false,
-                        onLongClick = { onSelectItem(item) },
-                        onLongClickLabel = "影视库操作",
-                    )
+                HomePreviewCardRow(columns = HomeExpandedColumnCount) { cardWidth ->
+                    items(items = items.take(HomePreviewItemCount), key = { it.item.id }) { item ->
+                        HomeVideoLibraryCard(
+                            item = item,
+                            thumbnailsEnabled = thumbnailsEnabled,
+                            videoThumbnailArtworkRevisions = videoThumbnailArtworkRevisions,
+                            cacheDir = cacheDir,
+                            selected = item.item.id in selectedItemIds,
+                            selectionActive = selectionActive,
+                            onOpenItem = onOpenItem,
+                            onToggleSelection = onToggleSelection,
+                            modifier = Modifier.width(cardWidth),
+                        )
+                    }
                 }
             }
         }
+        return
     }
+    item(span = HomeFullSpan, key = "video-library") {
+        MuBoxPanelSection(
+            title = "影视库",
+            actionText = "收起",
+            actionIcon = Icons.Filled.ExpandLess,
+            onAction = onToggleExpanded,
+        ) {
+            val cacheDir = LocalContext.current.cacheDir
+            HomeExpandedCardGrid(items = items, columns = HomeExpandedColumnCount) { videoItem, modifier ->
+                HomeVideoLibraryCard(
+                    item = videoItem,
+                    thumbnailsEnabled = thumbnailsEnabled,
+                    videoThumbnailArtworkRevisions = videoThumbnailArtworkRevisions,
+                    cacheDir = cacheDir,
+                    selected = videoItem.item.id in selectedItemIds,
+                    selectionActive = selectionActive,
+                    onOpenItem = onOpenItem,
+                    onToggleSelection = onToggleSelection,
+                    modifier = modifier,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeVideoLibraryCard(
+    item: VideoLibraryItemWithSources,
+    thumbnailsEnabled: Boolean,
+    videoThumbnailArtworkRevisions: Map<Long, Long>,
+    cacheDir: File,
+    selected: Boolean,
+    selectionActive: Boolean,
+    onOpenItem: (VideoLibraryItemWithSources) -> Unit,
+    onToggleSelection: (VideoLibraryItemWithSources) -> Unit,
+    modifier: Modifier,
+) {
+    MuBoxMediaPosterCard(
+        title = item.item.displayName,
+        mediaKind = MuBoxPosterKind.Video,
+        onClick = { if (selectionActive) onToggleSelection(item) else onOpenItem(item) },
+        modifier = modifier,
+        coverModel = rememberHomeArtworkModel(
+            path = resolvedVideoThumbnailPath(item, cacheDir),
+            enabled = thumbnailsEnabled,
+            artworkRevision = videoThumbnailArtworkRevisions[item.item.id] ?: 0L,
+        ),
+        selected = selected,
+        layout = MuBoxPosterLayout.Cover,
+        coverAspectRatio = 2f / 3f,
+        showKindLabel = false,
+        onLongClick = { onToggleSelection(item) },
+        onLongClickLabel = "选择影视项目",
+    )
 }
 
 @Composable
@@ -453,6 +667,57 @@ private fun rememberHomeArtworkModel(
                 .memoryCacheKey("${file.absolutePath}#extraction-$artworkRevision")
                 .diskCachePolicy(CachePolicy.DISABLED)
                 .build()
+        }
+    }
+}
+
+// 折叠态预览行：与展开网格共用同一套内边距/间距几何计算卡片宽度，
+// 保证展开时卡片大小不被压缩；内边距刻意缩小，容器恰好完整放下 columns 张卡片。
+@Composable
+private fun HomePreviewCardRow(
+    columns: Int,
+    content: LazyListScope.(cardWidth: Dp) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cardWidth =
+            (maxWidth - HomeGridHorizontalPadding * 2 - HomeCardSpacing * (columns - 1)) / columns
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = HomeGridHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+        ) {
+            content(cardWidth)
+        }
+    }
+}
+
+// 展开态仍收在原面板矩形框内：整组卡片在 MuBoxPanelSection 面板内部按列等宽排布，
+// 末行不足 columns 张时用占位补齐，保证各行卡片宽度一致。
+@Composable
+private fun <T> HomeExpandedCardGrid(
+    items: List<T>,
+    columns: Int,
+    content: @Composable (item: T, modifier: Modifier) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = HomeGridHorizontalPadding,
+                end = HomeGridHorizontalPadding,
+                bottom = 8.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.chunked(columns).forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            ) {
+                rowItems.forEach { item -> content(item, Modifier.weight(1f)) }
+                repeat(columns - rowItems.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
 }

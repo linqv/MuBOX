@@ -22,6 +22,7 @@ internal class AppUiStateHolder(
     editingWebDavSourceIdState: MutableState<Long?>,
     selectedTabNameState: MutableState<String>,
     selectionState: MutableState<AppSelection>,
+    homeSelectionState: MutableState<HomeSelection>,
     localOpenErrorState: MutableState<String?>,
     webDavActionMessageState: MutableState<String?>,
     cacheAnalysisState: MutableState<ComicCacheAnalysis>,
@@ -34,6 +35,7 @@ internal class AppUiStateHolder(
     var editingWebDavSourceId by editingWebDavSourceIdState
     var selectedTabName by selectedTabNameState
     var selection by selectionState
+    var homeSelection by homeSelectionState
     var localOpenError by localOpenErrorState
     var webDavActionMessage by webDavActionMessageState
     var cacheAnalysis by cacheAnalysisState
@@ -47,12 +49,24 @@ internal class AppUiStateHolder(
     val selectedWebDavFile get() = selection.webDavFileOrNull
     val selectedDirectoryComic get() = selection.directoryComicOrNull
     val selectedDirectoryVideo get() = selection.directoryVideoOrNull
-    val selectedLibraryItem get() = selection.libraryItemOrNull
-    val selectedVideoLibraryItem get() = selection.videoLibraryItemOrNull
     val hasActiveSelection: Boolean get() = selection.isActive
+        || homeSelection.isActive
 
     fun clearSelection() {
         selection = selection.clear()
+        homeSelection = HomeSelection()
+    }
+
+    fun toggleHomeHistorySelection(mediaKey: String) {
+        homeSelection = homeSelection.toggleHistory(mediaKey)
+    }
+
+    fun toggleHomeLibrarySelection(id: Long) {
+        homeSelection = homeSelection.toggleLibrary(id)
+    }
+
+    fun toggleHomeVideoLibrarySelection(id: Long) {
+        homeSelection = homeSelection.toggleVideoLibrary(id)
     }
 
     fun clearSelectionIf(predicate: (AppSelection) -> Boolean) {
@@ -88,6 +102,7 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
     val editingWebDavSourceIdState = rememberSaveable { mutableStateOf<Long?>(null) }
     val selectedTabNameState = rememberSaveable { mutableStateOf(AppTab.HOME.name) }
     val selectionState = remember { mutableStateOf<AppSelection>(AppSelection.None) }
+    val homeSelectionState = remember { mutableStateOf(HomeSelection()) }
     val localOpenErrorState = remember { mutableStateOf<String?>(null) }
     val webDavActionMessageState = remember { mutableStateOf<String?>(null) }
     val cacheAnalysisState = remember { mutableStateOf(ComicCacheAnalysis()) }
@@ -105,6 +120,7 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
         editingWebDavSourceIdState,
         selectedTabNameState,
         selectionState,
+        homeSelectionState,
         localOpenErrorState,
         webDavActionMessageState,
         cacheAnalysisState,
@@ -122,6 +138,7 @@ internal fun rememberAppUiStateHolder(context: Context): AppUiStateHolder {
             editingWebDavSourceIdState = editingWebDavSourceIdState,
             selectedTabNameState = selectedTabNameState,
             selectionState = selectionState,
+            homeSelectionState = homeSelectionState,
             localOpenErrorState = localOpenErrorState,
             webDavActionMessageState = webDavActionMessageState,
             cacheAnalysisState = cacheAnalysisState,

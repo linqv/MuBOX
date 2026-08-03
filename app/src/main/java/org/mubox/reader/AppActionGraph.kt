@@ -157,13 +157,11 @@ internal fun rememberAppActionGraph(
             settings = settings,
             container = container,
             viewModels = viewModels,
-            webDavResolver = webDavResolver,
             callbacks = AppComicActionCallbacks(
                 setError = { message -> ui.localOpenError = message },
                 setActionMessage = { message -> ui.webDavActionMessage = message },
                 setWebDavOpen = { open -> ui.isWebDavOpen = open },
                 setReaderOpen = { open -> ui.readerOpenState.value = open },
-                clearSelectionIf = ui::clearSelectionIf,
                 refreshCacheAnalysis = cacheActions::refresh,
             ),
         )

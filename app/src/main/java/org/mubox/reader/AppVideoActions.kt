@@ -11,7 +11,6 @@ import org.mubox.reader.core.model.settings.VideoProxySettings
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
 import org.mubox.reader.core.model.library.LibraryItemWithSources
 import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
-import org.mubox.reader.core.model.videolibrary.VideoSourceType
 import org.mubox.reader.ui.directorylisting.MAX_DIRECTORY_VIDEO_THUMBNAILS
 import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
 import org.mubox.reader.feature.webdav.mediaKind
@@ -29,9 +28,7 @@ import org.mubox.reader.core.model.media.webDavBrowserVideoThumbnailVersion
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 internal data class AppVideoActionCallbacks(
     val launchPlayer: (Intent) -> Unit,
@@ -267,37 +264,10 @@ internal class AppVideoActions(
                 services.library.remove(item)
             }.fold(
                 onSuccess = {
-                    callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }
                     videoLibraryViewModel.showMessage("已将 ${item.item.displayName} 移出影视库")
                 },
                 onFailure = { error ->
                     videoLibraryViewModel.showError(error.message ?: "移出影视库失败")
-                },
-            )
-        }
-    }
-
-    fun refreshVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
-        scope.launch {
-            runCatching {
-                thumbnailLoader.extractVideoLibrary(item, forceRefresh = true)
-            }.fold(
-                onSuccess = { thumbnailPath ->
-                    services.library.updateThumbnail(item, thumbnailPath)
-                    videoLibraryViewModel.onVideoThumbnailExtracted(
-                        videoLibraryItemId = item.item.id,
-                        thumbnailPath = thumbnailPath,
-                    )
-                    onVideoLibraryThumbnailRefreshed(
-                        item = item,
-                        thumbnailPath = thumbnailPath,
-                    )
-                    callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }
-                    videoLibraryViewModel.showMessage("已重新提取 ${item.item.displayName} 的缩略图")
-                },
-                onFailure = { error ->
-                    services.diagnostics.error("refresh_video_thumbnail_failed id=${item.item.id}", error)
-                    videoLibraryViewModel.showError(error.message ?: "重新提取缩略图失败")
                 },
             )
         }
@@ -415,27 +385,6 @@ internal class AppVideoActions(
         }
     }
 
-    fun deleteVideoLibraryThumbnail(item: VideoLibraryItemWithSources) {
-        scope.launch {
-            runCatching {
-                resolvedVideoThumbnailPath(item, context.cacheDir)?.let { path ->
-                    withContext(Dispatchers.IO) {
-                        File(path).takeIf { it.isFile }?.delete()
-                    }
-                }
-                services.library.updateThumbnail(item, null)
-            }.fold(
-                onSuccess = {
-                    callbacks.clearSelectionIf { it is AppSelection.VideoLibraryItem }
-                    videoLibraryViewModel.showMessage("已删除 ${item.item.displayName} 的缩略图")
-                },
-                onFailure = { error ->
-                    videoLibraryViewModel.showError(error.message ?: "删除缩略图失败")
-                },
-            )
-        }
-    }
-
     fun playVideoDownloadRecord(record: VideoDownloadRecord) =
         playbackActions.playVideoDownloadRecord(record)
 
@@ -485,46 +434,6 @@ internal class AppVideoActions(
             error,
         )
         false
-    }
-
-    private fun onVideoLibraryThumbnailRefreshed(
-        item: VideoLibraryItemWithSources,
-        thumbnailPath: String,
-    ) {
-        when (item.item.sourceType) {
-            VideoSourceType.LOCAL -> {
-                val source = item.localSource ?: return
-                val version = fileDirectoryBrowserVideoThumbnailVersion(
-                    uri = source.uri,
-                    size = source.size,
-                    lastModified = source.lastModified,
-                    requestRevision = fileDirectoryViewModel.uiState.thumbnailRequestRevision,
-                )
-                if (fileDirectoryViewModel.uiState.videoThumbnails[source.uri]?.version != version) return
-                fileDirectoryViewModel.onVideoThumbnailExtracted(
-                    uri = source.uri,
-                    version = version,
-                    thumbnailPath = thumbnailPath,
-                )
-            }
-            VideoSourceType.WEBDAV -> {
-                val source = item.webDavSource ?: return
-                if (currentWebDavAccountId() != source.accountId) return
-                val version = webDavBrowserVideoThumbnailVersion(
-                    path = source.remotePath,
-                    size = source.size,
-                    etag = source.etag,
-                    lastModified = source.lastModified,
-                    requestRevision = webDavViewModel.uiState.thumbnailRequestRevision,
-                )
-                if (webDavViewModel.uiState.videoThumbnails[source.remotePath]?.version != version) return
-                webDavViewModel.onVideoThumbnailExtracted(
-                    path = source.remotePath,
-                    version = version,
-                    thumbnailPath = thumbnailPath,
-                )
-            }
-        }
     }
 
     private fun webDavVideoRequestForItem(item: WebDavItem): WebDavVideoOpenRequest =

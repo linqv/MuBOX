@@ -109,8 +109,6 @@ class LibraryViewModelTest {
 
         override suspend fun markOpened(libraryItemId: Long) = Unit
 
-        override suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?) = Unit
-
         override suspend fun removeComic(libraryItemId: Long) = Unit
     }
 

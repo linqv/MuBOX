@@ -8,19 +8,13 @@ import org.mubox.reader.data.AppSettingsStore
 import org.mubox.reader.core.model.cache.ComicCacheAnalysis
 import org.mubox.reader.core.model.cache.ComicCacheCategory
 import org.mubox.reader.core.model.source.FileDirectorySource
-import org.mubox.reader.core.model.library.LibraryItemWithSources
-import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
 import org.mubox.reader.feature.filedirectory.FileDirectoryBrowserItem
 import org.mubox.reader.feature.filedirectory.FileDirectoryScreen
 import org.mubox.reader.feature.filedirectory.FileDirectoryUiState
 import org.mubox.reader.ui.directorylisting.DirectorySortField
-import org.mubox.reader.feature.library.LibraryScreen
-import org.mubox.reader.feature.library.LibraryUiState
 import org.mubox.reader.feature.reader.ReaderScreen
 import org.mubox.reader.feature.reader.ReaderUiState
 import org.mubox.reader.feature.settings.SettingsScreen
-import org.mubox.reader.feature.videolibrary.VideoLibraryScreen
-import org.mubox.reader.feature.videolibrary.VideoLibraryUiState
 import kotlinx.coroutines.CoroutineScope
 
 @Composable
@@ -114,58 +108,6 @@ internal fun FileDirectoryTabContent(
         onEditWebDavSource = onEditWebDavSource,
         selectedComic = selectedDirectoryComic,
         selectedVideo = selectedDirectoryVideo,
-        modifier = modifier,
-    )
-}
-
-@Composable
-internal fun LibraryTabContent(
-    libraryUiState: LibraryUiState,
-    localOpenError: String?,
-    coversEnabled: Boolean,
-    selectedItemId: Long?,
-    onOpenItem: (LibraryItemWithSources) -> Unit,
-    onSelectItem: (LibraryItemWithSources) -> Unit,
-    onOpenDirectories: () -> Unit,
-    onDismissMessage: () -> Unit,
-    navigationIcon: (@Composable () -> Unit)? = null,
-    modifier: Modifier = Modifier,
-) {
-    LibraryScreen(
-        uiState = libraryUiState.copy(error = libraryUiState.error ?: localOpenError),
-        onOpenItem = onOpenItem,
-        onSelectItem = onSelectItem,
-        onOpenDirectories = onOpenDirectories,
-        onDismissMessage = onDismissMessage,
-        coversEnabled = coversEnabled,
-        selectedItemId = selectedItemId,
-        navigationIcon = navigationIcon,
-        modifier = modifier,
-    )
-}
-
-@Composable
-internal fun VideoLibraryTabContent(
-    videoLibraryUiState: VideoLibraryUiState,
-    localOpenError: String?,
-    thumbnailsEnabled: Boolean,
-    selectedItemId: Long?,
-    onOpenItem: (VideoLibraryItemWithSources) -> Unit,
-    onSelectItem: (VideoLibraryItemWithSources) -> Unit,
-    onOpenDirectories: () -> Unit,
-    onDismissMessage: () -> Unit,
-    navigationIcon: (@Composable () -> Unit)? = null,
-    modifier: Modifier = Modifier,
-) {
-    VideoLibraryScreen(
-        uiState = videoLibraryUiState.copy(error = videoLibraryUiState.error ?: localOpenError),
-        onOpenItem = onOpenItem,
-        onSelectItem = onSelectItem,
-        onOpenDirectories = onOpenDirectories,
-        onDismissMessage = onDismissMessage,
-        thumbnailsEnabled = thumbnailsEnabled,
-        selectedItemId = selectedItemId,
-        navigationIcon = navigationIcon,
         modifier = modifier,
     )
 }

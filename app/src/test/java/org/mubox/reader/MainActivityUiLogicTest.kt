@@ -46,38 +46,6 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun videoLibrarySelectionActionsManageThumbnailAndRemoveOnly() {
-        assertEquals(
-            listOf("重新提取缩略图", "移除", "删除缩略图", "取消"),
-            selectionActionLabelsForVideoLibraryItem(),
-        )
-    }
-
-    @Test
-    fun downloadsScreenNoLongerHasMultiSelectSelection() {
-        assertEquals(
-            true,
-            hasActiveAppSelection(
-                webDavFileSelected = false,
-                directoryComicSelected = false,
-                directoryVideoSelected = false,
-                libraryItemSelected = true,
-                videoLibraryItemSelected = false,
-            ),
-        )
-        assertEquals(
-            false,
-            hasActiveAppSelection(
-                webDavFileSelected = false,
-                directoryComicSelected = false,
-                directoryVideoSelected = false,
-                libraryItemSelected = false,
-                videoLibraryItemSelected = false,
-            ),
-        )
-    }
-
-    @Test
     fun videoDownloadRecordIsKeptWhenDocumentDeleteReturnsFalse() {
         assertEquals(
             false,

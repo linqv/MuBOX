@@ -25,7 +25,6 @@ internal data class AppComicActionCallbacks(
     val setActionMessage: (String?) -> Unit,
     val setWebDavOpen: (Boolean) -> Unit,
     val setReaderOpen: (Boolean) -> Unit,
-    val clearSelectionIf: (predicate: (AppSelection) -> Boolean) -> Unit,
     val refreshCacheAnalysis: () -> Unit,
 )
 
@@ -35,7 +34,6 @@ internal class AppComicActions(
     private val settings: AppSettings,
     private val container: AppContainer,
     private val viewModels: AppViewModels,
-    private val webDavResolver: AppWebDavResolver,
     private val callbacks: AppComicActionCallbacks,
 ) {
     private val webDavViewModel = viewModels.webDav
@@ -197,49 +195,10 @@ internal class AppComicActions(
                 container.libraryRepository.removeComic(item.item.id)
             }.fold(
                 onSuccess = {
-                    callbacks.clearSelectionIf { it is AppSelection.LibraryItem }
                     libraryViewModel.showMessage("已将 ${item.item.displayName} 移出书架")
                 },
                 onFailure = { error ->
                     libraryViewModel.showError(error.message ?: "移出书架失败")
-                },
-            )
-        }
-    }
-
-    fun refreshLibraryCover(item: LibraryItemWithSources) {
-        val source = item.webDavSource ?: run {
-            libraryViewModel.showError("本地漫画暂不支持重新获取封面")
-            return
-        }
-        scope.launch {
-            runCatching {
-                val client = webDavResolver.clientFor(source.accountId)
-                    ?: error("请先连接 ${source.accountId}，再重新获取封面")
-                container.coverExtractor.extractFirstPageCover(
-                    client = client,
-                    accountId = source.accountId,
-                    remotePath = source.remotePath,
-                    knownInfo = source.size?.let { knownSize ->
-                        RemoteFileInfo(
-                            path = source.remotePath,
-                            size = knownSize,
-                            etag = source.etag,
-                            lastModified = source.lastModified,
-                            supportsRange = true,
-                        )
-                    },
-                )
-            }.fold(
-                onSuccess = { coverPath ->
-                    container.libraryRepository.updateCoverPath(item.item.id, coverPath)
-                    callbacks.clearSelectionIf { it is AppSelection.LibraryItem }
-                    callbacks.refreshCacheAnalysis()
-                    libraryViewModel.showMessage("已重新获取 ${item.item.displayName} 的封面")
-                },
-                onFailure = { error ->
-                    container.diagnostics.error("refresh_library_cover_failed id=${item.item.id}", error)
-                    libraryViewModel.showError(error.message ?: "重新获取封面失败")
                 },
             )
         }

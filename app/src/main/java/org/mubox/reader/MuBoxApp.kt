@@ -3,13 +3,12 @@ package org.mubox.reader
 import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -33,9 +32,7 @@ import org.mubox.reader.core.model.settings.VideoSettings
 import org.mubox.reader.core.model.history.WatchHistoryEntry
 import org.mubox.reader.core.model.history.WatchMediaType
 import org.mubox.reader.core.model.history.historyThumbnailStableKey
-import org.mubox.reader.core.model.library.LibraryItemWithSources
 import org.mubox.reader.core.model.media.videoThumbnailStableKey
-import org.mubox.reader.core.model.videolibrary.VideoLibraryItemWithSources
 import org.mubox.reader.feature.home.HomeScreen
 import org.mubox.reader.feature.downloads.DownloadsScreen
 import org.mubox.reader.feature.downloads.activeProgress
@@ -123,6 +120,18 @@ internal fun MuBoxApp(container: AppContainer) {
     val readerActions = actions.reader
     val videoActions = actions.video
     val comicActions = actions.comic
+    var pendingHomeDeleteSelection by remember { mutableStateOf<HomeSelection?>(null) }
+    val performHomeDelete: (HomeSelection) -> Unit = { selection ->
+        watchHistory
+            .filter { it.mediaKey in selection.historyKeys }
+            .forEach(cacheActions::deleteHistoryEntry)
+        libraryUiState.items
+            .filter { it.item.id in selection.libraryItemIds }
+            .forEach(comicActions::removeLibraryItem)
+        videoLibraryUiState.items
+            .filter { it.item.id in selection.videoLibraryItemIds }
+            .forEach(videoActions::removeVideoLibraryItem)
+    }
     LaunchedEffect(downloadState) {
         downloadActions.handleState(downloadState)
     }
@@ -245,12 +254,6 @@ internal fun MuBoxApp(container: AppContainer) {
                                 WatchMediaType.VIDEO -> videoActions.openHistoryEntry(entry)
                             }
                         }
-                        val selectLibraryItem: (LibraryItemWithSources) -> Unit = { item ->
-                            ui.selection = AppSelection.LibraryItem(item)
-                        }
-                        val selectVideoLibraryItem: (VideoLibraryItemWithSources) -> Unit = { item ->
-                            ui.selection = AppSelection.VideoLibraryItem(item)
-                        }
                         val dismissLibraryMessage: () -> Unit = {
                             ui.localOpenError = null
                             libraryViewModel.clearMessage()
@@ -266,11 +269,10 @@ internal fun MuBoxApp(container: AppContainer) {
                             onTabSelected = ui::selectTab,
                             downloadsActive = downloadProgress != null,
                             bottomBar = selectionBottomBar(
+                                homeSelection = ui.homeSelection,
                                 selectedWebDavFile = ui.selectedWebDavFile,
                                 selectedDirectoryComic = ui.selectedDirectoryComic,
                                 selectedDirectoryVideo = ui.selectedDirectoryVideo,
-                                selectedLibraryItem = ui.selectedLibraryItem,
-                                selectedVideoLibraryItem = ui.selectedVideoLibraryItem,
                                 onDownloadWebDavFile = { item ->
                                     ui.clearSelection()
                                     downloadActions.downloadWebDavComic(item)
@@ -295,15 +297,9 @@ internal fun MuBoxApp(container: AppContainer) {
                                     ui.clearSelection()
                                     videoActions.favoriteLocalDirectoryVideo(item)
                                 },
-                                onRemoveLibraryItem = comicActions::removeLibraryItem,
-                                onRefreshLibraryCover = comicActions::refreshLibraryCover,
-                                onDownloadLibraryItem = { item ->
-                                    ui.clearSelectionIf { it is AppSelection.LibraryItem }
-                                    downloadActions.downloadLibraryWebDavComic(item)
+                                onDeleteHomeSelection = {
+                                    pendingHomeDeleteSelection = ui.homeSelection
                                 },
-                                onRemoveVideoLibraryItem = videoActions::removeVideoLibraryItem,
-                                onRefreshVideoLibraryThumbnail = videoActions::refreshVideoLibraryThumbnail,
-                                onDeleteVideoLibraryThumbnail = videoActions::deleteVideoLibraryThumbnail,
                                 onCancel = ui::clearSelection,
                             ),
                         ) { contentModifier ->
@@ -358,15 +354,21 @@ internal fun MuBoxApp(container: AppContainer) {
                                             videoLibraryUiState.thumbnailExtractionMessage,
                                         thumbnailExtractionMessageIsError =
                                             videoLibraryUiState.thumbnailExtractionMessageIsError,
-                                        hasActiveSelection = ui.hasActiveSelection,
-                                        selectedLibraryItemId = ui.selectedLibraryItem?.item?.id,
-                                        selectedVideoLibraryItemId = ui.selectedVideoLibraryItem?.item?.id,
+                                        selectedHistoryKeys = ui.homeSelection.historyKeys,
+                                        selectedLibraryItemIds = ui.homeSelection.libraryItemIds,
+                                        selectedVideoLibraryItemIds = ui.homeSelection.videoLibraryItemIds,
                                         onOpenHistoryEntry = openHistoryEntry,
-                                        onDeleteHistoryEntry = cacheActions::deleteHistoryEntry,
+                                        onToggleHistorySelection = { entry ->
+                                            ui.toggleHomeHistorySelection(entry.mediaKey)
+                                        },
                                         onOpenLibraryItem = comicActions::openLibraryItem,
-                                        onSelectLibraryItem = selectLibraryItem,
+                                        onToggleLibrarySelection = { item ->
+                                            ui.toggleHomeLibrarySelection(item.item.id)
+                                        },
                                         onOpenVideoLibraryItem = videoActions::openVideoLibraryItem,
-                                        onSelectVideoLibraryItem = selectVideoLibraryItem,
+                                        onToggleVideoLibrarySelection = { item ->
+                                            ui.toggleHomeVideoLibrarySelection(item.item.id)
+                                        },
                                         onDismissLibraryMessage = dismissLibraryMessage,
                                         onDismissVideoLibraryMessage = dismissVideoLibraryMessage,
                                         onDismissThumbnailExtractionMessage =
@@ -379,48 +381,6 @@ internal fun MuBoxApp(container: AppContainer) {
                                             )
                                         },
                                         onOpenSources = openSourcesTab,
-                                        libraryPage = { onBack, pageModifier ->
-                                            LibraryTabContent(
-                                                libraryUiState = libraryUiState,
-                                                localOpenError = ui.localOpenError,
-                                                onOpenItem = comicActions::openLibraryItem,
-                                                onSelectItem = selectLibraryItem,
-                                                onOpenDirectories = openSourcesTab,
-                                                onDismissMessage = dismissLibraryMessage,
-                                                coversEnabled = appSettings.appearance.libraryCoversEnabled,
-                                                selectedItemId = ui.selectedLibraryItem?.item?.id,
-                                                navigationIcon = {
-                                                    IconButton(onClick = onBack) {
-                                                        Icon(
-                                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                                            contentDescription = "返回",
-                                                        )
-                                                    }
-                                                },
-                                                modifier = pageModifier,
-                                            )
-                                        },
-                                        videoLibraryPage = { onBack, pageModifier ->
-                                            VideoLibraryTabContent(
-                                                videoLibraryUiState = videoLibraryUiState,
-                                                localOpenError = ui.localOpenError,
-                                                onOpenItem = videoActions::openVideoLibraryItem,
-                                                onSelectItem = selectVideoLibraryItem,
-                                                onOpenDirectories = openSourcesTab,
-                                                onDismissMessage = dismissVideoLibraryMessage,
-                                                thumbnailsEnabled = appSettings.video.videoLibraryThumbnailsEnabled,
-                                                selectedItemId = ui.selectedVideoLibraryItem?.item?.id,
-                                                navigationIcon = {
-                                                    IconButton(onClick = onBack) {
-                                                        Icon(
-                                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                                            contentDescription = "返回",
-                                                        )
-                                                    }
-                                                },
-                                                modifier = pageModifier,
-                                            )
-                                        },
                                         modifier = contentModifier,
                                     )
                                 }
@@ -472,10 +432,53 @@ internal fun MuBoxApp(container: AppContainer) {
                             }
                         }
                     }
+                    pendingHomeDeleteSelection?.let { selection ->
+                        HomeDeleteConfirmDialog(
+                            selection = selection,
+                            onConfirm = {
+                                pendingHomeDeleteSelection = null
+                                ui.clearSelection()
+                                performHomeDelete(selection)
+                            },
+                            onDismiss = { pendingHomeDeleteSelection = null },
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun HomeDeleteConfirmDialog(
+    selection: HomeSelection,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val description = buildList {
+        if (selection.historyKeys.isNotEmpty()) {
+            add("${selection.historyKeys.size} 条观看记录（含关联缓存）")
+        }
+        if (selection.libraryItemIds.isNotEmpty()) {
+            add("${selection.libraryItemIds.size} 部漫画")
+        }
+        if (selection.videoLibraryItemIds.isNotEmpty()) {
+            add("${selection.videoLibraryItemIds.size} 部影视")
+        }
+    }.joinToString("、")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("删除所选 ${selection.count} 项？") },
+        text = { Text("将删除$description。此操作不可撤销。") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("删除", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
