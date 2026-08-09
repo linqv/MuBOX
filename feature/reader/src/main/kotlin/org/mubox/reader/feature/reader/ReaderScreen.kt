@@ -115,6 +115,24 @@ fun ReaderScreen(
     onReaderLandscapeModeChange: (Boolean) -> Unit = {},
     onReaderLandscapeOrientationLockedChange: (Boolean) -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val view = LocalView.current
+
+    DisposableEffect(context, view) {
+        val window = (context as? android.app.Activity)?.window
+        if (window != null) {
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.hide(WindowInsetsCompat.Type.navigationBars())
+        }
+        onDispose {
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -142,8 +160,6 @@ fun ReaderScreen(
             else -> {
                 val readerStateKey = readerScrollStateKey(uiState)
                 var controlsVisible by remember { mutableStateOf(false) }
-                val context = LocalContext.current
-                val view = LocalView.current
 
                 LaunchedEffect(controlsVisible) {
                     val window = (context as? android.app.Activity)?.window
@@ -155,6 +171,7 @@ fun ReaderScreen(
                         } else {
                             insetsController.hide(WindowInsetsCompat.Type.statusBars())
                         }
+                        insetsController.hide(WindowInsetsCompat.Type.navigationBars())
                     }
                 }
 

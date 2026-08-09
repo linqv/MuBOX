@@ -93,7 +93,7 @@ class VideoPlayerActivity : ComponentActivity() {
         )
     }
     private val systemBarsHandler = Handler(Looper.getMainLooper())
-    private val hideStatusBarRunnable = Runnable { hidePlayerStatusBar() }
+    private val hideSystemBarsRunnable = Runnable { hidePlayerSystemBars() }
     private val playbackSessionId: String = UUID.randomUUID().toString()
     private lateinit var playbackStopReceiver: BroadcastReceiver
 
@@ -475,57 +475,64 @@ class VideoPlayerActivity : ComponentActivity() {
             decorView.windowInsetsController?.systemBarsBehavior =
                 WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             decorView.setOnApplyWindowInsetsListener { _, insets ->
-                if (insets.isVisible(WindowInsets.Type.statusBars())) {
-                    scheduleStatusBarRehide()
+                if (
+                    insets.isVisible(WindowInsets.Type.statusBars()) ||
+                    insets.isVisible(WindowInsets.Type.navigationBars())
+                ) {
+                    scheduleSystemBarsRehide()
                 }
                 insets
             }
         } else {
             @Suppress("DEPRECATION")
             window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-                if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
-                    scheduleStatusBarRehide()
+                val systemBarsHidden = visibility and View.SYSTEM_UI_FLAG_FULLSCREEN != 0 &&
+                    visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION != 0
+                if (!systemBarsHidden) {
+                    scheduleSystemBarsRehide()
                 }
             }
         }
-        hidePlayerStatusBar()
+        hidePlayerSystemBars()
     }
 
-    private fun scheduleStatusBarRehide() {
-        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
-        systemBarsHandler.postDelayed(hideStatusBarRunnable, PLAYER_STATUS_BAR_REHIDE_MILLIS)
+    private fun scheduleSystemBarsRehide() {
+        systemBarsHandler.removeCallbacks(hideSystemBarsRunnable)
+        systemBarsHandler.postDelayed(hideSystemBarsRunnable, PLAYER_SYSTEM_BARS_REHIDE_MILLIS)
     }
 
-    private fun hidePlayerStatusBar() {
-        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
+    private fun hidePlayerSystemBars() {
+        systemBarsHandler.removeCallbacks(hideSystemBarsRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val decorView = window.decorView
             val controller = decorView.windowInsetsController
             if (controller == null) {
                 decorView.post {
                     if (!isFinishing && !isDestroyed) {
-                        hidePlayerStatusBar()
+                        hidePlayerSystemBars()
                     }
                 }
                 return
             }
-            controller.hide(WindowInsets.Type.statusBars())
+            controller.hide(WindowInsets.Type.systemBars())
         } else {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility =
                 window.decorView.systemUiVisibility or
                     View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         }
     }
 
     internal fun restorePlayerSystemBars() {
-        systemBarsHandler.removeCallbacks(hideStatusBarRunnable)
+        systemBarsHandler.removeCallbacks(hideSystemBarsRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val decorView = window.decorView
             decorView.setOnApplyWindowInsetsListener(null)
-            decorView.windowInsetsController?.show(WindowInsets.Type.statusBars())
+            decorView.windowInsetsController?.show(WindowInsets.Type.systemBars())
             @Suppress("DEPRECATION")
             window.setDecorFitsSystemWindows(true)
         } else {
@@ -536,6 +543,8 @@ class VideoPlayerActivity : ComponentActivity() {
                 window.decorView.systemUiVisibility and
                     View.SYSTEM_UI_FLAG_FULLSCREEN.inv() and
                     View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN.inv() and
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION.inv() and
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION.inv() and
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY.inv()
         }
     }
@@ -750,5 +759,5 @@ class VideoPlayerActivity : ComponentActivity() {
 }
 
 
-private const val PLAYER_STATUS_BAR_REHIDE_MILLIS = 3_000L
+private const val PLAYER_SYSTEM_BARS_REHIDE_MILLIS = 3_000L
 private const val PROXY_STATISTICS_SAMPLE_INTERVAL_MILLIS = 1_000L
