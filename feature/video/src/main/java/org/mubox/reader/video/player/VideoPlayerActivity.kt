@@ -431,6 +431,12 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         isActivityInForeground = false
+        if (::playbackPersistenceCoordinator.isInitialized && !isEpisodeSwitching) {
+            // Match mpv's lifecycle checkpoint: capture progress while native properties still
+            // describe the active file, even when background playback will continue.
+            playbackPersistenceCoordinator.saveCurrentPositionAsync()
+            saveCurrentHistoryAsync()
+        }
         if (
             ::playbackLifecyclePolicy.isInitialized &&
             !isFinishing &&
@@ -579,7 +585,7 @@ class VideoPlayerActivity : ComponentActivity() {
 
         val wasPlayingBeforeSwitch = !controller.state.value.isPaused
         controller.setPaused(true)
-        playbackPersistenceCoordinator.saveCurrentPositionAsync()
+        playbackPersistenceCoordinator.checkpointAndPauseForTransition()
         saveCurrentHistoryAsync()
         isEpisodeSwitching = true
         sessionCoordinator.launchLoad {
@@ -615,9 +621,9 @@ class VideoPlayerActivity : ComponentActivity() {
                 currentEpisodeIndex = targetIndex
                 playerMediaContext = episode.toPlayerMediaContext()
                 adoptedEpisode = true
-                episodeCoordinator.close(previousStreamIds)
                 playbackPersistenceCoordinator.startAutoSave()
                 startHistoryAutoSave()
+                episodeCoordinator.close(previousStreamIds)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -626,6 +632,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 if (!adoptedEpisode) {
                     sessionCoordinator.cancelEpisodeTransition()
                     preparedEpisode?.webDavStreamIds?.let(episodeCoordinator::close)
+                    playbackPersistenceCoordinator.startAutoSave()
                     if (wasPlayingBeforeSwitch && isActivityInForeground && sessionCoordinator.canLoad()) {
                         if (audioFocusController.request()) controller.setPaused(false)
                     }

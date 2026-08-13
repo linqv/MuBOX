@@ -32,7 +32,7 @@ class MpvControllerTest {
     }
 
     @Test
-    fun loadWithResumePositionLoadsNormallyThenSeeksAfterDurationIsKnown() {
+    fun loadWithResumePositionRestoresTimePositionOnlyAfterFileLoaded() {
         val engine = FakeMpvEngine()
         val controller = MpvController(engine)
 
@@ -43,14 +43,18 @@ class MpvControllerTest {
 
         controller.onDurationChanged(120.0)
 
-        assertEquals(
-            listOf(
-                listOf("loadfile", "http://127.0.0.1:1234/stream/1"),
-                listOf("seek", "92.5", "absolute"),
-            ),
-            engine.commands,
-        )
+        assertEquals(emptyMap<String, Double>(), engine.doubleProperties)
+
+        controller.onPositionChanged(0.0)
+        controller.onFileLoaded()
+
+        assertEquals(92.5, engine.doubleProperties["time-pos"] ?: 0.0, 0.0)
         assertEquals(92_500L, controller.state.value.positionMillis)
+        assertEquals(92_500L, controller.progress.value.positionMillis)
+
+        controller.onFileLoaded()
+
+        assertEquals(listOf(92.5), engine.doublePropertyHistory("time-pos"))
     }
 
     @Test

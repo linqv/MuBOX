@@ -71,4 +71,28 @@ class VideoPlaybackProgressSaverTest {
         assertFalse(job.isCancelled)
         assertEquals(emptyList<Throwable>(), unhandledFailures)
     }
+
+    @Test
+    fun savingNextEpisodeDoesNotCancelPreviousEpisodeWrite() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val savedKeys = mutableListOf<String>()
+        val saver = VideoPlaybackProgressSaver(
+            scope = CoroutineScope(SupervisorJob() + dispatcher),
+            savePosition = { key, _, _ ->
+                if (key == "episode-1") delay(1_000)
+                savedKeys += key
+            },
+        )
+
+        val first = saver.saveAsync("episode-1", 15_000L, 60_000L)
+        testScheduler.runCurrent()
+        val second = saver.saveAsync("episode-2", 20_000L, 60_000L)
+
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(first!!.isCompleted)
+        assertFalse(first.isCancelled)
+        assertTrue(second!!.isCompleted)
+        assertEquals(listOf("episode-2", "episode-1"), savedKeys)
+    }
 }

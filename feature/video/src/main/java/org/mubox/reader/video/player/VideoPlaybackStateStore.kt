@@ -3,6 +3,7 @@ package org.mubox.reader.video.player
 import org.mubox.reader.core.ports.PlaybackPositionGateway
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -33,7 +34,8 @@ internal class VideoPlaybackProgressSaver(
     private val scope: CoroutineScope,
     private val savePosition: suspend (String, Long, Long) -> Unit,
 ) {
-    private var latestSaveJob: Job? = null
+    private val saveJobsLock = Any()
+    private val latestSaveJobsByKey = mutableMapOf<String, Job>()
 
     fun saveAsync(
         playbackKey: String?,
@@ -41,17 +43,28 @@ internal class VideoPlaybackProgressSaver(
         durationMillis: Long,
     ): Job? {
         val key = playbackKey?.takeIf { it.isNotBlank() } ?: return null
-        latestSaveJob?.cancel()
-        latestSaveJob = scope.launch {
+        lateinit var saveJob: Job
+        saveJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 savePosition(key, positionMillis, durationMillis)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
                 System.err.println("Failed to save video playback position: ${error.message ?: error::class.java.simpleName}")
+            } finally {
+                synchronized(saveJobsLock) {
+                    if (latestSaveJobsByKey[key] === saveJob) {
+                        latestSaveJobsByKey.remove(key)
+                    }
+                }
             }
         }
-        return latestSaveJob
+        val supersededJob = synchronized(saveJobsLock) {
+            latestSaveJobsByKey.put(key, saveJob)
+        }
+        supersededJob?.cancel()
+        saveJob.start()
+        return saveJob
     }
 }
 

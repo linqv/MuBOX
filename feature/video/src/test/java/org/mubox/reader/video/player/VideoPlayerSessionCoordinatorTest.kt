@@ -111,6 +111,33 @@ class VideoPlayerSessionCoordinatorTest {
     }
 
     @Test
+    fun `file loaded routes persisted position for initial playback`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+        val coordinator = createCoordinator(runtime, controller)
+        assertTrue(coordinator.prepare())
+
+        assertTrue(
+            coordinator.load(
+                uri = "fd://42",
+                displayName = "movie.mkv",
+                startPositionMillis = 37_250L,
+                subtitles = emptyList(),
+                isWebDav = false,
+            ),
+        )
+        assertFalse(engine.doubleProperties.containsKey("time-pos"))
+
+        requireNotNull(runtime.observer).event(
+            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED,
+            MPVNode.MapNode(emptyMap()),
+        )
+
+        assertEquals(37.25, engine.doubleProperties["time-pos"] ?: 0.0, 0.0)
+    }
+
+    @Test
     fun `preparation failure rolls back registration and reports an error`() = runTest {
         val runtime = RecordingMpvRuntime(failInitialize = true)
         val engine = FakeMpvEngine()

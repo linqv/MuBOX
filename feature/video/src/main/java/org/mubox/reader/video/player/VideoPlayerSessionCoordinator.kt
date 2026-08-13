@@ -201,7 +201,7 @@ internal class VideoPlayerSessionCoordinator(
 
         override fun event(eventId: Int, data: MPVNode) {
             when (eventId) {
-                MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> routeEpisodeFileLoaded()
+                MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> routeFileLoaded()
                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> routeEndFile(data)
             }
         }
@@ -392,11 +392,10 @@ internal class VideoPlayerSessionCoordinator(
         }
     }
 
-    private fun routeEpisodeFileLoaded() {
-        val pendingResume = synchronized(lock) { resumeEpisodeWhenFileLoaded }
-        if (!pendingResume) return
-
+    private fun routeFileLoaded() {
         dispatchToMain {
+            if (isClosingOrClosed) return@dispatchToMain
+            controller.onFileLoaded()
             val shouldResume = synchronized(lock) {
                 if (!resumeEpisodeWhenFileLoaded) {
                     false

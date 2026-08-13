@@ -47,6 +47,12 @@ internal class VideoPlaybackPersistenceCoordinator(
         savePositionAsync(key, progress.positionMillis, progress.durationMillis)
     }
 
+    /** Captures the current media before a load resets mpv's progress callbacks. */
+    fun checkpointAndPauseForTransition() {
+        stopAutoSave()
+        saveCurrentPositionAsync()
+    }
+
     fun startAutoSave() {
         if (!resumeEnabled || autoSaveJob != null) return
         autoSaveJob = autoSaveScope.launch {

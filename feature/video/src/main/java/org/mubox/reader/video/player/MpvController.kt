@@ -33,7 +33,7 @@ class MpvController(
     private var isCleaning = false
     @Volatile
     private var isDestroyed = false
-    private var pendingResumeSeekMillis: Long? = null
+    private var pendingResumePositionMillis: Long? = null
     private var speedBeforeTemporary: Double? = null
     private var horizontalSwipeStartPositionMillis: Long? = null
     private var horizontalSwipeAccumulatedFraction: Double = 0.0
@@ -47,7 +47,7 @@ class MpvController(
         onFileLoaded: () -> Unit = {},
     ) {
         if (!canWriteEngine()) return
-        pendingResumeSeekMillis = startPositionMillis.takeIf { it > 0L }
+        pendingResumePositionMillis = startPositionMillis.takeIf { it > 0L }
         _progress.value = VideoPlaybackProgressState(positionMillis = startPositionMillis.coerceAtLeast(0L))
         _state.value = _state.value.copy(
             displayName = displayName,
@@ -485,11 +485,24 @@ class MpvController(
         )
     }
 
+    /**
+     * Applies a persisted position only after mpv confirms that the new file is loaded.
+     * Setting time-pos at this lifecycle edge mirrors mpv's native resume behavior and does not
+     * depend on a duration property being available (for example, for some remote streams).
+     */
+    fun onFileLoaded() {
+        val resumePositionMillis = pendingResumePositionMillis ?: return
+        if (!canWriteEngine()) return
+        pendingResumePositionMillis = null
+        _progress.value = _progress.value.copy(positionMillis = resumePositionMillis)
+        _state.value = _state.value.copy(positionMillis = resumePositionMillis)
+        engine.setPropertyDouble("time-pos", resumePositionMillis / 1_000.0)
+    }
+
     fun onDurationChanged(durationSeconds: Double) {
         val durationMillis = secondsToMillis(durationSeconds)
         _progress.value = _progress.value.copy(durationMillis = durationMillis)
         _state.value = _state.value.copy(durationMillis = durationMillis)
-        seekToPendingResumePosition()
     }
 
     fun onPositionChanged(positionSeconds: Double) {
@@ -691,13 +704,6 @@ class MpvController(
     private fun MPVNode.nodeInt(key: String): Long? = this[key]?.asInt()
 
     private fun MPVNode.nodeDouble(key: String): Double? = this[key]?.asDouble()
-
-    private fun seekToPendingResumePosition() {
-        val pendingPositionMillis = pendingResumeSeekMillis ?: return
-        if (_progress.value.durationMillis <= 0L || !canWriteEngine()) return
-        pendingResumeSeekMillis = null
-        seekTo(pendingPositionMillis)
-    }
 
     private fun attemptCleanup(failures: MutableList<Exception>, block: () -> Unit) {
         try {

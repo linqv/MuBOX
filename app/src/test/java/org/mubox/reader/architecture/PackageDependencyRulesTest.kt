@@ -123,7 +123,8 @@ class PackageDependencyRulesTest {
     private val repositoryFiles: List<File> by lazy {
         repositoryRoot.walkTopDown()
             .onEnter { directory ->
-                directory == repositoryRoot || directory.name !in IGNORED_DIRECTORIES
+                directory == repositoryRoot ||
+                    (directory.name !in IGNORED_DIRECTORIES && !File(directory, ".git").exists())
             }
             .filter(File::isFile)
             .filter { file -> file.extension in CHECKED_TEXT_EXTENSIONS || file.name in CHECKED_TEXT_FILES }
