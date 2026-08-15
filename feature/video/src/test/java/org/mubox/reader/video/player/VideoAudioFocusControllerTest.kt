@@ -90,6 +90,110 @@ class VideoAudioFocusControllerTest {
     }
 
     @Test
+    fun audioOnlyEligiblePlaybackKeepsPlayingInBackgroundWithNoneMode() {
+        var isPlaying = true
+        var pauseCount = 0
+        var foregroundStartCount = 0
+        var foregroundStopCount = 0
+        var audioOnly = true
+        val policy = VideoPlaybackLifecyclePolicy(
+            mode = VideoBackgroundMode.NONE,
+            isCurrentlyPlaying = { isPlaying },
+            onPausePlayback = {
+                pauseCount += 1
+                isPlaying = false
+            },
+            onCleanupPlayback = {},
+            onStartForegroundPlayback = {
+                foregroundStartCount += 1
+                true
+            },
+            onStopForegroundPlayback = { foregroundStopCount += 1 },
+            isBackgroundPlayEligible = { audioOnly },
+            backgroundCleanupScheduler = FakeBackgroundCleanupScheduler(),
+        )
+
+        // 听视频模式下即使设置的是“不后台播放”，退到后台也继续播放
+        policy.moveToBackground()
+
+        assertEquals(0, pauseCount)
+        assertEquals(1, foregroundStartCount)
+
+        policy.returnToForeground()
+        audioOnly = false
+        policy.moveToBackground()
+
+        // 关闭听视频后恢复原有“不后台播放”行为
+        assertEquals(1, pauseCount)
+        assertEquals(1, foregroundStopCount)
+    }
+
+    @Test
+    fun audioOnlyEligiblePlaybackKeepsPlayingInBackgroundWithResumeOnReturnMode() {
+        var isPlaying = true
+        var pauseCount = 0
+        var resumeCount = 0
+        var foregroundStartCount = 0
+        var foregroundStopCount = 0
+        val policy = VideoPlaybackLifecyclePolicy(
+            mode = VideoBackgroundMode.RESUME_ON_RETURN,
+            isCurrentlyPlaying = { isPlaying },
+            onPausePlayback = {
+                pauseCount += 1
+                isPlaying = false
+            },
+            onResumePlayback = {
+                resumeCount += 1
+                isPlaying = true
+            },
+            onCleanupPlayback = {},
+            onStartForegroundPlayback = {
+                foregroundStartCount += 1
+                true
+            },
+            onStopForegroundPlayback = { foregroundStopCount += 1 },
+            isBackgroundPlayEligible = { true },
+            backgroundCleanupScheduler = FakeBackgroundCleanupScheduler(),
+        )
+
+        // 听视频模式下即使设置的是“回来时继续播放”，退到后台也继续播放
+        policy.moveToBackground()
+
+        assertEquals(0, pauseCount)
+        assertEquals(1, foregroundStartCount)
+
+        policy.returnToForeground()
+
+        // 播放从未暂停，回前台只需停掉前台服务，无需“恢复”
+        assertEquals(1, foregroundStopCount)
+        assertEquals(0, resumeCount)
+        assertEquals(0, pauseCount)
+    }
+
+    @Test
+    fun audioOnlyEligiblePausedPlaybackStillPausesWithResumeOnReturnMode() {
+        var pauseCount = 0
+        var foregroundStartCount = 0
+        val policy = VideoPlaybackLifecyclePolicy(
+            mode = VideoBackgroundMode.RESUME_ON_RETURN,
+            isCurrentlyPlaying = { false },
+            onPausePlayback = { pauseCount += 1 },
+            onCleanupPlayback = {},
+            onStartForegroundPlayback = {
+                foregroundStartCount += 1
+                true
+            },
+            isBackgroundPlayEligible = { true },
+            backgroundCleanupScheduler = FakeBackgroundCleanupScheduler(),
+        )
+
+        policy.moveToBackground()
+
+        assertEquals(1, pauseCount)
+        assertEquals(0, foregroundStartCount)
+    }
+
+    @Test
     fun pausedPlaybackReleasesBackgroundResourcesOnceUntilForegrounded() {
         var pauseCount = 0
         val policy = VideoPlaybackLifecyclePolicy(

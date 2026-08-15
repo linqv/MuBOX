@@ -62,6 +62,7 @@ internal fun VideoPlayerScreen(
     proxyDebugInfoEnabled: Boolean,
     onConfigureSystemBars: () -> Unit,
     onRestoreSystemBars: () -> Unit,
+    onAudioOnlyChanged: (Boolean) -> Unit,
 ) {
     DisposableEffect(Unit) {
         onConfigureSystemBars()
@@ -159,6 +160,11 @@ internal fun VideoPlayerScreen(
                     onMenuClick = {
                         episodePageVisible = false
                         menuVisible = !menuVisible
+                    },
+                    onListenModeClick = {
+                        menuVisible = false
+                        episodePageVisible = false
+                        onAudioOnlyChanged(true)
                     },
                     showEpisodeButton = !episodeQueue?.episodes.isNullOrEmpty(),
                     onEpisodeClick = {

@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Parcel
 import android.os.Parcelable
 import org.mubox.reader.core.model.settings.Anime4KProfile
+import org.mubox.reader.core.model.settings.AppColorPalette
 import org.mubox.reader.core.model.settings.GpuApiMode
 import org.mubox.reader.core.model.settings.MpvProfileMode
 import org.mubox.reader.core.model.settings.VideoBackgroundMode
@@ -24,6 +25,7 @@ data class VideoPlayerOptions(
     val proxyDebugInfoEnabled: Boolean = false,
     val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
     val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
+    val colorPalette: AppColorPalette = AppColorPalette.DEFAULT,
 ) : Parcelable {
     private constructor(parcel: Parcel) : this(
         resumeEnabled = parcel.readInt() != 0,
@@ -36,6 +38,7 @@ data class VideoPlayerOptions(
         proxyDebugInfoEnabled = parcel.readInt() != 0,
         videoBackgroundMode = parcel.readEnumOrDefault(VideoBackgroundMode.NONE),
         anime4kProfile = parcel.readEnumOrDefault(Anime4KProfile.OFF),
+        colorPalette = parcel.readEnumOrDefault(AppColorPalette.DEFAULT),
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
@@ -49,6 +52,7 @@ data class VideoPlayerOptions(
         parcel.writeInt(if (proxyDebugInfoEnabled) 1 else 0)
         parcel.writeString(videoBackgroundMode.name)
         parcel.writeString(anime4kProfile.name)
+        parcel.writeString(colorPalette.name)
     }
 
     override fun describeContents(): Int = 0
@@ -79,6 +83,7 @@ internal fun Intent.putVideoPlayerOptions(options: VideoPlayerOptions): Intent =
         .putExtra(VideoPlayerLaunchContract.EXTRA_PROXY_DEBUG_INFO_ENABLED, options.proxyDebugInfoEnabled)
         .putExtra(VideoPlayerLaunchContract.EXTRA_VIDEO_BACKGROUND_MODE, options.videoBackgroundMode.name)
         .putExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_PROFILE, options.anime4kProfile.name)
+        .putExtra(VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE, options.colorPalette.name)
 
 internal fun Intent.videoPlayerOptions(): VideoPlayerOptions =
     parceledVideoPlayerOptions() ?: legacyVideoPlayerOptions()
@@ -124,6 +129,8 @@ private fun Intent.legacyVideoPlayerOptions(): VideoPlayerOptions {
                 mode = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE),
                 quality = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY),
             ),
+        colorPalette = getStringExtra(VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE)
+            .toEnumOrDefault(defaults.colorPalette),
     )
 }
 

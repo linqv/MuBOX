@@ -16,7 +16,7 @@ class MpvControllerTest {
 
         assertEquals("Movie", controller.state.value.displayName)
         assertEquals(listOf(listOf("loadfile", "content://media/movie.mp4")), engine.commands)
-        assertEquals(mapOf("force-media-title" to "Movie"), engine.stringProperties)
+        assertEquals(mapOf("force-media-title" to "Movie", "vid" to "auto"), engine.stringProperties)
     }
 
     @Test

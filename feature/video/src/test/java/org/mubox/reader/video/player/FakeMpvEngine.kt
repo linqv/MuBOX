@@ -3,6 +3,7 @@ package org.mubox.reader.video.player
 internal class FakeMpvEngine : MpvEngine {
     val commands = mutableListOf<List<String>>()
     val loadedFiles = mutableListOf<String>()
+    val requiresSurfaceValues = mutableListOf<Boolean>()
     val stringProperties = mutableMapOf<String, String>()
     val intProperties = mutableMapOf<String, Int>()
     val doubleProperties = mutableMapOf<String, Double>()
@@ -19,6 +20,12 @@ internal class FakeMpvEngine : MpvEngine {
     override fun loadFile(uri: String) {
         loadedFiles += uri
         commands += listOf("loadfile", uri)
+    }
+
+    override fun loadFile(uri: String, requiresSurface: Boolean, afterLoadfile: () -> Unit) {
+        requiresSurfaceValues += requiresSurface
+        loadFile(uri)
+        afterLoadfile()
     }
 
     override fun command(vararg args: String) {

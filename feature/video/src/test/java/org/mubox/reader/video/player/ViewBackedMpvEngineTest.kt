@@ -109,6 +109,70 @@ class ViewBackedMpvEngineTest {
     }
 
     @Test
+    fun fileLoadWithoutSurfaceRequirementUsesDirectMpvCommandWhenSurfaceIsDetached() {
+        val events = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = { events += "direct:$it" },
+            loadThroughView = { events += "view:$it" },
+        )
+
+        loader.playFileWhenReady(
+            "content://videos/episode-3",
+            afterLoadfile = { events += "after-loadfile" },
+            requiresSurface = false,
+        )
+
+        assertEquals(
+            listOf("direct:content://videos/episode-3", "after-loadfile"),
+            events,
+        )
+    }
+
+    @Test
+    fun fileLoadWithoutSurfaceRequirementReplacesStalePendingActions() {
+        val callbacks = mutableListOf<String>()
+        val loader = SurfaceAwareMpvFileLoader(
+            loadDirectly = {},
+            loadThroughView = {},
+        )
+
+        loader.playFileWhenReady("first", afterLoadfile = { callbacks += "first" })
+        loader.playFileWhenReady(
+            "second",
+            afterLoadfile = { callbacks += "second" },
+            requiresSurface = false,
+        )
+        loader.markSurfaceAttached()
+        loader.flushPendingAfterLoadfileActions()
+
+        assertEquals(listOf("second"), callbacks)
+    }
+
+    @Test
+    fun viewBackedEngineForwardsSurfaceRequirementToView() {
+        val loader = FakeMpvFileLoader()
+        val engine = ViewBackedMpvEngine(loader)
+
+        engine.loadFile(
+            "content://videos/episode-4",
+            afterLoadfile = {},
+            requiresSurface = false,
+        )
+
+        assertEquals(listOf("content://videos/episode-4"), loader.loadedUris)
+        assertEquals(listOf(false), loader.requiresSurfaceValues)
+    }
+
+    @Test
+    fun viewBackedEngineDefaultsToRequiringSurface() {
+        val loader = FakeMpvFileLoader()
+
+        ViewBackedMpvEngine(loader).loadFile("content://videos/episode-5") {}
+
+        assertEquals(listOf(true), loader.requiresSurfaceValues)
+    }
+
+    @Test
     fun mpvViewSubscribesToTheTypedPlaybackPropertyContract() {
         val api = RecordingMpvNativeApi()
 
@@ -148,10 +212,12 @@ class ViewBackedMpvEngineTest {
 
 private class FakeMpvFileLoader : MpvFileLoader {
     val loadedUris = mutableListOf<String>()
+    val requiresSurfaceValues = mutableListOf<Boolean>()
     var destroyCount = 0
 
-    override fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {
+    override fun playFileWhenReady(uri: String, requiresSurface: Boolean, afterLoadfile: () -> Unit) {
         loadedUris += uri
+        requiresSurfaceValues += requiresSurface
         afterLoadfile()
     }
 

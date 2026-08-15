@@ -35,7 +35,7 @@ class PlayerOptionPanelUiTest {
     @Test
     fun rightSideControlsIncludeOrientationBeforePanels() {
         assertEquals(
-            listOf("切换横竖屏", "音轨与字幕", "播放信息"),
+            listOf("切换横竖屏", "听视频", "音轨与字幕", "播放信息"),
             rightSideControlDescriptions(),
         )
     }

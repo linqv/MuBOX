@@ -35,6 +35,20 @@ internal class VideoPlayerOrientationSession(
             .also(::rememberFixedOrientation)
     }
 
+    /**
+     * 退出竖屏「听视频」界面后，恢复视频画面应有的方向：
+     * 优先按当前视频参数推导；被手动锁定或参数未知时回到最后一次固定的方向；
+     * 传感器模式下回到传感器方向。
+     */
+    fun restoreOrientationAfterListenMode(videoParams: VideoParams): Int =
+        requestForVideoParams(videoParams)
+            ?: lastFixedOrientation
+            ?: if (initialMode == VideoPlayerOrientationMode.SENSOR) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+
     fun toggleFixedOrientation(currentConfigurationOrientation: Int): Int {
         manualOverride = true
         val currentFixed = lastFixedOrientation ?: fixedOrientationForConfiguration(currentConfigurationOrientation)

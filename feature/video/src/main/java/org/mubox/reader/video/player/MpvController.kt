@@ -47,6 +47,8 @@ class MpvController(
         onFileLoaded: () -> Unit = {},
     ) {
         if (!canWriteEngine()) return
+        // 听视频模式无需视频输出，切集不必等待 Surface 重建即可加载新文件。
+        val requiresSurface = !_state.value.audioOnlyEnabled
         pendingResumePositionMillis = startPositionMillis.takeIf { it > 0L }
         _progress.value = VideoPlaybackProgressState(positionMillis = startPositionMillis.coerceAtLeast(0L))
         _state.value = _state.value.copy(
@@ -70,8 +72,9 @@ class MpvController(
             )
         }
         engine.setPropertyString("force-media-title", displayName)
-        engine.loadFile(uri) {
+        engine.loadFile(uri, requiresSurface = requiresSurface) {
             onFileLoaded()
+            applyAudioOnly(_state.value.audioOnlyEnabled)
             addSubtitles(subtitles)
         }
     }
@@ -175,6 +178,20 @@ class MpvController(
         if (!canWriteEngine()) return
         engine.setPropertyString("sid", "no")
         _state.value = _state.value.copy(selectedSubtitleTrackId = null)
+    }
+
+    /** 听视频模式：禁用视频轨（vid=no），仅保留音频播放；关闭时恢复自动选择。 */
+    fun setAudioOnly(enabled: Boolean) {
+        if (!canWriteEngine()) return
+        _state.value = _state.value.copy(audioOnlyEnabled = enabled)
+        applyAudioOnly(enabled)
+    }
+
+    fun showGestureHud(message: String) {
+        if (isDestroyed) return
+        _state.value = _state.value.copy(
+            gestureState = _state.value.gestureState.copy(hudMessage = message),
+        )
     }
 
     fun adjustAudioDelay(deltaMillis: Long) {
@@ -671,6 +688,10 @@ class MpvController(
         if (!canWriteEngine()) return
         engine.setPropertyDouble("audio-delay", delayMillis / 1000.0)
         _state.value = _state.value.copy(audioDelayMillis = delayMillis)
+    }
+
+    private fun applyAudioOnly(enabled: Boolean) {
+        engine.setPropertyString("vid", if (enabled) "no" else "auto")
     }
 
     private fun parseVideoParams(node: MPVNode): VideoParams =

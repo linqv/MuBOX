@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
@@ -83,6 +84,7 @@ internal fun PlayerTopBar(
     source: String,
     onClose: () -> Unit,
     onMenuClick: () -> Unit,
+    onListenModeClick: () -> Unit,
     showEpisodeButton: Boolean,
     onEpisodeClick: () -> Unit,
     onOrientationToggle: () -> Unit,
@@ -99,6 +101,17 @@ internal fun PlayerTopBar(
             Icon(Icons.Filled.ScreenRotation, "切换横竖屏", tint = Color.White, modifier = Modifier.size(22.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(
+                onClick = onListenModeClick,
+                modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Headphones,
+                    contentDescription = "听视频",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
             if (showEpisodeButton) {
                 IconButton(
                     onClick = onEpisodeClick,
@@ -445,7 +458,7 @@ internal fun ThinSeekBar(
     }
 }
 
-// ─── Menu panel: all functional controls live here ───
+// ─── Menu panel: video playback settings ───
 
 @Composable
 internal fun PlayerMenuPanel(
@@ -589,7 +602,7 @@ private fun ControlGroup(label: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CompactTextButton(text: String, selected: Boolean, onClick: () -> Unit) {
+internal fun CompactTextButton(text: String, selected: Boolean, onClick: () -> Unit) {
     val bg = if (selected) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.1f)
     val shape = RoundedCornerShape(8.dp)
     TextButton(
@@ -647,7 +660,7 @@ internal fun PlayerOptionPanel.sideRailDescriptor(): PlayerOptionPanelDescriptor
     }
 
 internal fun rightSideControlDescriptions(): List<String> =
-    listOf("切换横竖屏") + PlayerOptionPanel.entries.map { it.sideRailDescriptor().contentDescription }
+    listOf("切换横竖屏", "听视频") + PlayerOptionPanel.entries.map { it.sideRailDescriptor().contentDescription }
 
 internal fun episodeNavigationControlDescriptions(): List<String> = listOf("上一集", "下一集", "选集")
 
@@ -709,5 +722,5 @@ internal fun formatVideoTime(millis: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-private fun MpvTrack.shortLabel(): String =
+internal fun MpvTrack.shortLabel(): String =
     title.takeIf { it.isNotBlank() }?.let { if (it.length <= 8) it else it.take(7) + "…" } ?: "#$id"

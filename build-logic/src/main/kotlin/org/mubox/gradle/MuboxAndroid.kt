@@ -69,6 +69,20 @@ private fun Project.createMuboxAndroidExtension(libs: VersionCatalog): MuboxAndr
         )
     }
 
+    // -Ptarget is a common typo for -PtargetAbi, and the -Ptarget:<abi> colon form creates
+    // a property literally named "target:<abi>": both variants are silently ignored and the build
+    // would fall back to packaging every supported ABI (~2x APK size). Fail loudly instead.
+    val legacyTarget = providers.gradleProperty("target").orNull?.trim()?.takeIf(String::isNotBlank)
+    val legacyColonTargetKeys = providers.gradlePropertiesPrefixedBy("target:").get().keys
+    if (legacyTarget != null || legacyColonTargetKeys.isNotEmpty()) {
+        val found = legacyTarget ?: legacyColonTargetKeys.firstOrNull()
+        throw GradleException(
+            "Unsupported Gradle property '-Ptarget' (found '$found'). " +
+                "Use '-PtargetAbi' instead (e.g. '-PtargetAbi=arm64-v8a'). " +
+                "Supported values: ${supportedTargetAbis.joinToString()}",
+        )
+    }
+
     return extensions.create("muboxAndroid", MuboxAndroidExtension::class.java).apply {
         minSdk.set(libs.versionInt("minSdk"))
         supportedAbis.set(supportedTargetAbis)

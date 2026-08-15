@@ -1,7 +1,9 @@
 package org.mubox.reader
 
 import org.mubox.reader.core.model.settings.Anime4KProfile
+import org.mubox.reader.core.model.settings.AppColorPalette
 import org.mubox.reader.core.model.settings.AppSettings
+import org.mubox.reader.core.model.settings.AppearanceSettings
 import org.mubox.reader.core.model.settings.GpuApiMode
 import org.mubox.reader.core.model.settings.MpvProfileMode
 import org.mubox.reader.core.model.settings.VideoBackgroundMode
@@ -31,6 +33,7 @@ class VideoPlayerOptionsFactoryTest {
     @Test
     fun appSettingsMapEveryPlaybackOptionIntoOneValue() {
         val options = AppSettings(
+            appearance = AppearanceSettings(colorPalette = AppColorPalette.SEPIA),
             video = VideoSettings(
                 videoResumeEnabled = false,
                 videoOutputMode = VideoOutputMode.GPU_NEXT,
@@ -57,6 +60,7 @@ class VideoPlayerOptionsFactoryTest {
                 proxyDebugInfoEnabled = true,
                 videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
                 anime4kProfile = Anime4KProfile.EXTREME,
+                colorPalette = AppColorPalette.SEPIA,
             ),
             options,
         )

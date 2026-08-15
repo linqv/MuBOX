@@ -31,7 +31,7 @@ class VideoPlaybackService : Service() {
         }
         val displayName = intent?.getStringExtra(EXTRA_DISPLAY_NAME) ?: "音频播放"
         val playbackSessionId = intent?.getStringExtra(EXTRA_PLAYBACK_SESSION_ID)
-        startForeground(NOTIFICATION_ID, buildNotification(displayName, playbackSessionId))
+        startForeground(NOTIFICATION_ID, buildNotification(this, displayName, playbackSessionId, null))
         return START_NOT_STICKY
     }
 
@@ -43,34 +43,6 @@ class VideoPlaybackService : Service() {
             stopForeground(true)
         }
         super.onDestroy()
-    }
-
-    private fun buildNotification(displayName: String, playbackSessionId: String?): Notification {
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            packageManager.getLaunchIntentForPackage(packageName)
-                ?.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, VideoPlaybackService::class.java)
-                .setAction(ACTION_STOP)
-                .apply {
-                    playbackSessionId?.let { putExtra(EXTRA_PLAYBACK_SESSION_ID, it) }
-                },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MuBOX 音频播放")
-            .setContentText(displayName)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(contentIntent)
-            .addAction(NotificationCompat.Action.Builder(0, "停止", stopIntent).build())
-            .setOngoing(true)
-            .build()
     }
 
     private fun createNotificationChannel() {
@@ -109,6 +81,50 @@ class VideoPlaybackService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, VideoPlaybackService::class.java))
+        }
+
+        /** 更新正在播放的前台通知，[statusText] 用于展示定时关闭剩余时间等附注。 */
+        fun update(context: Context, displayName: String, playbackSessionId: String, statusText: String?) {
+            val notification = buildNotification(context, displayName, playbackSessionId, statusText)
+            context.getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
+        }
+
+        private fun buildNotification(
+            context: Context,
+            displayName: String,
+            playbackSessionId: String?,
+            statusText: String?,
+        ): Notification {
+            val contentIntent = PendingIntent.getActivity(
+                context,
+                0,
+                context.packageManager.getLaunchIntentForPackage(context.packageName)
+                    ?.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val stopIntent = PendingIntent.getService(
+                context,
+                1,
+                Intent(context, VideoPlaybackService::class.java)
+                    .setAction(ACTION_STOP)
+                    .apply {
+                        playbackSessionId?.let { putExtra(EXTRA_PLAYBACK_SESSION_ID, it) }
+                    },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val contentText = if (statusText.isNullOrBlank()) {
+                displayName
+            } else {
+                "$displayName · $statusText"
+            }
+            return NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle("MuBOX 音频播放")
+                .setContentText(contentText)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentIntent(contentIntent)
+                .addAction(NotificationCompat.Action.Builder(0, "停止", stopIntent).build())
+                .setOngoing(true)
+                .build()
         }
 
         internal fun playbackStoppedIntent(playbackSessionId: String?): Intent =

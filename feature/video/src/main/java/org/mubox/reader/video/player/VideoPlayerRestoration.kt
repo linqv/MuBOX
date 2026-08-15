@@ -3,6 +3,10 @@ package org.mubox.reader.video.player
 import org.mubox.reader.core.model.history.WatchHistoryMetadata
 import org.mubox.reader.core.model.history.WatchMediaType
 import org.mubox.reader.core.model.history.WatchSourceType
+import org.mubox.reader.core.model.media.fileDirectoryVideoThumbnailVersion
+import org.mubox.reader.core.model.media.videoThumbnailFile
+import org.mubox.reader.core.model.media.webDavVideoThumbnailStableKey
+import java.io.File
 internal data class RestoredVideoEpisodeSelection(
     val index: Int,
     val episode: VideoEpisode,
@@ -18,7 +22,7 @@ internal fun restoredVideoEpisodeSelection(
     return RestoredVideoEpisodeSelection(index = index, episode = episode)
 }
 
-internal fun VideoEpisode.toPlayerMediaContext(): VideoPlayerMediaContext =
+internal fun VideoEpisode.toPlayerMediaContext(cacheDir: File? = null): VideoPlayerMediaContext =
     VideoPlayerMediaContext(
         displayName = displayName,
         source = if (source == VideoEpisodeSource.WEB_DAV) {
@@ -27,7 +31,51 @@ internal fun VideoEpisode.toPlayerMediaContext(): VideoPlayerMediaContext =
             VideoPlayerLaunchContract.SOURCE_LOCAL
         },
         remotePath = webDavRequest?.remotePath ?: localRequest?.uri,
+        artworkPath = cacheDir?.let(::cachedArtworkPath),
     )
+
+internal fun VideoPlayerLaunchArguments.toCachedArtworkPath(cacheDir: File): String? {
+    val stableKey = if (isWebDav) {
+        webDavVideoThumbnailStableKey(
+            accountId = accountId.orEmpty(),
+            remotePath = remotePath.orEmpty(),
+            size = size,
+            etag = etag,
+            lastModified = lastModified,
+        )
+    } else {
+        fileDirectoryVideoThumbnailVersion(
+            uri = remotePath ?: uri.orEmpty(),
+            size = size,
+            lastModified = lastModified,
+        )
+    }
+    return cachedVideoArtworkPath(cacheDir, stableKey)
+}
+
+private fun VideoEpisode.cachedArtworkPath(cacheDir: File): String? {
+    val stableKey = localRequest?.let { request ->
+        fileDirectoryVideoThumbnailVersion(
+            uri = request.uri,
+            size = request.size,
+            lastModified = request.lastModified,
+        )
+    } ?: requireNotNull(webDavRequest).let { request ->
+        webDavVideoThumbnailStableKey(
+            accountId = request.accountId,
+            remotePath = request.remotePath,
+            size = request.size,
+            etag = request.etag,
+            lastModified = request.lastModified,
+        )
+    }
+    return cachedVideoArtworkPath(cacheDir, stableKey)
+}
+
+private fun cachedVideoArtworkPath(cacheDir: File, stableKey: String): String? =
+    videoThumbnailFile(cacheDir, stableKey)
+        .takeIf { it.isFile && it.length() > 0L }
+        ?.absolutePath
 
 internal fun VideoEpisode.toWatchHistoryMetadata(): WatchHistoryMetadata =
     localRequest?.let { request ->

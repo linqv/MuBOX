@@ -48,6 +48,7 @@ data class VideoPlayerMediaContext(
     val displayName: String,
     val source: String,
     val remotePath: String? = null,
+    val artworkPath: String? = null,
 )
 
 fun buildVideoPlayerStatisticsSnapshot(

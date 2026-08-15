@@ -16,7 +16,7 @@ import org.mubox.reader.video.VideoPlaybackMemoryBudget
 import org.mubox.reader.video.R
 
 interface MpvFileLoader {
-    fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit)
+    fun playFileWhenReady(uri: String, requiresSurface: Boolean = true, afterLoadfile: () -> Unit)
     fun destroy()
 }
 
@@ -98,8 +98,8 @@ class MuBoxMpvView(
         }
     }
 
-    override fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {
-        surfaceAwareFileLoader.playFileWhenReady(uri, afterLoadfile)
+    override fun playFileWhenReady(uri: String, requiresSurface: Boolean, afterLoadfile: () -> Unit) {
+        surfaceAwareFileLoader.playFileWhenReady(uri, requiresSurface, afterLoadfile)
     }
 
     companion object {

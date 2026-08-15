@@ -249,6 +249,16 @@ class VideoPlayerActivityIntegrationTest {
         assertEquals(null, compatibility.statusMessage)
     }
 
+    @Test
+    fun backgroundNotificationUpdatesTrackForegroundServiceNotConfiguredMode() {
+        assertFalse(shouldUpdateBackgroundPlaybackNotification(true, true))
+        assertFalse(shouldUpdateBackgroundPlaybackNotification(true, false))
+        assertFalse(shouldUpdateBackgroundPlaybackNotification(false, false))
+        // 听视频把 NONE / RESUME_ON_RETURN 动态提升为后台播放后，
+        // 前台服务运行即应刷新通知（睡眠定时器倒计时等）。
+        assertTrue(shouldUpdateBackgroundPlaybackNotification(false, true))
+    }
+
     private fun testLoadRequest(): VideoPlaybackLoadRequest =
         VideoPlaybackLoadRequest(
             uri = "content://videos/test",

@@ -26,6 +26,7 @@ data class MpvPlayerState(
     val selectedAudioTrackId: Int? = null,
     val selectedSubtitleTrackId: Int? = null,
     val audioDelayMillis: Long = 0L,
+    val audioOnlyEnabled: Boolean = false,
     val currentHwdec: String? = null,
     val activeHwdec: String? = null,
     val activeVideoDecoder: String? = null,

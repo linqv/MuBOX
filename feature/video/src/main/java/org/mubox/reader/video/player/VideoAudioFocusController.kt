@@ -67,6 +67,7 @@ internal class VideoPlaybackLifecyclePolicy(
     private val onBackgroundTimeoutAfterCleanup: () -> Unit = {},
     private val onStartForegroundPlayback: () -> Boolean = { true },
     private val onStopForegroundPlayback: () -> Unit = {},
+    private val isBackgroundPlayEligible: () -> Boolean = { false },
     private val backgroundCleanupDelayMillis: Long = DEFAULT_BACKGROUND_CLEANUP_DELAY_MILLIS,
     private val backgroundCleanupScheduler: BackgroundCleanupScheduler = MainThreadBackgroundCleanupScheduler(),
 ) {
@@ -80,7 +81,7 @@ internal class VideoPlaybackLifecyclePolicy(
         if (isInBackground) return
         isInBackground = true
         val wasPlaying = isCurrentlyPlaying()
-        when (mode) {
+        when (effectiveMode()) {
             VideoBackgroundMode.NONE -> {
                 shouldResumeOnReturn = false
                 onPausePlayback()
@@ -109,7 +110,7 @@ internal class VideoPlaybackLifecyclePolicy(
         if (cleanedUp) return
         if (!isInBackground) return
         isInBackground = false
-        when (mode) {
+        when (effectiveMode()) {
             VideoBackgroundMode.NONE -> {
                 shouldResumeOnReturn = false
                 cancelBackgroundCleanup()
@@ -131,7 +132,7 @@ internal class VideoPlaybackLifecyclePolicy(
         if (cleanedUp) return
         shouldResumeOnReturn = false
         cancelBackgroundCleanup()
-        if (mode == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
+        if (effectiveMode() == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
             cleanup()
             onBackgroundTimeoutAfterCleanup()
             return
@@ -142,12 +143,24 @@ internal class VideoPlaybackLifecyclePolicy(
     fun playbackInterrupted() {
         if (cleanedUp) return
         shouldResumeOnReturn = false
-        if (mode == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
+        if (effectiveMode() == VideoBackgroundMode.BACKGROUND_PLAY && isInBackground) {
             cancelBackgroundCleanup()
             cleanup()
             onBackgroundTimeoutAfterCleanup()
         }
     }
+
+    /**
+     * 听视频（仅音频）播放视为后台播放条件成立：即使用户没有在设置中开启后台播放
+     * （NONE），或者只选择了“回来时继续播放”（RESUME_ON_RETURN），仅音频模式下
+     * 退到后台也继续播放，锁屏即可继续收听。
+     */
+    private fun effectiveMode(): VideoBackgroundMode =
+        if (isBackgroundPlayEligible()) {
+            VideoBackgroundMode.BACKGROUND_PLAY
+        } else {
+            mode
+        }
 
     fun cleanup() {
         if (cleanedUp) return

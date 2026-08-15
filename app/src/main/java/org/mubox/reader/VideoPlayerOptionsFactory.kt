@@ -15,4 +15,5 @@ internal fun AppSettings.toVideoPlayerOptions(): VideoPlayerOptions =
         proxyDebugInfoEnabled = video.videoPlayerProxyDebugInfoEnabled,
         videoBackgroundMode = video.videoBackgroundMode,
         anime4kProfile = video.anime4kProfile,
+        colorPalette = appearance.colorPalette,
     )

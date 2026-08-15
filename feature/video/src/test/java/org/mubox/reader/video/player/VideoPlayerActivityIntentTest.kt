@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Parcel
 import androidx.test.core.app.ApplicationProvider
 import org.mubox.reader.core.model.settings.Anime4KProfile
+import org.mubox.reader.core.model.settings.AppColorPalette
 import org.mubox.reader.core.model.settings.GpuApiMode
 import org.mubox.reader.core.model.settings.MpvProfileMode
 import org.mubox.reader.core.model.settings.VideoBackgroundMode
@@ -318,6 +319,7 @@ class VideoPlayerActivityIntentTest {
             proxyDebugInfoEnabled = true,
             videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
             anime4kProfile = Anime4KProfile.EXTREME,
+            colorPalette = AppColorPalette.SEPIA,
         )
 
 }

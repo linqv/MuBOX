@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -57,6 +58,15 @@ internal fun videoBackgroundPermissionDecision(
             !postNotificationsGranted,
     )
 
+/**
+ * 后台播放通知是否应当刷新。听视频会把 NONE / RESUME_ON_RETURN 动态提升为后台播放，
+ * 因此以“前台服务是否正在运行”为准，而不是以配置的后台播放模式为准。
+ */
+internal fun shouldUpdateBackgroundPlaybackNotification(
+    isActivityInForeground: Boolean,
+    isForegroundPlaybackActive: Boolean,
+): Boolean = !isActivityInForeground && isForegroundPlaybackActive
+
 class VideoPlayerActivity : ComponentActivity() {
     private lateinit var mpvView: MuBoxMpvView
     private lateinit var controller: MpvController
@@ -73,7 +83,8 @@ class VideoPlayerActivity : ComponentActivity() {
     private var episodeQueue: VideoEpisodeQueue? = null
     private var currentEpisodeIndex by mutableIntStateOf(0)
     private var isEpisodeSwitching by mutableStateOf(false)
-    private var isActivityInForeground = false
+    private var isActivityInForeground by mutableStateOf(false)
+    private var isForegroundPlaybackActive = false
     private var historyAutoSaveJob: kotlinx.coroutines.Job? = null
     private lateinit var currentHistoryMetadata: WatchHistoryMetadata
     private val videoProxyManager by lazy(LazyThreadSafetyMode.NONE) {
@@ -96,6 +107,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private val hideSystemBarsRunnable = Runnable { hidePlayerSystemBars() }
     private val playbackSessionId: String = UUID.randomUUID().toString()
     private lateinit var playbackStopReceiver: BroadcastReceiver
+    private lateinit var sleepTimerController: SleepTimerController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,11 +131,12 @@ class VideoPlayerActivity : ComponentActivity() {
         val initialPlaybackKey = restoredEpisode?.episode?.playbackKey ?: launchPlaybackKey
         currentHistoryMetadata = restoredEpisode?.episode?.toWatchHistoryMetadata()
             ?: launchArguments.toWatchHistoryMetadata(initialPlaybackKey)
-        playerMediaContext = restoredEpisode?.episode?.toPlayerMediaContext()
+        playerMediaContext = restoredEpisode?.episode?.toPlayerMediaContext(cacheDir)
             ?: VideoPlayerMediaContext(
                 displayName = launchArguments.displayName,
                 source = launchArguments.source,
                 remotePath = launchArguments.remotePath,
+                artworkPath = launchArguments.toCachedArtworkPath(cacheDir),
             )
         val initialVideoOutputMode = playerOptions.videoOutputMode
         val initialGpuApiMode = playerOptions.gpuApiMode
@@ -226,16 +239,30 @@ class VideoPlayerActivity : ComponentActivity() {
                 }
             },
             onStartForegroundPlayback = {
-                runCatching {
+                val started = runCatching {
                     VideoPlaybackService.start(this, playerMediaContext.displayName, playbackSessionId)
                     true
                 }.getOrElse {
                     controller.onError("后台播放启动失败，已暂停")
                     false
                 }
+                if (started) {
+                    isForegroundPlaybackActive = true
+                }
+                started
             },
             onStopForegroundPlayback = {
+                isForegroundPlaybackActive = false
                 VideoPlaybackService.stop(this)
+            },
+            isBackgroundPlayEligible = { controller.state.value.audioOnlyEnabled },
+        )
+        sleepTimerController = SleepTimerController(
+            scope = activityScope,
+            onExpired = {
+                if (!isFinishing) {
+                    closePlayer()
+                }
             },
         )
         val playbackInputResolver = AndroidVideoPlaybackInputResolver(this)
@@ -253,7 +280,10 @@ class VideoPlayerActivity : ComponentActivity() {
             isHostInForeground = { isActivityInForeground },
             resolvePlaybackInput = { request -> playbackInputResolver.resolve(request) },
             requestAudioFocus = audioFocusController::request,
-            onPlaybackEnded = playbackLifecyclePolicy::playbackEnded,
+            onPlaybackEnded = {
+                sleepTimerController.onPlaybackEnded()
+                playbackLifecyclePolicy.playbackEnded()
+            },
             onPlaybackInterrupted = playbackLifecyclePolicy::playbackInterrupted,
         )
         playbackStopReceiver = object : BroadcastReceiver() {
@@ -271,9 +301,10 @@ class VideoPlayerActivity : ComponentActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setContent {
-            MuBoxTheme {
+            MuBoxTheme(palette = playerOptions.colorPalette) {
                 val state by controller.state.collectAsState()
                 val progress by controller.progress.collectAsState()
+                val sleepTimerState by sleepTimerController.state.collectAsState()
                 LaunchedEffect(webDavStreamIds, proxyDebugInfoEnabled) {
                     if (webDavStreamIds.isEmpty() || !proxyDebugInfoEnabled) {
                         proxyStatistics = null
@@ -285,6 +316,29 @@ class VideoPlayerActivity : ComponentActivity() {
                     }
                 }
                 LaunchedEffect(
+                    sleepTimerState.mode,
+                    sleepTimerState.remainingMillis / 1000L,
+                    isActivityInForeground,
+                ) {
+                    if (
+                        !shouldUpdateBackgroundPlaybackNotification(
+                            isActivityInForeground = isActivityInForeground,
+                            isForegroundPlaybackActive = isForegroundPlaybackActive,
+                        )
+                    ) {
+                        return@LaunchedEffect
+                    }
+                    runCatching {
+                        VideoPlaybackService.update(
+                            context = this@VideoPlayerActivity,
+                            displayName = playerMediaContext.displayName,
+                            playbackSessionId = playbackSessionId,
+                            statusText = sleepTimerState.notificationStatusText(),
+                        )
+                    }
+                }
+                LaunchedEffect(
+                    state.audioOnlyEnabled,
                     state.videoParams.width,
                     state.videoParams.height,
                     state.videoParams.rotationDegrees,
@@ -294,58 +348,88 @@ class VideoPlayerActivity : ComponentActivity() {
                     state.videoOutParams.rotationDegrees,
                     state.videoOutParams.aspectRatio,
                 ) {
+                    // 听视频竖屏界面锁定竖屏，视频参数变化不得改变方向。
+                    if (state.audioOnlyEnabled) return@LaunchedEffect
                     val orientationVideoParams = preferredVideoParamsForOrientation(state)
                     orientationSession.requestForVideoParams(orientationVideoParams)?.let { orientation ->
                         requestedOrientation = orientation
                     }
                 }
                 BackHandler {
-                    closePlayer()
+                    if (state.audioOnlyEnabled) {
+                        // 听视频界面下返回键退出聆听模式，回到视频画面。
+                        handleAudioOnlyChanged(false)
+                    } else {
+                        closePlayer()
+                    }
                 }
-                VideoPlayerScreen(
-                    state = state,
-                    progress = progress,
-                    mpvView = mpvView,
-                    onClose = ::closePlayer,
-                    onPlayPause = controller::togglePlayPause,
-                    onSeek = controller::seekTo,
-                    onSpeedSelected = controller::setPlaybackSpeed,
-                    onAudioTrackSelected = controller::selectAudioTrack,
-                    onSubtitleTrackSelected = controller::selectSubtitleTrack,
-                    onSubtitlesDisabled = controller::disableSubtitles,
-                    onScaleModeSelected = controller::setScaleMode,
-                    onDecoderModeSelected = controller::setDecoderMode,
-                    onAnime4KProfileSelected = controller::setAnime4KProfile,
-                    onOrientationToggle = {
-                        requestedOrientation = orientationSession.toggleFixedOrientation(
-                            resources.configuration.orientation,
-                        )
-                    },
-                    onControlsLockedChanged = controller::setControlsLocked,
-                    onVolumeDelta = controller::adjustGestureVolume,
-                    onBrightnessDelta = ::handleBrightnessGesture,
-                    onDoubleTapSeek = controller::handleDoubleTapSeek,
-                    onHorizontalSeekStarted = controller::beginHorizontalSwipeSeek,
-                    onHorizontalSeekFraction = controller::handleHorizontalSwipeSeek,
-                    onHorizontalSeekEnded = controller::endHorizontalSwipeSeek,
-                    onZoomDelta = controller::adjustGestureZoom,
-                    onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) },
-                    onTemporarySpeedDelta = controller::adjustTemporarySpeed,
-                    onTemporarySpeedEnded = controller::endTemporarySpeed,
-                    onClearHud = controller::clearGestureHud,
-                    mediaContext = playerMediaContext,
-                    episodeQueue = episodeQueue,
-                    currentEpisodeIndex = currentEpisodeIndex,
-                    isEpisodeSwitching = isEpisodeSwitching,
-                    onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) },
-                    onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) },
-                    onEpisodeSelected = ::switchToEpisode,
-                    controlsAutoHideMillis = controlsAutoHideMillis,
-                    proxyStatistics = proxyStatistics,
-                    proxyDebugInfoEnabled = proxyDebugInfoEnabled,
-                    onConfigureSystemBars = ::configurePlayerSystemBars,
-                    onRestoreSystemBars = ::restorePlayerSystemBars,
-                )
+                if (state.audioOnlyEnabled) {
+                    AudioListenScreen(
+                        state = state,
+                        progress = progress,
+                        mediaContext = playerMediaContext,
+                        episodeQueue = episodeQueue,
+                        currentEpisodeIndex = currentEpisodeIndex,
+                        isEpisodeSwitching = isEpisodeSwitching,
+                        sleepTimerState = sleepTimerState,
+                        onExitListenMode = { handleAudioOnlyChanged(false) },
+                        onPlayPause = controller::togglePlayPause,
+                        onSeek = controller::seekTo,
+                        onSpeedSelected = controller::setPlaybackSpeed,
+                        onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) },
+                        onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) },
+                        onEpisodeSelected = ::switchToEpisode,
+                        onSleepTimerSelected = ::handleSleepTimerSelected,
+                        onConfigureSystemBars = ::configurePlayerSystemBars,
+                        onRestoreSystemBars = ::restorePlayerSystemBars,
+                    )
+                } else {
+                    VideoPlayerScreen(
+                        state = state,
+                        progress = progress,
+                        mpvView = mpvView,
+                        onClose = ::closePlayer,
+                        onPlayPause = controller::togglePlayPause,
+                        onSeek = controller::seekTo,
+                        onSpeedSelected = controller::setPlaybackSpeed,
+                        onAudioTrackSelected = controller::selectAudioTrack,
+                        onSubtitleTrackSelected = controller::selectSubtitleTrack,
+                        onSubtitlesDisabled = controller::disableSubtitles,
+                        onScaleModeSelected = controller::setScaleMode,
+                        onDecoderModeSelected = controller::setDecoderMode,
+                        onAnime4KProfileSelected = controller::setAnime4KProfile,
+                        onOrientationToggle = {
+                            requestedOrientation = orientationSession.toggleFixedOrientation(
+                                resources.configuration.orientation,
+                            )
+                        },
+                        onControlsLockedChanged = controller::setControlsLocked,
+                        onVolumeDelta = controller::adjustGestureVolume,
+                        onBrightnessDelta = ::handleBrightnessGesture,
+                        onDoubleTapSeek = controller::handleDoubleTapSeek,
+                        onHorizontalSeekStarted = controller::beginHorizontalSwipeSeek,
+                        onHorizontalSeekFraction = controller::handleHorizontalSwipeSeek,
+                        onHorizontalSeekEnded = controller::endHorizontalSwipeSeek,
+                        onZoomDelta = controller::adjustGestureZoom,
+                        onTemporarySpeedStarted = { controller.beginTemporarySpeed(2.0) },
+                        onTemporarySpeedDelta = controller::adjustTemporarySpeed,
+                        onTemporarySpeedEnded = controller::endTemporarySpeed,
+                        onClearHud = controller::clearGestureHud,
+                        mediaContext = playerMediaContext,
+                        episodeQueue = episodeQueue,
+                        currentEpisodeIndex = currentEpisodeIndex,
+                        isEpisodeSwitching = isEpisodeSwitching,
+                        onPreviousEpisode = { switchToEpisode(currentEpisodeIndex - 1) },
+                        onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) },
+                        onEpisodeSelected = ::switchToEpisode,
+                        controlsAutoHideMillis = controlsAutoHideMillis,
+                        proxyStatistics = proxyStatistics,
+                        proxyDebugInfoEnabled = proxyDebugInfoEnabled,
+                        onConfigureSystemBars = ::configurePlayerSystemBars,
+                        onRestoreSystemBars = ::restorePlayerSystemBars,
+                        onAudioOnlyChanged = ::handleAudioOnlyChanged,
+                    )
+                }
             }
         }
 
@@ -555,6 +639,31 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private fun handleAudioOnlyChanged(enabled: Boolean) {
+        controller.setAudioOnly(enabled)
+        if (enabled) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            controller.showGestureHud("听视频模式已开启")
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            requestedOrientation = orientationSession.restoreOrientationAfterListenMode(
+                preferredVideoParamsForOrientation(controller.state.value),
+            )
+            controller.showGestureHud("听视频模式已关闭")
+        }
+    }
+
+    private fun handleSleepTimerSelected(mode: SleepTimerMode) {
+        val wasActive = sleepTimerController.state.value.isActive
+        sleepTimerController.start(mode)
+        when {
+            mode == SleepTimerMode.OFF && wasActive -> controller.showGestureHud("已取消定时关闭")
+            mode == SleepTimerMode.END_OF_EPISODE -> controller.showGestureHud("本集结束后自动关闭")
+            mode != SleepTimerMode.OFF -> controller.showGestureHud("定时关闭：${mode.controlLabel()}")
+        }
+    }
+
     private fun closePlayer() {
         playbackLifecyclePolicy.cleanup()
         finish()
@@ -619,7 +728,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 playbackPersistenceCoordinator.adoptPlaybackKey(episode.playbackKey)
                 currentHistoryMetadata = episode.toWatchHistoryMetadata()
                 currentEpisodeIndex = targetIndex
-                playerMediaContext = episode.toPlayerMediaContext()
+                playerMediaContext = episode.toPlayerMediaContext(cacheDir)
                 adoptedEpisode = true
                 playbackPersistenceCoordinator.startAutoSave()
                 startHistoryAutoSave()
@@ -713,6 +822,7 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_PROXY_DEBUG_INFO_ENABLED = VideoPlayerLaunchContract.EXTRA_PROXY_DEBUG_INFO_ENABLED
         const val EXTRA_VIDEO_BACKGROUND_MODE = VideoPlayerLaunchContract.EXTRA_VIDEO_BACKGROUND_MODE
         const val EXTRA_ANIME4K_PROFILE = VideoPlayerLaunchContract.EXTRA_ANIME4K_PROFILE
+        const val EXTRA_COLOR_PALETTE = VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE
         const val EXTRA_PLAYER_OPTIONS = VideoPlayerLaunchContract.EXTRA_PLAYER_OPTIONS
         const val EXTRA_EPISODE_QUEUE_ID = VideoPlayerLaunchContract.EXTRA_EPISODE_QUEUE_ID
         const val SOURCE_LOCAL = VideoPlayerLaunchContract.SOURCE_LOCAL

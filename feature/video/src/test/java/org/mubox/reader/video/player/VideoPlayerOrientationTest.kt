@@ -223,4 +223,60 @@ class VideoPlayerOrientationTest {
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR, session.initialRequestedOrientation())
         assertNull(session.requestForVideoParams(VideoParams(width = 720, height = 1280)))
     }
+
+    @Test
+    fun listenModeRestoreUsesVideoParamsForAutoVideoMode() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.VIDEO)
+        session.initialRequestedOrientation()
+
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            session.restoreOrientationAfterListenMode(VideoParams(width = 720, height = 1280)),
+        )
+    }
+
+    @Test
+    fun listenModeRestoreFallsBackToInitialLandscapeWhenParamsAreUnknown() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.VIDEO)
+        session.initialRequestedOrientation()
+
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            session.restoreOrientationAfterListenMode(VideoParams()),
+        )
+    }
+
+    @Test
+    fun listenModeRestoreKeepsManualOverride() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.VIDEO)
+        session.initialRequestedOrientation()
+        session.toggleFixedOrientation(Configuration.ORIENTATION_LANDSCAPE)
+
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            session.restoreOrientationAfterListenMode(VideoParams(width = 1920, height = 1080)),
+        )
+    }
+
+    @Test
+    fun listenModeRestoreRespectsSensorMode() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.SENSOR)
+        session.initialRequestedOrientation()
+
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR,
+            session.restoreOrientationAfterListenMode(VideoParams(width = 720, height = 1280)),
+        )
+    }
+
+    @Test
+    fun listenModeRestoreRespectsFixedPortraitMode() {
+        val session = VideoPlayerOrientationSession(VideoPlayerOrientationMode.PORTRAIT)
+        session.initialRequestedOrientation()
+
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            session.restoreOrientationAfterListenMode(VideoParams(width = 1920, height = 1080)),
+        )
+    }
 }

@@ -7,7 +7,11 @@ interface MpvEngine {
         command("loadfile", uri)
     }
 
-    fun loadFile(uri: String, afterLoadfile: () -> Unit) {
+    /**
+     * [requiresSurface] 为 false 时（听视频模式，vid=no 无需视频输出），
+     * 即使 Surface 尚未附加也直接下发 loadfile，避免切集被推迟到回到视频界面。
+     */
+    fun loadFile(uri: String, requiresSurface: Boolean = true, afterLoadfile: () -> Unit) {
         loadFile(uri)
         afterLoadfile()
     }
@@ -28,8 +32,8 @@ class ViewBackedMpvEngine(
         view.playFileWhenReady(uri) {}
     }
 
-    override fun loadFile(uri: String, afterLoadfile: () -> Unit) {
-        view.playFileWhenReady(uri, afterLoadfile)
+    override fun loadFile(uri: String, requiresSurface: Boolean, afterLoadfile: () -> Unit) {
+        view.playFileWhenReady(uri, requiresSurface, afterLoadfile)
     }
 
     override fun command(vararg args: String) {

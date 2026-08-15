@@ -30,6 +30,7 @@ object VideoPlayerLaunchContract {
     const val EXTRA_PROXY_DEBUG_INFO_ENABLED = "org.mubox.reader.video.extra.PROXY_DEBUG_INFO_ENABLED"
     const val EXTRA_VIDEO_BACKGROUND_MODE = "org.mubox.reader.video.extra.VIDEO_BACKGROUND_MODE"
     const val EXTRA_ANIME4K_PROFILE = "org.mubox.reader.video.extra.ANIME4K_PROFILE"
+    const val EXTRA_COLOR_PALETTE = "org.mubox.reader.video.extra.COLOR_PALETTE"
     // Read-only legacy extras kept for restoring intents created by older versions.
     const val EXTRA_ANIME4K_ENABLED = "org.mubox.reader.video.extra.ANIME4K_ENABLED"
     const val EXTRA_ANIME4K_MODE = "org.mubox.reader.video.extra.ANIME4K_MODE"

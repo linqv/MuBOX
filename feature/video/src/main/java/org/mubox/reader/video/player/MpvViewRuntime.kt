@@ -148,9 +148,13 @@ internal class SurfaceAwareMpvFileLoader(
     val isSurfaceAttached: Boolean
         get() = surfaceAttached
 
-    fun playFileWhenReady(uri: String, afterLoadfile: () -> Unit) {
+    /**
+     * [requiresSurface] 为 false 时（听视频模式，无视频输出）不等待 Surface：
+     * 直接下发 mpv loadfile 命令并立即执行加载后动作，保证切集即时生效。
+     */
+    fun playFileWhenReady(uri: String, requiresSurface: Boolean = true, afterLoadfile: () -> Unit) {
         pendingAfterLoadfileActions.clear()
-        if (surfaceAttached) {
+        if (surfaceAttached || !requiresSurface) {
             loadDirectly(uri)
             afterLoadfile()
         } else {
