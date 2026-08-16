@@ -63,7 +63,7 @@ class VideoPlayerSessionCoordinatorTest {
     }
 
     @Test
-    fun `episode transition consumes expected stop and resumes only after file loaded`() = runTest {
+    fun `episode transition consumes normal old-file end and resumes only after file loaded`() = runTest {
         val runtime = RecordingMpvRuntime()
         val engine = FakeMpvEngine()
         val controller = MpvController(engine)
@@ -81,7 +81,8 @@ class VideoPlayerSessionCoordinatorTest {
         coordinator.beginEpisodeTransition()
         observer.event(
             MPVLib.MpvEvent.MPV_EVENT_END_FILE,
-            MPVNode.MapNode(mapOf("reason" to MPVNode.StringNode("stop"))),
+            // Some mpv/device combinations report replacement as a normal reason other than stop.
+            MPVNode.MapNode(mapOf("reason" to MPVNode.StringNode("quit"))),
         )
         assertEquals(0, playbackEndedCalls)
 
@@ -111,6 +112,195 @@ class VideoPlayerSessionCoordinatorTest {
     }
 
     @Test
+    fun `episode transition preserves paused state when resume is not requested`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+        val coordinator = createCoordinator(runtime, controller)
+        assertTrue(coordinator.prepare())
+
+        controller.setPaused(true)
+        coordinator.beginEpisodeTransition(resumePlayback = false)
+        requireNotNull(runtime.observer).event(
+            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED,
+            MPVNode.MapNode(emptyMap()),
+        )
+
+        assertTrue(controller.state.value.isPaused)
+        assertEquals(true, engine.booleanProperties["pause"])
+    }
+
+    @Test
+    fun `episode transition consumes old-file end even when it arrives after new file loaded`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val controller = MpvController(FakeMpvEngine())
+        var playbackEndedCalls = 0
+        var playbackInterruptedCalls = 0
+        var transitionCompletedCalls = 0
+        val coordinator = createCoordinator(
+            runtime = runtime,
+            controller = controller,
+            onPlaybackEnded = { playbackEndedCalls += 1 },
+            onPlaybackInterrupted = { playbackInterruptedCalls += 1 },
+        )
+        assertTrue(coordinator.prepare())
+        val observer = requireNotNull(runtime.observer)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(10L))),
+        )
+        coordinator.beginEpisodeTransition(
+            onTransitionCompleted = { transitionCompletedCalls += 1 },
+        )
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(11L))),
+        )
+        observer.event(MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED, MPVNode.MapNode(emptyMap()))
+        assertEquals(0, transitionCompletedCalls)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(
+                mapOf(
+                    "reason" to MPVNode.StringNode("error"),
+                    "error" to MPVNode.StringNode("old entry replaced"),
+                    "playlist_entry_id" to MPVNode.IntNode(10L),
+                ),
+            ),
+        )
+
+        assertEquals(0, playbackEndedCalls)
+        assertEquals(0, playbackInterruptedCalls)
+        assertEquals(1, transitionCompletedCalls)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(
+                mapOf(
+                    "reason" to MPVNode.StringNode("eof"),
+                    "playlist_entry_id" to MPVNode.IntNode(11L),
+                ),
+            ),
+        )
+        assertEquals(1, playbackEndedCalls)
+    }
+
+    @Test
+    fun `queued old file-loaded event is not applied to replacement entry`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+        val pendingMainActions = ArrayDeque<() -> Unit>()
+        var transitionCompletedCalls = 0
+        val coordinator = createCoordinator(
+            runtime = runtime,
+            controller = controller,
+            dispatchToMain = pendingMainActions::addLast,
+        )
+        assertTrue(coordinator.prepare())
+        val observer = requireNotNull(runtime.observer)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(10L))),
+        )
+        // The native callback is received for the old entry, but its main-thread work is delayed.
+        observer.event(MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED, MPVNode.MapNode(emptyMap()))
+
+        coordinator.beginEpisodeTransition(
+            resumePlayback = false,
+            onTransitionCompleted = { transitionCompletedCalls += 1 },
+        )
+        assertTrue(
+            coordinator.load(
+                uri = "fd://replacement",
+                displayName = "replacement.mkv",
+                startPositionMillis = 37_250L,
+                subtitles = emptyList(),
+                isWebDav = false,
+            ),
+        )
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(11L))),
+        )
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(
+                mapOf(
+                    "reason" to MPVNode.StringNode("stop"),
+                    "playlist_entry_id" to MPVNode.IntNode(10L),
+                ),
+            ),
+        )
+
+        pendingMainActions.removeFirst().invoke()
+        assertFalse(engine.doubleProperties.containsKey("time-pos"))
+        assertEquals(0, transitionCompletedCalls)
+
+        pendingMainActions.removeFirst().invoke()
+        observer.event(MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED, MPVNode.MapNode(emptyMap()))
+        pendingMainActions.removeFirst().invoke()
+
+        assertEquals(37.25, engine.doubleProperties["time-pos"] ?: 0.0, 0.0)
+        assertEquals(1, transitionCompletedCalls)
+    }
+
+    @Test
+    fun `episode transition does not consume replacement-file error before old-file end`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val controller = MpvController(FakeMpvEngine())
+        var playbackInterruptedCalls = 0
+        var transitionCompletedCalls = 0
+        val coordinator = createCoordinator(
+            runtime = runtime,
+            controller = controller,
+            onPlaybackInterrupted = { playbackInterruptedCalls += 1 },
+        )
+        assertTrue(coordinator.prepare())
+        val observer = requireNotNull(runtime.observer)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(20L))),
+        )
+        coordinator.beginEpisodeTransition(
+            onTransitionCompleted = { transitionCompletedCalls += 1 },
+        )
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE,
+            MPVNode.MapNode(mapOf("playlist_entry_id" to MPVNode.IntNode(21L))),
+        )
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(
+                mapOf(
+                    "reason" to MPVNode.StringNode("error"),
+                    "file_error" to MPVNode.StringNode("HTTP 503"),
+                    "playlist_entry_id" to MPVNode.IntNode(21L),
+                ),
+            ),
+        )
+
+        assertEquals(1, playbackInterruptedCalls)
+        assertEquals(0, transitionCompletedCalls)
+
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(
+                mapOf(
+                    "reason" to MPVNode.StringNode("stop"),
+                    "playlist_entry_id" to MPVNode.IntNode(20L),
+                ),
+            ),
+        )
+        assertEquals(1, playbackInterruptedCalls)
+        assertEquals(1, transitionCompletedCalls)
+    }
+
+    @Test
     fun `file loaded routes persisted position for initial playback`() = runTest {
         val runtime = RecordingMpvRuntime()
         val engine = FakeMpvEngine()
@@ -135,6 +325,27 @@ class VideoPlayerSessionCoordinatorTest {
         )
 
         assertEquals(37.25, engine.doubleProperties["time-pos"] ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun `background episode load bypasses detached surface`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val engine = FakeMpvEngine()
+        val coordinator = createCoordinator(runtime, MpvController(engine))
+        assertTrue(coordinator.prepare())
+
+        assertTrue(
+            coordinator.load(
+                uri = "fd://43",
+                displayName = "next.mkv",
+                startPositionMillis = 0L,
+                subtitles = emptyList(),
+                isWebDav = false,
+                requiresSurface = false,
+            ),
+        )
+
+        assertEquals(listOf(false), engine.requiresSurfaceValues)
     }
 
     @Test
@@ -179,13 +390,14 @@ class VideoPlayerSessionCoordinatorTest {
         onPlaybackEnded: () -> Unit = {},
         onPlaybackInterrupted: () -> Unit = {},
         diagnostics: MutableList<String> = mutableListOf(),
+        dispatchToMain: ((() -> Unit) -> Unit) = { action -> action() },
     ): VideoPlayerSessionCoordinator {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         return VideoPlayerSessionCoordinator(
             scope = this,
             controller = controller,
             runtime = runtime,
-            dispatchToMain = { action -> action() },
+            dispatchToMain = dispatchToMain,
             isHostFinishing = { false },
             isHostInForeground = { true },
             resolvePlaybackInput = { request ->

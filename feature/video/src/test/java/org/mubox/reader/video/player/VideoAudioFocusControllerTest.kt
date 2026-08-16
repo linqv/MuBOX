@@ -32,6 +32,37 @@ class VideoAudioFocusControllerTest {
     }
 
     @Test
+    fun repeatedRequestReusesFocusAlreadyOwnedByPlaybackSession() {
+        val focus = FakeAudioFocusGateway(requestResult = true)
+        val controller = VideoAudioFocusController(
+            context = ApplicationProvider.getApplicationContext<Context>(),
+            onFocusLost = {},
+            focusGateway = focus,
+        )
+
+        assertTrue(controller.request())
+        assertTrue(controller.request())
+
+        assertEquals(1, focus.requestCalls)
+    }
+
+    @Test
+    fun permanentFocusLossRequiresARealRequestBeforePlaybackCanResume() {
+        val focus = FakeAudioFocusGateway(requestResult = true)
+        val controller = VideoAudioFocusController(
+            context = ApplicationProvider.getApplicationContext<Context>(),
+            onFocusLost = {},
+            focusGateway = focus,
+        )
+
+        assertTrue(controller.request())
+        focus.sendLoss()
+        assertTrue(controller.request())
+
+        assertEquals(2, focus.requestCalls)
+    }
+
+    @Test
     fun requestReturnsFalseAndAbandonDoesNotReleaseWhenFocusDenied() {
         val focus = FakeAudioFocusGateway(requestResult = false)
         val controller = VideoAudioFocusController(
@@ -396,6 +427,62 @@ class VideoAudioFocusControllerTest {
         scheduler.runPending()
 
         assertEquals(0, pauseCount)
+        assertEquals(0, cleanupCount)
+    }
+
+    @Test
+    fun externalPauseInBackgroundSchedulesCleanup() {
+        var isPlaying = true
+        var pauseCount = 0
+        var cleanupCount = 0
+        val scheduler = FakeBackgroundCleanupScheduler()
+        val policy = VideoPlaybackLifecyclePolicy(
+            mode = VideoBackgroundMode.BACKGROUND_PLAY,
+            isCurrentlyPlaying = { isPlaying },
+            onPausePlayback = {
+                pauseCount += 1
+                isPlaying = false
+            },
+            onCleanupPlayback = { cleanupCount += 1 },
+            onStartForegroundPlayback = { true },
+            backgroundCleanupDelayMillis = 100,
+            backgroundCleanupScheduler = scheduler,
+        )
+
+        policy.moveToBackground()
+        policy.togglePlayback()
+        scheduler.runPending()
+
+        assertEquals(1, pauseCount)
+        assertEquals(1, cleanupCount)
+    }
+
+    @Test
+    fun externalResumeInBackgroundCancelsPausedCleanup() {
+        var isPlaying = true
+        var resumeCount = 0
+        var cleanupCount = 0
+        val scheduler = FakeBackgroundCleanupScheduler()
+        val policy = VideoPlaybackLifecyclePolicy(
+            mode = VideoBackgroundMode.BACKGROUND_PLAY,
+            isCurrentlyPlaying = { isPlaying },
+            onPausePlayback = { isPlaying = false },
+            onResumePlayback = {
+                resumeCount += 1
+                isPlaying = true
+            },
+            onCleanupPlayback = { cleanupCount += 1 },
+            onStartForegroundPlayback = { true },
+            backgroundCleanupDelayMillis = 100,
+            backgroundCleanupScheduler = scheduler,
+        )
+
+        policy.moveToBackground()
+        policy.togglePlayback()
+        policy.togglePlayback()
+        scheduler.runPending()
+
+        assertEquals(1, resumeCount)
         assertEquals(0, cleanupCount)
     }
 

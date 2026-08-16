@@ -84,7 +84,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var currentEpisodeIndex by mutableIntStateOf(0)
     private var isEpisodeSwitching by mutableStateOf(false)
     private var isActivityInForeground by mutableStateOf(false)
-    private var isForegroundPlaybackActive = false
+    private var isForegroundPlaybackActive by mutableStateOf(false)
     private var historyAutoSaveJob: kotlinx.coroutines.Job? = null
     private lateinit var currentHistoryMetadata: WatchHistoryMetadata
     private val videoProxyManager by lazy(LazyThreadSafetyMode.NONE) {
@@ -240,7 +240,11 @@ class VideoPlayerActivity : ComponentActivity() {
             },
             onStartForegroundPlayback = {
                 val started = runCatching {
-                    VideoPlaybackService.start(this, playerMediaContext.displayName, playbackSessionId)
+                    VideoPlaybackService.start(
+                        context = this,
+                        state = currentPlaybackNotificationState(),
+                        playbackSessionId = playbackSessionId,
+                    )
                     true
                 }.getOrElse {
                     controller.onError("后台播放启动失败，已暂停")
@@ -277,7 +281,7 @@ class VideoPlayerActivity : ComponentActivity() {
             ),
             dispatchToMain = { action -> runOnUiThread { action() } },
             isHostFinishing = { isFinishing },
-            isHostInForeground = { isActivityInForeground },
+            isHostInForeground = { isActivityInForeground || isForegroundPlaybackActive },
             resolvePlaybackInput = { request -> playbackInputResolver.resolve(request) },
             requestAudioFocus = audioFocusController::request,
             onPlaybackEnded = {
@@ -291,13 +295,23 @@ class VideoPlayerActivity : ComponentActivity() {
                 if (VideoPlaybackService.isPlaybackStoppedForSession(intent, playbackSessionId)) {
                     playbackLifecyclePolicy.cleanup()
                     if (!isFinishing) finish()
+                    return
+                }
+                when (VideoPlaybackService.playbackControlForSession(intent, playbackSessionId)) {
+                    VideoPlaybackNotificationControl.TOGGLE_PLAY_PAUSE -> playbackLifecyclePolicy.togglePlayback()
+                    VideoPlaybackNotificationControl.PREVIOUS_EPISODE -> switchToEpisode(currentEpisodeIndex - 1)
+                    VideoPlaybackNotificationControl.NEXT_EPISODE -> switchToEpisode(currentEpisodeIndex + 1)
+                    null -> Unit
                 }
             }
         }
         ContextCompat.registerReceiver(
             this,
             playbackStopReceiver,
-            IntentFilter(VideoPlaybackService.ACTION_PLAYBACK_STOPPED),
+            IntentFilter().apply {
+                addAction(VideoPlaybackService.ACTION_PLAYBACK_STOPPED)
+                addAction(VideoPlaybackService.ACTION_PLAYBACK_CONTROL)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setContent {
@@ -316,9 +330,14 @@ class VideoPlayerActivity : ComponentActivity() {
                     }
                 }
                 LaunchedEffect(
+                    state.isPaused,
+                    playerMediaContext.displayName,
+                    currentEpisodeIndex,
+                    isEpisodeSwitching,
                     sleepTimerState.mode,
                     sleepTimerState.remainingMillis / 1000L,
                     isActivityInForeground,
+                    isForegroundPlaybackActive,
                 ) {
                     if (
                         !shouldUpdateBackgroundPlaybackNotification(
@@ -331,9 +350,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     runCatching {
                         VideoPlaybackService.update(
                             context = this@VideoPlayerActivity,
-                            displayName = playerMediaContext.displayName,
+                            state = currentPlaybackNotificationState(),
                             playbackSessionId = playbackSessionId,
-                            statusText = sleepTimerState.notificationStatusText(),
                         )
                     }
                 }
@@ -664,6 +682,26 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private fun currentPlaybackNotificationState(): VideoPlaybackNotificationState {
+        val queue = episodeQueue
+        val episodeCount = queue?.episodes?.size?.takeIf { it > 0 }
+        return VideoPlaybackNotificationState(
+            displayName = playerMediaContext.displayName,
+            isPaused = controller.state.value.isPaused,
+            episodeNumber = episodeCount?.let { currentEpisodeIndex + 1 },
+            episodeCount = episodeCount,
+            hasPreviousEpisode = !isEpisodeSwitching && currentEpisodeIndex > 0,
+            hasNextEpisode = !isEpisodeSwitching &&
+                queue != null &&
+                currentEpisodeIndex < queue.episodes.lastIndex,
+            statusText = if (::sleepTimerController.isInitialized) {
+                sleepTimerController.state.value.notificationStatusText()
+            } else {
+                null
+            },
+        )
+    }
+
     private fun closePlayer() {
         playbackLifecyclePolicy.cleanup()
         finish()
@@ -710,13 +748,19 @@ class VideoPlayerActivity : ComponentActivity() {
                     },
                 )
                 if (!sessionCoordinator.canLoad()) return@launchLoad
-                sessionCoordinator.beginEpisodeTransition()
+                sessionCoordinator.beginEpisodeTransition(
+                    resumePlayback = wasPlayingBeforeSwitch,
+                    onTransitionCompleted = { isEpisodeSwitching = false },
+                )
                 val loaded = sessionCoordinator.load(
                     uri = prepared.uri,
                     displayName = episode.displayName,
                     startPositionMillis = startPositionMillis,
                     subtitles = prepared.subtitles,
                     isWebDav = episode.source == VideoEpisodeSource.WEB_DAV,
+                    // 通知栏切集发生在 Surface 已脱离的后台，直接向 mpv 下发 loadfile；
+                    // 回到前台后现有 Surface 生命周期会重新接管视频输出。
+                    requiresSurface = isActivityInForeground && !controller.state.value.audioOnlyEnabled,
                 )
                 if (!loaded) {
                     sessionCoordinator.cancelEpisodeTransition()
@@ -742,11 +786,15 @@ class VideoPlayerActivity : ComponentActivity() {
                     sessionCoordinator.cancelEpisodeTransition()
                     preparedEpisode?.webDavStreamIds?.let(episodeCoordinator::close)
                     playbackPersistenceCoordinator.startAutoSave()
-                    if (wasPlayingBeforeSwitch && isActivityInForeground && sessionCoordinator.canLoad()) {
+                    if (
+                        wasPlayingBeforeSwitch &&
+                        (isActivityInForeground || isForegroundPlaybackActive) &&
+                        sessionCoordinator.canLoad()
+                    ) {
                         if (audioFocusController.request()) controller.setPaused(false)
                     }
+                    isEpisodeSwitching = false
                 }
-                isEpisodeSwitching = false
             }
         }
     }

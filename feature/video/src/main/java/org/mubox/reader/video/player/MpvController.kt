@@ -44,11 +44,12 @@ class MpvController(
         displayName: String,
         startPositionMillis: Long = 0L,
         subtitles: List<VideoSubtitleOpenRequest> = emptyList(),
+        requiresSurface: Boolean? = null,
         onFileLoaded: () -> Unit = {},
     ) {
         if (!canWriteEngine()) return
-        // 听视频模式无需视频输出，切集不必等待 Surface 重建即可加载新文件。
-        val requiresSurface = !_state.value.audioOnlyEnabled
+        // 听视频模式和后台通知切集都无需等待 Surface 重建即可加载新文件。
+        val loadRequiresSurface = requiresSurface ?: !_state.value.audioOnlyEnabled
         pendingResumePositionMillis = startPositionMillis.takeIf { it > 0L }
         _progress.value = VideoPlaybackProgressState(positionMillis = startPositionMillis.coerceAtLeast(0L))
         _state.value = _state.value.copy(
@@ -72,7 +73,7 @@ class MpvController(
             )
         }
         engine.setPropertyString("force-media-title", displayName)
-        engine.loadFile(uri, requiresSurface = requiresSurface) {
+        engine.loadFile(uri, requiresSurface = loadRequiresSurface) {
             onFileLoaded()
             applyAudioOnly(_state.value.audioOnlyEnabled)
             addSubtitles(subtitles)

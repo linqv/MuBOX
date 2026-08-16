@@ -2,9 +2,7 @@ package org.mubox.reader.video.player
 
 import `is`.xyz.mpv.MPVNode
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MpvEndFileEventTest {
@@ -41,16 +39,5 @@ class MpvEndFileEventTest {
         )
 
         assertEquals("视频播放失败：network unreachable", mpvEndFileErrorMessage(data))
-    }
-
-    @Test
-    fun episodeSwitchOnlySuppressesStopEndFileEvent() {
-        val stopped = MPVNode.MapNode(mapOf("reason" to MPVNode.StringNode("stop")))
-        val numericStopped = MPVNode.MapNode(mapOf("reason" to MPVNode.IntNode(2L)))
-        val eof = MPVNode.MapNode(mapOf("reason" to MPVNode.StringNode("eof")))
-
-        assertTrue(isMpvEndFileStop(stopped))
-        assertTrue(isMpvEndFileStop(numericStopped))
-        assertFalse(isMpvEndFileStop(eof))
     }
 }

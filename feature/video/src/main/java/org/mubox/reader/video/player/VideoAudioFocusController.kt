@@ -33,9 +33,14 @@ class VideoAudioFocusController private constructor(
 
     private val focusListener = VideoAudioFocusListener { change ->
         when (change) {
-            VideoAudioFocusChange.Loss,
-            VideoAudioFocusChange.TransientLoss,
-            -> onFocusLost()
+            VideoAudioFocusChange.Loss -> {
+                // A permanent loss invalidates the request. Android 12+ keeps playback muted
+                // until the app successfully requests focus again.
+                hasFocus = false
+                onFocusLost()
+            }
+
+            VideoAudioFocusChange.TransientLoss -> onFocusLost()
 
             VideoAudioFocusChange.Duck,
             VideoAudioFocusChange.Gain,
@@ -47,6 +52,10 @@ class VideoAudioFocusController private constructor(
     }
 
     fun request(): Boolean {
+        // Episode changes reuse the focus already owned by this playback session. Re-requesting
+        // while backgrounded can produce a transient loss callback on some Android audio stacks,
+        // which would otherwise tear down the foreground playback service mid-transition.
+        if (hasFocus) return true
         hasFocus = focusGateway.request(focusListener)
         return hasFocus
     }
@@ -147,6 +156,24 @@ internal class VideoPlaybackLifecyclePolicy(
             cancelBackgroundCleanup()
             cleanup()
             onBackgroundTimeoutAfterCleanup()
+        }
+    }
+
+    /** Applies an external play/pause control without bypassing focus and background cleanup. */
+    fun togglePlayback() {
+        if (cleanedUp) return
+        if (isCurrentlyPlaying()) {
+            onPausePlayback()
+            if (isInBackground) scheduleBackgroundCleanup()
+            return
+        }
+
+        onResumePlayback()
+        if (isCurrentlyPlaying()) {
+            cancelBackgroundCleanup()
+        } else if (isInBackground) {
+            // Keep the paused-session timeout when focus acquisition fails.
+            scheduleBackgroundCleanup()
         }
     }
 

@@ -110,6 +110,22 @@ internal enum class VideoPlayerSessionState {
     CLOSED,
 }
 
+private data class EpisodeTransitionState(
+    val oldPlaylistEntryId: Long?,
+    val resumePlayback: Boolean,
+    val onCompleted: () -> Unit,
+    var newPlaylistEntryId: Long? = null,
+    var isOldEndPending: Boolean = true,
+    var isFileLoaded: Boolean = false,
+    var isReplacementTerminal: Boolean = false,
+)
+
+private data class FileLoadedRouting(
+    val shouldApply: Boolean,
+    val shouldResume: Boolean = false,
+    val completion: (() -> Unit)? = null,
+)
+
 /**
  * Owns one mpv session: native observer registration, preparation and loading, the active load
  * job, episode-transition event routing, and exactly-once native cleanup.
@@ -140,8 +156,8 @@ internal class VideoPlayerSessionCoordinator(
     private var observerRegistered = false
     private var logObserverRegistered = false
     private var nativeInitialized = false
-    private var ignoreNextStopEndFile = false
-    private var resumeEpisodeWhenFileLoaded = false
+    private var activePlaylistEntryId: Long? = null
+    private var episodeTransition: EpisodeTransitionState? = null
 
     private val playbackLoader = VideoPlaybackLoadCoordinator(
         canLoad = ::canLoad,
@@ -154,6 +170,7 @@ internal class VideoPlayerSessionCoordinator(
                 request.displayName,
                 startPositionMillis = request.startPositionMillis,
                 subtitles = resolvedInput.subtitleRequests(),
+                requiresSurface = request.requiresSurface,
                 onFileLoaded = onFileLoaded,
             )
         },
@@ -201,6 +218,7 @@ internal class VideoPlayerSessionCoordinator(
 
         override fun event(eventId: Int, data: MPVNode) {
             when (eventId) {
+                MPVLib.MpvEvent.MPV_EVENT_START_FILE -> routeStartFile(data)
                 MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> routeFileLoaded()
                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> routeEndFile(data)
             }
@@ -321,6 +339,7 @@ internal class VideoPlayerSessionCoordinator(
         startPositionMillis: Long,
         subtitles: List<VideoSubtitleOpenRequest>,
         isWebDav: Boolean,
+        requiresSurface: Boolean? = null,
     ): Boolean =
         playbackLoader.load(
             VideoPlaybackLoadRequest(
@@ -329,22 +348,31 @@ internal class VideoPlayerSessionCoordinator(
                 startPositionMillis = startPositionMillis,
                 subtitles = subtitles,
                 isWebDav = isWebDav,
+                requiresSurface = requiresSurface,
             ),
         )
 
-    fun beginEpisodeTransition() {
+    fun beginEpisodeTransition(
+        resumePlayback: Boolean = true,
+        onTransitionCompleted: () -> Unit = {},
+    ) {
         synchronized(lock) {
             if (state != VideoPlayerSessionState.READY) return
-            ignoreNextStopEndFile = true
-            resumeEpisodeWhenFileLoaded = true
+            episodeTransition = EpisodeTransitionState(
+                oldPlaylistEntryId = activePlaylistEntryId,
+                resumePlayback = resumePlayback,
+                onCompleted = onTransitionCompleted,
+            )
         }
     }
 
     fun cancelEpisodeTransition() {
-        synchronized(lock) {
-            ignoreNextStopEndFile = false
-            resumeEpisodeWhenFileLoaded = false
+        val completion = synchronized(lock) {
+            episodeTransition?.onCompleted.also {
+                episodeTransition = null
+            }
         }
+        completion?.let(dispatchToMain)
     }
 
     /**
@@ -360,8 +388,8 @@ internal class VideoPlayerSessionCoordinator(
                 return false
             }
             state = VideoPlayerSessionState.CLEANING_UP
-            ignoreNextStopEndFile = false
-            resumeEpisodeWhenFileLoaded = false
+            activePlaylistEntryId = null
+            episodeTransition = null
             loadJob.also { loadJob = null }
         }
         pendingLoad?.cancel()
@@ -392,46 +420,113 @@ internal class VideoPlayerSessionCoordinator(
         }
     }
 
-    private fun routeFileLoaded() {
-        dispatchToMain {
-            if (isClosingOrClosed) return@dispatchToMain
-            controller.onFileLoaded()
-            val shouldResume = synchronized(lock) {
-                if (!resumeEpisodeWhenFileLoaded) {
-                    false
-                } else {
-                    resumeEpisodeWhenFileLoaded = false
-                    true
+    private fun routeStartFile(data: MPVNode) {
+        val playlistEntryId = mpvEventPlaylistEntryId(data) ?: return
+        synchronized(lock) {
+            episodeTransition?.let { transition ->
+                if (playlistEntryId != transition.oldPlaylistEntryId) {
+                    transition.newPlaylistEntryId = playlistEntryId
                 }
             }
-            if (shouldResume && isHostInForeground() && canLoad()) {
+            activePlaylistEntryId = playlistEntryId
+        }
+    }
+
+    private fun routeFileLoaded() {
+        // FILE_LOADED does not carry a playlist entry ID. Capture the active entry while handling
+        // the native event so a queued main-thread callback cannot be mistaken for a later entry.
+        val loadedPlaylistEntryId = synchronized(lock) { activePlaylistEntryId }
+        dispatchToMain {
+            if (isClosingOrClosed) return@dispatchToMain
+            val routing = synchronized(lock) {
+                val transition = episodeTransition
+                    ?: return@synchronized FileLoadedRouting(shouldApply = true)
+                val belongsToReplacement = when {
+                    loadedPlaylistEntryId != null && transition.newPlaylistEntryId != null ->
+                        loadedPlaylistEntryId == transition.newPlaylistEntryId
+
+                    loadedPlaylistEntryId != null && transition.oldPlaylistEntryId != null ->
+                        loadedPlaylistEntryId != transition.oldPlaylistEntryId
+
+                    transition.oldPlaylistEntryId != null && transition.newPlaylistEntryId == null ->
+                        false
+
+                    // Compatibility fallback for bridges that omit playlist entry IDs.
+                    else -> true
+                }
+                if (!belongsToReplacement || transition.isFileLoaded) {
+                    return@synchronized FileLoadedRouting(shouldApply = false)
+                }
+
+                transition.isFileLoaded = true
+                FileLoadedRouting(
+                    shouldApply = true,
+                    shouldResume = transition.resumePlayback,
+                    completion = transitionCompletionIfReadyLocked(),
+                )
+            }
+            if (!routing.shouldApply) return@dispatchToMain
+
+            controller.onFileLoaded()
+            if (routing.shouldResume && isHostInForeground() && canLoad()) {
                 controller.setPaused(false)
             }
+            routing.completion?.invoke()
         }
     }
 
     private fun routeEndFile(data: MPVNode) {
-        val ignoreExpectedStop = synchronized(lock) {
-            if (ignoreNextStopEndFile && isMpvEndFileStop(data)) {
-                ignoreNextStopEndFile = false
-                true
-            } else {
-                false
-            }
-        }
-        if (ignoreExpectedStop) return
+        val playlistEntryId = mpvEventPlaylistEntryId(data)
+        var completion: (() -> Unit)? = null
+        val ignoreTransitionEndFile = synchronized(lock) {
+            val transition = episodeTransition
+            val isOldEntryEnd = transition?.isOldEndPending == true && when {
+                transition.oldPlaylistEntryId != null && playlistEntryId != null ->
+                    transition.oldPlaylistEntryId == playlistEntryId
 
-        val errorMessage = mpvEndFileErrorMessage(data)
+                else -> isMpvTransitionReplacementEndFile(data)
+            }
+
+            if (isOldEntryEnd) {
+                transition?.isOldEndPending = false
+            } else if (transition != null) {
+                val isKnownReplacementEntry = playlistEntryId != null &&
+                    playlistEntryId != transition.oldPlaylistEntryId
+                if (isKnownReplacementEntry || !isMpvTransitionReplacementEndFile(data)) {
+                    transition.isReplacementTerminal = true
+                }
+            }
+
+            if (playlistEntryId != null && activePlaylistEntryId == playlistEntryId) {
+                activePlaylistEntryId = null
+            }
+            completion = transitionCompletionIfReadyLocked()
+            isOldEntryEnd
+        }
+
         dispatchToMain {
             if (isClosingOrClosed) return@dispatchToMain
-            if (errorMessage == null) {
-                controller.onPlaybackEnded()
-                onPlaybackEnded()
-            } else {
-                controller.onError(errorMessage)
-                onPlaybackInterrupted()
+            if (!ignoreTransitionEndFile) {
+                val errorMessage = mpvEndFileErrorMessage(data)
+                if (errorMessage == null) {
+                    controller.onPlaybackEnded()
+                    onPlaybackEnded()
+                } else {
+                    controller.onError(errorMessage)
+                    onPlaybackInterrupted()
+                }
             }
+            completion?.invoke()
         }
+    }
+
+    private fun transitionCompletionIfReadyLocked(): (() -> Unit)? {
+        val transition = episodeTransition ?: return null
+        if (transition.isOldEndPending) return null
+        if (!transition.isFileLoaded && !transition.isReplacementTerminal) return null
+
+        episodeTransition = null
+        return transition.onCompleted
     }
 
     private fun isStillPreparing(): Boolean =

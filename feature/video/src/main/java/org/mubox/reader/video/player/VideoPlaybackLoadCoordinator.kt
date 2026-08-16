@@ -40,6 +40,7 @@ internal data class VideoPlaybackLoadRequest(
     val startPositionMillis: Long,
     val subtitles: List<VideoSubtitleOpenRequest>,
     val isWebDav: Boolean,
+    val requiresSurface: Boolean? = null,
 )
 
 /**

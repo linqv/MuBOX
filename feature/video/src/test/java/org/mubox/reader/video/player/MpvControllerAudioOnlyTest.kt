@@ -57,6 +57,20 @@ class MpvControllerAudioOnlyTest {
     }
 
     @Test
+    fun backgroundEpisodeLoadCanBypassDetachedVideoSurface() {
+        val engine = FakeMpvEngine()
+        val controller = MpvController(engine)
+
+        controller.load(
+            uri = "content://media/episode2.mkv",
+            displayName = "第二集",
+            requiresSurface = false,
+        )
+
+        assertEquals(listOf(false), engine.requiresSurfaceValues)
+    }
+
+    @Test
     fun showGestureHudPublishesMessage() {
         val controller = MpvController(FakeMpvEngine())
 
