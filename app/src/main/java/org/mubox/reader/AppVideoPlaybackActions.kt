@@ -1,16 +1,12 @@
 package org.mubox.reader
 
 import android.content.Context
-import android.net.Uri
 import org.mubox.reader.core.diagnostics.Diagnostics
 import org.mubox.reader.core.model.history.WatchHistoryEntry
 import org.mubox.reader.core.model.history.WatchMediaType
 import org.mubox.reader.core.model.history.WatchSourceType
 import org.mubox.reader.core.model.media.LocalVideoOpenRequest
-import org.mubox.reader.core.model.media.VideoSubtitleOpenRequest
-import org.mubox.reader.core.model.media.WebDavSubtitleOpenRequest
 import org.mubox.reader.core.model.media.WebDavVideoOpenRequest
-import org.mubox.reader.core.model.media.findSidecarSubtitles
 import org.mubox.reader.core.model.media.mimeTypeForMediaFileName
 import org.mubox.reader.core.model.settings.AppSettings
 import org.mubox.reader.core.model.transfer.VideoDownloadRecord
@@ -68,18 +64,28 @@ internal class AppVideoPlaybackActions(
         when (entry.sourceType) {
             WatchSourceType.LOCAL -> {
                 callbacks.setError(null)
-                callbacks.launchPlayer(
-                    VideoPlayerActivity.localIntent(
-                        context = context,
+                scope.launch {
+                    val resolution = resolveLocalDirectoryPlayback(
+                        localDirectoryReader = localDirectoryReader,
                         request = LocalVideoOpenRequest(
                             uri = entry.sourceLocator,
                             displayName = entry.displayTitle,
                             size = entry.size,
                             lastModified = entry.lastModified,
                         ),
-                        options = settings.toVideoPlayerOptions(),
-                    ),
-                )
+                        onDirectoryReadFailure = { error ->
+                            diagnostics.error("local_history_directory_read_failed uri=${entry.sourceLocator}", error)
+                        },
+                    )
+                    callbacks.launchPlayer(
+                        VideoPlayerActivity.localIntent(
+                            context = context,
+                            request = resolution.request,
+                            options = settings.toVideoPlayerOptions(),
+                            episodeQueue = resolution.episodeQueue,
+                        ),
+                    )
+                }
             }
             WatchSourceType.WEB_DAV -> {
                 val accountId = entry.accountId
@@ -99,12 +105,20 @@ internal class AppVideoPlaybackActions(
                 callbacks.setError(null)
                 scope.launch {
                     runCatching {
+                        val resolution = resolveWebDavDirectoryPlayback(
+                            client = webDavResolver.clientFor(accountId),
+                            request = request,
+                            onDirectoryReadFailure = { error ->
+                                diagnostics.error("webdav_history_directory_read_failed path=${entry.sourceLocator}", error)
+                            },
+                        )
                         rememberWebDavPlaybackFactory(accountId)
                         callbacks.launchPlayer(
                             VideoPlayerActivity.webDavIntent(
                                 context = context,
-                                request = request,
+                                request = resolution.request,
                                 options = settings.toVideoPlayerOptions(),
+                                episodeQueue = resolution.episodeQueue,
                             ),
                         )
                     }.onFailure { error ->
@@ -179,22 +193,25 @@ internal class AppVideoPlaybackActions(
             return
         }
         scope.launch {
-            val request = LocalVideoOpenRequest(
-                uri = source.uri,
-                displayName = source.fileName,
-                size = source.size,
-                lastModified = source.lastModified,
-                subtitles = localVideoLibrarySubtitles(
-                    videoUri = source.uri,
-                    videoFileName = source.fileName,
+            val resolution = resolveLocalDirectoryPlayback(
+                localDirectoryReader = localDirectoryReader,
+                request = LocalVideoOpenRequest(
+                    uri = source.uri,
+                    displayName = source.fileName,
+                    size = source.size,
+                    lastModified = source.lastModified,
                 ),
+                onDirectoryReadFailure = { error ->
+                    diagnostics.error("local_video_library_directory_read_failed uri=${source.uri}", error)
+                },
             )
             videoLibraryViewModel.markOpened(item.item.id)
             callbacks.launchPlayer(
                 VideoPlayerActivity.localIntent(
                     context = context,
-                    request = request,
+                    request = resolution.request,
                     options = settings.toVideoPlayerOptions(),
+                    episodeQueue = resolution.episodeQueue,
                 ),
             )
         }
@@ -216,76 +233,26 @@ internal class AppVideoPlaybackActions(
         )
         scope.launch {
             runCatching {
-                val subtitles = webDavVideoLibrarySubtitles(
-                    accountId = source.accountId,
-                    remotePath = source.remotePath,
-                    videoFileName = source.fileName,
+                val resolution = resolveWebDavDirectoryPlayback(
+                    client = webDavResolver.clientFor(source.accountId),
+                    request = request,
+                    onDirectoryReadFailure = { error ->
+                        diagnostics.error("webdav_video_library_directory_read_failed path=${source.remotePath}", error)
+                    },
                 )
-                val playbackRequest = request.copy(subtitles = subtitles)
                 rememberWebDavPlaybackFactory(source.accountId)
                 videoLibraryViewModel.markOpened(item.item.id)
                 callbacks.launchPlayer(
                     VideoPlayerActivity.webDavIntent(
                         context = context,
-                        request = playbackRequest,
+                        request = resolution.request,
                         options = settings.toVideoPlayerOptions(),
+                        episodeQueue = resolution.episodeQueue,
                     ),
                 )
             }.onFailure { error ->
                 videoLibraryViewModel.showError(error.message ?: "打开视频失败")
             }
-        }
-    }
-
-    private suspend fun localVideoLibrarySubtitles(
-        videoUri: String,
-        videoFileName: String,
-    ): List<VideoSubtitleOpenRequest> {
-        val parentUri = parentDocumentUriForLocalVideo(Uri.parse(videoUri)) ?: return emptyList()
-        val siblings = runCatching {
-            localDirectoryReader.listChildren(parentUri.toString())
-        }.onFailure { error ->
-            diagnostics.error("local_video_library_subtitles_failed uri=$videoUri", error)
-        }.getOrDefault(emptyList())
-        return findSidecarSubtitles(
-            videoFileName = videoFileName,
-            candidates = siblings,
-            nameOf = FileDirectoryBrowserItem::name,
-            isDirectoryOf = FileDirectoryBrowserItem::isDirectory,
-        ).map { subtitle ->
-            VideoSubtitleOpenRequest(
-                uri = subtitle.uri,
-                displayName = subtitle.name,
-            )
-        }
-    }
-
-    private suspend fun webDavVideoLibrarySubtitles(
-        accountId: String,
-        remotePath: String,
-        videoFileName: String,
-    ): List<WebDavSubtitleOpenRequest> {
-        val client = webDavResolver.clientFor(accountId) ?: return emptyList()
-        val parentPath = parentWebDavDirectoryPath(remotePath)
-        val siblings = runCatching {
-            client.list(parentPath)
-        }.onFailure { error ->
-            diagnostics.error("webdav_video_library_subtitles_failed path=$remotePath", error)
-        }.getOrDefault(emptyList())
-        return findSidecarSubtitles(
-            videoFileName = videoFileName,
-            candidates = siblings,
-            nameOf = WebDavItem::name,
-            isDirectoryOf = WebDavItem::isDirectory,
-        ).map { subtitle ->
-            WebDavSubtitleOpenRequest(
-                remotePath = subtitle.path,
-                displayName = subtitle.name,
-                size = subtitle.size,
-                etag = subtitle.etag,
-                lastModified = subtitle.lastModified,
-                mimeType = mimeTypeForMediaFileName(subtitle.name),
-            )
         }
     }
 

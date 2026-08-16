@@ -1,5 +1,6 @@
 package org.mubox.reader.video.player
 
+import org.mubox.reader.core.model.history.decodePercentEncodedMediaTitle
 import org.mubox.reader.core.model.media.LocalVideoOpenRequest
 import org.mubox.reader.core.model.media.VideoSubtitleOpenRequest
 import org.mubox.reader.core.model.media.WebDavSubtitleOpenRequest
@@ -84,6 +85,27 @@ class VideoEpisodeQueue(
     fun withCurrentPlaybackKey(playbackKey: String?): VideoEpisodeQueue {
         val matchingIndex = indexOf(playbackKey)
         return if (matchingIndex >= 0) VideoEpisodeQueue(episodes, matchingIndex) else this
+    }
+}
+
+internal fun VideoEpisodeQueue.parentDirectoryName(currentEpisodeIndex: Int): String? =
+    episodes.getOrNull(currentEpisodeIndex.coerceInEpisodes(episodes))
+        ?.parentDirectoryName()
+
+private fun VideoEpisode.parentDirectoryName(): String? {
+    val locator = localRequest?.uri ?: requireNotNull(webDavRequest).remotePath
+    val decodedLocator = decodePercentEncodedMediaTitle(
+        locator.substringBefore('?').substringBefore('#'),
+    ).trimEnd('/')
+    val parentName = decodedLocator
+        .substringBeforeLast('/', missingDelimiterValue = "")
+        .substringAfterLast('/')
+        .trim()
+    if (parentName.isBlank()) return null
+    return if (source == VideoEpisodeSource.LOCAL) {
+        parentName.substringAfterLast(':').takeIf(String::isNotBlank)
+    } else {
+        parentName
     }
 }
 

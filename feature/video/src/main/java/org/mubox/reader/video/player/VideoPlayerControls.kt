@@ -228,6 +228,7 @@ internal fun EpisodeSelectionPage(
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
+    val parentDirectoryName = queue.parentDirectoryName(currentEpisodeIndex)
     val firstVisibleIndex = (currentEpisodeIndex - 2).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstVisibleIndex)
     LaunchedEffect(currentEpisodeIndex) {
@@ -270,6 +271,15 @@ internal fun EpisodeSelectionPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("选集", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                            if (parentDirectoryName != null) {
+                                Text(
+                                    text = parentDirectoryName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.86f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Text(
                                 "第 ${(currentEpisodeIndex + 1).coerceAtMost(queue.episodes.size)} / ${queue.episodes.size} 集",
                                 style = MaterialTheme.typography.bodySmall,

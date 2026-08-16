@@ -577,6 +577,7 @@ private fun ListenEpisodeSheet(
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
+    val parentDirectoryName = queue.parentDirectoryName(currentEpisodeIndex)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         modifier = modifier,
@@ -600,6 +601,15 @@ private fun ListenEpisodeSheet(
                         style = MaterialTheme.typography.titleLarge,
                         color = colors.text,
                     )
+                    if (parentDirectoryName != null) {
+                        Text(
+                            text = parentDirectoryName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
                         text = "第 ${(currentEpisodeIndex + 1).coerceAtMost(queue.episodes.size)} / ${queue.episodes.size} 集",
                         style = MaterialTheme.typography.bodyMedium,
