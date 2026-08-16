@@ -1,6 +1,7 @@
 package org.mubox.reader.nativebridge
 
 import org.mubox.reader.core.ports.RangeProvider
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -21,49 +22,42 @@ object RangeProviderRegistry {
         providers.remove(fileId)?.close()
     }
 
+    /** Fills one native-owned direct buffer without allocating a range-sized Java array. */
     @JvmStatic
-    fun size(fileId: Long): Long = provider(fileId).size(fileId)
-
-    @JvmStatic
-    fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray {
-        requireValidRange(start, endInclusive)
-        return provider(fileId).readRange(fileId, start, endInclusive)
-    }
-
-    @JvmStatic
-    fun isRangeCached(fileId: Long, start: Long, endInclusive: Long): Boolean {
-        requireValidRange(start, endInclusive)
-        return provider(fileId).isRangeCached(start, endInclusive)
-    }
-
-    @JvmStatic
-    fun readCachedRange(fileId: Long, start: Long, endInclusive: Long): ByteArray? {
-        requireValidRange(start, endInclusive)
-        return provider(fileId).readCachedRange(start, endInclusive)
-    }
-
-    @JvmStatic
-    fun prefetchRange(fileId: Long, start: Long, endInclusive: Long): Boolean {
-        requireValidRange(start, endInclusive)
-        return provider(fileId).prefetchRange(start, endInclusive)
-    }
-
-    @JvmStatic
-    fun prefetchRange(
+    fun fetchRangeIntoV1(
         fileId: Long,
+        requestId: Long,
         start: Long,
         endInclusive: Long,
-        priority: Int,
-        protectedRanges: List<LongRange>,
-    ): Boolean {
+        target: ByteBuffer,
+    ): Int {
+        require(requestId > 0L) { "Range request id must be positive" }
         requireValidRange(start, endInclusive)
-        protectedRanges.forEach { range -> requireValidRange(range.first, range.last) }
-        return provider(fileId).prefetchRange(start, endInclusive, priority, protectedRanges)
+        require(target.isDirect) { "Range request target must be a direct ByteBuffer" }
+        require(!target.isReadOnly) { "Range request target must be writable" }
+        val expectedBytes = endInclusive - start + 1L
+        require(expectedBytes in 1..Int.MAX_VALUE.toLong()) { "Range request is too large" }
+        require(
+            target.position() == 0 &&
+                target.limit() == expectedBytes.toInt() &&
+                target.capacity() == expectedBytes.toInt()
+        ) { "Range target has the wrong bounds" }
+        val written = provider(fileId).fetchRangeInto(
+            fileId = fileId,
+            requestId = requestId,
+            start = start,
+            endInclusive = endInclusive,
+            target = target,
+        )
+        require(written == expectedBytes.toInt()) { "Range response has the wrong size" }
+        require(target.position() == expectedBytes.toInt()) { "Range target was not fully written" }
+        return written
     }
 
     @JvmStatic
-    fun cancelPrefetches(fileId: Long) {
-        providers[fileId]?.cancelPrefetches()
+    fun cancelRangeFetchV1(fileId: Long, requestId: Long) {
+        require(requestId > 0L) { "Range request id must be positive" }
+        providers[fileId]?.cancelRangeRequest(requestId)
     }
 
     private fun requireValidRange(start: Long, endInclusive: Long) {

@@ -3,7 +3,9 @@ package org.mubox.reader.nativebridge
 import androidx.annotation.WorkerThread
 import org.mubox.reader.core.ports.ComicReaderSession
 import org.mubox.reader.core.ports.PlannedRemoteRange
+import org.mubox.reader.core.ports.ReconciledPrefetchPlan
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ComicEngine(
     private val native: ComicNativeFacade = ComicNative,
@@ -24,8 +26,7 @@ class ComicEngine(
         return openChecked(handle)
     }
 
-    // Note: openRemote registers a RangeProvider whose readRange callback is invoked
-    // synchronously by Rust. Inside that callback, Java may runBlocking to await OkHttp I/O.
+    // Rust synchronously calls the registered transport on worker threads for network misses.
     @WorkerThread
     fun openRemote(
         fileId: Long,
@@ -35,7 +36,7 @@ class ComicEngine(
         validator: String,
         webDavPrefetchPageCount: Int = 4,
     ): ComicReaderSession {
-        val handle = native.openRemote(
+        val handle = native.openRemoteCachedV1(
             fileId,
             size,
             cacheDir.absolutePath,
@@ -92,8 +93,7 @@ class ComicSession internal constructor(
     override val forwardPrefetchPageCount: Int = 4,
 ) : ComicReaderSession {
     override val advancePrefetchOnPageDemand: Boolean = rangeProviderFileId != null
-    private var isClosed = false
-
+    private val isClosed = AtomicBoolean(false)
     @WorkerThread
     override fun loadPageToFile(pageIndex: Int, outputFile: File): File {
         val result = native.loadPageToFile(handle, pageIndex, outputFile.absolutePath)
@@ -131,9 +131,39 @@ class ComicSession internal constructor(
     }
 
     @WorkerThread
+    override fun reconcilePrefetchPlan(
+        pageIndex: Int,
+        networkClass: Int,
+        activeRanges: List<PlannedRemoteRange>,
+        completedRanges: List<PlannedRemoteRange>,
+        byteBudget: Long,
+    ): ReconciledPrefetchPlan {
+        val encoded = native.reconcilePrefetchPlanV1(
+            handle = handle,
+            pageIndex = pageIndex,
+            networkClass = networkClass,
+            forwardPrefetchPageCount = forwardPrefetchPageCount,
+            byteBudget = byteBudget,
+            activeRanges = PrefetchPlanWireV1.encodeRanges(activeRanges),
+            completedRanges = PrefetchPlanWireV1.encodeRanges(completedRanges),
+        )
+        val decoded = encoded?.let(PrefetchPlanWireV1::decodePlan)
+        if (decoded == null) {
+            throw ComicNativeException(
+                native.lastErrorMessage().ifBlank { "Failed to reconcile native prefetch plan" },
+            )
+        }
+        return decoded
+    }
+
+    @WorkerThread
     override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
-        val fileId = rangeProviderFileId ?: return false
-        return RangeProviderRegistry.prefetchRange(fileId, start, endInclusive)
+        return prefetchRange(
+            start = start,
+            endInclusive = endInclusive,
+            priority = 0,
+            protectedRanges = emptyList(),
+        )
     }
 
     @WorkerThread
@@ -143,20 +173,34 @@ class ComicSession internal constructor(
         priority: Int,
         protectedRanges: List<LongRange>,
     ): Boolean {
-        val fileId = rangeProviderFileId ?: return false
-        return RangeProviderRegistry.prefetchRange(fileId, start, endInclusive, priority, protectedRanges)
+        if (rangeProviderFileId == null) return false
+        val result = native.prefetchRemoteRangeV1(
+            handle = handle,
+            start = start,
+            endInclusive = endInclusive,
+            priority = priority,
+            protectedRanges = RangeIoWireV1.encodeProtectedRanges(protectedRanges),
+        )
+        if (result < 0) {
+            throw ComicNativeException(
+                native.lastErrorMessage().ifBlank { "Failed to prefetch native range" },
+            )
+        }
+        return result > 0
     }
 
     override fun cancelPrefetches() {
-        val fileId = rangeProviderFileId ?: return
-        RangeProviderRegistry.cancelPrefetches(fileId)
+        if (rangeProviderFileId == null) return
+        native.cancelRemoteIoV1(handle)
     }
 
     override fun close() {
-        if (!isClosed) {
-            isClosed = true
-            native.close(handle)
-            onClose()
+        if (isClosed.compareAndSet(false, true)) {
+            try {
+                native.close(handle)
+            } finally {
+                onClose()
+            }
         }
     }
 }
@@ -178,7 +222,7 @@ internal fun decodeDiagnostics(encoded: String): DiagnosticsDecodeResult =
         encoded == "v2;error" -> DiagnosticsDecodeResult.NativeError
         encoded == "v2;ok" -> DiagnosticsDecodeResult.Success("")
         encoded.startsWith("v2;ok;") -> DiagnosticsDecodeResult.Success(encoded.removePrefix("v2;ok;"))
-        else -> DiagnosticsDecodeResult.Success(encoded)
+        else -> throw IllegalArgumentException("Unsupported diagnostics format")
     }
 
 internal fun decodePlannedRanges(encoded: String): PlannedRangesDecodeResult {
@@ -189,13 +233,7 @@ internal fun decodePlannedRanges(encoded: String): PlannedRangesDecodeResult {
         return PlannedRangesDecodeResult.Success(decodePlannedRangeEntries(trimmed.removePrefix("v2;ok;")))
     }
 
-    // v1 was the pre-status protocol. Keep decoding successful v1 payloads so a
-    // staged native-library upgrade does not break an already-running process.
-    if (trimmed.isEmpty() || trimmed == "v1") {
-        return PlannedRangesDecodeResult.Success(emptyList())
-    }
-    require(trimmed.startsWith("v1;")) { "Unsupported planned range format" }
-    return PlannedRangesDecodeResult.Success(decodePlannedRangeEntries(trimmed.removePrefix("v1;")))
+    throw IllegalArgumentException("Unsupported planned range format")
 }
 
 private fun decodePlannedRangeEntries(entries: String): List<PlannedRemoteRange> =

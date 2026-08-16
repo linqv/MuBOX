@@ -1,404 +1,224 @@
 package org.mubox.reader.network
 
-import org.mubox.reader.core.remote.WebDavClient
-import org.mubox.reader.core.ports.RangeProvider
 import java.io.Closeable
 import java.io.IOException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CancellationException
+import java.nio.ByteBuffer
+import java.util.concurrent.CancellationException
+import org.mubox.reader.core.ports.RangeProvider
+import org.mubox.reader.core.remote.WebDavClient
 import kotlinx.coroutines.runBlocking
 
-// WebDavRangeProvider implements the RangeProvider interface called synchronously from Rust
-// (via JNI) during comic parsing. Inside readRange(), Java uses runBlocking to bridge the
-// suspend OkHttp call back to the blocking Rust caller. Callers of ComicEngine.openRemote
-// and ComicReaderSession methods must therefore be on a worker thread (annotated @WorkerThread).
+/**
+ * Thin WebDAV transport for the native comic range engine.
+ *
+ * Rust owns caching, read-ahead, in-flight request coalescing and protected eviction. This class
+ * only streams an exact network miss into native-owned memory and adapts cancellation to OkHttp.
+ */
 class WebDavRangeProvider(
     private val client: WebDavClient,
     private val path: String,
     private val size: Long,
-    private val readAheadBytes: Long = DEFAULT_READ_AHEAD_BYTES,
-    private val maxCacheBytes: Long = DEFAULT_MAX_CACHE_BYTES,
 ) : RangeProvider {
     private val lock = Any()
-    private val cache = RangeWindowCache(maxCacheBytes)
-    private val inFlightRanges = mutableListOf<InFlightRange>()
-    private val fetchCancellations = mutableMapOf<CompletableDeferred<ByteArray>, Closeable>()
-    private val cancelledFetches = mutableSetOf<CompletableDeferred<ByteArray>>()
-    private var latestProtectedRanges: List<LongRange> = emptyList()
+    private val activeRequests = mutableMapOf<Long, ActiveRangeFetch>()
+    private val cancelledBeforeRegistration = linkedSetOf<Long>()
+    private val recentlyCompletedRequests = linkedSetOf<Long>()
     private var closed = false
 
-    override fun size(fileId: Long): Long = size
+    override fun fetchRangeInto(
+        fileId: Long,
+        requestId: Long,
+        start: Long,
+        endInclusive: Long,
+        target: ByteBuffer,
+    ): Int {
+        require(requestId > 0L) { "Range request id must be positive" }
+        require(start >= 0L && endInclusive >= start) { "Invalid range $start-$endInclusive" }
+        require(endInclusive < size) { "Range end must be smaller than the remote file" }
+        require(target.isDirect && !target.isReadOnly) { "Range target must be writable native memory" }
+        val expectedBytes = rangeLength(start, endInclusive)
+        require(expectedBytes <= Int.MAX_VALUE.toLong()) { "Range is too large for direct transport" }
+        require(
+            target.position() == 0 &&
+                target.limit() == expectedBytes.toInt() &&
+                target.capacity() == expectedBytes.toInt()
+        ) { "Range target has the wrong bounds" }
 
-    override fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray {
-        val cached = synchronized(lock) {
-            cache.find(start, endInclusive)
-        }
-        if (cached != null) {
-            return cached.bytes
-        }
-
-        val expandedEnd = (endInclusive + readAheadBytes)
-            .coerceAtMost(size - 1)
-            .coerceAtLeast(endInclusive)
-        val decision = synchronized(lock) {
+        val fetch = synchronized(lock) {
             checkOpenLocked()
-            coveringInFlight(start, endInclusive)?.let { existing ->
-                FetchDecision.Join(existing)
-            } ?: coveringInFlight(start, expandedEnd)?.let { existing ->
-                FetchDecision.Join(existing)
-            } ?: FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand))
+            check(activeRequests[requestId] == null) { "Duplicate range request id: $requestId" }
+            if (cancelledBeforeRegistration.remove(requestId)) {
+                throw CancellationException("range request cancelled")
+            }
+            recentlyCompletedRequests.remove(requestId)
+            ActiveRangeFetch().also { activeRequests[requestId] = it }
         }
-        if (decision is FetchDecision.Join) {
-            return try {
-                awaitInFlight(decision.inFlight, start, endInclusive)
-            } catch (error: Throwable) {
-                if (decision.inFlight.owner != InFlightOwner.Prefetch || isClosed()) {
-                    throw error
+        return try {
+            val written = readNetworkRangeInto(
+                start = start,
+                endInclusive = endInclusive,
+                target = target,
+                fetch = fetch,
+            )
+            fetch.throwIfCancelled()
+            written
+        } catch (error: Throwable) {
+            fetch.throwIfCancelled(error)
+            throw error
+        } finally {
+            synchronized(lock) {
+                activeRequests.remove(requestId, fetch)
+                cancelledBeforeRegistration.remove(requestId)
+                rememberBoundedRequestIdLocked(recentlyCompletedRequests, requestId)
+            }
+            fetch.finish()
+        }
+    }
+
+    override fun cancelRangeRequest(requestId: Long) {
+        val fetch = synchronized(lock) {
+            activeRequests[requestId] ?: run {
+                // A native cancellation can race with the narrow window after this callback
+                // returned but before Rust published the response. Do not turn that late
+                // cancellation into a tombstone for a request that already completed.
+                if (requestId !in recentlyCompletedRequests) {
+                    rememberBoundedRequestIdLocked(cancelledBeforeRegistration, requestId)
                 }
-                fetchReadRange(start, endInclusive, expandedEnd)
+                null
             }
         }
-        return fetchReadRange(start, endInclusive, expandedEnd, (decision as FetchDecision.Fetch).fetch)
-    }
-
-    private fun fetchReadRange(
-        start: Long,
-        endInclusive: Long,
-        expandedEnd: Long,
-        registeredFetch: RegisteredFetch? = null,
-    ): ByteArray {
-        val fetch = registeredFetch ?: synchronized(lock) {
-            checkOpenLocked()
-            FetchDecision.Fetch(registerInFlight(start, expandedEnd, InFlightOwner.Demand)).fetch
-        }
-        val bytes = try {
-            readNetworkRange(fetch)
-        } catch (error: Throwable) {
-            val cancelled = failInFlight(fetch, error)
-            if (cancelled) throw CancellationException("range fetch cancelled")
-            throw error
-        }
-        throwIfCancelled(fetch)
-        val result = synchronized(lock) {
-            storeReadRange(fetch, start, endInclusive, bytes)
-            cache.find(start, endInclusive)?.bytes
-                ?: bytes.copyOfRange(0, (endInclusive - start + 1).toInt())
-        }
-        completeInFlight(fetch, bytes)
-        return result
-    }
-
-    override fun isRangeCached(start: Long, endInclusive: Long): Boolean =
-        synchronized(lock) {
-            cache.isCovered(start, endInclusive)
-        }
-
-    override fun readCachedRange(start: Long, endInclusive: Long): ByteArray? {
-        val cached = synchronized(lock) {
-            cache.find(start, endInclusive)
-        }
-        return cached?.bytes
-    }
-
-    override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
-        return prefetchRange(start, endInclusive, priority = 0, protectedRanges = emptyList())
-    }
-
-    override fun prefetchRange(
-        start: Long,
-        endInclusive: Long,
-        priority: Int,
-        protectedRanges: List<LongRange>,
-    ): Boolean {
-        if (start >= size) return false
-        val clampedEnd = endInclusive.coerceAtMost(size - 1)
-        val rememberedProtectedRanges = normalizeProtectedRanges(protectedRanges)
-        val cached = synchronized(lock) {
-            if (rememberedProtectedRanges.isNotEmpty()) {
-                latestProtectedRanges = rememberedProtectedRanges
-            }
-            cache.find(start, clampedEnd)
-        }
-        if (cached != null) return true
-
-        val decision = synchronized(lock) {
-            checkOpenLocked()
-            coveringInFlight(start, clampedEnd)?.let { existing ->
-                FetchDecision.Join(existing)
-            } ?: FetchDecision.Fetch(registerInFlight(start, clampedEnd, InFlightOwner.Prefetch))
-        }
-        if (decision is FetchDecision.Join) {
-            awaitInFlight(decision.inFlight, start, clampedEnd)
-            return synchronized(lock) {
-                cache.find(start, clampedEnd) != null
-            }
-        }
-        val fetch = (decision as FetchDecision.Fetch).fetch
-
-        val bytes = try {
-            readNetworkRange(fetch)
-        } catch (error: Throwable) {
-            val cancelled = failInFlight(fetch, error)
-            if (cancelled) throw CancellationException("range prefetch cancelled")
-            throw error
-        }
-        throwIfCancelled(fetch)
-        val stored = synchronized(lock) {
-            storePrefetchRange(fetch, bytes, priority, rememberedProtectedRanges).stored
-        }
-        completeInFlight(fetch, bytes)
-        return stored
-    }
-
-    override fun cancelPrefetches() {
-        cancelInFlightRanges(owner = null, closeProvider = false)
+        fetch?.cancel()
     }
 
     override fun close() {
-        cancelInFlightRanges(owner = null, closeProvider = true)
+        cancelAll(closeProvider = true)
     }
 
-    private fun storePrefetchRange(
-        fetch: RegisteredFetch,
-        bytes: ByteArray,
-        priority: Int,
-        protectedRanges: List<LongRange>,
-    ): RangeWindowCache.StoreResult {
-        val protectedResult = cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
-        if (
-            priority <= LOW_PRIORITY_PREFETCH_PRIORITY &&
-            protectedResult.skippedReason == "protected_capacity"
-        ) {
-            return cache.store(fetch.start, fetch.endInclusive, bytes)
-        }
-        return protectedResult
-    }
-
-    private fun coveringInFlight(start: Long, endInclusive: Long): InFlightRange? =
-        inFlightRanges.firstOrNull { it.covers(start, endInclusive) }
-
-    private fun registerInFlight(
+    private fun readNetworkRangeInto(
         start: Long,
         endInclusive: Long,
-        owner: InFlightOwner,
-    ): RegisteredFetch {
-        val deferred = CompletableDeferred<ByteArray>()
-        inFlightRanges += InFlightRange(
+        target: ByteBuffer,
+        fetch: ActiveRangeFetch,
+    ): Int = runBlocking {
+        val response = client.openRangeStream(
+            path = path,
             start = start,
             endInclusive = endInclusive,
-            owner = owner,
-            deferred = deferred,
+            registerCancellation = fetch::registerCancellation,
         )
-        return RegisteredFetch(start = start, endInclusive = endInclusive, deferred = deferred)
-    }
-
-    private fun completeInFlight(fetch: RegisteredFetch, bytes: ByteArray) {
-        synchronized(lock) {
-            inFlightRanges.removeAll { it.deferred === fetch.deferred }
-            fetchCancellations.remove(fetch.deferred)
-            cancelledFetches.remove(fetch.deferred)
-        }
-        fetch.deferred.complete(bytes)
-    }
-
-    private fun failInFlight(fetch: RegisteredFetch, error: Throwable): Boolean {
-        val cancelled = synchronized(lock) {
-            inFlightRanges.removeAll { it.deferred === fetch.deferred }
-            fetchCancellations.remove(fetch.deferred)
-            cancelledFetches.remove(fetch.deferred)
-        }
-        fetch.deferred.completeExceptionally(
-            if (cancelled) {
-                CancellationException("range fetch cancelled")
-            } else {
-                error
-            },
-        )
-        return cancelled
-    }
-
-    private fun awaitInFlight(inFlight: InFlightRange, start: Long, endInclusive: Long): ByteArray {
-        val bytes = runBlocking { inFlight.deferred.await() }
-        return inFlight.slice(bytes, start, endInclusive)
-    }
-
-    private fun readNetworkRange(fetch: RegisteredFetch): ByteArray {
-        val bytes = runBlocking {
-            try {
-                val response = client.openRangeStream(
-                    path = path,
-                    start = fetch.start,
-                    endInclusive = fetch.endInclusive,
-                    registerCancellation = { closeable ->
-                        registerCancellation(fetch, closeable)
-                    },
-                )
-                try {
-                    response.stream.readBytes()
-                } finally {
-                    response.close()
+        try {
+            val initialPosition = target.position()
+            while (target.hasRemaining()) {
+                fetch.throwIfCancelled()
+                var count: Int
+                do {
+                    count = response.readInto(target)
+                } while (count == 0)
+                if (count < 0) {
+                    throw IOException(
+                        "Invalid range response length: " +
+                            "start=$start end=$endInclusive expected=${target.limit() - initialPosition} " +
+                            "actual=${target.position() - initialPosition}",
+                    )
                 }
-            } catch (error: UnsupportedOperationException) {
-                client.readRange(path, fetch.start, fetch.endInclusive)
             }
-        }
-        val expectedBytes = fetch.endInclusive - fetch.start + 1
-        if (bytes.size.toLong() != expectedBytes) {
-            throw IOException(
-                "Invalid range response length for $path: " +
-                    "start=${fetch.start} end=${fetch.endInclusive} " +
-                    "expected=$expectedBytes actual=${bytes.size}",
-            )
-        }
-        return bytes
-    }
-
-    private fun registerCancellation(fetch: RegisteredFetch, closeable: Closeable) {
-        val closeImmediately = synchronized(lock) {
-            if (inFlightRanges.any { it.deferred === fetch.deferred }) {
-                fetchCancellations[fetch.deferred] = closeable
-                false
-            } else {
-                true
+            fetch.throwIfCancelled()
+            val overflow = ByteBuffer.allocateDirect(1)
+            var overflowCount: Int
+            do {
+                overflowCount = response.readInto(overflow)
+            } while (overflowCount == 0)
+            if (overflowCount > 0) {
+                throw IOException(
+                    "Invalid range response length: start=$start end=$endInclusive " +
+                        "expected=${target.limit() - initialPosition} actual>expected",
+                )
             }
-        }
-        if (closeImmediately) {
-            closeable.close()
+            target.position() - initialPosition
+        } finally {
+            response.close()
         }
     }
 
-    private fun cancelInFlightRanges(owner: InFlightOwner?, closeProvider: Boolean) {
-        val cancellations: List<Closeable>
-        val deferreds: List<CompletableDeferred<ByteArray>>
-        synchronized(lock) {
+    private fun cancelAll(closeProvider: Boolean) {
+        val active = synchronized(lock) {
             if (closeProvider) {
                 closed = true
+                cancelledBeforeRegistration.clear()
+                recentlyCompletedRequests.clear()
             }
-            val cancelledRanges = inFlightRanges
-                .filter { range -> owner == null || range.owner == owner }
-            if (cancelledRanges.isEmpty()) return
-            val cancelledDeferreds = cancelledRanges.map { it.deferred }.toSet()
-            cancelledFetches += cancelledDeferreds
-            inFlightRanges.removeAll { it.deferred in cancelledDeferreds }
-            cancellations = cancelledRanges.mapNotNull { fetchCancellations.remove(it.deferred) }
-            deferreds = cancelledRanges.map { it.deferred }
+            activeRequests.values.toList()
         }
-        cancellations.forEach { closeable ->
-            runCatching { closeable.close() }
-        }
-        val error = CancellationException("range fetch cancelled")
-        deferreds.forEach { deferred ->
-            deferred.completeExceptionally(error)
-        }
+        active.forEach(ActiveRangeFetch::cancel)
     }
-
-    private fun throwIfCancelled(fetch: RegisteredFetch) {
-        if (synchronized(lock) { cancelledFetches.contains(fetch.deferred) }) {
-            failInFlight(fetch, CancellationException("range fetch cancelled"))
-            throw CancellationException("range fetch cancelled")
-        }
-    }
-
-    private fun isClosed(): Boolean = synchronized(lock) { closed }
 
     private fun checkOpenLocked() {
         if (closed) throw CancellationException("range provider closed")
     }
 
-    private fun storeReadRange(
-        fetch: RegisteredFetch,
-        requestStart: Long,
-        requestEndInclusive: Long,
-        bytes: ByteArray,
-    ) {
-        val hasReadAhead = fetch.endInclusive > requestEndInclusive
-        val protectedRanges = if (hasReadAhead) latestProtectedRanges else emptyList()
-        val expandedResult = if (protectedRanges.isNotEmpty()) {
-            cache.store(fetch.start, fetch.endInclusive, bytes, protectedRanges)
-        } else {
-            cache.store(fetch.start, fetch.endInclusive, bytes)
-        }
-        if (!hasReadAhead || expandedResult.stored) {
-            return
-        }
-
-        val requestedByteCount = (requestEndInclusive - requestStart + 1).toInt()
-        val requestedBytes = bytes.copyOfRange(0, requestedByteCount)
-        val requestedResult = if (protectedRanges.isNotEmpty()) {
-            cache.store(fetch.start, requestEndInclusive, requestedBytes, protectedRanges)
-        } else {
-            cache.store(fetch.start, requestEndInclusive, requestedBytes)
-        }
-        if (requestedResult.stored) {
-            return
-        }
-
-        if (requestedResult.skippedReason == "protected_capacity") {
-            val priorityResult = cache.store(fetch.start, requestEndInclusive, requestedBytes)
-            if (priorityResult.stored) return
+    private fun rangeLength(start: Long, endInclusive: Long): Long {
+        require(start >= 0L && endInclusive >= start) { "Invalid range $start-$endInclusive" }
+        return (endInclusive - start + 1L).also { length ->
+            require(length > 0L) { "Range length overflow" }
         }
     }
 
-    private fun normalizeProtectedRanges(ranges: List<LongRange>): List<LongRange> {
-        val sortedRanges = ranges
-            .filterNot { it.isEmpty() }
-            .sortedBy { it.first }
-        if (sortedRanges.isEmpty()) {
-            return emptyList()
+    private fun rememberBoundedRequestIdLocked(target: LinkedHashSet<Long>, requestId: Long) {
+        target.remove(requestId)
+        target.add(requestId)
+        while (target.size > MAX_REQUEST_TOMBSTONES) {
+            val iterator = target.iterator()
+            iterator.next()
+            iterator.remove()
         }
-
-        val merged = mutableListOf<LongRange>()
-        var currentStart = sortedRanges.first().first
-        var currentEnd = sortedRanges.first().last
-        sortedRanges.drop(1).forEach { range ->
-            val adjacent = currentEnd != Long.MAX_VALUE && range.first == currentEnd + 1
-            if (range.first <= currentEnd || adjacent) {
-                currentEnd = maxOf(currentEnd, range.last)
-            } else {
-                merged += currentStart..currentEnd
-                currentStart = range.first
-                currentEnd = range.last
-            }
-        }
-        merged += currentStart..currentEnd
-        return merged
-    }
-
-    private data class InFlightRange(
-        val start: Long,
-        val endInclusive: Long,
-        val owner: InFlightOwner,
-        val deferred: CompletableDeferred<ByteArray>,
-    ) {
-        fun covers(reqStart: Long, reqEndInclusive: Long): Boolean =
-            reqStart >= start && reqEndInclusive <= endInclusive
-
-        fun slice(bytes: ByteArray, reqStart: Long, reqEndInclusive: Long): ByteArray {
-            val from = (reqStart - start).toInt()
-            val toExclusive = (reqEndInclusive - start + 1).toInt()
-            return bytes.copyOfRange(from, toExclusive)
-        }
-    }
-
-    private data class RegisteredFetch(
-        val start: Long,
-        val endInclusive: Long,
-        val deferred: CompletableDeferred<ByteArray>,
-    )
-
-    private enum class InFlightOwner {
-        Demand,
-        Prefetch,
-    }
-
-    private sealed class FetchDecision {
-        data class Join(val inFlight: InFlightRange) : FetchDecision()
-        data class Fetch(val fetch: RegisteredFetch) : FetchDecision()
     }
 
     private companion object {
-        const val DEFAULT_READ_AHEAD_BYTES = 4L * 1024L * 1024L
-        const val DEFAULT_MAX_CACHE_BYTES = 64L * 1024L * 1024L
-        const val LOW_PRIORITY_PREFETCH_PRIORITY = 2
+        const val MAX_REQUEST_TOMBSTONES = 4_096
+    }
+}
+
+private class ActiveRangeFetch {
+    private val lock = Any()
+    private var cancellation: Closeable? = null
+    private var cancelled = false
+    private var finished = false
+
+    fun registerCancellation(closeable: Closeable) {
+        val closeImmediately = synchronized(lock) {
+            if (cancelled || finished) {
+                true
+            } else {
+                cancellation = closeable
+                false
+            }
+        }
+        if (closeImmediately) runCatching { closeable.close() }
+    }
+
+    fun cancel() {
+        val closeable = synchronized(lock) {
+            if (cancelled || finished) return
+            cancelled = true
+            cancellation.also { cancellation = null }
+        }
+        closeable?.let { runCatching { it.close() } }
+    }
+
+    fun finish() {
+        synchronized(lock) {
+            finished = true
+            cancellation = null
+        }
+    }
+
+    fun throwIfCancelled(cause: Throwable? = null) {
+        if (synchronized(lock) { cancelled }) {
+            throw CancellationException("range request cancelled").also { cancellation ->
+                if (cause != null && cause !== cancellation) {
+                    cancellation.initCause(cause)
+                }
+            }
+        }
     }
 }

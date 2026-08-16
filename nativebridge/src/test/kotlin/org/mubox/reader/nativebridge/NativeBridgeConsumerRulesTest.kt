@@ -16,8 +16,15 @@ class NativeBridgeConsumerRulesTest {
         assertTrue(consumerRules.contains("org.mubox.reader.nativebridge.ComicNative"))
         assertTrue(consumerRules.contains("native <methods>;"))
         assertTrue(consumerRules.contains("-keepnames class org.mubox.reader.nativebridge.RangeProviderRegistry"))
-        assertTrue(consumerRules.contains("public static byte[] readRange(long, long, long);"))
-        assertTrue(consumerRules.contains("public static byte[] readCachedRange(long, long, long);"))
+        assertTrue(
+            consumerRules.contains(
+                "public static int fetchRangeIntoV1(long, long, long, long, java.nio.ByteBuffer);",
+            ),
+        )
+        assertTrue(consumerRules.contains("public static void cancelRangeFetchV1(long, long);"))
+        assertFalse(consumerRules.contains("readRange"))
+        assertFalse(consumerRules.contains("readCachedRange"))
+        assertFalse(consumerRules.contains("cancelRangeRequestsV1"))
         assertFalse(appRules.contains("org.mubox.reader.nativebridge"))
     }
 

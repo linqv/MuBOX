@@ -1,466 +1,176 @@
 package org.mubox.reader.network
 
-import java.io.IOException
+import java.io.ByteArrayInputStream
+import java.io.Closeable
+import java.io.File
+import java.nio.ByteBuffer
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
+import org.mubox.reader.core.remote.ContentRange
+import org.mubox.reader.core.remote.RemoteFileInfo
+import org.mubox.reader.core.remote.WebDavClient
+import org.mubox.reader.core.remote.WebDavItem
+import org.mubox.reader.core.remote.WebDavStreamResponse
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebDavRangeProviderTest {
     @Test
-    fun readAheadServesCoveredNextRangeFromMergedWindow() {
+    fun fetchRangeIntoStreamsExactBytesIntoDirectBuffer() {
         val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 32,
+        val client = StreamingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        val target = ByteBuffer.allocateDirect(20)
+
+        val written = provider.fetchRangeInto(
+            fileId = 7,
+            requestId = 41,
+            start = 10,
+            endInclusive = 29,
+            target = target,
         )
 
-        assertArrayEquals(bytes.sliceArray(10..19), provider.readRange(fileId = 1, start = 10, endInclusive = 19))
-        assertArrayEquals(bytes.sliceArray(30..40), provider.readRange(fileId = 1, start = 30, endInclusive = 40))
-
-        assertEquals(listOf(10L to 51L), client.rangeCalls)
+        assertEquals(20, written)
+        assertEquals(20, target.position())
+        assertArrayEquals(bytes.sliceArray(10..29), target.writtenBytes())
+        assertEquals(listOf(10L to 29L), client.rangeCalls)
+        assertEquals(1, client.cancellationRegistrations)
     }
 
     @Test
-    fun nonOverlappingWindowsAreRetainedUntilCapacityIsExceeded() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            maxCacheBytes = 30,
+    fun largeStreamNeverRequestsMoreThanFixedScratchCapacity() {
+        val rangeSize = 256 * 1024 + 8 * 1024
+        val bytes = ByteArray(rangeSize) { (it % 251).toByte() }
+        val client = StreamingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        val target = ByteBuffer.allocateDirect(rangeSize)
+
+        assertEquals(
+            rangeSize,
+            provider.fetchRangeInto(1, 42, 0, rangeSize.toLong() - 1, target),
         )
 
-        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
-        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
-        provider.readRange(fileId = 1, start = 40, endInclusive = 49)
-
-        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-        assertArrayEquals(bytes.sliceArray(20..29), provider.readRange(fileId = 1, start = 20, endInclusive = 29))
-        assertArrayEquals(bytes.sliceArray(40..49), provider.readRange(fileId = 1, start = 40, endInclusive = 49))
-
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L), client.rangeCalls)
+        assertTrue(client.largestBulkRead <= 64 * 1024)
+        assertEquals(64 * 1024, client.largestBulkRead)
+        assertArrayEquals(bytes, target.writtenBytes())
     }
 
     @Test
-    fun lruEvictionRemovesLeastRecentlyAccessedWindowWhenCapacityIsExceeded() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            maxCacheBytes = 20,
-        )
-
-        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
-        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
-        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
-        provider.readRange(fileId = 1, start = 40, endInclusive = 49)
-
-        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L), client.rangeCalls)
-
-        assertArrayEquals(bytes.sliceArray(20..29), provider.readRange(fileId = 1, start = 20, endInclusive = 29))
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L, 20L to 29L), client.rangeCalls)
-    }
-
-    @Test
-    fun lowPriorityPrefetchDoesNotEvictWindowIntersectingProtectedRange() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            maxCacheBytes = 20,
-        )
-
-        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
-        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
-
-        assertTrue(
-            provider.prefetchRange(start = 40, endInclusive = 49, priority = 3, protectedRanges = listOf(5L..6L)),
-        )
-        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L), client.rangeCalls)
-    }
-
-    @Test
-    fun highPriorityPrefetchEvictsUnprotectedWindowBeforeProtectedWindow() {
-            val bytes = ByteArray(128) { it.toByte() }
-            val client = RecordingWebDavClient(bytes)
-            val provider = WebDavRangeProvider(
-                client = client,
-                path = "/books/book.cbz",
-                size = bytes.size.toLong(),
-                readAheadBytes = 0,
-                maxCacheBytes = 20,
-            )
-
-            assertTrue(provider.prefetchRange(start = 20, endInclusive = 29))
-            assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
-
-            assertTrue(
-                provider.prefetchRange(start = 40, endInclusive = 49, priority = 1, protectedRanges = listOf(0L..9L)),
-            )
-            assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-            assertArrayEquals(bytes.sliceArray(20..29), provider.readRange(fileId = 1, start = 20, endInclusive = 29))
-
-            assertEquals(listOf(20L to 29L, 0L to 9L, 40L to 49L, 20L to 29L), client.rangeCalls)
-    }
-
-    @Test
-    fun readRangeReadAheadTrimsInsteadOfEvictingProtectedWindow() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 20,
-            maxCacheBytes = 30,
-        )
-
-        assertTrue(provider.prefetchRange(start = 0, endInclusive = 9))
-        assertTrue(
-            provider.prefetchRange(start = 20, endInclusive = 29, priority = 3, protectedRanges = listOf(0L..9L)),
-        )
-
-        assertArrayEquals(bytes.sliceArray(40..49), provider.readRange(fileId = 1, start = 40, endInclusive = 49))
-        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 69L), client.rangeCalls)
-    }
-
-    @Test
-    fun readRangeCanEvictOlderWindowIntersectingProtectedRangeWhenCapacityRequiresIt() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            maxCacheBytes = 20,
-        )
-
-        provider.readRange(fileId = 1, start = 0, endInclusive = 9)
-        provider.readRange(fileId = 1, start = 20, endInclusive = 29)
-        assertTrue(
-            provider.prefetchRange(start = 40, endInclusive = 49, priority = 3, protectedRanges = listOf(5L..6L)),
-        )
-
-        provider.readRange(fileId = 1, start = 60, endInclusive = 69)
-        assertArrayEquals(bytes.sliceArray(0..9), provider.readRange(fileId = 1, start = 0, endInclusive = 9))
-
-        assertEquals(listOf(0L to 9L, 20L to 29L, 40L to 49L, 60L to 69L, 0L to 9L), client.rangeCalls)
-    }
-
-    @Test
-    fun oversizedResponseIsNotCachedPastHardCapacityLimit() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-            maxCacheBytes = 8,
-        )
-
-        assertArrayEquals(bytes.sliceArray(10..19), provider.readRange(fileId = 1, start = 10, endInclusive = 19))
-        assertArrayEquals(bytes.sliceArray(10..19), provider.readRange(fileId = 1, start = 10, endInclusive = 19))
-
-        assertEquals(listOf(10L to 19L, 10L to 19L), client.rangeCalls)
-    }
-
-    @Test
-    fun requestLargerThanReadAheadStillReturnsOnlyRequestedBytes() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 5,
-        )
-
-        assertArrayEquals(bytes.sliceArray(10..30), provider.readRange(fileId = 1, start = 10, endInclusive = 30))
-        assertEquals(listOf(10L to 35L), client.rangeCalls)
-    }
-
-    @Test
-    fun cacheMissClampsExpandedEndToFileEnd() {
+    fun overlongStreamingResponseIsRejectedAndClosed() {
         val bytes = ByteArray(64) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 32,
-        )
+        val client = StreamingWebDavClient(bytes, appendExtraResponseByte = true)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
 
-        assertArrayEquals(bytes.sliceArray(50..55), provider.readRange(fileId = 1, start = 50, endInclusive = 55))
-        assertEquals(listOf(50L to 63L), client.rangeCalls)
+        val error = assertThrows(java.io.IOException::class.java) {
+            provider.fetchRangeInto(1, 43, 10, 19, ByteBuffer.allocateDirect(10))
+        }
+
+        assertTrue(error.message.orEmpty().contains("actual>expected"))
+        assertEquals(1, client.closedResponses)
     }
 
     @Test
-    fun prefetchedPlannedRangeServesLaterReadWithoutAnotherWebDavRequest() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
+    fun fetchRangeIntoRejectsInvalidRequestAndTargetBeforeNetworkIo() {
+        val bytes = ByteArray(64) { it.toByte() }
+        val client = StreamingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
 
-        assertTrue(provider.prefetchRange(start = 40, endInclusive = 79))
-        assertArrayEquals(bytes.sliceArray(50..59), provider.readRange(fileId = 1, start = 50, endInclusive = 59))
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 0, 10, 19, ByteBuffer.allocateDirect(10))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, -1, 8, ByteBuffer.allocateDirect(10))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 20, 19, ByteBuffer.allocateDirect(0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 60, 64, ByteBuffer.allocateDirect(5))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 10, 19, ByteBuffer.allocate(10))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 10, 19, ByteBuffer.allocateDirect(10).asReadOnlyBuffer())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 10, 19, ByteBuffer.allocateDirect(9))
+        }
+        val offsetTarget = ByteBuffer.allocateDirect(12).apply {
+            position(1)
+            limit(11)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 10, 19, offsetTarget)
+        }
+        val wrongSizedSlice = ByteBuffer.allocateDirect(12).apply { position(1) }.slice()
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.fetchRangeInto(1, 1, 10, 19, wrongSizedSlice)
+        }
 
-        assertEquals(listOf(40L to 79L), client.rangeCalls)
+        assertTrue(client.rangeCalls.isEmpty())
     }
 
     @Test
-    fun adjacentPrefetchedSegmentsAreComposedForLaterCrossRangeRead() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
-
-        assertTrue(provider.prefetchRange(start = 40, endInclusive = 79))
-        assertTrue(provider.prefetchRange(start = 80, endInclusive = 99))
-        assertArrayEquals(bytes.sliceArray(50..90), provider.readRange(fileId = 1, start = 50, endInclusive = 90))
-
-        assertEquals(listOf(40L to 79L, 80L to 99L), client.rangeCalls)
-    }
-
-    @Test
-    fun truncatedNetworkResponseIsRejectedAndNeverCached() {
+    fun truncatedStreamingResponseFailsAndReleasesRequestId() {
         val bytes = ByteArray(64) { it.toByte() }
         val client = TruncatedStreamingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
 
-        val firstError = assertThrows(IOException::class.java) {
-            provider.readRange(fileId = 1, start = 10, endInclusive = 19)
+        val firstError = assertThrows(java.io.IOException::class.java) {
+            provider.fetchRangeInto(1, 9, 10, 19, ByteBuffer.allocateDirect(10))
         }
         assertTrue(firstError.message.orEmpty().contains("expected=10 actual=9"))
-        assertFalse(provider.isRangeCached(start = 10, endInclusive = 19))
 
-        assertThrows(IOException::class.java) {
-            provider.readRange(fileId = 1, start = 10, endInclusive = 19)
+        assertThrows(java.io.IOException::class.java) {
+            provider.fetchRangeInto(1, 9, 10, 19, ByteBuffer.allocateDirect(10))
         }
         assertEquals(listOf(10L to 19L, 10L to 19L), client.rangeCalls)
     }
 
     @Test
-    fun readRangeJoinsCoveringInFlightPrefetch() {
-            val bytes = ByteArray(128) { it.toByte() }
-            val release = CompletableDeferred<Unit>()
-            val firstReadStarted = CountDownLatch(1)
-            val client = BlockingFirstRangeWebDavClient(
-                bytes = bytes,
-                releaseFirstRead = release,
-                firstReadStarted = firstReadStarted,
-            )
-            val provider = WebDavRangeProvider(
-                client = client,
-                path = "/books/book.cbz",
-                size = bytes.size.toLong(),
-                readAheadBytes = 0,
-            )
+    fun cancellationBeforeRegistrationIsConsumedByOneMatchingRequest() {
+        val bytes = ByteArray(64) { it.toByte() }
+        val client = StreamingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        provider.cancelRangeRequest(17)
 
-            val prefetchThread = Thread {
-                provider.prefetchRange(start = 40, endInclusive = 79)
-            }
-            prefetchThread.start()
-            assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
-
-            val readResult = mutableListOf<ByteArray>()
-            val readThread = Thread {
-                readResult += provider.readRange(fileId = 1, start = 50, endInclusive = 59)
-            }
-            readThread.start()
-            Thread.sleep(100)
-
-            assertTrue("readRange should wait for the covering prefetch", readThread.isAlive)
-            release.complete(Unit)
-            readThread.join(1_000)
-            prefetchThread.join(1_000)
-
-            assertFalse(readThread.isAlive)
-            assertFalse(prefetchThread.isAlive)
-            assertArrayEquals(bytes.sliceArray(50..59), readResult.single())
-            assertEquals(listOf(40L to 79L), client.rangeCalls)
-    }
-
-    @Test
-    fun readRangeFallsBackWhenJoinedPrefetchFails() {
-            val bytes = ByteArray(128) { it.toByte() }
-            val release = CompletableDeferred<Unit>()
-            val firstReadStarted = CountDownLatch(1)
-            val client = FailingFirstRangeWebDavClient(
-                bytes = bytes,
-                releaseFirstRead = release,
-                firstReadStarted = firstReadStarted,
-            )
-            val provider = WebDavRangeProvider(
-                client = client,
-                path = "/books/book.cbz",
-                size = bytes.size.toLong(),
-                readAheadBytes = 0,
-            )
-
-            val prefetchThread = Thread {
-                runCatching { provider.prefetchRange(start = 40, endInclusive = 79) }
-            }
-            prefetchThread.start()
-            assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
-
-            val readResult = mutableListOf<ByteArray>()
-            val readThread = Thread {
-                readResult += provider.readRange(fileId = 1, start = 50, endInclusive = 59)
-            }
-            readThread.start()
-            Thread.sleep(100)
-            assertTrue("readRange should first join the covering prefetch", readThread.isAlive)
-
-            release.complete(Unit)
-            readThread.join(1_000)
-            prefetchThread.join(1_000)
-
-            assertFalse(readThread.isAlive)
-            assertFalse(prefetchThread.isAlive)
-            assertArrayEquals(bytes.sliceArray(50..59), readResult.single())
-            assertEquals(listOf(40L to 79L, 50L to 59L), client.rangeCalls)
-    }
-
-    @Test
-    fun concurrentReadRangesJoinTheFirstCoveringFetch() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val release = CompletableDeferred<Unit>()
-        val firstReadStarted = CountDownLatch(1)
-        val client = BlockingWebDavClient(
-            bytes = bytes,
-            release = release,
-            firstReadStarted = firstReadStarted,
-        )
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 32,
-        )
-
-        val firstResult = mutableListOf<ByteArray>()
-        val secondResult = mutableListOf<ByteArray>()
-        val firstThread = Thread {
-            firstResult += provider.readRange(fileId = 1, start = 10, endInclusive = 19)
-        }
-        val secondThread = Thread {
-            secondResult += provider.readRange(fileId = 1, start = 30, endInclusive = 40)
+        assertThrows(CancellationException::class.java) {
+            provider.fetchRangeInto(1, 17, 10, 19, ByteBuffer.allocateDirect(10))
         }
 
-        firstThread.start()
-        assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
-        secondThread.start()
-        Thread.sleep(100)
-
-        assertEquals(listOf(10L to 51L), client.rangeCalls)
-        release.complete(Unit)
-        firstThread.join(1_000)
-        secondThread.join(1_000)
-
-        assertArrayEquals(bytes.sliceArray(10..19), firstResult.single())
-        assertArrayEquals(bytes.sliceArray(30..40), secondResult.single())
-        assertEquals(listOf(10L to 51L), client.rangeCalls)
+        val target = ByteBuffer.allocateDirect(10)
+        assertEquals(10, provider.fetchRangeInto(1, 17, 10, 19, target))
+        assertArrayEquals(bytes.sliceArray(10..19), target.writtenBytes())
+        assertEquals(listOf(10L to 19L), client.rangeCalls)
     }
 
     @Test
-    fun prefetchedRangeCanBeCheckedAndReadFromCacheWithoutWebDavRequest() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val client = RecordingWebDavClient(bytes)
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
+    fun cancellationAfterCompletedRequestDoesNotCreateRegistrationTombstone() {
+        val bytes = ByteArray(64) { it.toByte() }
+        val client = StreamingWebDavClient(bytes)
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+
+        assertEquals(
+            10,
+            provider.fetchRangeInto(1, 18, 10, 19, ByteBuffer.allocateDirect(10)),
         )
+        provider.cancelRangeRequest(18)
 
-        assertTrue(provider.prefetchRange(start = 40, endInclusive = 79))
-
-        assertTrue(provider.isRangeCached(start = 40, endInclusive = 79))
-        assertTrue(provider.isRangeCached(start = 50, endInclusive = 59))
-        assertFalse(provider.isRangeCached(start = 39, endInclusive = 40))
-        assertArrayEquals(bytes.sliceArray(50..59), provider.readCachedRange(start = 50, endInclusive = 59))
-
-        assertNull(provider.readCachedRange(start = 39, endInclusive = 40))
-        assertNull(provider.readCachedRange(start = 80, endInclusive = 89))
-        assertEquals(listOf(40L to 79L), client.rangeCalls)
+        val target = ByteBuffer.allocateDirect(10)
+        assertEquals(10, provider.fetchRangeInto(1, 18, 20, 29, target))
+        assertArrayEquals(bytes.sliceArray(20..29), target.writtenBytes())
+        assertEquals(listOf(10L to 19L, 20L to 29L), client.rangeCalls)
     }
 
     @Test
-    fun readCachedRangeDoesNotJoinCoveringInFlightPrefetch() {
-        val bytes = ByteArray(128) { it.toByte() }
-        val release = CompletableDeferred<Unit>()
-        val firstReadStarted = CountDownLatch(1)
-        val client = BlockingWebDavClient(
-            bytes = bytes,
-            release = release,
-            firstReadStarted = firstReadStarted,
-        )
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
-
-        val prefetchThread = Thread {
-            provider.prefetchRange(start = 40, endInclusive = 79)
-        }
-        prefetchThread.start()
-        assertTrue(firstReadStarted.await(1, TimeUnit.SECONDS))
-        val cached = provider.readCachedRange(start = 50, endInclusive = 59)
-
-        assertNull(cached)
-        assertEquals(listOf(40L to 79L), client.rangeCalls)
-
-        release.complete(Unit)
-        prefetchThread.join(1_000)
-        assertFalse(prefetchThread.isAlive)
-        assertArrayEquals(bytes.sliceArray(50..59), provider.readCachedRange(start = 50, endInclusive = 59))
-        assertEquals(listOf(40L to 79L), client.rangeCalls)
-    }
-
-    @Test
-    fun cancelPrefetchesCancelsInFlightPrefetchRequest() {
+    fun cancellationClosesActiveNetworkRequestAndSurfacesCancellation() {
         val bytes = ByteArray(128) { it.toByte() }
         val readStarted = CountDownLatch(1)
         val cancellationRegistered = CountDownLatch(1)
@@ -471,32 +181,65 @@ class WebDavRangeProviderTest {
             cancellationRegistered = cancellationRegistered,
             cancellationCalled = cancellationCalled,
         )
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
-        val prefetchError = AtomicReference<Throwable?>()
-        val prefetchThread = Thread {
-            prefetchError.set(runCatching { provider.prefetchRange(start = 40, endInclusive = 79) }.exceptionOrNull())
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        val failure = AtomicReference<Throwable?>()
+        val request = Thread {
+            failure.set(
+                runCatching {
+                    provider.fetchRangeInto(1, 23, 40, 79, ByteBuffer.allocateDirect(40))
+                }.exceptionOrNull(),
+            )
         }
 
-        prefetchThread.start()
+        request.start()
         assertTrue(readStarted.await(1, TimeUnit.SECONDS))
         assertTrue(cancellationRegistered.await(1, TimeUnit.SECONDS))
-
-        provider.cancelPrefetches()
+        provider.cancelRangeRequest(23)
 
         assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
-        prefetchThread.join(1_000)
-        assertFalse(prefetchThread.isAlive)
-        assertTrue(prefetchError.get() is CancellationException)
+        request.join(1_000)
+        assertFalse(request.isAlive)
+        assertTrue(failure.get() is CancellationException)
+        assertTrue(failure.get()?.cause is java.io.IOException)
         assertEquals(listOf(40L to 79L), client.rangeCalls)
     }
 
     @Test
-    fun cancelPrefetchesCancelsInFlightDemandRequestForReaderClose() {
+    fun cancelRangeRequestDoesNotCloseProvider() {
+        val bytes = ByteArray(128) { it.toByte() }
+        val readStarted = CountDownLatch(1)
+        val cancellationRegistered = CountDownLatch(1)
+        val cancellationCalled = CountDownLatch(1)
+        val client = CancellableFirstThenStreamingWebDavClient(
+            bytes = bytes,
+            readStarted = readStarted,
+            cancellationRegistered = cancellationRegistered,
+            cancellationCalled = cancellationCalled,
+        )
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        val request = Thread {
+            runCatching {
+                provider.fetchRangeInto(1, 24, 40, 79, ByteBuffer.allocateDirect(40))
+            }
+        }
+
+        request.start()
+        assertTrue(readStarted.await(1, TimeUnit.SECONDS))
+        assertTrue(cancellationRegistered.await(1, TimeUnit.SECONDS))
+        provider.cancelRangeRequest(24)
+
+        assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
+        request.join(1_000)
+        assertFalse(request.isAlive)
+
+        // Per-request cancellation must not close the provider.
+        val target = ByteBuffer.allocateDirect(4)
+        assertEquals(4, provider.fetchRangeInto(1, 25, 0, 3, target))
+        assertArrayEquals(bytes.sliceArray(0..3), target.writtenBytes())
+    }
+
+    @Test
+    fun closeCancelsActiveRequestAndRejectsFutureRequests() {
         val bytes = ByteArray(128) { it.toByte() }
         val readStarted = CountDownLatch(1)
         val cancellationRegistered = CountDownLatch(1)
@@ -507,33 +250,152 @@ class WebDavRangeProviderTest {
             cancellationRegistered = cancellationRegistered,
             cancellationCalled = cancellationCalled,
         )
-        val provider = WebDavRangeProvider(
-            client = client,
-            path = "/books/book.cbz",
-            size = bytes.size.toLong(),
-            readAheadBytes = 0,
-        )
-        val readError = AtomicReference<Throwable?>()
-        val readThread = Thread {
-            readError.set(runCatching { provider.readRange(fileId = 1L, start = 40, endInclusive = 79) }.exceptionOrNull())
+        val provider = WebDavRangeProvider(client, "/books/book.cbz", bytes.size.toLong())
+        val request = Thread {
+            runCatching {
+                provider.fetchRangeInto(1, 31, 40, 79, ByteBuffer.allocateDirect(40))
+            }
         }
 
-        readThread.start()
+        request.start()
         assertTrue(readStarted.await(1, TimeUnit.SECONDS))
         assertTrue(cancellationRegistered.await(1, TimeUnit.SECONDS))
+        provider.close()
 
-        try {
-            provider.cancelPrefetches()
-
-            assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
-            readThread.join(1_000)
-            assertFalse(readThread.isAlive)
-            assertTrue(readError.get() is CancellationException)
-            assertEquals(listOf(40L to 79L), client.rangeCalls)
-        } finally {
-            provider.close()
-            readThread.join(1_000)
+        assertTrue(cancellationCalled.await(1, TimeUnit.SECONDS))
+        request.join(1_000)
+        assertFalse(request.isAlive)
+        assertThrows(CancellationException::class.java) {
+            provider.fetchRangeInto(1, 32, 0, 3, ByteBuffer.allocateDirect(4))
         }
     }
+}
 
+private fun ByteBuffer.writtenBytes(): ByteArray {
+    flip()
+    return ByteArray(remaining()).also(::get)
+}
+
+private class StreamingWebDavClient(
+    private val bytes: ByteArray,
+    private val appendExtraResponseByte: Boolean = false,
+) : WebDavClient {
+    val rangeCalls = mutableListOf<Pair<Long, Long>>()
+    var cancellationRegistrations = 0
+    var largestBulkRead = 0
+    var closedResponses = 0
+
+    override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+    override suspend fun head(path: String): RemoteFileInfo =
+        RemoteFileInfo(path, bytes.size.toLong(), null, null, supportsRange = true)
+
+    override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+        error("provider should use range streams")
+
+    override suspend fun openRangeStream(
+        path: String,
+        start: Long,
+        endInclusive: Long?,
+        registerCancellation: (Closeable) -> Unit,
+    ): WebDavStreamResponse {
+        val end = requireNotNull(endInclusive)
+        rangeCalls += start to end
+        val requested = bytes.sliceArray(start.toInt()..end.toInt())
+        val payload = if (appendExtraResponseByte) requested + 0x7f.toByte() else requested
+        val stream = TrackingInputStream(
+            payload,
+            onBulkRead = { requestedBytes ->
+                largestBulkRead = maxOf(largestBulkRead, requestedBytes)
+            },
+            onClose = { closedResponses += 1 },
+        )
+        registerCancellation(stream)
+        cancellationRegistrations += 1
+        return WebDavStreamResponse(
+            stream = stream,
+            statusCode = 206,
+            contentLength = end - start + 1,
+            contentRange = ContentRange(start, end, bytes.size.toLong()),
+            contentType = "application/octet-stream",
+            totalSize = bytes.size.toLong(),
+            close = stream::close,
+        )
+    }
+
+    override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+        error("unused")
+}
+
+private class TrackingInputStream(
+    bytes: ByteArray,
+    private val onBulkRead: (Int) -> Unit,
+    private val onClose: () -> Unit,
+) : ByteArrayInputStream(bytes) {
+    private var closeReported = false
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        onBulkRead(length)
+        return super.read(buffer, offset, length)
+    }
+
+    override fun close() {
+        if (!closeReported) {
+            closeReported = true
+            onClose()
+        }
+        super.close()
+    }
+}
+
+private class CancellableFirstThenStreamingWebDavClient(
+    private val bytes: ByteArray,
+    private val readStarted: CountDownLatch,
+    private val cancellationRegistered: CountDownLatch,
+    private val cancellationCalled: CountDownLatch,
+) : WebDavClient {
+    private var requestCount = 0
+
+    override suspend fun list(path: String): List<WebDavItem> = emptyList()
+
+    override suspend fun head(path: String): RemoteFileInfo =
+        RemoteFileInfo(path, bytes.size.toLong(), null, null, supportsRange = true)
+
+    override suspend fun readRange(path: String, start: Long, endInclusive: Long): ByteArray =
+        error("provider should use range streams")
+
+    override suspend fun openRangeStream(
+        path: String,
+        start: Long,
+        endInclusive: Long?,
+        registerCancellation: (Closeable) -> Unit,
+    ): WebDavStreamResponse {
+        val end = requireNotNull(endInclusive)
+        requestCount += 1
+        val stream = if (requestCount == 1) {
+            BlockingTestInputStream(readStarted).also { blocking ->
+                registerCancellation(
+                    Closeable {
+                        cancellationCalled.countDown()
+                        blocking.close()
+                    },
+                )
+                cancellationRegistered.countDown()
+            }
+        } else {
+            ByteArrayInputStream(bytes.sliceArray(start.toInt()..end.toInt())).also(registerCancellation)
+        }
+        return WebDavStreamResponse(
+            stream = stream,
+            statusCode = 206,
+            contentLength = end - start + 1,
+            contentRange = ContentRange(start, end, bytes.size.toLong()),
+            contentType = "application/octet-stream",
+            totalSize = bytes.size.toLong(),
+            close = stream::close,
+        )
+    }
+
+    override suspend fun download(path: String, target: File, onBytesRead: (Long) -> Unit): Long =
+        error("unused")
 }

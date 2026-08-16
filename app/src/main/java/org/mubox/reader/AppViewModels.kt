@@ -10,6 +10,7 @@ import org.mubox.reader.feature.downloads.AndroidDownloadBackend
 import org.mubox.reader.feature.downloads.DownloadCoordinator
 import org.mubox.reader.feature.filedirectory.FileDirectoryViewModel
 import org.mubox.reader.feature.library.LibraryViewModel
+import org.mubox.reader.feature.reader.AndroidNetworkClassProvider
 import org.mubox.reader.feature.reader.ReaderViewModel
 import org.mubox.reader.feature.videolibrary.VideoLibraryViewModel
 import org.mubox.reader.feature.webdav.WebDavViewModel
@@ -40,6 +41,7 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
             reportFailure = { event, error -> container.diagnostics.error(event, error) },
         )
     }
+    val networkClassProvider = remember(context) { AndroidNetworkClassProvider(context) }
     return AppViewModels(
         webDav = viewModel(
             factory = viewModelFactory { WebDavViewModel(clientFactory = container::createWebDavClient) },
@@ -53,6 +55,7 @@ internal fun rememberAppViewModels(container: AppContainer): AppViewModels {
                         container.watchHistoryRepository.upsert(entry)
                     },
                     diagnosticLog = container.diagnostics,
+                    networkClassProvider = networkClassProvider::invoke,
                 )
             },
         ),

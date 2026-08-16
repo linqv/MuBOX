@@ -4,8 +4,9 @@ import org.mubox.reader.core.diagnostics.Diagnostics
 import org.mubox.reader.core.diagnostics.NoopDiagnostics
 import org.mubox.reader.core.ports.ComicReaderSession
 import org.mubox.reader.core.ports.PlannedRemoteRange
+import org.mubox.reader.core.ports.ReconciledPrefetchPlan
+import org.mubox.reader.core.ports.ReconciledPrefetchTask
 import java.io.File
-import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +19,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
 /**
  * Owns all speculative reader work while the ViewModel remains responsible for UI events.
@@ -33,6 +35,7 @@ internal class ReaderPrefetchCoordinator(
     diagnosticLog: Diagnostics = NoopDiagnostics,
     pageFiles: () -> Map<Int, File>,
     onPageFilesLoaded: (Map<Int, File>) -> Unit,
+    networkClass: () -> Int = { NETWORK_CLASS_WIFI },
 ) {
     private val pagePrefetch = ReaderPagePrefetchCoordinator(
         scope = scope,
@@ -47,6 +50,7 @@ internal class ReaderPrefetchCoordinator(
         ioDispatcher = ioDispatcher,
         sessionCoordinator = sessionCoordinator,
         diagnosticLog = diagnosticLog,
+        networkClass = networkClass,
     )
 
     fun prefetchNeighbors(pageIndex: Int, reason: String = "viewport") {
@@ -214,10 +218,12 @@ private class ReaderPlannedRangePrefetchCoordinator(
     private val ioDispatcher: CoroutineDispatcher,
     private val sessionCoordinator: ReaderSessionCoordinator,
     private val diagnosticLog: Diagnostics,
+    private val networkClass: () -> Int,
 ) {
     private val lock = Any()
     private val jobs = mutableMapOf<PlannedRangeKey, PlannedRangePrefetch>()
     private val completedRanges = mutableMapOf<PlannedRangeKey, CompletedPlannedRange>()
+    private var rangeStateRevision = 0L
     private var supervisor = SupervisorJob()
     private var rangeScope = CoroutineScope(supervisor + ioDispatcher)
     private val rangeSemaphore = Semaphore(MAX_PLANNED_RANGE_CONCURRENCY)
@@ -231,18 +237,13 @@ private class ReaderPlannedRangePrefetchCoordinator(
         sessionCoordinator.replaceViewportJob {
             scope.launch {
                 runCatching {
-                    val plannedRanges = withContext(ioDispatcher) {
-                        sessionCoordinator.withSessionLock {
-                            if (!sessionCoordinator.isCurrent(expectedGeneration)) {
-                                return@withSessionLock emptyList<PlannedRemoteRange>()
-                            }
-                            session.updateViewport(pageIndex, NETWORK_WIFI)
-                            val ranges = session.plannedRanges(pageIndex, NETWORK_WIFI)
-                            ranges
-                        }
-                    }
-                    if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                        schedule(session, plannedRanges, expectedGeneration)
+                    withContext(ioDispatcher) {
+                        reconcileUntilScheduled(
+                            session = session,
+                            pageIndex = pageIndex,
+                            expectedGeneration = expectedGeneration,
+                            updateViewport = true,
+                        )
                     }
                 }.onFailure { error ->
                     if (sessionCoordinator.isCurrent(expectedGeneration) && error !is CancellationException) {
@@ -259,15 +260,12 @@ private class ReaderPlannedRangePrefetchCoordinator(
         val expectedGeneration = activeReader.descriptor.generation
         rangeScope.launch {
             runCatching {
-                val ranges = sessionCoordinator.withSessionLock {
-                    if (!sessionCoordinator.isCurrent(expectedGeneration)) {
-                        return@withSessionLock emptyList<PlannedRemoteRange>()
-                    }
-                    activeSession.plannedRanges(pageIndex, NETWORK_WIFI)
-                }
-                if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                    schedule(activeSession, ranges, expectedGeneration)
-                }
+                reconcileUntilScheduled(
+                    session = activeSession,
+                    pageIndex = pageIndex,
+                    expectedGeneration = expectedGeneration,
+                    updateViewport = false,
+                )
             }.onFailure { error ->
                 if (sessionCoordinator.isCurrent(expectedGeneration) && error !is CancellationException) {
                     diagnosticLog.error("demand_planned_range_failed page=$pageIndex source=$source", error)
@@ -285,91 +283,147 @@ private class ReaderPlannedRangePrefetchCoordinator(
         supervisor.cancel(CancellationException("reader view model cleared"))
     }
 
+    private suspend fun reconcileUntilScheduled(
+        session: ComicReaderSession,
+        pageIndex: Int,
+        expectedGeneration: Int,
+        updateViewport: Boolean,
+    ) {
+        var viewportUpdatePending = updateViewport
+        while (sessionCoordinator.isCurrent(expectedGeneration)) {
+            val activeNetworkClass = networkClass()
+            val snapshot = sessionCoordinator.withSessionLock {
+                if (!sessionCoordinator.isCurrent(expectedGeneration)) {
+                    return@withSessionLock null
+                }
+                if (viewportUpdatePending) {
+                    session.updateViewport(pageIndex, activeNetworkClass)
+                    viewportUpdatePending = false
+                }
+                val state = snapshotRangeState()
+                val plan = session.reconcilePrefetchPlan(
+                    pageIndex = pageIndex,
+                    networkClass = activeNetworkClass,
+                    activeRanges = state.activeRanges,
+                    completedRanges = state.completedRanges,
+                    byteBudget = PREFETCH_PLAN_MAX_BYTES,
+                )
+                ReconciledPrefetchPlanSnapshot(
+                    plan = plan,
+                    rangeStateRevision = state.revision,
+                )
+            } ?: return
+            currentCoroutineContext().ensureActive()
+            if (!sessionCoordinator.isCurrent(expectedGeneration)) return
+            if (
+                schedule(
+                    session = session,
+                    plan = snapshot.plan,
+                    expectedGeneration = expectedGeneration,
+                    expectedRangeStateRevision = snapshot.rangeStateRevision,
+                )
+            ) {
+                return
+            }
+            // A job completed or was cancelled while native reconciliation was running.
+            // Retry from a fresh atomic snapshot rather than applying stale coverage.
+            yield()
+        }
+    }
+
     private fun schedule(
         session: ComicReaderSession,
-        ranges: List<PlannedRemoteRange>,
+        plan: ReconciledPrefetchPlan,
         expectedGeneration: Int,
-    ) {
-        val mergedRanges = mergeSameStartPlannedRanges(ranges)
-        // Nearby active ranges remain useful while continuous scrolling advances the viewport.
-        val retainedPages = plannedRangeProtectionPages(mergedRanges)
-        cancel(reason = "stale_plan", keepPages = retainedPages)
-        if (mergedRanges.isEmpty()) return
+        expectedRangeStateRevision: Long,
+    ): Boolean {
+        val jobsToCancel = mutableListOf<Job>()
+        val jobsToStart = mutableListOf<Job>()
+        val applied = synchronized(lock) {
+            if (rangeStateRevision != expectedRangeStateRevision) {
+                return@synchronized false
+            }
+            var stateChanged = false
+            // Nearby active ranges remain useful while continuous scrolling advances the viewport.
+            val staleKeys = jobs
+                .filter { (_, planned) ->
+                    planned.range.pages.none { page -> page in plan.retainedPages }
+                }
+                .keys
+                .toList()
+            staleKeys.forEach { key ->
+                jobs.remove(key)?.job?.let(jobsToCancel::add)
+                stateChanged = true
+            }
+            plan.tasks.forEach { task ->
+                val range = task.range
+                val key = range.key()
+                if (
+                    jobs[key]?.job?.isPendingOrActive() == true ||
+                    completedRanges[key] != null
+                ) {
+                    return@forEach
+                }
+                val job = createPrefetchJob(
+                    session = session,
+                    task = task,
+                    expectedGeneration = expectedGeneration,
+                )
+                jobs[key] = PlannedRangePrefetch(range = range, job = job)
+                jobsToStart += job
+                stateChanged = true
+            }
+            if (stateChanged) {
+                rangeStateRevision++
+            }
+            true
+        }
+        if (!applied) return false
+        jobsToCancel.forEach { job ->
+            job.cancel(CancellationException("planned range stale_plan"))
+        }
+        jobsToStart.forEach(Job::start)
+        return true
+    }
 
-        val budgetedPrefetch = limitPlannedRangesByBudget(
-            mergedRanges.flatMap(::missingSegments),
-        )
-        val prefetchRanges = budgetedPrefetch.ranges
-        if (prefetchRanges.isEmpty()) return
-
-        prefetchRanges.forEach { range ->
-            val key = range.key()
-            val protectedRanges = protectedByteRanges(prefetchRanges, excludedKey = key)
-            val job = rangeScope.launch(start = CoroutineStart.LAZY) {
-                try {
-                    if (!sessionCoordinator.isCurrent(expectedGeneration)) return@launch
-                    prefetchWithLimits(session, range, protectedRanges)
-                    if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                        markCompleted(range)
-                    }
-                } catch (_: CancellationException) {
-                    // Expected stale-plan cancellation is logged by the reconciler.
-                } catch (error: Throwable) {
-                    if (error.isExpectedReaderCancellation()) return@launch
-                    if (sessionCoordinator.isCurrent(expectedGeneration)) {
-                        diagnosticLog.error(
-                            "planned_range_prefetch_failed start=${range.start} end=${range.endInclusive}",
-                            error,
-                        )
-                    }
-                } finally {
-                    val currentJob = currentCoroutineContext()[Job]
-                    if (currentJob != null) {
-                        synchronized(lock) {
-                            if (jobs[key]?.job === currentJob) {
-                                jobs.remove(key)
-                            }
+    private fun createPrefetchJob(
+        session: ComicReaderSession,
+        task: ReconciledPrefetchTask,
+        expectedGeneration: Int,
+    ): Job {
+        val range = task.range
+        val key = range.key()
+        return rangeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                if (!sessionCoordinator.isCurrent(expectedGeneration)) return@launch
+                val completed = prefetchWithLimits(session, range, task.protectedRanges)
+                // A rejected, cancelled or not-stored prefetch must NOT be recorded as
+                // completed: the next reconcile then re-schedules the same range instead
+                // of treating it as covered for the rest of the session.
+                if (completed && sessionCoordinator.isCurrent(expectedGeneration)) {
+                    markCompleted(range)
+                }
+            } catch (_: CancellationException) {
+                // Expected stale-plan cancellation is logged by the reconciler.
+            } catch (error: Throwable) {
+                if (error.isExpectedReaderCancellation()) return@launch
+                if (sessionCoordinator.isCurrent(expectedGeneration)) {
+                    diagnosticLog.error(
+                        "planned_range_prefetch_failed start=${range.start} end=${range.endInclusive}",
+                        error,
+                    )
+                }
+            } finally {
+                val currentJob = currentCoroutineContext()[Job]
+                if (currentJob != null) {
+                    synchronized(lock) {
+                        if (jobs[key]?.job === currentJob) {
+                            jobs.remove(key)
+                            rangeStateRevision++
                         }
                     }
                 }
             }
-            val shouldStart = synchronized(lock) {
-                when {
-                    jobs[key]?.job?.isPendingOrActive() == true -> false
-                    completedRanges[key] != null -> false
-                    else -> {
-                        jobs[key] = PlannedRangePrefetch(range = range, job = job)
-                        true
-                    }
-                }
-            }
-            if (!shouldStart) {
-                job.cancel()
-                return@forEach
-            }
-            job.start()
-        }
-    }
-
-    private fun missingSegments(range: PlannedRemoteRange): List<PlannedRemoteRange> {
-        val coveredRanges = synchronized(lock) {
-            val activeRanges = jobs
-                .values
-                .filter { it.job.isPendingOrActive() }
-                .map { it.range.key().asLongRange() }
-            activeRanges + completedRanges.keys.map(PlannedRangeKey::asLongRange)
-        }
-        return subtractCoveredRanges(
-            start = range.start,
-            endInclusive = range.endInclusive,
-            coveredRanges = coveredRanges,
-        ).map { missing ->
-            PlannedRemoteRange(
-                start = missing.first,
-                endInclusive = missing.last,
-                pages = range.pages,
-                priority = range.priority,
-            )
         }
     }
 
@@ -385,93 +439,55 @@ private class ReaderPlannedRangePrefetchCoordinator(
         lowPriorityPlannedRangeSemaphore = lowPriorityRangeSemaphore,
     )
 
-    private fun protectedByteRanges(
-        ranges: List<PlannedRemoteRange>,
-        excludedKey: PlannedRangeKey,
-    ): List<LongRange> {
-        val protectionPages = plannedRangeProtectionPages(ranges)
-        val currentPages = ranges.flatMap { it.pages }.toSet()
-        val candidates = mutableListOf<PlannedRangeProtectionCandidate>()
-        ranges.forEach { range ->
-            candidates += PlannedRangeProtectionCandidate(
-                key = range.key(),
-                sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_CURRENT,
-                pages = range.pages.toSet(),
+    private fun snapshotRangeState(): PlannedRangeStateSnapshot = synchronized(lock) {
+        val activeRanges = jobs
+            .values
+            .filter { it.job.isPendingOrActive() }
+            .map { it.range }
+        val completed = completedRanges.map { (key, range) ->
+            PlannedRemoteRange(
+                start = key.start,
+                endInclusive = key.endInclusive,
+                pages = range.pages.sorted(),
                 priority = range.priority,
             )
         }
-        synchronized(lock) {
-            jobs
-                .values
-                .filter {
-                    it.job.isPendingOrActive() &&
-                        it.range.pages.any { page -> page in protectionPages }
-                }
-                .forEach { planned ->
-                    candidates += PlannedRangeProtectionCandidate(
-                        key = planned.range.key(),
-                        sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_ACTIVE,
-                        pages = planned.range.pages.toSet(),
-                        priority = planned.range.priority,
-                    )
-                }
-            completedRanges
-                .filter { (_, completed) ->
-                    completed.pages.any { page -> page in protectionPages }
-                }
-                .forEach { (key, completed) ->
-                    candidates += PlannedRangeProtectionCandidate(
-                        key = key,
-                        sourceRank = PLANNED_RANGE_PROTECTION_SOURCE_COMPLETED,
-                        pages = completed.pages,
-                        priority = completed.priority,
-                    )
-                }
-        }
-
-        val selected = mutableListOf<LongRange>()
-        val seen = mutableSetOf<PlannedRangeKey>()
-        var selectedBytes = 0L
-        val sortedCandidates = candidates.sortedWith(
-            compareBy<PlannedRangeProtectionCandidate> { it.sourceRank }
-                .thenBy { pageDistance(it.pages, currentPages) }
-                .thenBy { it.priority }
-                .thenBy { it.byteLength },
+        PlannedRangeStateSnapshot(
+            activeRanges = activeRanges,
+            completedRanges = completed,
+            revision = rangeStateRevision,
         )
-        for (candidate in sortedCandidates) {
-            if (candidate.key == excludedKey) continue
-            if (!seen.add(candidate.key)) continue
-            val byteLength = candidate.byteLength
-            if (selectedBytes + byteLength > MAX_PLANNED_RANGE_PROTECTED_BYTES) continue
-            selected += candidate.key.asLongRange()
-            selectedBytes += byteLength
-        }
-        return selected
     }
 
     private fun markCompleted(range: PlannedRemoteRange) {
         synchronized(lock) {
-            completedRanges[range.key()] = CompletedPlannedRange(
+            val completed = CompletedPlannedRange(
                 priority = range.priority,
                 pages = range.pages.toSet(),
             )
+            if (completedRanges.put(range.key(), completed) != completed) {
+                rangeStateRevision++
+            }
         }
     }
 
     private fun cancel(reason: String, keepPages: Set<Int>) {
         val cancelled = synchronized(lock) {
-            jobs
+            val keys = jobs
                 .filter { (_, planned) ->
                     planned.range.pages.none { page -> page in keepPages }
                 }
                 .map { (key, _) -> key }
                 .toList()
+            val removed = keys.mapNotNull(jobs::remove)
+            if (removed.isNotEmpty()) {
+                rangeStateRevision++
+            }
+            removed
         }
         if (cancelled.isEmpty()) return
-        cancelled.forEach { key ->
-            synchronized(lock) {
-                jobs.remove(key)
-            }?.job?.cancel(CancellationException("planned range $reason"))
+        cancelled.forEach { planned ->
+            planned.job.cancel(CancellationException("planned range $reason"))
         }
     }
 
@@ -482,6 +498,7 @@ private class ReaderPlannedRangePrefetchCoordinator(
         synchronized(lock) {
             jobs.clear()
             completedRanges.clear()
+            rangeStateRevision++
         }
     }
 }
@@ -501,73 +518,16 @@ internal fun retainedPagePrefetchWindow(
     return desiredWindow + (firstPage..lastPage)
 }
 
-internal fun subtractCoveredRanges(
-    start: Long,
-    endInclusive: Long,
-    coveredRanges: List<LongRange>,
-): List<LongRange> {
-    if (endInclusive < start) return emptyList()
-    val clipped = coveredRanges
-        .mapNotNull { covered ->
-            val clippedStart = maxOf(start, covered.first)
-            val clippedEnd = minOf(endInclusive, covered.last)
-            if (clippedStart <= clippedEnd) clippedStart..clippedEnd else null
-        }
-        .sortedBy { it.first }
-    if (clipped.isEmpty()) return listOf(start..endInclusive)
-
-    val missing = mutableListOf<LongRange>()
-    var cursor = start
-    clipped.forEach { covered ->
-        if (covered.last < cursor) return@forEach
-        if (covered.first > endInclusive) return@forEach
-        if (covered.first > cursor) {
-            missing += cursor..(covered.first - 1)
-        }
-        if (covered.last == Long.MAX_VALUE) return missing
-        cursor = maxOf(cursor, covered.last + 1)
-    }
-    if (cursor <= endInclusive) {
-        missing += cursor..endInclusive
-    }
-    return missing
-}
-
-internal fun mergeSameStartPlannedRanges(ranges: List<PlannedRemoteRange>): List<PlannedRemoteRange> =
-    ranges
-        .groupBy { it.start }
-        .map { (start, group) ->
-            PlannedRemoteRange(
-                start = start,
-                endInclusive = group.maxOf { it.endInclusive },
-                pages = group.flatMap { it.pages }.distinct().sorted(),
-                priority = group.minOf { it.priority },
-            )
-        }
-
-internal fun plannedRangeProtectionPages(ranges: List<PlannedRemoteRange>): Set<Int> {
-    val pages = ranges.flatMap { it.pages }
-    if (pages.isEmpty()) return emptySet()
-    val firstPage = (pages.min() - ReaderPrefetchPlanner.FORWARD_PAGES).coerceAtLeast(0)
-    val lastPage = pages.max() + ReaderPrefetchPlanner.FORWARD_PAGES
-    return (firstPage..lastPage).toSet()
-}
-
 internal fun Throwable.isExpectedReaderCancellation(): Boolean {
     if (this is CancellationException) return true
     cause?.let { cause ->
         if (cause.isExpectedReaderCancellation()) return true
     }
+    // Native sessions surface cancellation as a plain ComicNativeException whose
+    // message is the Rust error text, so classification falls back to the exact
+    // messages the transport and range-session layers produce.
     val text = message ?: return false
-    return text.contains("CancellationException") &&
-        EXPECTED_READER_CANCELLATION_MESSAGES.any { text.contains(it) }
-}
-
-private fun pageDistance(candidatePages: Set<Int>, currentPages: Set<Int>): Int {
-    if (candidatePages.isEmpty() || currentPages.isEmpty()) return Int.MAX_VALUE
-    return candidatePages.minOf { candidate ->
-        currentPages.minOf { current -> abs(candidate - current) }
-    }
+    return EXPECTED_READER_CANCELLATION_MESSAGES.any { text.contains(it) }
 }
 
 private fun Job.isPendingOrActive(): Boolean = !isCompleted && !isCancelled
@@ -575,9 +535,7 @@ private fun Job.isPendingOrActive(): Boolean = !isCompleted && !isCancelled
 private data class PlannedRangeKey(
     val start: Long,
     val endInclusive: Long,
-) {
-    fun asLongRange(): LongRange = start..endInclusive
-}
+)
 
 private data class PlannedRangePrefetch(
     val range: PlannedRemoteRange,
@@ -589,33 +547,28 @@ private data class CompletedPlannedRange(
     val pages: Set<Int>,
 )
 
-private data class PlannedRangeProtectionCandidate(
-    val key: PlannedRangeKey,
-    val sourceRank: Int,
-    val pages: Set<Int>,
-    val priority: Int,
-) {
-    val byteLength: Long
-        get() = key.endInclusive - key.start + 1
-}
+private data class PlannedRangeStateSnapshot(
+    val activeRanges: List<PlannedRemoteRange>,
+    val completedRanges: List<PlannedRemoteRange>,
+    val revision: Long,
+)
+
+private data class ReconciledPrefetchPlanSnapshot(
+    val plan: ReconciledPrefetchPlan,
+    val rangeStateRevision: Long,
+)
 
 private fun PlannedRemoteRange.key(): PlannedRangeKey =
     PlannedRangeKey(start = start, endInclusive = endInclusive)
 
 private const val PREFETCH_START_DELAY_MS = 150L
 private const val PREFETCH_STAGGER_MS = 1L
-private const val NETWORK_WIFI = 2
-private const val MAX_PLANNED_RANGE_PROTECTED_BYTES = 32L * 1024L * 1024L
 private const val CONTINUOUS_PAGE_PREFETCH_RETENTION_BEHIND = 2
 private const val CONTINUOUS_PAGE_PREFETCH_RETENTION_AHEAD = 2
-private const val PLANNED_RANGE_PROTECTION_SOURCE_CURRENT = 0
-private const val PLANNED_RANGE_PROTECTION_SOURCE_ACTIVE = 1
-private const val PLANNED_RANGE_PROTECTION_SOURCE_COMPLETED = 2
 private const val LOAD_REASON_PREFETCH = "prefetch"
 private val EXPECTED_READER_CANCELLATION_MESSAGES = listOf(
-    "range fetch cancelled",
-    "range prefetch cancelled",
     "range request cancelled",
+    "remote range session closed",
     "range provider closed",
     "reader session changed",
 )

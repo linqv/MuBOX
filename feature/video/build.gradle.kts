@@ -1,10 +1,14 @@
 plugins {
     id("mubox.android.library")
     id("mubox.android.compose")
+    id("mubox.rust.android")
 }
 
 android {
     namespace = "org.mubox.reader.video"
+    defaultConfig {
+        consumerProguardFiles("consumer-rules.pro")
+    }
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -16,6 +20,11 @@ android {
             }
         }
     }
+}
+
+muboxRustAndroid {
+    crateDirectory.set(layout.projectDirectory.dir("../../media-proxy-core"))
+    libraryName.set("media_proxy_core")
 }
 
 dependencies {

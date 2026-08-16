@@ -1,4 +1,6 @@
 mod jni;
+mod prefetch_wire;
+mod range_io_wire;
 
 use std::cell::RefCell;
 use std::ffi::CString;

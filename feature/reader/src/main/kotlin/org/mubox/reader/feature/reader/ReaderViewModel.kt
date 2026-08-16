@@ -40,6 +40,7 @@ class ReaderViewModel(
     private val savePage: SaveReadingProgress = { _, _ -> },
     private val recordHistory: RecordReadingHistory = {},
     private val diagnosticLog: Diagnostics = NoopDiagnostics,
+    private val networkClassProvider: () -> Int = { NETWORK_CLASS_WIFI },
     prunePageCache: (cacheDir: File, protectedFile: File, maxBytes: Long) -> Unit = { cacheDir, protectedFile, maxBytes ->
         ReaderPageCache.prune(cacheDir, protectedFile, maxBytes)
     },
@@ -66,6 +67,7 @@ class ReaderViewModel(
         onPageFilesLoaded = { files ->
             uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
         },
+        networkClass = networkClassProvider,
     )
 
     fun updatePageCacheMaxBytes(maxBytes: Long) {

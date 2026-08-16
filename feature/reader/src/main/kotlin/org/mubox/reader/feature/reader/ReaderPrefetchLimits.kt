@@ -17,48 +17,6 @@ internal const val PREFETCH_PLAN_MAX_BYTES = 48L * 1024L * 1024L
 /** Priority threshold: ranges with priority > this value are low-priority. */
 internal const val HIGH_PRIORITY_PLANNED_RANGE_MAX = 2
 
-internal data class PlannedRangeBudgetResult(
-    val ranges: List<PlannedRemoteRange>,
-    val skippedCount: Int,
-    val skippedBytes: Long,
-)
-
-internal fun limitPlannedRangesByBudget(
-    ranges: List<PlannedRemoteRange>,
-    maxBytes: Long = PREFETCH_PLAN_MAX_BYTES,
-): PlannedRangeBudgetResult {
-    if (maxBytes <= 0L || ranges.isEmpty()) {
-        return PlannedRangeBudgetResult(
-            ranges = emptyList(),
-            skippedCount = ranges.size,
-            skippedBytes = ranges.sumOf { it.byteCount() },
-        )
-    }
-
-    val selected = mutableListOf<PlannedRemoteRange>()
-    var selectedBytes = 0L
-    var skippedCount = 0
-    var skippedBytes = 0L
-    ranges.sortedBy { it.priority }.forEach { range ->
-        val byteCount = range.byteCount()
-        if (selectedBytes + byteCount <= maxBytes) {
-            selected += range
-            selectedBytes += byteCount
-        } else {
-            skippedCount++
-            skippedBytes += byteCount
-        }
-    }
-    return PlannedRangeBudgetResult(
-        ranges = selected,
-        skippedCount = skippedCount,
-        skippedBytes = skippedBytes,
-    )
-}
-
-internal fun PlannedRemoteRange.byteCount(): Long =
-    endInclusive - start + 1
-
 /**
  * Executes a planned-range prefetch respecting concurrency limits.
  *

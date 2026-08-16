@@ -1,6 +1,7 @@
 package org.mubox.reader.network
 
 import org.mubox.reader.core.remote.RemoteFileInfo
+import org.mubox.reader.core.remote.RemoteByteSource
 import org.mubox.reader.core.remote.WebDavClient
 import org.mubox.reader.core.remote.WebDavException
 import org.mubox.reader.core.remote.WebDavItem
@@ -205,15 +206,16 @@ internal class OkHttpWebDavClient(
             }
             val body = response.body
             val contentLength = body.contentLength()
-            val stream = body.byteStream()
+            val source = body.source()
             WebDavStreamResponse(
-                stream = stream,
+                stream = source.inputStream(),
                 statusCode = response.code,
                 contentLength = contentLength,
                 contentRange = null,
                 contentType = response.header("Content-Type"),
                 totalSize = contentLength.takeIf { it >= 0 },
                 close = { response.close() },
+                byteSource = RemoteByteSource(source::read),
             )
         }
     }
@@ -341,14 +343,16 @@ internal class OkHttpWebDavClient(
                 expectedEndInclusive = endInclusive,
                 sanitizedUrl = diagnostics.sanitizedUrl(request.url),
             )
+            val source = body.source()
             return WebDavStreamResponse(
-                stream = body.byteStream(),
+                stream = source.inputStream(),
                 statusCode = response.code,
                 contentLength = validated.contentLength,
                 contentRange = validated.contentRange,
                 contentType = response.header("Content-Type"),
                 totalSize = validated.totalSize,
                 close = { response.close() },
+                byteSource = RemoteByteSource(source::read),
             )
         } catch (error: Throwable) {
             response.close()

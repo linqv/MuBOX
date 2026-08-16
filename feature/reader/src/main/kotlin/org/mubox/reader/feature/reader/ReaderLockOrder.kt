@@ -6,9 +6,10 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Lock ordering contract for [ReaderViewModel].
  *
- * 1. **sessionMutex** – All native session calls (loadPageToFile, updateViewport,
- *    plannedRanges, prefetchRange, close) MUST be serialized under this coroutine
- *    [Mutex]. Never call native methods outside sessionMutex.
+ * 1. **sessionMutex** – Index/session-state native calls (loadPageToFile, updateViewport,
+ *    plannedRanges, reconcilePrefetchPlan, close) MUST be serialized under this coroutine [Mutex].
+ *    Remote `prefetchRange` and `cancelPrefetches` are deliberate exceptions: their Rust range-I/O
+ *    engine owns independent synchronization so they can join or cancel a demand network request.
  *
  * 2. **plannedRangeLock** – The [plannedRangeJobs] and [completedPlannedRanges] maps
  *    are only accessed inside `synchronized(plannedRangeLock)`. Do NOT enter a

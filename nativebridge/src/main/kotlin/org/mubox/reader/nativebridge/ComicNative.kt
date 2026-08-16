@@ -5,7 +5,8 @@ import androidx.annotation.WorkerThread
 interface ComicNativeFacade {
     @WorkerThread fun openLocal(path: String): Long
     @WorkerThread fun openLocalFd(fd: Int, size: Long, format: String): Long
-    @WorkerThread fun openRemote(
+    @WorkerThread
+    fun openRemoteCachedV1(
         fileId: Long,
         size: Long,
         cacheDir: String,
@@ -17,6 +18,25 @@ interface ComicNativeFacade {
     @WorkerThread fun updateViewport(handle: Long, pageIndex: Int, networkClass: Int, forwardPrefetchPageCount: Int): Int
     fun diagnostics(handle: Long): String
     @WorkerThread fun plannedRanges(handle: Long, pageIndex: Int, networkClass: Int, forwardPrefetchPageCount: Int): String
+    @WorkerThread
+    fun reconcilePrefetchPlanV1(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        byteBudget: Long,
+        activeRanges: LongArray,
+        completedRanges: LongArray,
+    ): LongArray?
+    @WorkerThread
+    fun prefetchRemoteRangeV1(
+        handle: Long,
+        start: Long,
+        endInclusive: Long,
+        priority: Int,
+        protectedRanges: LongArray,
+    ): Int
+    fun cancelRemoteIoV1(handle: Long)
     fun close(handle: Long)
     fun lastErrorMessage(): String
 }
@@ -33,7 +53,7 @@ object ComicNative : ComicNativeFacade {
     external override fun openLocalFd(fd: Int, size: Long, format: String): Long
 
     @WorkerThread
-    external override fun openRemote(
+    external override fun openRemoteCachedV1(
         fileId: Long,
         size: Long,
         cacheDir: String,
@@ -63,6 +83,28 @@ object ComicNative : ComicNativeFacade {
         networkClass: Int,
         forwardPrefetchPageCount: Int,
     ): String
+
+    @WorkerThread
+    external override fun reconcilePrefetchPlanV1(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        byteBudget: Long,
+        activeRanges: LongArray,
+        completedRanges: LongArray,
+    ): LongArray?
+
+    @WorkerThread
+    external override fun prefetchRemoteRangeV1(
+        handle: Long,
+        start: Long,
+        endInclusive: Long,
+        priority: Int,
+        protectedRanges: LongArray,
+    ): Int
+
+    external override fun cancelRemoteIoV1(handle: Long)
 
     external override fun close(handle: Long)
 

@@ -1,17 +1,22 @@
 package org.mubox.reader.core.ports
 
+import java.nio.ByteBuffer
+
 interface RangeProvider {
-    fun size(fileId: Long): Long
-    fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray
-    fun isRangeCached(start: Long, endInclusive: Long): Boolean = false
-    fun readCachedRange(start: Long, endInclusive: Long): ByteArray? = null
-    fun prefetchRange(start: Long, endInclusive: Long): Boolean = false
-    fun prefetchRange(
+    /**
+     * Fills one exact range into native-owned memory.
+     *
+     * Implementations must not retain [target] after this call returns. WebDAV streams into it
+     * with a fixed scratch array so a network miss does not allocate a range-sized Java array.
+     */
+    fun fetchRangeInto(
+        fileId: Long,
+        requestId: Long,
         start: Long,
         endInclusive: Long,
-        priority: Int,
-        protectedRanges: List<LongRange>,
-    ): Boolean = prefetchRange(start, endInclusive)
-    fun cancelPrefetches() = Unit
+        target: ByteBuffer,
+    ): Int
+
+    fun cancelRangeRequest(requestId: Long) = Unit
     fun close() = Unit
 }

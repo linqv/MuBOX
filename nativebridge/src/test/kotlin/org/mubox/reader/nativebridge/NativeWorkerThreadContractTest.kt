@@ -63,6 +63,14 @@ class NativeWorkerThreadContractTest {
     }
 
     @Test
+    fun comicReaderSession_reconcilePrefetchPlan_hasWorkerThread() {
+        assertAnnotationAboveFunction(
+            File(srcRoot, "nativebridge/ComicEngine.kt"),
+            "fun reconcilePrefetchPlan",
+        )
+    }
+
+    @Test
     fun comicReaderSession_prefetchRange_hasWorkerThread() {
         assertAnnotationAboveFunction(
             File(srcRoot, "nativebridge/ComicEngine.kt"),
@@ -127,7 +135,7 @@ class NativeWorkerThreadContractTest {
 
         override fun openLocalFd(fd: Int, size: Long, format: String): Long = 1
 
-        override fun openRemote(
+        override fun openRemoteCachedV1(
             fileId: Long,
             size: Long,
             cacheDir: String,
@@ -153,7 +161,27 @@ class NativeWorkerThreadContractTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
-        ): String = "v1"
+        ): String = "v2;ok"
+
+        override fun reconcilePrefetchPlanV1(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+            byteBudget: Long,
+            activeRanges: LongArray,
+            completedRanges: LongArray,
+        ): LongArray = longArrayOf(1, 0, 0, 0)
+
+        override fun prefetchRemoteRangeV1(
+            handle: Long,
+            start: Long,
+            endInclusive: Long,
+            priority: Int,
+            protectedRanges: LongArray,
+        ): Int = 0
+
+        override fun cancelRemoteIoV1(handle: Long) = Unit
 
         override fun close(handle: Long) = Unit
 

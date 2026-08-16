@@ -13,6 +13,7 @@ keystore.properties
 worktrees/
 app/src/main/jniLibs/
 comic-core/target/
+media-proxy-core/target/
 docs/
 agent.md
 .gitignore

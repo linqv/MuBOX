@@ -7,10 +7,6 @@ import org.mubox.reader.core.model.media.WebDavVideoOpenRequest
 import org.mubox.reader.core.remote.WebDavClientFactory
 import org.mubox.reader.core.model.settings.VideoProxySettings
 import java.io.Closeable
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 
 /**
  * Owns one aggregate proxy/cache lifecycle. A manager may be shared by playback and thumbnail
@@ -18,11 +14,11 @@ import kotlinx.coroutines.cancel
  */
 class VideoProxyManager(
     private val diagnostics: Diagnostics = NoopDiagnostics,
+    private val nativeProvider: () -> MediaProxyNativeFacade = { MediaProxyNative },
 ) : Closeable {
     private val lifecycleLock = Any()
     private var activeStreams = 0
     private var closed = false
-    private var scope: CoroutineScope? = null
     private var proxy: MuBoxVideoProxy? = null
 
     suspend fun open(
@@ -95,16 +91,19 @@ class VideoProxyManager(
         }
     }
 
-    private fun newScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private fun reserveProxyStream(): MuBoxVideoProxy =
         synchronized(lifecycleLock) {
             check(!closed) { "Video proxy manager is closed" }
-            activeStreams += 1
-            proxy ?: MuBoxVideoProxy(
-                coroutineScope = scope ?: newScope().also { scope = it },
+            proxy?.let { existing ->
+                activeStreams += 1
+                return@synchronized existing
+            }
+            val created = MuBoxVideoProxy(
                 diagnostics = diagnostics,
-            ).also { proxy = it }
+                native = nativeProvider(),
+            )
+            activeStreams += 1
+            created.also { proxy = it }
         }
 
     private fun reserveAdditionalStreams(count: Int) {
@@ -128,8 +127,6 @@ class VideoProxyManager(
         closingProxy?.close()
         proxy = null
         activeStreams = 0
-        scope?.cancel()
-        scope = null
     }
 
     private fun WebDavSubtitleOpenRequest.asStreamRequest(accountId: String): WebDavVideoOpenRequest =

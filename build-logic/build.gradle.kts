@@ -29,5 +29,9 @@ gradlePlugin {
             id = "mubox.jvm.library"
             implementationClass = "org.mubox.gradle.MuboxJvmLibraryPlugin"
         }
+        register("rustAndroid") {
+            id = "mubox.rust.android"
+            implementationClass = "org.mubox.gradle.MuboxRustAndroidPlugin"
+        }
     }
 }

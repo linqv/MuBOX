@@ -24,6 +24,21 @@ interface ComicReaderSession : Closeable {
     @WorkerThread
     fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> = emptyList()
 
+    /**
+     * Reconciles the viewport's native range plan with work already owned by the caller.
+     *
+     * Implementations only compute the plan. The caller remains responsible for starting,
+     * cancelling, and completing prefetch work.
+     */
+    @WorkerThread
+    fun reconcilePrefetchPlan(
+        pageIndex: Int,
+        networkClass: Int,
+        activeRanges: List<PlannedRemoteRange>,
+        completedRanges: List<PlannedRemoteRange>,
+        byteBudget: Long,
+    ): ReconciledPrefetchPlan = ReconciledPrefetchPlan()
+
     @WorkerThread
     fun prefetchRange(start: Long, endInclusive: Long): Boolean = false
 
@@ -43,4 +58,14 @@ data class PlannedRemoteRange(
     val endInclusive: Long,
     val pages: List<Int>,
     val priority: Int,
+)
+
+data class ReconciledPrefetchTask(
+    val range: PlannedRemoteRange,
+    val protectedRanges: List<LongRange>,
+)
+
+data class ReconciledPrefetchPlan(
+    val tasks: List<ReconciledPrefetchTask> = emptyList(),
+    val retainedPages: Set<Int> = emptySet(),
 )

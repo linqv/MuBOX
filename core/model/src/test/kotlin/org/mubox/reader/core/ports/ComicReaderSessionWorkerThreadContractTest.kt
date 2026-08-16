@@ -10,7 +10,12 @@ class ComicReaderSessionWorkerThreadContractTest {
     fun blockingSessionOperationsRemainWorkerThreadAnnotated() {
         val source = File("src/main/kotlin/org/mubox/reader/core/ports/ComicReaderSession.kt")
         val lines = source.readLines()
-        val signatures = listOf("fun loadPageToFile", "fun updateViewport", "fun plannedRanges")
+        val signatures = listOf(
+            "fun loadPageToFile",
+            "fun updateViewport",
+            "fun plannedRanges",
+            "fun reconcilePrefetchPlan",
+        )
 
         signatures.forEach { signature -> assertWorkerThreadAbove(lines, signature) }
 

@@ -11,6 +11,8 @@ import org.mubox.reader.core.model.history.WatchMediaType
 import org.mubox.reader.core.model.history.WatchSourceType
 import org.mubox.reader.core.ports.ComicReaderSession
 import org.mubox.reader.core.ports.PlannedRemoteRange
+import org.mubox.reader.core.ports.ReconciledPrefetchPlan
+import org.mubox.reader.core.ports.ReconciledPrefetchTask
 import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -35,12 +37,14 @@ class ReaderViewModelTest {
 
     private fun kotlinx.coroutines.test.TestScope.createTestViewModel(
         diagnosticLog: Diagnostics = NoopDiagnostics,
+        networkClassProvider: () -> Int = { NETWORK_CLASS_WIFI },
     ): ReaderViewModel {
         val dispatcher = StandardTestDispatcher(testScheduler)
         mainDispatcher.set(dispatcher)
         return ReaderViewModel(
             ioDispatcher = dispatcher,
             diagnosticLog = diagnosticLog,
+            networkClassProvider = networkClassProvider,
         )
     }
 
@@ -82,24 +86,160 @@ class ReaderViewModelTest {
     }
 
     @Test
-    fun openSessionLimitsPlannedRangePrefetchBytes() = runTest {
-        val ranges = listOf(
-            plannedRange(start = 0, sizeBytes = 16 * 1024 * 1024, priority = 0),
-            plannedRange(start = 16 * 1024 * 1024, sizeBytes = 16 * 1024 * 1024, priority = 1),
-            plannedRange(start = 32 * 1024 * 1024, sizeBytes = 16 * 1024 * 1024, priority = 2),
-            plannedRange(start = 48 * 1024 * 1024, sizeBytes = 16 * 1024 * 1024, priority = 3),
-        )
+    fun openSessionConsumesNativeReconciliation() = runTest {
+        val range = plannedRange(start = 1024, sizeBytes = 512, priority = 1)
         val session = RecordingComicSession(
             pageCount = 20,
-            forwardPrefetchPageCount = 12,
-            plannedRanges = ranges,
+            forwardPrefetchPageCount = 4,
+            reconciledPlansForPage = {
+                ReconciledPrefetchPlan(
+                    retainedPages = setOf(0, 1, 2),
+                    tasks = listOf(
+                        ReconciledPrefetchTask(
+                            range = range,
+                            protectedRanges = listOf(0L..511L),
+                        ),
+                    ),
+                )
+            },
         )
         val viewModel = createTestViewModel()
 
         openDefaultSession(viewModel, session)
         runCurrent()
 
-        assertEquals(ranges.take(3).map { it.key() }, session.prefetchedRanges)
+        assertEquals(listOf(0), session.reconciledPlanPages)
+        assertEquals(listOf(range.key()), session.prefetchedRanges)
+        assertEquals(listOf(listOf(0L..511L)), session.prefetchProtectedRanges)
+    }
+
+    @Test
+    fun replacedViewportDoesNotSchedulePlanReturnedAfterCancellation() = runTest {
+        val staleRange = plannedRange(start = 1_024, sizeBytes = 512, priority = 0)
+        val currentRange = plannedRange(start = 2_048, sizeBytes = 512, priority = 0)
+        lateinit var viewModel: ReaderViewModel
+        var reconciliationCalls = 0
+        val session = RecordingComicSession(
+            pageCount = 20,
+            forwardPrefetchPageCount = 4,
+            reconciledPlansForPage = {
+                reconciliationCalls++
+                val range = if (reconciliationCalls == 1) {
+                    // Replaces and cancels the viewport job while its synchronous native call is active.
+                    viewModel.selectPage(0)
+                    staleRange
+                } else {
+                    currentRange
+                }
+                ReconciledPrefetchPlan(
+                    retainedPages = setOf(0),
+                    tasks = listOf(
+                        ReconciledPrefetchTask(
+                            range = range,
+                            protectedRanges = emptyList(),
+                        ),
+                    ),
+                )
+            },
+        )
+        viewModel = createTestViewModel()
+
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        assertEquals(2, reconciliationCalls)
+        assertEquals(listOf(currentRange.key()), session.prefetchedRanges)
+    }
+
+    @Test
+    fun rejectedPrefetchIsRetriedAndCompletedOnlyOnSuccess() = runTest {
+        val range = plannedRange(start = 1024, sizeBytes = 512, priority = 1)
+        var prefetchAttempts = 0
+        val session = RecordingComicSession(
+            pageCount = 20,
+            forwardPrefetchPageCount = 4,
+            reconciledPlansForPage = {
+                ReconciledPrefetchPlan(
+                    retainedPages = setOf(0),
+                    tasks = listOf(
+                        ReconciledPrefetchTask(
+                            range = range,
+                            protectedRanges = emptyList(),
+                        ),
+                    ),
+                )
+            },
+            prefetchResult = { _, _ -> prefetchAttempts++ == 1 },
+        )
+        val viewModel = createTestViewModel()
+
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        // First attempt is rejected: the range must NOT be recorded as completed.
+        assertEquals(listOf(range.key()), session.prefetchedRanges)
+        assertEquals(1, prefetchAttempts)
+
+        // The next demand re-schedules the rejected range; the second attempt succeeds.
+        viewModel.reportPageDemand(1, "pager_target")
+        runCurrent()
+        assertEquals(listOf(range.key(), range.key()), session.prefetchedRanges)
+        assertEquals(2, prefetchAttempts)
+
+        // Once completed, further demands must not re-schedule the same range.
+        viewModel.reportPageDemand(2, "pager_target")
+        runCurrent()
+        assertEquals(listOf(range.key(), range.key()), session.prefetchedRanges)
+        assertEquals(2, prefetchAttempts)
+    }
+
+    @Test
+    fun failedPrefetchIsNotMarkedCompletedAndIsRetried() = runTest {
+        val range = plannedRange(start = 2048, sizeBytes = 512, priority = 0)
+        var prefetchAttempts = 0
+        val session = RecordingComicSession(
+            pageCount = 20,
+            forwardPrefetchPageCount = 4,
+            reconciledPlansForPage = {
+                ReconciledPrefetchPlan(
+                    retainedPages = setOf(0),
+                    tasks = listOf(
+                        ReconciledPrefetchTask(
+                            range = range,
+                            protectedRanges = emptyList(),
+                        ),
+                    ),
+                )
+            },
+            prefetchResult = { _, _ ->
+                prefetchAttempts++
+                if (prefetchAttempts == 1) throw IllegalStateException("network lost")
+                true
+            },
+        )
+        val viewModel = createTestViewModel()
+
+        openDefaultSession(viewModel, session)
+        runCurrent()
+        assertEquals(listOf(range.key()), session.prefetchedRanges)
+        assertEquals(1, prefetchAttempts)
+
+        viewModel.reportPageDemand(1, "pager_target")
+        runCurrent()
+        assertEquals(listOf(range.key(), range.key()), session.prefetchedRanges)
+        assertEquals(2, prefetchAttempts)
+    }
+
+    @Test
+    fun viewportAndReconcileUseTheProvidedNetworkClass() = runTest {
+        val session = RecordingComicSession(pageCount = 20, forwardPrefetchPageCount = 4)
+        val viewModel = createTestViewModel(networkClassProvider = { NETWORK_CLASS_MOBILE })
+
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        assertEquals(listOf(NETWORK_CLASS_MOBILE), session.updateViewportNetworkClasses)
+        assertEquals(listOf(NETWORK_CLASS_MOBILE), session.reconciledPlanNetworkClasses)
     }
 
     @Test
@@ -128,10 +268,7 @@ class ReaderViewModelTest {
             pageCount = 4,
             forwardPrefetchPageCount = 1,
             pageErrors = mapOf(
-                1 to IllegalStateException(
-                    "range callback readRange failed for file 2 bytes 10-20: " +
-                        "java.util.concurrent.CancellationException: range fetch cancelled",
-                ),
+                1 to IllegalStateException("remote range session closed"),
             ),
         )
         val viewModel = createTestViewModel(diagnostics)
@@ -157,12 +294,12 @@ class ReaderViewModelTest {
         runCurrent()
         advanceTimeBy(200)
         runCurrent()
-        session.plannedRangePages.clear()
+        session.reconciledPlanPages.clear()
 
         viewModel.reportPageDemand(1, "pager_target")
         runCurrent()
 
-        assertEquals(listOf(1), session.plannedRangePages)
+        assertEquals(listOf(1), session.reconciledPlanPages)
     }
 
     @Test
@@ -172,8 +309,18 @@ class ReaderViewModelTest {
             pageCount = 20,
             forwardPrefetchPageCount = forwardWindow,
             advancePrefetchOnPageDemand = true,
-            plannedRangesForPage = { page ->
-                plannedRangesForWindow(pageIndex = page, pageCount = 20, forwardPages = forwardWindow)
+            reconciledPlansForPage = { page ->
+                val ranges = plannedRangesForWindow(
+                    pageIndex = page,
+                    pageCount = 20,
+                    forwardPages = forwardWindow,
+                )
+                ReconciledPrefetchPlan(
+                    retainedPages = ranges.flatMap(PlannedRemoteRange::pages).toSet(),
+                    tasks = ranges.map { range ->
+                        ReconciledPrefetchTask(range = range, protectedRanges = emptyList())
+                    },
+                )
             },
         )
         val viewModel = createTestViewModel()
@@ -184,7 +331,7 @@ class ReaderViewModelTest {
         runCurrent()
         assertEquals((0..12).toList(), session.loadedPages)
         assertEquals((0..12).map { plannedRangeForPage(it).key() }, session.prefetchedRanges)
-        session.plannedRangePages.clear()
+        session.reconciledPlanPages.clear()
         session.prefetchedRanges.clear()
 
         viewModel.reportPageDemand(1, "pager_current")
@@ -192,7 +339,7 @@ class ReaderViewModelTest {
         advanceTimeBy(200)
         runCurrent()
 
-        assertEquals(listOf(1), session.plannedRangePages)
+        assertEquals(listOf(1), session.reconciledPlanPages)
         assertEquals(listOf(plannedRangeForPage(13).key()), session.prefetchedRanges)
         assertEquals((0..13).toList(), session.loadedPages)
     }
@@ -253,14 +400,17 @@ class ReaderViewModelTest {
 private class RecordingComicSession(
     override val pageCount: Int,
     override val forwardPrefetchPageCount: Int,
-    private val plannedRanges: List<PlannedRemoteRange> = emptyList(),
-    private val plannedRangesForPage: (Int) -> List<PlannedRemoteRange> = { plannedRanges },
+    private val reconciledPlansForPage: (Int) -> ReconciledPrefetchPlan = { ReconciledPrefetchPlan() },
     private val pageErrors: Map<Int, Throwable> = emptyMap(),
     override val advancePrefetchOnPageDemand: Boolean = false,
+    private val prefetchResult: (start: Long, endInclusive: Long) -> Boolean = { _, _ -> true },
 ) : ComicReaderSession {
     val loadedPages = mutableListOf<Int>()
     val prefetchedRanges = mutableListOf<Pair<Long, Long>>()
-    val plannedRangePages = mutableListOf<Int>()
+    val prefetchProtectedRanges = mutableListOf<List<LongRange>>()
+    val reconciledPlanPages = mutableListOf<Int>()
+    val reconciledPlanNetworkClasses = mutableListOf<Int>()
+    val updateViewportNetworkClasses = mutableListOf<Int>()
     var cancelPrefetchesCalls = 0
     var closeCalls = 0
 
@@ -272,9 +422,20 @@ private class RecordingComicSession(
         return outputFile
     }
 
-    override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
-        plannedRangePages += pageIndex
-        return plannedRangesForPage(pageIndex)
+    override fun updateViewport(pageIndex: Int, networkClass: Int) {
+        updateViewportNetworkClasses += networkClass
+    }
+
+    override fun reconcilePrefetchPlan(
+        pageIndex: Int,
+        networkClass: Int,
+        activeRanges: List<PlannedRemoteRange>,
+        completedRanges: List<PlannedRemoteRange>,
+        byteBudget: Long,
+    ): ReconciledPrefetchPlan {
+        reconciledPlanPages += pageIndex
+        reconciledPlanNetworkClasses += networkClass
+        return reconciledPlansForPage(pageIndex)
     }
 
     override fun prefetchRange(
@@ -284,7 +445,8 @@ private class RecordingComicSession(
         protectedRanges: List<LongRange>,
     ): Boolean {
         prefetchedRanges += start to endInclusive
-        return true
+        prefetchProtectedRanges += protectedRanges
+        return prefetchResult(start, endInclusive)
     }
 
     override fun cancelPrefetches() {

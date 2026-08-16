@@ -2,8 +2,12 @@ package org.mubox.reader.nativebridge
 
 import org.mubox.reader.core.ports.PlannedRemoteRange
 import org.mubox.reader.core.ports.RangeProvider
+import org.mubox.reader.core.ports.ReconciledPrefetchPlan
+import org.mubox.reader.core.ports.ReconciledPrefetchTask
 import java.io.File
+import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -69,7 +73,7 @@ class ComicEngineTest {
 
         assertEquals(
             RemoteOpenCall(4, 100, cacheDir.absolutePath, "comic-key", "etag-1"),
-            native.remoteOpenCalls.single(),
+            native.cachedRemoteOpenCalls.single(),
         )
     }
 
@@ -101,18 +105,27 @@ class ComicEngineTest {
     }
 
     @Test
-    fun diagnosticsReadsNativeSessionDiagnostics() {
-        val native = FakeComicNative(openHandle = 5, pageCount = 1, diagnostics = "planned_request_count=2")
+    fun legacyNativeWirePayloadsAreRejected() {
+        val native = FakeComicNative(
+            openHandle = 5,
+            pageCount = 1,
+            diagnostics = "planned_request_count=2",
+            plannedRanges = "v1;10,29,1,2|3",
+        )
         val session = ComicEngine(native).openRemote(
             fileId = 4,
             size = 100,
-            cacheDir = temp.newFolder("remote-planned-cache"),
+            cacheDir = temp.newFolder("remote-legacy-wire-cache"),
             comicKey = "comic-key",
             validator = "etag-1",
             webDavPrefetchPageCount = 8,
         )
 
-        assertEquals("planned_request_count=2", session.diagnostics())
+        assertTrue(runCatching { session.diagnostics() }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching { session.plannedRanges(pageIndex = 0, networkClass = 2) }
+                .exceptionOrNull() is IllegalArgumentException,
+        )
     }
 
     @Test
@@ -181,29 +194,6 @@ class ComicEngineTest {
     }
 
     @Test
-    fun plannedRangesStillParsesLegacyV1Success() {
-        val native = FakeComicNative(
-            openHandle = 5,
-            pageCount = 6,
-            plannedRanges = "v1;10,29,1,2|3",
-        )
-        val session = ComicEngine(native).openRemote(
-            fileId = 4,
-            size = 100,
-            cacheDir = temp.newFolder("remote-legacy-plan-cache"),
-            comicKey = "comic-key",
-            validator = "etag-1",
-        )
-
-        assertEquals(
-            listOf(
-                PlannedRemoteRange(start = 10, endInclusive = 29, pages = listOf(2, 3), priority = 1),
-            ),
-            session.plannedRanges(pageIndex = 2, networkClass = 2),
-        )
-    }
-
-    @Test
     fun plannedRangesParsesV2SuccessAndDistinguishesEmptyPlan() {
         val native = FakeComicNative(
             openHandle = 5,
@@ -249,33 +239,97 @@ class ComicEngineTest {
     }
 
     @Test
-    fun remoteSessionPrefetchesRangesThroughRegisteredProvider() {
-        val native = FakeComicNative(openHandle = 9, pageCount = 1)
-        val provider = RecordingRangeProvider(size = 100)
-        val fileId = RangeProviderRegistry.register(provider)
+    fun reconcilePrefetchPlanPassesStateAndDecodesTaskProtection() {
+        val native = FakeComicNative(
+            openHandle = 5,
+            pageCount = 6,
+            reconcileResult = {
+                longArrayOf(
+                    1, 0,
+                    2, 2, 3,
+                    1,
+                    10, 19, 1, 2, 2, 3,
+                    1, 0, 9,
+                )
+            },
+        )
         val session = ComicEngine(native).openRemote(
-            fileId = fileId,
+            fileId = 4,
             size = 100,
-            cacheDir = temp.newFolder("range-prefetch-cache"),
+            cacheDir = temp.newFolder("remote-reconciled-plan-cache"),
             comicKey = "comic-key",
             validator = "etag-1",
+            webDavPrefetchPageCount = 8,
+        )
+        val active = listOf(PlannedRemoteRange(0, 9, listOf(1), 0))
+        val completed = listOf(PlannedRemoteRange(20, 29, listOf(4), 2))
+
+        val result = session.reconcilePrefetchPlan(
+            pageIndex = 2,
+            networkClass = 2,
+            activeRanges = active,
+            completedRanges = completed,
+            byteBudget = 48,
         )
 
-        assertTrue(session.prefetchRange(start = 10, endInclusive = 19))
-
-        assertEquals(listOf(10L to 19L), provider.prefetchCalls)
-        session.close()
+        assertEquals(
+            ReconciledPrefetchPlan(
+                retainedPages = setOf(2, 3),
+                tasks = listOf(
+                    ReconciledPrefetchTask(
+                        range = PlannedRemoteRange(10, 19, listOf(2, 3), 1),
+                        protectedRanges = listOf(0L..9L),
+                    ),
+                ),
+            ),
+            result,
+        )
+        assertEquals(
+            ReconcileCall(
+                handle = 5,
+                pageIndex = 2,
+                networkClass = 2,
+                forwardPrefetchPageCount = 8,
+                byteBudget = 48,
+                activeRanges = listOf(1L, 1L, 0L, 9L, 0L, 1L, 1L),
+                completedRanges = listOf(1L, 1L, 20L, 29L, 2L, 1L, 4L),
+            ),
+            native.reconcileCalls.single(),
+        )
     }
 
     @Test
-    fun remoteSessionPrefetchPassesPriorityAndProtectedRangesThroughRegisteredProvider() {
-        val native = FakeComicNative(openHandle = 9, pageCount = 1)
-        val provider = RecordingRangeProvider(size = 100)
+    fun reconcilePrefetchPlanMapsNativeError() {
+        val errorNative = FakeComicNative(
+            openHandle = 5,
+            pageCount = 1,
+            lastError = "invalid reconciliation state",
+            reconcileResult = { longArrayOf(1, 1) },
+        )
+        val errorSession = ComicEngine(errorNative).openLocal("/tmp/book.cbz")
+
+        val error = runCatching {
+            errorSession.reconcilePrefetchPlan(0, 2, emptyList(), emptyList(), 48)
+        }.exceptionOrNull()
+
+        assertTrue(error is ComicNativeException)
+        assertEquals("invalid reconciliation state", error?.message)
+
+    }
+
+    @Test
+    fun nativeRangeBundleOwnsPrefetchAndEncodesPerTaskProtection() {
+        val native = FakeComicNative(
+            openHandle = 9,
+            pageCount = 1,
+        )
+        val provider = RecordingRangeProvider()
         val fileId = RangeProviderRegistry.register(provider)
+        val cacheDir = temp.newFolder("native-range-bundle-cache")
         val session = ComicEngine(native).openRemote(
             fileId = fileId,
             size = 100,
-            cacheDir = temp.newFolder("range-prefetch-priority-cache"),
+            cacheDir = cacheDir,
             comicKey = "comic-key",
             validator = "etag-1",
         )
@@ -288,12 +342,94 @@ class ComicEngineTest {
                 protectedRanges = listOf(0L..9L, 20L..29L),
             ),
         )
+        session.cancelPrefetches()
+        session.close()
 
         assertEquals(
-            listOf(PriorityPrefetchCall(10, 19, 7, listOf(0L..9L, 20L..29L))),
-            provider.priorityPrefetchCalls,
+            listOf(RemoteOpenCall(fileId, 100, cacheDir.absolutePath, "comic-key", "etag-1")),
+            native.cachedRemoteOpenCalls,
         )
-        session.close()
+        assertEquals(
+            listOf(
+                NativePrefetchCall(
+                    handle = 9,
+                    start = 10,
+                    endInclusive = 19,
+                    priority = 7,
+                    protectedRanges = listOf(1L, 2L, 0L, 9L, 20L, 29L),
+                ),
+            ),
+            native.nativePrefetchCalls,
+        )
+        assertEquals(listOf(9L), native.nativeCancelCalls)
+        assertEquals(1, provider.closeCalls)
+    }
+
+    @Test
+    fun nativeRangeBundleMapsFalseAndErrorPrefetchResults() {
+        val falseNative = FakeComicNative(
+            openHandle = 10,
+            pageCount = 1,
+            nativePrefetchResult = 0,
+        )
+        val falseProvider = RecordingRangeProvider()
+        val falseSession = ComicEngine(falseNative).openRemote(
+            RangeProviderRegistry.register(falseProvider),
+            100,
+            temp.newFolder("native-range-false-cache"),
+            "comic-key",
+            "etag-1",
+        )
+        assertFalse(falseSession.prefetchRange(0, 9))
+        falseSession.close()
+
+        val errorNative = FakeComicNative(
+            openHandle = 11,
+            pageCount = 1,
+            lastError = "native prefetch failed",
+            nativePrefetchResult = -1,
+        )
+        val errorProvider = RecordingRangeProvider()
+        val errorSession = ComicEngine(errorNative).openRemote(
+            RangeProviderRegistry.register(errorProvider),
+            100,
+            temp.newFolder("native-range-error-cache"),
+            "comic-key",
+            "etag-1",
+        )
+
+        val error = runCatching { errorSession.prefetchRange(0, 9) }.exceptionOrNull()
+
+        assertTrue(error is ComicNativeException)
+        assertEquals("native prefetch failed", error?.message)
+        errorSession.close()
+    }
+
+    @Test
+    fun nativeRangeBundleBusinessFailureClosesRegisteredProvider() {
+        val native = FakeComicNative(
+            openHandle = 99,
+            cachedOpenHandle = 0,
+            pageCount = 1,
+            lastError = "native cache open failed",
+        )
+        val provider = RecordingRangeProvider()
+        val fileId = RangeProviderRegistry.register(provider)
+
+        val error = runCatching {
+            ComicEngine(native).openRemote(
+                fileId,
+                100,
+                temp.newFolder("native-range-open-error-cache"),
+                "comic-key",
+                "etag-1",
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is ComicNativeException)
+        assertEquals("native cache open failed", error?.message)
+        assertEquals(1, native.cachedRemoteOpenCalls.size)
+        assertEquals(1, provider.closeCalls)
     }
 
     @Test
@@ -313,13 +449,19 @@ class ComicEngineTest {
         private val lastError: String = "",
         private val diagnostics: String = "",
         private val plannedRanges: String = "v2;ok",
+        private val reconcileResult: () -> LongArray? = { longArrayOf(1, 0, 0, 0) },
+        private val cachedOpenHandle: Long = openHandle,
+        private val nativePrefetchResult: Int = 1,
     ) : ComicNativeFacade {
         val closedHandles = mutableListOf<Long>()
         val loadCalls = mutableListOf<LoadCall>()
         val localFdOpenCalls = mutableListOf<LocalFdOpenCall>()
-        val remoteOpenCalls = mutableListOf<RemoteOpenCall>()
+        val cachedRemoteOpenCalls = mutableListOf<RemoteOpenCall>()
         val viewportCalls = mutableListOf<ViewportCall>()
         val plannedRangeCalls = mutableListOf<PlannedRangeCall>()
+        val reconcileCalls = mutableListOf<ReconcileCall>()
+        val nativePrefetchCalls = mutableListOf<NativePrefetchCall>()
+        val nativeCancelCalls = mutableListOf<Long>()
 
         override fun openLocal(path: String): Long = openHandle
 
@@ -328,15 +470,15 @@ class ComicEngineTest {
             return openHandle
         }
 
-        override fun openRemote(
+        override fun openRemoteCachedV1(
             fileId: Long,
             size: Long,
             cacheDir: String,
             comicKey: String,
             validator: String,
         ): Long {
-            remoteOpenCalls += RemoteOpenCall(fileId, size, cacheDir, comicKey, validator)
-            return openHandle
+            cachedRemoteOpenCalls += RemoteOpenCall(fileId, size, cacheDir, comicKey, validator)
+            return cachedOpenHandle
         }
 
         override fun pageCount(handle: Long): Int = pageCount
@@ -372,31 +514,68 @@ class ComicEngineTest {
             return plannedRanges
         }
 
-        override fun lastErrorMessage(): String = lastError
-    }
-
-    private class RecordingRangeProvider(private val size: Long) : RangeProvider {
-        val prefetchCalls = mutableListOf<Pair<Long, Long>>()
-        val priorityPrefetchCalls = mutableListOf<PriorityPrefetchCall>()
-
-        override fun size(fileId: Long): Long = size
-
-        override fun readRange(fileId: Long, start: Long, endInclusive: Long): ByteArray =
-            ByteArray((endInclusive - start + 1).toInt())
-
-        override fun prefetchRange(start: Long, endInclusive: Long): Boolean {
-            prefetchCalls += start to endInclusive
-            return true
+        override fun reconcilePrefetchPlanV1(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+            byteBudget: Long,
+            activeRanges: LongArray,
+            completedRanges: LongArray,
+        ): LongArray? {
+            reconcileCalls += ReconcileCall(
+                handle = handle,
+                pageIndex = pageIndex,
+                networkClass = networkClass,
+                forwardPrefetchPageCount = forwardPrefetchPageCount,
+                byteBudget = byteBudget,
+                activeRanges = activeRanges.toList(),
+                completedRanges = completedRanges.toList(),
+            )
+            return reconcileResult()
         }
 
-        override fun prefetchRange(
+        override fun prefetchRemoteRangeV1(
+            handle: Long,
             start: Long,
             endInclusive: Long,
             priority: Int,
-            protectedRanges: List<LongRange>,
-        ): Boolean {
-            priorityPrefetchCalls += PriorityPrefetchCall(start, endInclusive, priority, protectedRanges)
-            return true
+            protectedRanges: LongArray,
+        ): Int {
+            nativePrefetchCalls += NativePrefetchCall(
+                handle = handle,
+                start = start,
+                endInclusive = endInclusive,
+                priority = priority,
+                protectedRanges = protectedRanges.toList(),
+            )
+            return nativePrefetchResult
+        }
+
+        override fun cancelRemoteIoV1(handle: Long) {
+            nativeCancelCalls += handle
+        }
+
+        override fun lastErrorMessage(): String = lastError
+    }
+
+    private class RecordingRangeProvider : RangeProvider {
+        var closeCalls = 0
+
+        override fun fetchRangeInto(
+            fileId: Long,
+            requestId: Long,
+            start: Long,
+            endInclusive: Long,
+            target: ByteBuffer,
+        ): Int {
+            val length = target.remaining()
+            target.put(ByteArray(length))
+            return length
+        }
+
+        override fun close() {
+            closeCalls += 1
         }
     }
 
@@ -434,10 +613,22 @@ class ComicEngineTest {
         val forwardPrefetchPageCount: Int,
     )
 
-    private data class PriorityPrefetchCall(
+    private data class ReconcileCall(
+        val handle: Long,
+        val pageIndex: Int,
+        val networkClass: Int,
+        val forwardPrefetchPageCount: Int,
+        val byteBudget: Long,
+        val activeRanges: List<Long>,
+        val completedRanges: List<Long>,
+    )
+
+    private data class NativePrefetchCall(
+        val handle: Long,
         val start: Long,
         val endInclusive: Long,
         val priority: Int,
-        val protectedRanges: List<LongRange>,
+        val protectedRanges: List<Long>,
     )
+
 }
