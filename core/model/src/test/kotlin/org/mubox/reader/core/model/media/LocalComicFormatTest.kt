@@ -7,55 +7,27 @@ import org.junit.Test
 
 class LocalComicFormatTest {
     @Test
-    fun supportedLocalComicNamesIncludeArchivesAndMuPdfDocumentsButNotRar() {
+    fun supportedLocalComicNamesIncludeZipAndCbzButNotOtherArchivesOrDocuments() {
         assertTrue(isSupportedLocalComicFileName("book.cbz"))
         assertTrue(isSupportedLocalComicFileName("book.zip"))
-        assertTrue(isSupportedLocalComicFileName("book.cb7"))
-        assertTrue(isSupportedLocalComicFileName("book.7z"))
-        assertTrue(isSupportedLocalComicFileName("book.cbt"))
-        assertTrue(isSupportedLocalComicFileName("book.tar"))
-        assertTrue(isSupportedLocalComicFileName("book.pdf"))
-        assertTrue(isSupportedLocalComicFileName("book.epub"))
-        assertTrue(isSupportedLocalComicFileName("book.mobi"))
-        assertTrue(isSupportedLocalComicFileName("book.azw3"))
+        assertFalse(isSupportedLocalComicFileName("book.cb7"))
+        assertFalse(isSupportedLocalComicFileName("book.7z"))
+        assertFalse(isSupportedLocalComicFileName("book.cbt"))
+        assertFalse(isSupportedLocalComicFileName("book.tar"))
+        assertFalse(isSupportedLocalComicFileName("book.pdf"))
+        assertFalse(isSupportedLocalComicFileName("book.epub"))
+        assertFalse(isSupportedLocalComicFileName("book.mobi"))
+        assertFalse(isSupportedLocalComicFileName("book.azw3"))
         assertFalse(isSupportedLocalComicFileName("book.cbr"))
         assertFalse(isSupportedLocalComicFileName("book.rar"))
         assertFalse(isSupportedLocalComicFileName("notes.txt"))
     }
 
     @Test
-    fun localArchiveFormatIsDerivedFromSupportedArchiveFileName() {
-        assertEquals(LocalArchiveFormat.Zip, localArchiveFormatForFileName("book.cbz"))
-        assertEquals(LocalArchiveFormat.Zip, localArchiveFormatForFileName("book.zip"))
-        assertEquals(LocalArchiveFormat.SevenZ, localArchiveFormatForFileName("book.cb7"))
-        assertEquals(LocalArchiveFormat.SevenZ, localArchiveFormatForFileName("book.7z"))
-        assertEquals(LocalArchiveFormat.Tar, localArchiveFormatForFileName("book.cbt"))
-        assertEquals(LocalArchiveFormat.Tar, localArchiveFormatForFileName("book.tar"))
-        assertEquals(null, localArchiveFormatForFileName("book.pdf"))
-    }
-
-    @Test
-    fun localDocumentFormatIsDerivedFromSupportedDocumentFileName() {
-        assertEquals(LocalDocumentFormat.Pdf, localDocumentFormatForFileName("book.pdf"))
-        assertEquals(LocalDocumentFormat.Epub, localDocumentFormatForFileName("book.epub"))
-        assertEquals(LocalDocumentFormat.Mobi, localDocumentFormatForFileName("book.mobi"))
-        assertEquals(LocalDocumentFormat.Azw3, localDocumentFormatForFileName("book.azw3"))
-        assertEquals(null, localDocumentFormatForFileName("book.cbz"))
-        assertEquals(null, localDocumentFormatForFileName("book.rar"))
-    }
-
-    @Test
-    fun localComicTitleStripsSupportedArchiveAndDocumentSuffixes() {
+    fun localComicTitleStripsSupportedArchiveSuffixes() {
         assertEquals("book", localComicTitleFromFileName("book.cbz"))
         assertEquals("book", localComicTitleFromFileName("book.zip"))
-        assertEquals("book", localComicTitleFromFileName("book.cb7"))
-        assertEquals("book", localComicTitleFromFileName("book.7z"))
-        assertEquals("book", localComicTitleFromFileName("book.cbt"))
-        assertEquals("book", localComicTitleFromFileName("book.tar"))
-        assertEquals("book", localComicTitleFromFileName("book.pdf"))
-        assertEquals("book", localComicTitleFromFileName("book.epub"))
-        assertEquals("book", localComicTitleFromFileName("book.mobi"))
-        assertEquals("book", localComicTitleFromFileName("book.azw3"))
         assertEquals("book.rar", localComicTitleFromFileName("book.rar"))
+        assertEquals("book.pdf", localComicTitleFromFileName("book.pdf"))
     }
 }

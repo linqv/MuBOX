@@ -22,7 +22,6 @@ datastore = "1.1.1"
 junit = "4.13.2"
 lifecycle = "2.10.0"
 mpv = "0.0.1"
-mupdf = "1.27.1"
 okhttpBom = "5.3.2"
 robolectric = "4.15.1"
 room = "2.8.4"
@@ -63,7 +62,6 @@ coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", ve
 junit = { module = "junit:junit", version.ref = "junit" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver" }
 mpv = { module = "is.xyz.mpv:mpv-android-lib", version.ref = "mpv" }
-mupdf = { module = "com.artifex.mupdf:fitz", version.ref = "mupdf" }
 okhttp = { module = "com.squareup.okhttp3:okhttp" }
 okhttp-bom = { module = "com.squareup.okhttp3:okhttp-bom", version.ref = "okhttpBom" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

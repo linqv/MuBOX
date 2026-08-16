@@ -19,11 +19,10 @@ use crate::error::ComicCoreError;
 use crate::remote::jni_range_transport::JniRangeTransport;
 use crate::remote::range_session::RangeSessionError;
 use crate::session_registry::{
-    ComicHandle, archive_format_from_name, cancel_remote_io, close_session,
-    forward_prefetch_window_from_i32, load_page_to_file, network_class_from_i32, open_local_fd,
-    open_local_path, open_remote_range_session, page_count, planned_ranges_for_viewport,
-    prefetch_remote_range, reconcile_prefetch_plan_for_viewport, session_diagnostics,
-    update_viewport,
+    ComicHandle, cancel_remote_io, close_session, forward_prefetch_window_from_i32,
+    load_page_to_file, network_class_from_i32, open_local_fd, open_local_path,
+    open_remote_range_session, page_count, planned_ranges_for_viewport, prefetch_remote_range,
+    reconcile_prefetch_plan_for_viewport, session_diagnostics, update_viewport,
 };
 
 /// Called by the JVM when the dynamic library is loaded.
@@ -73,7 +72,7 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "openLocalFd",
-            "(IJLjava/lang/String;)J",
+            "(IJ)J",
             native_open_local_fd as *const () as *mut c_void,
         ),
         native_method(
@@ -150,17 +149,13 @@ extern "system" fn native_open_local(
 }
 
 extern "system" fn native_open_local_fd(
-    mut env: JNIEnv<'_>,
+    _env: JNIEnv<'_>,
     _class: JClass<'_>,
     fd: jint,
     size: jlong,
-    format: JString<'_>,
 ) -> jlong {
     let size_hint = if size > 0 { Some(size as u64) } else { None };
-    match jstring_to_string(&mut env, &format).and_then(|format| {
-        let format = archive_format_from_name(&format)?;
-        open_local_fd(fd, size_hint, format)
-    }) {
+    match open_local_fd(fd, size_hint) {
         Ok(handle) => handle as jlong,
         Err(error) => {
             set_last_error(error);

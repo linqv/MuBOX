@@ -71,6 +71,4 @@ private val subtitleMimeTypes = setOf(
 private val comicMimeTypes = setOf(
     "application/zip",
     "application/x-cbz",
-    "application/pdf",
-    "application/epub+zip",
 )

@@ -20,9 +20,8 @@ class ComicEngine(
     fun openLocalFd(
         fd: Int,
         size: Long,
-        format: String,
     ): ComicReaderSession {
-        val handle = native.openLocalFd(fd, size, format)
+        val handle = native.openLocalFd(fd, size)
         return openChecked(handle)
     }
 

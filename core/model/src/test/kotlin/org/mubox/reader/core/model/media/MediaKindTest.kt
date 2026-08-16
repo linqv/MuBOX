@@ -8,7 +8,7 @@ class MediaKindTest {
     @Test
     fun identifiesSupportedMediaKindsFromFileNames() {
         assertEquals(MediaKind.Comic, mediaKindForFileName("Book.CBZ"))
-        assertEquals(MediaKind.Comic, mediaKindForFileName("scan.pdf"))
+        assertEquals(MediaKind.Comic, mediaKindForFileName("scan.zip"))
         assertEquals(MediaKind.Video, mediaKindForFileName("movie.mkv"))
         assertEquals(MediaKind.Video, mediaKindForFileName("clip.MP4"))
         assertEquals(MediaKind.Audio, mediaKindForFileName("track.flac"))

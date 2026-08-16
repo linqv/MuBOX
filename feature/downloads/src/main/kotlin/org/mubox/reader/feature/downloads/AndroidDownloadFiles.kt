@@ -118,12 +118,6 @@ internal fun mimeTypeForDownloadFileName(fileName: String): String =
     org.mubox.reader.core.model.media.mimeTypeForMediaFileName(fileName)
         ?: when (fileName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)) {
             "cbz", "zip" -> "application/zip"
-            "cb7", "7z" -> "application/x-7z-compressed"
-            "cbt", "tar" -> "application/x-tar"
-            "pdf" -> "application/pdf"
-            "epub" -> "application/epub+zip"
-            "mobi" -> "application/x-mobipocket-ebook"
-            "azw3" -> "application/vnd.amazon.ebook"
             else -> "application/octet-stream"
         }
 

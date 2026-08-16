@@ -2,12 +2,14 @@ use anyhow::{Result, anyhow};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::archive::{ArchiveFormat, LocalArchiveSession, open_local_archive_fd};
+#[cfg(unix)]
+use std::os::fd::FromRawFd;
+
 use crate::cache::index_cache::{IndexCacheKey, open_cbz_with_index_cache, store_index_cache};
 use crate::cbz::{CbzIndex, CbzPageEntry, open_cbz};
 use crate::error::ComicCoreError;
@@ -81,7 +83,6 @@ enum SessionKind {
         reader: SessionReader,
         index: CbzIndex,
     },
-    LocalArchive(Box<LocalArchiveSession>),
 }
 
 impl RangeReader for SessionReader {
@@ -169,13 +170,34 @@ pub(crate) fn open_remote_range_session(
     )
 }
 
-pub(crate) fn open_local_fd(
-    fd: i32,
-    size_hint: Option<u64>,
-    format: ArchiveFormat,
-) -> Result<ComicHandle> {
-    let archive = open_local_archive_fd(fd, size_hint, format)?;
-    insert_session(SessionKind::LocalArchive(Box::new(archive)), None, None)
+pub(crate) fn open_local_fd(fd: i32, size_hint: Option<u64>) -> Result<ComicHandle> {
+    let reader = open_local_fd_reader(fd, size_hint)?;
+    let index = open_cbz(&reader)?;
+    insert_session(
+        SessionKind::Zip {
+            reader: SessionReader::Local(reader),
+            index,
+        },
+        None,
+        None,
+    )
+}
+
+#[cfg(unix)]
+fn open_local_fd_reader(fd: i32, size_hint: Option<u64>) -> Result<FileRangeReader> {
+    if fd < 0 {
+        return Err(anyhow!("invalid local comic file descriptor"));
+    }
+    // SAFETY: the caller transfers ownership of a valid, open file descriptor.
+    let file = unsafe { File::from_raw_fd(fd) };
+    FileRangeReader::from_file(file, size_hint)
+}
+
+#[cfg(not(unix))]
+fn open_local_fd_reader(_fd: i32, _size_hint: Option<u64>) -> Result<FileRangeReader> {
+    Err(anyhow!(
+        "local file descriptors are not supported on this platform"
+    ))
 }
 
 fn insert_session(
@@ -269,7 +291,6 @@ pub(crate) fn page_count(handle: ComicHandle) -> Result<i32> {
         .map_err(|_| anyhow!("native session lock poisoned"))?;
     Ok(match &session.kind {
         SessionKind::Zip { index, .. } => index.pages.len() as i32,
-        SessionKind::LocalArchive(archive) => archive.page_count() as i32,
     })
 }
 
@@ -295,12 +316,6 @@ pub(crate) fn load_page_to_file(
                 }
                 page.bytes
             }
-            SessionKind::LocalArchive(archive) => {
-                if archive.materialize_solid_page_to_file(page_index, output_path)? {
-                    return Ok(());
-                }
-                archive.extract_page(page_index)?
-            }
         }
     };
     let tmp_path = output_path.with_extension("tmp");
@@ -322,10 +337,6 @@ pub(crate) fn update_viewport(
         .map_err(|_| anyhow!("native session lock poisoned"))?;
     let (index, reader) = match &session.kind {
         SessionKind::Zip { reader, index } => (index, reader),
-        SessionKind::LocalArchive(_) => {
-            session.diagnostics = SessionDiagnostics::default();
-            return Ok(());
-        }
     };
     if page_index >= index.pages.len() {
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
@@ -363,7 +374,6 @@ pub(crate) fn planned_ranges_for_viewport(
         .map_err(|_| anyhow!("native session lock poisoned"))?;
     let (index, reader) = match &session.kind {
         SessionKind::Zip { reader, index } => (index, reader),
-        SessionKind::LocalArchive(_) => return Ok(Vec::new()),
     };
     if page_index >= index.pages.len() {
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
@@ -394,14 +404,6 @@ pub(crate) fn reconcile_prefetch_plan_for_viewport(
         .map_err(|_| anyhow!("native session lock poisoned"))?;
     let (index, reader) = match &session.kind {
         SessionKind::Zip { reader, index } => (index, reader),
-        SessionKind::LocalArchive(_) => {
-            return Ok(reconcile_prefetch_plan(
-                &[],
-                &active_ranges,
-                &completed_ranges,
-                byte_budget,
-            ));
-        }
     };
     if page_index >= index.pages.len() {
         return Err(ComicCoreError::InvalidZip("page index out of bounds".to_string()).into());
@@ -557,15 +559,6 @@ pub(crate) fn forward_prefetch_window_from_i32(value: i32) -> usize {
         4
     } else {
         (value as usize).min(16)
-    }
-}
-
-pub(crate) fn archive_format_from_name(value: &str) -> Result<ArchiveFormat> {
-    match value {
-        "zip" => Ok(ArchiveFormat::Zip),
-        "7z" => Ok(ArchiveFormat::SevenZ),
-        "tar" => Ok(ArchiveFormat::Tar),
-        _ => Err(anyhow!("unsupported local archive format: {value}")),
     }
 }
 

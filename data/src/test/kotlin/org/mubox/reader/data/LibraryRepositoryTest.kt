@@ -111,10 +111,10 @@ class LibraryRepositoryTest {
     }
 
     @Test
-    fun addLocalDocumentStoresTitleWithoutMuPdfDocumentExtension() = runTest {
+    fun addLocalComicStoresTitleWithoutArchiveExtension() = runTest {
         val libraryItemId = repository.addLocalComic(
-            uri = "content://documents/tree/books/document/book.pdf",
-            fileName = "book.pdf",
+            uri = "content://documents/tree/books/document/book.zip",
+            fileName = "book.zip",
             size = 100L,
             lastModified = 10L,
         )
@@ -124,7 +124,7 @@ class LibraryRepositoryTest {
         assertTrue(libraryItemId > 0L)
         assertEquals("book", library.single().item.title)
         assertEquals("book", library.single().item.displayName)
-        assertEquals("book.pdf", library.single().localSource?.fileName)
+        assertEquals("book.zip", library.single().localSource?.fileName)
     }
 
     @Test

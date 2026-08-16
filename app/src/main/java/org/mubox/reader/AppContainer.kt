@@ -52,11 +52,10 @@ internal class AppContainer(
     val localDirectoryReader = AndroidLocalDirectoryReader(context.applicationContext)
     val localComicOpener = LocalComicOpener(
         context = context.applicationContext,
-        openSession = { fd, size, format ->
+        openSession = { fd, size ->
             ComicEngine().openLocalFd(
                 fd = fd,
                 size = size,
-                format = format.nativeName,
             )
         },
     )

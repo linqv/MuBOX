@@ -2,12 +2,9 @@ package org.mubox.reader.feature.reader
 
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import org.mubox.reader.core.model.media.LocalArchiveFormat
-import org.mubox.reader.core.model.media.LocalDocumentFormat
 import org.mubox.reader.core.ports.ComicReaderSession
 import java.io.File
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,18 +18,17 @@ class LocalComicOpenerTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun openerPassesSeekableFileDescriptorAndFormatToSessionFactory() {
-        val archive = temp.newFile("book.cbt").apply {
+    fun openerPassesSeekableFileDescriptorAndSizeToSessionFactory() {
+        val archive = temp.newFile("book.cbz").apply {
             writeBytes(ByteArray(4096) { 7 })
         }
         val calls = mutableListOf<OpenLocalFdCall>()
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
-            openSession = { fd, size, format ->
+            openSession = { fd, size ->
                 calls += OpenLocalFdCall(
                     fd = fd,
                     size = size,
-                    format = format,
                 )
                 FakeReaderSession(pageCount = 1)
             },
@@ -41,53 +37,15 @@ class LocalComicOpenerTest {
         val session = opener.open(Uri.fromFile(archive), archive.name)
 
         assertEquals(1, session.pageCount)
-        assertEquals(listOf(LocalArchiveFormat.Tar), calls.map { it.format })
         assertEquals(listOf(archive.length()), calls.map { it.size })
         assertTrue(calls.single().fd > 0)
-    }
-
-    @Test
-    fun openerPassesDocumentDescriptorAndFormatToDocumentFactory() {
-        val document = temp.newFile("book.pdf").apply {
-            writeBytes(ByteArray(1024) { 8 })
-        }
-        val documentCalls = mutableListOf<OpenLocalDocumentCall>()
-        val archiveCalls = mutableListOf<OpenLocalFdCall>()
-        val opener = LocalComicOpener(
-            context = ApplicationProvider.getApplicationContext(),
-            openSession = { fd, size, format ->
-                archiveCalls += OpenLocalFdCall(
-                    fd = fd,
-                    size = size,
-                    format = format,
-                )
-                FakeReaderSession(pageCount = 1)
-            },
-            openDocumentSession = { descriptor, fileName, format ->
-                documentCalls += OpenLocalDocumentCall(
-                    fd = descriptor.fd,
-                    fileName = fileName,
-                    format = format,
-                )
-                FakeReaderSession(pageCount = 2)
-            },
-        )
-
-        val session = opener.open(Uri.fromFile(document), document.name)
-
-        assertEquals(2, session.pageCount)
-        assertTrue(archiveCalls.isEmpty())
-        assertEquals(listOf("book.pdf"), documentCalls.map { it.fileName })
-        assertEquals(listOf(LocalDocumentFormat.Pdf), documentCalls.map { it.format })
-        assertTrue(documentCalls.single().fd > 0)
     }
 
     @Test
     fun openerRejectsUnsupportedLocalComicExtensionBeforeOpeningAnySession() {
         val opener = LocalComicOpener(
             context = ApplicationProvider.getApplicationContext(),
-            openSession = { _, _, _ -> error("archive factory should not be called") },
-            openDocumentSession = { _, _, _ -> error("document factory should not be called") },
+            openSession = { _, _ -> error("archive factory should not be called") },
         )
 
         val error = runCatching {
@@ -100,13 +58,6 @@ class LocalComicOpenerTest {
     private data class OpenLocalFdCall(
         val fd: Int,
         val size: Long,
-        val format: LocalArchiveFormat,
-    )
-
-    private data class OpenLocalDocumentCall(
-        val fd: Int,
-        val fileName: String,
-        val format: LocalDocumentFormat,
     )
 
     private class FakeReaderSession(

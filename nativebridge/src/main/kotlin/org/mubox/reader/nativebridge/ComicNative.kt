@@ -4,7 +4,7 @@ import androidx.annotation.WorkerThread
 
 interface ComicNativeFacade {
     @WorkerThread fun openLocal(path: String): Long
-    @WorkerThread fun openLocalFd(fd: Int, size: Long, format: String): Long
+    @WorkerThread fun openLocalFd(fd: Int, size: Long): Long
     @WorkerThread
     fun openRemoteCachedV1(
         fileId: Long,
@@ -50,7 +50,7 @@ object ComicNative : ComicNativeFacade {
     external override fun openLocal(path: String): Long
 
     @WorkerThread
-    external override fun openLocalFd(fd: Int, size: Long, format: String): Long
+    external override fun openLocalFd(fd: Int, size: Long): Long
 
     @WorkerThread
     external override fun openRemoteCachedV1(

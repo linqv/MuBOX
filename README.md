@@ -6,10 +6,9 @@ Android 包名：`org.mubox.reader`
 
 ## 功能
 
-### 漫画 / 文档阅读
-- 支持格式：CBZ、ZIP、CB7、7Z、CBT/TAR、PDF、EPUB、MOBI、AZW3
-- 基于 Rust JNI 库的高性能 ZIP/7Z 解压与页面提取
-- PDF / EPUB / MOBI / AZW3 由 MuPDF（fitz）渲染
+### 漫画阅读
+- 支持格式：CBZ、ZIP
+- 基于 Rust JNI 库的高性能 ZIP 解压与页面提取
 - 支持捏合缩放、翻页手势，阅读进度自动保存
 
 ### 视频 / 音频播放

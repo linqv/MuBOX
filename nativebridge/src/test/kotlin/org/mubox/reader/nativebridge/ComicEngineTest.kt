@@ -78,12 +78,12 @@ class ComicEngineTest {
     }
 
     @Test
-    fun openLocalFdPassesArchiveIdentityToNative() {
+    fun openLocalFdPassesDescriptorAndSizeToNative() {
         val native = FakeComicNative(openHandle = 12, pageCount = 1)
 
-        ComicEngine(native).openLocalFd(fd = 11, size = 2048, format = "zip")
+        ComicEngine(native).openLocalFd(fd = 11, size = 2048)
 
-        assertEquals(LocalFdOpenCall(11, 2048, "zip"), native.localFdOpenCalls.single())
+        assertEquals(LocalFdOpenCall(11, 2048), native.localFdOpenCalls.single())
     }
 
     @Test
@@ -465,8 +465,8 @@ class ComicEngineTest {
 
         override fun openLocal(path: String): Long = openHandle
 
-        override fun openLocalFd(fd: Int, size: Long, format: String): Long {
-            localFdOpenCalls += LocalFdOpenCall(fd, size, format)
+        override fun openLocalFd(fd: Int, size: Long): Long {
+            localFdOpenCalls += LocalFdOpenCall(fd, size)
             return openHandle
         }
 
@@ -588,7 +588,6 @@ class ComicEngineTest {
     private data class LocalFdOpenCall(
         val fd: Int,
         val size: Long,
-        val format: String,
     )
 
     private data class RemoteOpenCall(

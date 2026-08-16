@@ -35,7 +35,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.coroutines.android)
-    implementation(libs.mupdf)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

@@ -133,7 +133,7 @@ class NativeWorkerThreadContractTest {
     private object NoopComicNative : ComicNativeFacade {
         override fun openLocal(path: String): Long = 1
 
-        override fun openLocalFd(fd: Int, size: Long, format: String): Long = 1
+        override fun openLocalFd(fd: Int, size: Long): Long = 1
 
         override fun openRemoteCachedV1(
             fileId: Long,
