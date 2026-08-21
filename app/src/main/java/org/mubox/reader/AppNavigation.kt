@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Folder
@@ -383,16 +384,30 @@ internal fun selectionBottomBar(
     onAddWebDavVideoToVideoLibrary: (WebDavItem) -> Unit,
     onAddDirectoryComicToLibrary: (FileDirectoryBrowserItem) -> Unit,
     onAddDirectoryVideoToVideoLibrary: (FileDirectoryBrowserItem) -> Unit,
+    canSelectAllHistory: Boolean,
+    onSelectAllHistory: () -> Unit,
     onDeleteHomeSelection: () -> Unit,
     onCancel: () -> Unit,
 ): (@Composable () -> Unit)? {
     val actions = when {
-        homeSelection.isActive -> listOf(
-            SelectionAction("删除 ${homeSelection.count} 项", Icons.Filled.Delete) {
-                onDeleteHomeSelection()
-            },
-            SelectionAction("取消", Icons.Filled.Close, onClick = onCancel),
-        )
+        homeSelection.isActive -> buildList {
+            if (homeSelection.historyKeys.isNotEmpty()) {
+                add(
+                    SelectionAction(
+                        label = "全选记录",
+                        icon = Icons.Filled.SelectAll,
+                        enabled = canSelectAllHistory,
+                        onClick = onSelectAllHistory,
+                    ),
+                )
+            }
+            add(
+                SelectionAction("删除 ${homeSelection.count} 项", Icons.Filled.Delete) {
+                    onDeleteHomeSelection()
+                },
+            )
+            add(SelectionAction("取消", Icons.Filled.Close, onClick = onCancel))
+        }
         selectedWebDavFile != null -> when (mediaKindFor(name = selectedWebDavFile.name, isDirectory = selectedWebDavFile.isDirectory)) {
             MediaKind.Video -> listOf(
                 SelectionAction("加入影视库", Icons.Filled.PlayArrow) { onAddWebDavVideoToVideoLibrary(selectedWebDavFile) },

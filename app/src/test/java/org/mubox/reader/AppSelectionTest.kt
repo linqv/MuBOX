@@ -88,6 +88,18 @@ class AppSelectionTest {
     }
 
     @Test
+    fun homeSelectionCanSelectAllHistoryWithoutChangingOtherGroups() {
+        val selection = HomeSelection(
+            historyKeys = setOf("history-1"),
+            libraryItemIds = setOf(11L),
+        ).selectAllHistory(setOf("history-1", "history-2", "history-3"))
+
+        assertEquals(setOf("history-1", "history-2", "history-3"), selection.historyKeys)
+        assertEquals(setOf(11L), selection.libraryItemIds)
+        assertEquals(4, selection.count)
+    }
+
+    @Test
     fun homeSelectionToggleRemovesOnlyTheTappedItem() {
         val selection = HomeSelection(
             historyKeys = setOf("history-1"),

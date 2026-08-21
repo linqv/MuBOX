@@ -61,6 +61,10 @@ internal class AppUiStateHolder(
         homeSelection = homeSelection.toggleHistory(mediaKey)
     }
 
+    fun selectAllHomeHistory(mediaKeys: Set<String>) {
+        homeSelection = homeSelection.selectAllHistory(mediaKeys)
+    }
+
     fun toggleHomeLibrarySelection(id: Long) {
         homeSelection = homeSelection.toggleLibrary(id)
     }

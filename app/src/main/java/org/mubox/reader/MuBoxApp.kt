@@ -297,6 +297,11 @@ internal fun MuBoxApp(container: AppContainer) {
                                     ui.clearSelection()
                                     videoActions.favoriteLocalDirectoryVideo(item)
                                 },
+                                canSelectAllHistory = ui.homeSelection.historyKeys.isNotEmpty() &&
+                                    ui.homeSelection.historyKeys.size < historyMediaKeys.size,
+                                onSelectAllHistory = {
+                                    ui.selectAllHomeHistory(historyMediaKeys)
+                                },
                                 onDeleteHomeSelection = {
                                     pendingHomeDeleteSelection = ui.homeSelection
                                 },

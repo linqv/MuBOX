@@ -20,6 +20,10 @@ internal data class HomeSelection(
         historyKeys = historyKeys.toggle(key),
     )
 
+    fun selectAllHistory(keys: Set<String>): HomeSelection = copy(
+        historyKeys = keys,
+    )
+
     fun toggleLibrary(id: Long): HomeSelection = copy(
         libraryItemIds = libraryItemIds.toggle(id),
     )

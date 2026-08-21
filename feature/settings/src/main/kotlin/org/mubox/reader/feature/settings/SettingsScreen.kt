@@ -21,7 +21,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
@@ -35,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -275,7 +279,15 @@ fun SettingsScreen(
             HistorySettingsPage(
                 history = history,
                 onOpenEntry = onOpenHistoryEntry,
-                onDeleteEntry = { onAction(SettingsAction.DeleteHistoryEntry(it)) },
+                onDeleteEntries = { entries ->
+                    if (entries.size == history.size) {
+                        onAction(SettingsAction.ClearHistory)
+                    } else {
+                        entries.forEach { entry ->
+                            onAction(SettingsAction.DeleteHistoryEntry(entry))
+                        }
+                    }
+                },
                 onBack = { currentPage = SettingsPage.ROOT },
                 modifier = modifier,
             )
@@ -524,22 +536,60 @@ fun SettingsScreen(
 private fun HistorySettingsPage(
     history: List<WatchHistoryEntry>,
     onOpenEntry: (WatchHistoryEntry) -> Unit,
-    onDeleteEntry: (WatchHistoryEntry) -> Unit,
+    onDeleteEntries: (List<WatchHistoryEntry>) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
-    var pendingDelete by remember { mutableStateOf<WatchHistoryEntry?>(null) }
+    val availableKeys = remember(history) { history.mapTo(linkedSetOf(), WatchHistoryEntry::mediaKey) }
+    var selectedKeys by remember { mutableStateOf(emptySet<String>()) }
+    var pendingDeleteKeys by remember { mutableStateOf<Set<String>?>(null) }
+    val selectionActive = selectedKeys.isNotEmpty()
+
+    LaunchedEffect(availableKeys) {
+        selectedKeys = selectedKeys.intersect(availableKeys)
+    }
+    BackHandler(enabled = selectionActive) {
+        selectedKeys = emptySet()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .muBoxAppBackground(colors),
     ) {
         MuBoxHeaderBar(
-            title = "观看历史",
+            title = if (selectionActive) "已选择 ${selectedKeys.size} 项" else "观看历史",
             navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                IconButton(onClick = {
+                    if (selectionActive) selectedKeys = emptySet() else onBack()
+                }) {
+                    Icon(
+                        imageVector = if (selectionActive) {
+                            Icons.Filled.Close
+                        } else {
+                            Icons.AutoMirrored.Filled.ArrowBack
+                        },
+                        contentDescription = if (selectionActive) "取消选择" else "返回",
+                    )
+                }
+            },
+            actions = {
+                if (selectionActive) {
+                    TextButton(
+                        onClick = { selectedKeys = availableKeys },
+                        enabled = selectedKeys.size < availableKeys.size,
+                    ) {
+                        Icon(Icons.Filled.SelectAll, contentDescription = null)
+                        Text("全选")
+                    }
+                    IconButton(onClick = { pendingDeleteKeys = selectedKeys }) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "删除所选 ${selectedKeys.size} 条历史记录",
+                            tint = colors.errorText,
+                        )
+                    }
                 }
             },
         )
@@ -551,7 +601,7 @@ private fun HistorySettingsPage(
                 top = 16.dp,
                 bottom = 24.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (history.isEmpty()) {
                 item {
@@ -564,8 +614,8 @@ private fun HistorySettingsPage(
             } else {
                 item {
                     Text(
-                        text = "最近观看",
-                        modifier = Modifier.padding(start = 16.dp),
+                        text = if (selectionActive) "轻触条目可继续多选" else "长按条目可多选删除",
+                        modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
                         style = MaterialTheme.typography.labelLarge,
                         color = colors.muted,
                     )
@@ -577,35 +627,45 @@ private fun HistorySettingsPage(
                     HistoryEntryRow(
                         entry = entry,
                         onOpen = { onOpenEntry(entry) },
-                        onDelete = { pendingDelete = entry },
+                        selected = entry.mediaKey in selectedKeys,
+                        selectionActive = selectionActive,
+                        onToggleSelection = {
+                            selectedKeys = selectedKeys.toggle(entry.mediaKey)
+                        },
                     )
                 }
             }
         }
     }
-    pendingDelete?.let { entry ->
+    pendingDeleteKeys?.let { keys ->
+        val entries = history.filter { it.mediaKey in keys }
         AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("删除这条历史记录？") },
-            text = { Text("将同时清理《${entry.displayTitle}》的恢复位置和关联漫画缓存。") },
+            onDismissRequest = { pendingDeleteKeys = null },
+            title = { Text("删除所选 ${entries.size} 条历史记录？") },
+            text = { Text("将同时清理对应的恢复位置和关联漫画缓存，此操作无法撤销。") },
             confirmButton = {
                 TextButton(
+                    enabled = entries.isNotEmpty(),
                     onClick = {
-                        pendingDelete = null
-                        onDeleteEntry(entry)
+                        pendingDeleteKeys = null
+                        selectedKeys = emptySet()
+                        onDeleteEntries(entries)
                     },
                 ) {
-                    Text("删除")
+                    Text("删除", color = colors.errorText)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) {
+                TextButton(onClick = { pendingDeleteKeys = null }) {
                     Text("取消")
                 }
             },
         )
     }
 }
+
+private fun <T> Set<T>.toggle(value: T): Set<T> =
+    if (value in this) this - value else this + value
 
 internal fun historyRetentionLabel(days: Int): String =
     if (days <= 0) "永久" else "$days 天"
