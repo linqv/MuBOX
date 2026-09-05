@@ -21,12 +21,16 @@ class AudioListenScreenUiTest {
     @Test
     fun listenScreenExposesPersistentTimerControl() {
         assertEquals("定时关闭", LISTEN_TIMER_CONTENT_DESCRIPTION)
+        assertEquals(
+            "播放设置：播放方式、倍速和定时关闭",
+            LISTEN_PLAYBACK_SETTINGS_CONTENT_DESCRIPTION,
+        )
     }
 
     @Test
     fun listenScreenExposesQuickControlGroups() {
         assertEquals(
-            listOf("播放设置", "倍速", "定时关闭", "选集"),
+            listOf("播放设置", "播放方式", "倍速", "定时关闭", "选集"),
             listenScreenQuickControlLabels(),
         )
     }

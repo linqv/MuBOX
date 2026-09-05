@@ -158,6 +158,7 @@ internal class VideoPlayerSessionCoordinator(
     private var nativeInitialized = false
     private var activePlaylistEntryId: Long? = null
     private var episodeTransition: EpisodeTransitionState? = null
+    private var naturalEndSignaled = false
 
     private val playbackLoader = VideoPlaybackLoadCoordinator(
         canLoad = ::canLoad,
@@ -201,7 +202,11 @@ internal class VideoPlayerSessionCoordinator(
         }
 
         override fun eventProperty(property: String, value: Boolean) {
-            dispatchProperty { propertyEventRouter.route(property, value) }
+            if (property == "eof-reached") {
+                routeEofReached(value)
+            } else {
+                dispatchProperty { propertyEventRouter.route(property, value) }
+            }
         }
 
         override fun eventProperty(property: String, value: String) {
@@ -421,14 +426,41 @@ internal class VideoPlayerSessionCoordinator(
     }
 
     private fun routeStartFile(data: MPVNode) {
-        val playlistEntryId = mpvEventPlaylistEntryId(data) ?: return
+        val playlistEntryId = mpvEventPlaylistEntryId(data)
         synchronized(lock) {
+            naturalEndSignaled = false
+            if (playlistEntryId == null) return@synchronized
             episodeTransition?.let { transition ->
                 if (playlistEntryId != transition.oldPlaylistEntryId) {
                     transition.newPlaylistEntryId = playlistEntryId
                 }
             }
             activePlaylistEntryId = playlistEntryId
+        }
+    }
+
+    /**
+     * With keep-open enabled mpv stays on the last frame, so eof-reached is the reliable natural
+     * completion signal. END_FILE may only arrive later when loadfile unloads the old entry.
+     */
+    private fun routeEofReached(reached: Boolean) {
+        val shouldDispatch = synchronized(lock) {
+            if (!reached) {
+                naturalEndSignaled = false
+                false
+            } else if (naturalEndSignaled) {
+                false
+            } else {
+                naturalEndSignaled = true
+                true
+            }
+        }
+        if (!shouldDispatch) return
+
+        dispatchToMain {
+            if (isClosingOrClosed) return@dispatchToMain
+            controller.onPlaybackEnded()
+            onPlaybackEnded()
         }
     }
 
@@ -477,7 +509,9 @@ internal class VideoPlayerSessionCoordinator(
 
     private fun routeEndFile(data: MPVNode) {
         val playlistEntryId = mpvEventPlaylistEntryId(data)
+        val errorMessage = mpvEndFileErrorMessage(data)
         var completion: (() -> Unit)? = null
+        var isDuplicateNaturalEnd = false
         val ignoreTransitionEndFile = synchronized(lock) {
             val transition = episodeTransition
             val isOldEntryEnd = transition?.isOldEndPending == true && when {
@@ -500,14 +534,17 @@ internal class VideoPlayerSessionCoordinator(
             if (playlistEntryId != null && activePlaylistEntryId == playlistEntryId) {
                 activePlaylistEntryId = null
             }
+            isDuplicateNaturalEnd = !isOldEntryEnd && errorMessage == null && naturalEndSignaled
+            if (!isOldEntryEnd && errorMessage == null && !isDuplicateNaturalEnd) {
+                naturalEndSignaled = true
+            }
             completion = transitionCompletionIfReadyLocked()
             isOldEntryEnd
         }
 
         dispatchToMain {
             if (isClosingOrClosed) return@dispatchToMain
-            if (!ignoreTransitionEndFile) {
-                val errorMessage = mpvEndFileErrorMessage(data)
+            if (!ignoreTransitionEndFile && !isDuplicateNaturalEnd) {
                 if (errorMessage == null) {
                     controller.onPlaybackEnded()
                     onPlaybackEnded()

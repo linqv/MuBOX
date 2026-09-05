@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -26,8 +28,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +86,7 @@ internal fun AudioListenScreen(
     currentEpisodeIndex: Int,
     isEpisodeSwitching: Boolean,
     sleepTimerState: SleepTimerState,
+    playbackMode: ListenPlaybackMode,
     onExitListenMode: () -> Unit,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -90,6 +95,7 @@ internal fun AudioListenScreen(
     onNextEpisode: () -> Unit,
     onEpisodeSelected: (Int) -> Unit,
     onSleepTimerSelected: (SleepTimerMode) -> Unit,
+    onPlaybackModeSelected: (ListenPlaybackMode) -> Unit,
     onConfigureSystemBars: () -> Unit,
     onRestoreSystemBars: () -> Unit,
 ) {
@@ -168,7 +174,9 @@ internal fun AudioListenScreen(
                             hasNextEpisode = hasNextEpisode,
                             isEpisodeSwitching = isEpisodeSwitching,
                             hasEpisodes = episodeCount != null && episodeCount > 0,
-                            hasCustomPlaybackSettings = state.playbackSpeed != 1.0 || sleepTimerState.isActive,
+                            hasCustomPlaybackSettings = playbackMode != ListenPlaybackMode.SEQUENTIAL ||
+                                state.playbackSpeed != 1.0 ||
+                                sleepTimerState.isActive,
                             onPreviousEpisode = onPreviousEpisode,
                             onNextEpisode = onNextEpisode,
                             onPlayPause = onPlayPause,
@@ -200,8 +208,10 @@ internal fun AudioListenScreen(
                 ListenPlaybackSettingsSheet(
                     playbackSpeed = state.playbackSpeed,
                     sleepTimerState = sleepTimerState,
+                    playbackMode = playbackMode,
                     onSpeedSelected = onSpeedSelected,
                     onSleepTimerSelected = onSleepTimerSelected,
+                    onPlaybackModeSelected = onPlaybackModeSelected,
                     onDismiss = { playbackSettingsVisible = false },
                 )
             }
@@ -459,15 +469,17 @@ private fun ListenMenuIconButton(
     }
 }
 
-// ─── 左侧播放设置菜单：倍速 + 定时关闭 ───
+// ─── 播放设置菜单：播放方式 + 倍速 + 定时关闭 ───
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ListenPlaybackSettingsSheet(
     playbackSpeed: Double,
     sleepTimerState: SleepTimerState,
+    playbackMode: ListenPlaybackMode,
     onSpeedSelected: (Double) -> Unit,
     onSleepTimerSelected: (SleepTimerMode) -> Unit,
+    onPlaybackModeSelected: (ListenPlaybackMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -475,6 +487,7 @@ private fun ListenPlaybackSettingsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -483,6 +496,31 @@ private fun ListenPlaybackSettingsSheet(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            Text(
+                text = "播放方式",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ListenPlaybackMode.entries.forEach { mode ->
+                    ListenOptionChip(
+                        text = mode.controlLabel(),
+                        selected = playbackMode == mode,
+                        icon = mode.icon(),
+                    ) {
+                        onPlaybackModeSelected(mode)
+                    }
+                }
+            }
+            Text(
+                text = playbackMode.detailText(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
             Text(
                 text = "倍速",
                 style = MaterialTheme.typography.titleSmall,
@@ -557,14 +595,32 @@ private fun ListenPlaybackSettingsSheet(
 private fun ListenOptionChip(
     text: String,
     selected: Boolean,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
 ) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(text = text, maxLines = 1) },
+        leadingIcon = icon?.let { imageVector ->
+            {
+                Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        },
+        modifier = Modifier.heightIn(min = 48.dp),
     )
 }
+
+private fun ListenPlaybackMode.icon(): ImageVector =
+    when (this) {
+        ListenPlaybackMode.SEQUENTIAL -> Icons.AutoMirrored.Filled.ViewList
+        ListenPlaybackMode.SHUFFLE -> Icons.Filled.Shuffle
+        ListenPlaybackMode.LOOP -> Icons.Filled.Repeat
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -679,7 +735,7 @@ internal fun listenScreenTransportControlDescriptions(): List<String> =
     listOf("退出听视频，返回视频画面", "播放", "暂停", "上一集", "下一集")
 
 internal fun listenScreenQuickControlLabels(): List<String> =
-    listOf("播放设置", "倍速", "定时关闭", "选集")
+    listOf("播放设置", "播放方式", "倍速", "定时关闭", "选集")
 
 /** 媒体占位卡标签：多集时显示当前集数，否则显示音符。 */
 internal fun listenDiscCenterLabel(episodeIndex: Int, queueSize: Int?): String =
@@ -715,5 +771,5 @@ internal const val LISTEN_COVER_MAX_SIZE_DP = 280
 internal const val LISTEN_COVER_CONTENT_DESCRIPTION = "当前视频封面"
 internal const val LISTEN_PROGRESS_CONTENT_DESCRIPTION = "播放进度"
 internal const val LISTEN_TIMER_CONTENT_DESCRIPTION = "定时关闭"
-internal const val LISTEN_PLAYBACK_SETTINGS_CONTENT_DESCRIPTION = "播放设置：倍速和定时关闭"
+internal const val LISTEN_PLAYBACK_SETTINGS_CONTENT_DESCRIPTION = "播放设置：播放方式、倍速和定时关闭"
 internal const val LISTEN_EPISODE_MENU_CONTENT_DESCRIPTION = "选集"

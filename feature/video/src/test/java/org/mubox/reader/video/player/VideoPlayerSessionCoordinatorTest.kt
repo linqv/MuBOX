@@ -131,6 +131,52 @@ class VideoPlayerSessionCoordinatorTest {
     }
 
     @Test
+    fun `eof reached drives keep-open completion once and rearms after seeking away`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        val controller = MpvController(FakeMpvEngine())
+        var playbackEndedCalls = 0
+        val coordinator = createCoordinator(
+            runtime = runtime,
+            controller = controller,
+            onPlaybackEnded = { playbackEndedCalls += 1 },
+        )
+        assertTrue(coordinator.prepare())
+        val observer = requireNotNull(runtime.observer)
+
+        observer.eventProperty("eof-reached", true)
+        observer.eventProperty("eof-reached", true)
+
+        assertEquals(1, playbackEndedCalls)
+        assertTrue(controller.state.value.isPaused)
+
+        observer.eventProperty("eof-reached", false)
+        observer.eventProperty("eof-reached", true)
+
+        assertEquals(2, playbackEndedCalls)
+    }
+
+    @Test
+    fun `end-file after eof property does not dispatch completion twice`() = runTest {
+        val runtime = RecordingMpvRuntime()
+        var playbackEndedCalls = 0
+        val coordinator = createCoordinator(
+            runtime = runtime,
+            controller = MpvController(FakeMpvEngine()),
+            onPlaybackEnded = { playbackEndedCalls += 1 },
+        )
+        assertTrue(coordinator.prepare())
+        val observer = requireNotNull(runtime.observer)
+
+        observer.eventProperty("eof-reached", true)
+        observer.event(
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE,
+            MPVNode.MapNode(mapOf("reason" to MPVNode.StringNode("eof"))),
+        )
+
+        assertEquals(1, playbackEndedCalls)
+    }
+
+    @Test
     fun `episode transition consumes old-file end even when it arrives after new file loaded`() = runTest {
         val runtime = RecordingMpvRuntime()
         val controller = MpvController(FakeMpvEngine())

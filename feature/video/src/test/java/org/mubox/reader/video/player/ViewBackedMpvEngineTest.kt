@@ -181,6 +181,7 @@ class ViewBackedMpvEngineTest {
         assertEquals(
             listOf(
                 "observe:pause=${MPVLib.MpvFormat.MPV_FORMAT_FLAG}",
+                "observe:eof-reached=${MPVLib.MpvFormat.MPV_FORMAT_FLAG}",
                 "observe:duration=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:time-pos=${MPVLib.MpvFormat.MPV_FORMAT_DOUBLE}",
                 "observe:core-idle=${MPVLib.MpvFormat.MPV_FORMAT_FLAG}",

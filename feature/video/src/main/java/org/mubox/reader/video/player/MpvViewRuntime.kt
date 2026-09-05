@@ -93,6 +93,7 @@ internal data class MpvObservedProperty(
 // NODE_ARRAY and NODE_MAP describe the returned node's contents, not the requested format.
 internal val mpvObservedPlaybackProperties: List<MpvObservedProperty> = listOf(
     MpvObservedProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG),
+    MpvObservedProperty("eof-reached", MPVLib.MpvFormat.MPV_FORMAT_FLAG),
     MpvObservedProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE),
     MpvObservedProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG),

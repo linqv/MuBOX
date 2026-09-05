@@ -82,6 +82,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var proxyStatistics by mutableStateOf<VideoProxyStatistics?>(null)
     private var episodeQueue: VideoEpisodeQueue? = null
     private var currentEpisodeIndex by mutableIntStateOf(0)
+    private var listenPlaybackMode by mutableStateOf(ListenPlaybackMode.SEQUENTIAL)
     private var isEpisodeSwitching by mutableStateOf(false)
     private var isActivityInForeground by mutableStateOf(false)
     private var isForegroundPlaybackActive by mutableStateOf(false)
@@ -128,6 +129,9 @@ class VideoPlayerActivity : ComponentActivity() {
                 ?.getInt(STATE_CURRENT_EPISODE_INDEX),
         )
         currentEpisodeIndex = restoredEpisode?.index ?: episodeQueue?.currentIndex ?: 0
+        listenPlaybackMode = restoredListenPlaybackMode(
+            savedInstanceState?.getString(STATE_LISTEN_PLAYBACK_MODE),
+        )
         val initialPlaybackKey = restoredEpisode?.episode?.playbackKey ?: launchPlaybackKey
         currentHistoryMetadata = restoredEpisode?.episode?.toWatchHistoryMetadata()
             ?: launchArguments.toWatchHistoryMetadata(initialPlaybackKey)
@@ -285,8 +289,7 @@ class VideoPlayerActivity : ComponentActivity() {
             resolvePlaybackInput = { request -> playbackInputResolver.resolve(request) },
             requestAudioFocus = audioFocusController::request,
             onPlaybackEnded = {
-                sleepTimerController.onPlaybackEnded()
-                playbackLifecyclePolicy.playbackEnded()
+                handlePlaybackEnded()
             },
             onPlaybackInterrupted = playbackLifecyclePolicy::playbackInterrupted,
         )
@@ -390,6 +393,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         currentEpisodeIndex = currentEpisodeIndex,
                         isEpisodeSwitching = isEpisodeSwitching,
                         sleepTimerState = sleepTimerState,
+                        playbackMode = listenPlaybackMode,
                         onExitListenMode = { handleAudioOnlyChanged(false) },
                         onPlayPause = controller::togglePlayPause,
                         onSeek = controller::seekTo,
@@ -398,6 +402,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         onNextEpisode = { switchToEpisode(currentEpisodeIndex + 1) },
                         onEpisodeSelected = ::switchToEpisode,
                         onSleepTimerSelected = ::handleSleepTimerSelected,
+                        onPlaybackModeSelected = ::handleListenPlaybackModeSelected,
                         onConfigureSystemBars = ::configurePlayerSystemBars,
                         onRestoreSystemBars = ::restorePlayerSystemBars,
                     )
@@ -551,6 +556,7 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt(STATE_CURRENT_EPISODE_INDEX, currentEpisodeIndex)
+        outState.putString(STATE_LISTEN_PLAYBACK_MODE, listenPlaybackMode.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -682,6 +688,45 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private fun handleListenPlaybackModeSelected(mode: ListenPlaybackMode) {
+        if (listenPlaybackMode == mode) return
+        listenPlaybackMode = mode
+        controller.showGestureHud("播放方式：${mode.controlLabel()}")
+    }
+
+    private fun handlePlaybackEnded() {
+        val closeAtEndOfEpisode = sleepTimerController.state.value.mode == SleepTimerMode.END_OF_EPISODE
+        sleepTimerController.onPlaybackEnded()
+        if (closeAtEndOfEpisode || isFinishing) return
+
+        if (!controller.state.value.audioOnlyEnabled) {
+            playbackLifecyclePolicy.playbackEnded()
+            return
+        }
+
+        val targetIndex = nextListenEpisodeIndex(
+            mode = listenPlaybackMode,
+            currentIndex = currentEpisodeIndex,
+            episodeCount = episodeQueue?.episodes?.size ?: 1,
+        )
+        when {
+            targetIndex == null -> playbackLifecyclePolicy.playbackEnded()
+            targetIndex == currentEpisodeIndex -> restartCurrentListenEpisode()
+            else -> switchToEpisode(targetIndex, resumePlayback = true)
+        }
+    }
+
+    private fun restartCurrentListenEpisode() {
+        if (!audioFocusController.request()) {
+            controller.markPaused(true)
+            controller.onError("无法获取音频焦点，已暂停播放")
+            playbackLifecyclePolicy.playbackEnded()
+            return
+        }
+        controller.seekTo(0L)
+        controller.setPaused(false)
+    }
+
     private fun currentPlaybackNotificationState(): VideoPlaybackNotificationState {
         val queue = episodeQueue
         val episodeCount = queue?.episodes?.size?.takeIf { it > 0 }
@@ -725,12 +770,12 @@ class VideoPlayerActivity : ComponentActivity() {
         )
     }
 
-    private fun switchToEpisode(targetIndex: Int) {
+    private fun switchToEpisode(targetIndex: Int, resumePlayback: Boolean? = null) {
         val queue = episodeQueue ?: return
         val episode = queue.episodes.getOrNull(targetIndex) ?: return
         if (targetIndex == currentEpisodeIndex || isEpisodeSwitching) return
 
-        val wasPlayingBeforeSwitch = !controller.state.value.isPaused
+        val wasPlayingBeforeSwitch = resumePlayback ?: !controller.state.value.isPaused
         controller.setPaused(true)
         playbackPersistenceCoordinator.checkpointAndPauseForTransition()
         saveCurrentHistoryAsync()
@@ -848,6 +893,7 @@ class VideoPlayerActivity : ComponentActivity() {
     companion object {
         private const val REQUEST_POST_NOTIFICATIONS = 2001
         private const val STATE_CURRENT_EPISODE_INDEX = "video_player_current_episode_index"
+        private const val STATE_LISTEN_PLAYBACK_MODE = "video_player_listen_playback_mode"
         const val EXTRA_SOURCE = VideoPlayerLaunchContract.EXTRA_SOURCE
         const val EXTRA_URI = VideoPlayerLaunchContract.EXTRA_URI
         const val EXTRA_DISPLAY_NAME = VideoPlayerLaunchContract.EXTRA_DISPLAY_NAME
