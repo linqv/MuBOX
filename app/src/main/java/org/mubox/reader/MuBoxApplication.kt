@@ -1,7 +1,11 @@
 package org.mubox.reader
 
 import android.app.Application
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
 import org.mubox.reader.core.model.settings.DiagnosticLogLevel
+import org.mubox.reader.infrastructure.image.AvifDecoder
 import org.mubox.reader.video.VideoPlaybackMemoryBudget
 import org.mubox.reader.infrastructure.diagnostics.createAppDiagnostics
 import org.mubox.reader.video.player.VideoPlayerDependencies
@@ -14,7 +18,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-class MuBoxApplication : Application(), VideoPlayerDependenciesOwner {
+class MuBoxApplication : Application(), VideoPlayerDependenciesOwner, SingletonImageLoader.Factory {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var previousCrashHandler: Thread.UncaughtExceptionHandler? = null
     private var processCrashLogger: ProcessCrashLogger? = null
@@ -28,6 +32,14 @@ class MuBoxApplication : Application(), VideoPlayerDependenciesOwner {
 
     override val videoPlayerDependencies: VideoPlayerDependencies
         get() = appContainer.videoPlayerDependencies
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        return ImageLoader.Builder(context)
+            .components {
+                add(AvifDecoder.Factory(diagnostics))
+            }
+            .build()
+    }
 
     override fun onCreate() {
         super.onCreate()

@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use crate::cbz::{CbzIndex, open_cbz};
 use crate::zip::RangeReader;
 
-pub const INDEX_CACHE_VERSION: u32 = 3;
+pub const INDEX_CACHE_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexCacheKey {
@@ -127,7 +127,7 @@ mod tests {
         let path = index_cache_file(temp.path(), &key.comic_key);
         let old_json = fs::read_to_string(&path)
             .unwrap()
-            .replace("\"version\":3", "\"version\":2");
+            .replace("\"version\":4", "\"version\":3");
         fs::write(path, old_json).unwrap();
 
         let loaded = load_index_cache(temp.path(), &key).unwrap();

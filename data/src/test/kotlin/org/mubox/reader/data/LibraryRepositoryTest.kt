@@ -111,6 +111,28 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun updateCoverPathUpdatesExistingCoverPathAndAllowsNull() = runTest {
+        val libraryItemId = repository.addWebDavComic(
+            accountId = "primary-webdav",
+            remotePath = "/library/series/Chapter 01.zip",
+            fileName = "Chapter 01.zip",
+            size = 84_000L,
+            etag = "\"abc123\"",
+            lastModified = 1_650_000_000_000L,
+            cacheKey = "primary-webdav:/library/series/Chapter 01.zip",
+            coverPath = "/cache/library-covers/v1.img",
+        )
+
+        assertEquals("/cache/library-covers/v1.img", repository.observeLibrary().first().single().item.coverPath)
+
+        repository.updateCoverPath(libraryItemId, "/cache/library-covers/v2/new.img")
+        assertEquals("/cache/library-covers/v2/new.img", repository.observeLibrary().first().single().item.coverPath)
+
+        repository.updateCoverPath(libraryItemId, null)
+        assertNull(repository.observeLibrary().first().single().item.coverPath)
+    }
+
+    @Test
     fun addLocalComicStoresTitleWithoutArchiveExtension() = runTest {
         val libraryItemId = repository.addLocalComic(
             uri = "content://documents/tree/books/document/book.zip",

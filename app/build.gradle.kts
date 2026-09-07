@@ -181,6 +181,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.avif.coder.coil)
     implementation(libs.coil.compose)
     implementation(libs.coroutines.android)
     debugImplementation(libs.androidx.compose.ui.tooling)
@@ -189,6 +190,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.coroutines.test)
+    // Real org.json so parseIndexJson's primary JSON path is covered by JVM unit tests
+    // instead of falling through to its regex fallback (android.jar stubs throw).
+    testImplementation(libs.json)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.test.core)

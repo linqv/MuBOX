@@ -132,6 +132,7 @@ internal fun rememberAppActionGraph(
                 diagnostics = container.diagnostics,
                 localDirectoryReader = container.localDirectoryReader,
                 library = AppVideoLibraryCoordinator(container.videoLibraryRepository),
+                comicLibrary = container.libraryRepository,
                 videoThumbnailExtractor = container.videoThumbnailExtractor,
                 localComicOpener = container.localComicOpener,
                 coverExtractor = container.coverExtractor,

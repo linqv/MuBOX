@@ -49,9 +49,13 @@ class WebDavLibraryCoverExtractor(
             etag = info.etag,
             lastModified = info.lastModified,
         )
+        // The legacy unversioned cover must survive a failed extraction, so it is
+        // only removed once a valid versioned cover is in place.
+        val legacyFile = legacyCoverFile(cacheKey)
         val coverFile = coverFile(cacheKey)
         if (coverFile.isFile && coverFile.length() > 0L) {
             coverFile.setLastModified(System.currentTimeMillis())
+            legacyFile.delete()
             return@withContext coverFile.absolutePath
         }
 
@@ -88,6 +92,7 @@ class WebDavLibraryCoverExtractor(
                 loadedFile.delete()
             }
             coverFile.setLastModified(System.currentTimeMillis())
+            legacyFile.delete()
             coverFile.absolutePath
         } finally {
             runCatching { session?.close() }
@@ -97,6 +102,9 @@ class WebDavLibraryCoverExtractor(
     }
 
     private fun coverFile(cacheKey: ComicCacheKey): File =
+        File(appCacheDir, "library-covers/v2/${cacheKey.value}.img")
+
+    private fun legacyCoverFile(cacheKey: ComicCacheKey): File =
         File(appCacheDir, "library-covers/${cacheKey.value}.img")
 
     private fun RemoteFileInfo.validator(): String =

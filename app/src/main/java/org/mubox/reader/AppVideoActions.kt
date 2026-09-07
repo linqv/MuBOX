@@ -346,7 +346,10 @@ internal class AppVideoActions(
                 }
                 historyTargets.forEach { entry ->
                     try {
-                        thumbnailLoader.extractHistory(entry)
+                        val artworkPath = thumbnailLoader.extractHistory(entry)
+                        if (entry.mediaType == WatchMediaType.COMIC) {
+                            syncComicLibraryCoverPath(entry, artworkPath, libraryItems)
+                        }
                         videoLibraryViewModel.onHistoryThumbnailExtracted(
                             mediaKey = entry.mediaKey,
                             isVideo = entry.mediaType == WatchMediaType.VIDEO,
@@ -382,6 +385,32 @@ internal class AppVideoActions(
                         isError = true,
                     )
             }
+        }
+    }
+
+    /**
+     * Cover extraction moves comics from the unversioned cover layout to
+     * library-covers/v2 and deletes the old file, so the stored coverPath must
+     * follow; otherwise the bookshelf grid loses a cover that still exists on disk.
+     */
+    private suspend fun syncComicLibraryCoverPath(
+        entry: WatchHistoryEntry,
+        coverPath: String,
+        libraryItems: List<LibraryItemWithSources>,
+    ) {
+        val item = libraryItems.firstOrNull { candidate ->
+            candidate.webDavSource?.let { source ->
+                source.accountId == entry.accountId && source.remotePath == entry.sourceLocator
+            } == true
+        } ?: return
+        if (item.item.coverPath == coverPath) return
+        runCatching {
+            services.comicLibrary.updateCoverPath(item.item.id, coverPath)
+        }.onFailure { error ->
+            services.diagnostics.error(
+                "sync_comic_library_cover_path_failed id=${item.item.id}",
+                error,
+            )
         }
     }
 

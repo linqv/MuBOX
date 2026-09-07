@@ -123,6 +123,11 @@ internal class AppVideoThumbnailLoader(
             }
         }
 
+    /**
+     * Extracts the artwork for a history entry and returns the extracted source
+     * path. For WebDAV comics this is the versioned library cover file, so the
+     * caller can keep the library item's coverPath pointing at a live file.
+     */
     suspend fun extractHistory(entry: WatchHistoryEntry): String =
         when (entry.mediaType) {
             WatchMediaType.VIDEO -> extractHistoryVideo(entry)
@@ -214,6 +219,7 @@ internal class AppVideoThumbnailLoader(
                         temporary.delete()
                     }
                 }
+                coverPath
             }
         }
     }

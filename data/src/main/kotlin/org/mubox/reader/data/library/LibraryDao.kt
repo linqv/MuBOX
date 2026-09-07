@@ -54,6 +54,9 @@ internal abstract class LibraryDao {
     @Query("UPDATE library_items SET lastOpenedAt = :openedAt WHERE id = :libraryItemId")
     abstract suspend fun updateLastOpened(libraryItemId: Long, openedAt: Long)
 
+    @Query("UPDATE library_items SET coverPath = :coverPath WHERE id = :libraryItemId")
+    abstract suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?)
+
     @Query("DELETE FROM library_items WHERE id = :libraryItemId")
     abstract suspend fun deleteLibraryItem(libraryItemId: Long)
 }

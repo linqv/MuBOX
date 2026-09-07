@@ -8,14 +8,22 @@ internal object ReaderPageCache {
         val safeKey = safeCacheKey(pageCacheKey)
         val pageDir = File(cacheDir, "mubox-reader-pages/$safeKey")
         pageDir.mkdirs()
-        return File(pageDir, "page-$pageIndex.img")
+        val legacyFile = File(pageDir, "page-$pageIndex.img")
+        if (legacyFile.exists()) {
+            legacyFile.delete()
+        }
+        return File(pageDir, "v2-page-$pageIndex.img")
     }
 
     fun transientPageFile(cacheDir: File, readerKey: String?, pageIndex: Int): File {
         val safeKey = safeCacheKey(readerKey)
         val pageDir = File(cacheDir, "mubox-reader-pages-transient/$safeKey")
         pageDir.mkdirs()
-        return File(pageDir, "page-$pageIndex.img")
+        val legacyFile = File(pageDir, "page-$pageIndex.img")
+        if (legacyFile.exists()) {
+            legacyFile.delete()
+        }
+        return File(pageDir, "v2-page-$pageIndex.img")
     }
 
     fun clearTransientPages(cacheDir: File, readerKey: String? = null) {
@@ -85,3 +93,7 @@ fun pruneReaderPageCache(cacheDir: File, maxBytes: Long): Int =
 /** Removes persistent and transient pages for one comic without exposing the cache layout. */
 fun clearReaderPageCacheForComic(cacheDir: File, comicKey: String): Long =
     ReaderPageCache.clearComicPages(cacheDir = cacheDir, comicKey = comicKey)
+
+/** Resolves the persistent versioned reader page file for a comic page. */
+fun readerPageFile(cacheDir: File, pageCacheKey: String?, pageIndex: Int): File =
+    ReaderPageCache.pageFile(cacheDir = cacheDir, pageCacheKey = pageCacheKey, pageIndex = pageIndex)

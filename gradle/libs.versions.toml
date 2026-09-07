@@ -14,11 +14,13 @@ androidxAnnotation = "1.8.1"
 androidxTestCore = "1.6.1"
 androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
+avifCoder = "2.2.1"
 coil = "3.4.0"
 composeBom = "2026.05.01"
 coreKtx = "1.18.0"
 coroutines = "1.11.0"
 datastore = "1.1.1"
+json = "20240303"
 junit = "4.13.2"
 lifecycle = "2.10.0"
 mpv = "0.0.1"
@@ -54,11 +56,13 @@ androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+avif-coder-coil = { module = "io.github.awxkee:avif-coder-coil", version.ref = "avifCoder" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+json = { module = "org.json:json", version.ref = "json" }
 junit = { module = "junit:junit", version.ref = "junit" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver" }
 mpv = { module = "is.xyz.mpv:mpv-android-lib", version.ref = "mpv" }

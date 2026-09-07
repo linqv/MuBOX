@@ -25,7 +25,7 @@ fun historyThumbnailStableKey(entry: WatchHistoryEntry): String =
             )
         }
         WatchMediaType.COMIC -> listOf(
-            "history",
+            "history-v2",
             entry.mediaType.name,
             entry.mediaKey,
             entry.sourceLocator,
@@ -88,13 +88,16 @@ fun resolvedHistoryArtworkPath(
     cacheDir: File? = null,
 ): String? {
     val libraryPath = libraryArtworkPathForHistory(entry, comics, videos)
-    if (cacheDir == null) return libraryPath
-    return libraryPath
+    val validLibraryPath = libraryPath
         ?.let(::File)
         ?.takeIf(File::isFile)
+        ?.takeIf { it.length() > 0L }
         ?.absolutePath
+    if (cacheDir == null) return validLibraryPath
+    return validLibraryPath
         ?: historyThumbnailFile(cacheDir, entry)
             .takeIf(File::isFile)
+            ?.takeIf { it.length() > 0L }
             ?.absolutePath
 }
 

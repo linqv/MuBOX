@@ -25,5 +25,6 @@ interface LibraryCatalog {
     ): Long
 
     suspend fun markOpened(libraryItemId: Long)
+    suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?)
     suspend fun removeComic(libraryItemId: Long)
 }

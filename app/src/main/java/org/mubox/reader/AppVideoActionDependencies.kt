@@ -1,6 +1,7 @@
 package org.mubox.reader
 
 import org.mubox.reader.core.diagnostics.Diagnostics
+import org.mubox.reader.core.ports.LibraryCatalog
 import org.mubox.reader.feature.filedirectory.FileDirectoryViewModel
 import org.mubox.reader.feature.filedirectory.LocalDirectoryReader
 import org.mubox.reader.feature.reader.LocalComicOpener
@@ -19,6 +20,7 @@ internal data class AppVideoMediaServices(
     val diagnostics: Diagnostics,
     val localDirectoryReader: LocalDirectoryReader,
     val library: AppVideoLibraryCoordinator,
+    val comicLibrary: LibraryCatalog,
     val videoThumbnailExtractor: VideoThumbnailExtractor,
     val localComicOpener: LocalComicOpener,
     val coverExtractor: WebDavLibraryCoverExtractor,

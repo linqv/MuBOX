@@ -109,8 +109,19 @@ class LibraryViewModelTest {
 
         override suspend fun markOpened(libraryItemId: Long) = Unit
 
+        val coverPathUpdates = mutableListOf<CoverPathUpdate>()
+
+        override suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?) {
+            coverPathUpdates += CoverPathUpdate(libraryItemId, coverPath)
+        }
+
         override suspend fun removeComic(libraryItemId: Long) = Unit
     }
+
+    private data class CoverPathUpdate(
+        val libraryItemId: Long,
+        val coverPath: String?,
+    )
 
     private data class LocalAdd(
         val uri: String,

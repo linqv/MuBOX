@@ -12,6 +12,7 @@ pub fn is_supported_image(name: &str) -> bool {
         || ends_with_ignore_ascii_case(name, ".bmp")
         || ends_with_ignore_ascii_case(name, ".heif")
         || ends_with_ignore_ascii_case(name, ".heic")
+        || ends_with_ignore_ascii_case(name, ".avif")
 }
 
 #[cfg(test)]
@@ -50,10 +51,13 @@ mod tests {
     }
 
     #[test]
-    fn avif_is_not_supported() {
-        assert!(!is_supported_image("photo.avif"));
-        assert!(!is_supported_image("PHOTO.AVIF"));
-        assert!(!is_supported_image("img.Avif"));
+    fn avif_is_supported() {
+        assert!(is_supported_image(".avif"));
+        assert!(is_supported_image(".AVIF"));
+        assert!(is_supported_image(".Avif"));
+        assert!(is_supported_image("photo.avif"));
+        assert!(is_supported_image("PHOTO.AVIF"));
+        assert!(is_supported_image("img.Avif"));
     }
 
     #[test]

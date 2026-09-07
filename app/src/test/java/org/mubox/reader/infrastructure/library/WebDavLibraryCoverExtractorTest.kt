@@ -4,6 +4,7 @@ import org.mubox.reader.core.ports.ComicReaderSession
 import org.mubox.reader.core.ports.PlannedRemoteRange
 import org.mubox.reader.core.remote.RemoteFileInfo
 import org.mubox.reader.core.remote.WebDavClient
+import org.mubox.reader.data.ComicCacheKey
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -51,7 +52,7 @@ class WebDavLibraryCoverExtractorTest {
 
         val coverFile = File(requireNotNull(coverPath))
         assertTrue(coverFile.isFile)
-        assertTrue(coverFile.absolutePath.contains("library-covers"))
+        assertTrue(coverFile.absolutePath.contains("library-covers/v2"))
         assertEquals("cover-0", coverFile.readText())
         assertEquals(0, requestedPrefetchPageCount)
         assertEquals(listOf(0), session.loadedPages)
@@ -72,6 +73,52 @@ class WebDavLibraryCoverExtractorTest {
 
         assertEquals(coverFile.absolutePath, secondPath)
         assertEquals(1, openCalls)
+    }
+
+    @Test
+    fun extractFirstPageCoverDeletesLegacyUnversionedCover() = runTest {
+        val cacheDir = temporaryFolder.newFolder("cache-legacy")
+        val remoteCacheDir = temporaryFolder.newFolder("remote-cache-legacy")
+        val info = RemoteFileInfo(
+            path = "/books/book.cbz",
+            size = 123,
+            etag = "abc",
+            lastModified = null,
+            supportsRange = true,
+        )
+        val cacheKey = ComicCacheKey.fromRemote(
+            accountId = "account-1",
+            remotePath = "/books/book.cbz",
+            size = info.size,
+            etag = info.etag,
+            lastModified = info.lastModified,
+        )
+        val legacyDir = cacheDir.resolve("library-covers")
+        legacyDir.mkdirs()
+        val legacyFile = legacyDir.resolve("${cacheKey.value}.img")
+        legacyFile.writeText("old-legacy-cover")
+        assertTrue(legacyFile.exists())
+
+        val extractor = WebDavLibraryCoverExtractor(
+            appCacheDir = cacheDir,
+            remoteCacheDir = remoteCacheDir,
+            openRemoteSession = { _, _, _, _, _, _ ->
+                FakeComicReaderSession()
+            },
+        )
+
+        val coverPath = extractor.extractFirstPageCover(
+            client = FakeWebDavClient(),
+            accountId = "account-1",
+            remotePath = "/books/book.cbz",
+            knownInfo = info,
+        )
+
+        assertFalse("Legacy unversioned cover should be deleted", legacyFile.exists())
+        val newCoverFile = File(requireNotNull(coverPath))
+        assertTrue(newCoverFile.exists())
+        assertTrue(newCoverFile.absolutePath.contains("library-covers/v2"))
+        assertEquals("cover-0", newCoverFile.readText())
     }
 
     @Test
@@ -101,6 +148,69 @@ class WebDavLibraryCoverExtractorTest {
 
         assertEquals(null, coverPath)
         assertFalse(cacheDir.resolve("library-covers").exists())
+    }
+
+    @Test
+    fun failedExtractionKeepsLegacyUnversionedCover() = runTest {
+        val cacheDir = temporaryFolder.newFolder("cache-failure")
+        val remoteCacheDir = temporaryFolder.newFolder("remote-cache-failure")
+        val cacheKey = ComicCacheKey.fromRemote(
+            accountId = "account-1",
+            remotePath = "/books/book.cbz",
+            size = 123,
+            etag = "abc",
+            lastModified = null,
+        )
+        val legacyFile = cacheDir.resolve("library-covers/${cacheKey.value}.img")
+        legacyFile.parentFile!!.mkdirs()
+        legacyFile.writeText("old-legacy-cover")
+        val knownInfo = RemoteFileInfo(
+            path = "/books/book.cbz",
+            size = 123,
+            etag = "abc",
+            lastModified = null,
+            supportsRange = true,
+        )
+
+        val extractorWithEmptyArchive = WebDavLibraryCoverExtractor(
+            appCacheDir = cacheDir,
+            remoteCacheDir = remoteCacheDir,
+            openRemoteSession = { _, _, _, _, _, _ ->
+                FakeComicReaderSession(pageCount = 0)
+            },
+        )
+        val extractorWithFailingOpen = WebDavLibraryCoverExtractor(
+            appCacheDir = cacheDir,
+            remoteCacheDir = remoteCacheDir,
+            openRemoteSession = { _, _, _, _, _, _ ->
+                error("native session open failed")
+            },
+        )
+
+        assertEquals(
+            null,
+            extractorWithEmptyArchive.extractFirstPageCover(
+                client = FakeWebDavClient(),
+                accountId = "account-1",
+                remotePath = "/books/book.cbz",
+                knownInfo = knownInfo,
+            ),
+        )
+        val failingOpen = runCatching {
+            extractorWithFailingOpen.extractFirstPageCover(
+                client = FakeWebDavClient(),
+                accountId = "account-1",
+                remotePath = "/books/book.cbz",
+                knownInfo = knownInfo,
+            )
+        }
+        assertTrue("Session open failure must propagate", failingOpen.isFailure)
+
+        assertTrue(
+            "Failed extraction must keep the legacy cover readable",
+            legacyFile.isFile && legacyFile.length() > 0L,
+        )
+        assertFalse(cacheDir.resolve("library-covers/v2").exists())
     }
 
     @Test

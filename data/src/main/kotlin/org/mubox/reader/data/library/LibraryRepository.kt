@@ -77,6 +77,10 @@ class LibraryRepository internal constructor(
         dao.updateLastOpened(libraryItemId, clock())
     }
 
+    override suspend fun updateCoverPath(libraryItemId: Long, coverPath: String?) {
+        dao.updateCoverPath(libraryItemId, coverPath)
+    }
+
     override suspend fun removeComic(libraryItemId: Long) {
         dao.deleteLibraryItem(libraryItemId)
     }
