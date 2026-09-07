@@ -531,7 +531,7 @@ class WebDavViewModel(
     )
 }
 
-internal fun buildWebDavBaseUrl(useHttps: Boolean, host: String, port: String, rootPath: String): String {
+fun buildWebDavBaseUrl(useHttps: Boolean, host: String, port: String, rootPath: String): String {
     val cleanHost = host.trim()
     if (cleanHost.isBlank()) return ""
     val scheme = if (useHttps) "https" else "http"

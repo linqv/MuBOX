@@ -15,11 +15,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,8 +53,10 @@ fun WebDavAccountScreen(
     onAnonymousAccessChange: (Boolean) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    onTestConnection: () -> Unit,
+    onConnect: () -> Unit,
+    onSave: () -> Unit,
     onBackToLibrary: () -> Unit,
+    isEditing: Boolean = false,
     message: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -61,7 +67,7 @@ fun WebDavAccountScreen(
             .muBoxAppBackground(colors),
     ) {
         MuBoxHeaderBar(
-            title = "添加网络连接",
+            title = if (isEditing) "编辑网络连接" else "添加网络连接",
             navigationIcon = {
                 IconButton(onClick = onBackToLibrary) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -189,7 +195,7 @@ fun WebDavAccountScreen(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TextButton(
@@ -198,12 +204,27 @@ fun WebDavAccountScreen(
                         ) {
                             Text("取消")
                         }
-                        Button(
-                            onClick = onTestConnection,
+                        OutlinedButton(
+                            onClick = onSave,
                             enabled = !uiState.isLoading && uiState.host.isNotBlank(),
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                         ) {
                             Text("保存")
+                        }
+                        Button(
+                            onClick = onConnect,
+                            enabled = !uiState.isLoading && uiState.host.isNotBlank(),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            if (uiState.isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                                Spacer(modifier = Modifier.size(8.dp))
+                            }
+                            Text("连接")
                         }
                     }
                 }

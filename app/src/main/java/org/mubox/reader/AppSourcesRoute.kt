@@ -71,10 +71,12 @@ internal fun AppSourcesRoute(
             onAnonymousAccessChange = webDavViewModel::updateAnonymousAccess,
             onUsernameChange = webDavViewModel::updateUsername,
             onPasswordChange = webDavViewModel::updatePassword,
-            onTestConnection = {
+            onConnect = webDavViewModel::testConnection,
+            onSave = {
                 sourceActions.saveConnectedWebDavSource(state.editingWebDavSourceId)
             },
             onBackToLibrary = sourceActions::closeWebDav,
+            isEditing = state.editingWebDavSourceId != null,
             message = state.localOpenError,
             modifier = modifier,
         )

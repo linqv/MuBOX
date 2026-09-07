@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import org.mubox.reader.core.model.source.FileDirectorySource
 import org.mubox.reader.core.model.source.FileDirectorySourceType
+import org.mubox.reader.feature.webdav.buildWebDavBaseUrl
 import org.mubox.reader.ui.decodeWebDavPathForDisplay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -80,20 +81,35 @@ internal class AppSourceActions(
     }
 
     fun editWebDavSource(source: FileDirectorySource) {
-        val baseUrl = source.webDavBaseUrl
-            ?.takeIf { it.isNotBlank() }
-            ?: source.webDavAccountId?.substringBefore("|").orEmpty()
-        webDavViewModel.editSavedConnection(
-            displayName = source.displayName,
-            baseUrl = baseUrl,
-            username = source.webDavUsername,
-            password = source.webDavPassword,
-            path = source.webDavPath ?: "/",
-        )
-        callbacks.setEditingWebDavSourceId(source.id)
-        callbacks.setAddingWebDavPath(false)
-        callbacks.setWebDavOpen(true)
-        clearMessages()
+        val expectedAccountId = source.webDavAccountId
+        scope.launch {
+            val savedAccount = expectedAccountId?.let { accountId ->
+                container.webDavAccountStore.loadAccount(accountId)
+            }
+            val baseUrl = source.webDavBaseUrl
+                ?.takeIf { it.isNotBlank() }
+                ?: savedAccount?.baseUrl
+                ?: expectedAccountId?.substringBefore("|").orEmpty()
+            val username = source.webDavUsername
+                ?.takeIf { it.isNotBlank() }
+                ?: savedAccount?.username
+                ?: expectedAccountId?.substringAfter("|").orEmpty()
+            val password = source.webDavPassword
+                ?.takeIf { it.isNotBlank() }
+                ?: savedAccount?.password
+                .orEmpty()
+            webDavViewModel.editSavedConnection(
+                displayName = source.displayName,
+                baseUrl = baseUrl,
+                username = username,
+                password = password,
+                path = source.webDavPath ?: "/",
+            )
+            callbacks.setEditingWebDavSourceId(source.id)
+            callbacks.setAddingWebDavPath(false)
+            callbacks.setWebDavOpen(true)
+            clearMessages()
+        }
     }
 
     fun saveCurrentWebDavDirectory() {
@@ -114,22 +130,39 @@ internal class AppSourceActions(
             .takeIf { it.isNotBlank() }
             ?: state.host.takeIf { it.isNotBlank() }
             ?: state.baseUrl
-        val accountId = "${state.baseUrl.trim()}|$username"
-        if (editingSourceId != null) {
-            fileDirectoryViewModel.updateWebDavDirectory(
-                id = editingSourceId,
-                displayName = displayName,
-                accountId = accountId,
-                path = state.currentPath,
-            )
-        } else {
-            fileDirectoryViewModel.addWebDavDirectory(
-                displayName = displayName,
-                accountId = accountId,
-                path = "/",
+        val normalizedBaseUrl = state.baseUrl.trim().ifBlank {
+            buildWebDavBaseUrl(
+                useHttps = state.useHttps,
+                host = state.host,
+                port = state.port,
+                rootPath = state.rootPath,
             )
         }
-        resetWebDavNavigationState()
+        val accountId = "${normalizedBaseUrl}|$username"
+        scope.launch {
+            if (normalizedBaseUrl.isNotBlank()) {
+                container.webDavAccountStore.saveAccount(
+                    baseUrl = normalizedBaseUrl,
+                    username = username,
+                    password = password,
+                )
+            }
+            if (editingSourceId != null) {
+                fileDirectoryViewModel.updateWebDavDirectory(
+                    id = editingSourceId,
+                    displayName = displayName,
+                    accountId = accountId,
+                    path = state.currentPath.ifBlank { "/" },
+                )
+            } else {
+                fileDirectoryViewModel.addWebDavDirectory(
+                    displayName = displayName,
+                    accountId = accountId,
+                    path = state.currentPath.ifBlank { "/" },
+                )
+            }
+            resetWebDavNavigationState()
+        }
     }
 
     fun closeWebDav() {
@@ -163,20 +196,27 @@ internal class AppSourceActions(
             val baseUrl = source.webDavBaseUrl
                 ?.takeIf { it.isNotBlank() }
                 ?: savedAccount?.baseUrl
-            if (baseUrl.isNullOrBlank()) {
-                callbacks.setError("请先连接 ${expectedAccountId.orEmpty()}，再打开这个 WebDAV 目录")
+                ?: expectedAccountId?.substringBefore("|")?.takeIf { it.isNotBlank() }
+            val username = source.webDavUsername
+                ?.takeIf { it.isNotBlank() }
+                ?: savedAccount?.username
+                ?: expectedAccountId?.substringAfter("|").orEmpty()
+            val password = source.webDavPassword
+                ?.takeIf { it.isNotBlank() }
+                ?: savedAccount?.password
+                .orEmpty()
+
+            if (baseUrl.isNullOrBlank() || (savedAccount == null && password.isBlank() && username.isNotBlank())) {
+                editWebDavSource(source)
+                callbacks.setError("请先配置并连接 WebDAV 账户")
                 callbacks.setActionMessage(null)
                 return@launch
             }
             clearMessages()
             webDavViewModel.connectToSavedSource(
                 baseUrl = baseUrl,
-                username = source.webDavUsername
-                    ?.takeIf { it.isNotBlank() }
-                    ?: savedAccount?.username,
-                password = source.webDavPassword
-                    ?.takeIf { it.isNotBlank() }
-                    ?: savedAccount?.password,
+                username = username,
+                password = password,
                 path = path,
             )
             callbacks.setWebDavOpen(true)

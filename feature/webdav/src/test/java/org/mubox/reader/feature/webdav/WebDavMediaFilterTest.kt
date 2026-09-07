@@ -87,6 +87,22 @@ class WebDavMediaFilterTest {
         )
     }
 
+    @Test
+    fun buildWebDavBaseUrlConstructsExpectedUrls() {
+        assertEquals(
+            "https://example.com/",
+            buildWebDavBaseUrl(useHttps = true, host = "example.com", port = "443", rootPath = "/"),
+        )
+        assertEquals(
+            "http://example.com:8080/dav",
+            buildWebDavBaseUrl(useHttps = false, host = "example.com", port = "8080", rootPath = "dav"),
+        )
+        assertEquals(
+            "http://192.168.1.20/",
+            buildWebDavBaseUrl(useHttps = false, host = "192.168.1.20", port = "80", rootPath = "/"),
+        )
+    }
+
     private fun item(name: String, isDirectory: Boolean = false): WebDavItem =
         WebDavItem(
             name = name,
