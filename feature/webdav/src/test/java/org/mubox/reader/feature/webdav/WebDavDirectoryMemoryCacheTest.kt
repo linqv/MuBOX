@@ -3,6 +3,9 @@ package org.mubox.reader.feature.webdav
 import org.mubox.reader.core.remote.WebDavItem
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebDavDirectoryMemoryCacheTest {
@@ -44,14 +47,24 @@ class WebDavDirectoryMemoryCacheTest {
     }
 
     @Test
-    fun expiresDirectoryAfterTwoMinutes() {
+    fun keepsExpiredDirectoryAvailableForBackgroundRefresh() {
         var nowMillis = 1_000L
         val cache = WebDavDirectoryMemoryCache(nowMillis = { nowMillis })
         cache.put("/Comics/", listOf(directoryItem(1)))
 
-        nowMillis += 120_000L
+        nowMillis += 119_999L
+        assertFalse(requireNotNull(cache.get("/Comics/")).isStale)
 
-        assertNull(cache.get("/Comics/"))
+        nowMillis += 1L
+
+        val stale = requireNotNull(cache.get("/Comics/"))
+        assertTrue(stale.isStale)
+        assertEquals(listOf(directoryItem(1)), stale.items)
+
+        cache.put("/Comics/", emptyList())
+        val refreshed = requireNotNull(cache.get("/Comics/"))
+        assertFalse(refreshed.isStale)
+        assertTrue(refreshed.items.isEmpty())
     }
 
     private fun directoryItem(index: Int): WebDavItem =

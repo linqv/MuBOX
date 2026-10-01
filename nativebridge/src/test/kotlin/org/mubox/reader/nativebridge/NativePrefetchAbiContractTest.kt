@@ -28,6 +28,43 @@ class NativePrefetchAbiContractTest {
     }
 
     @Test
+    fun v2MethodAddsBackwardWindowWithoutChangingV1() {
+        val method = ComicNative::class.java.getDeclaredMethod(
+            "reconcilePrefetchPlanV2",
+            java.lang.Long.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+            java.lang.Long.TYPE,
+            LongArray::class.java,
+            LongArray::class.java,
+        )
+
+        assertTrue(Modifier.isNative(method.modifiers))
+        assertFalse(Modifier.isStatic(method.modifiers))
+        assertEquals(LongArray::class.java, method.returnType)
+    }
+
+    @Test
+    fun viewportAndPlannedRangeDescriptorsPassBothWindows() {
+        val parameters = arrayOf(
+            java.lang.Long.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+            Integer.TYPE,
+        )
+        val viewport = ComicNative::class.java.getDeclaredMethod("updateViewport", *parameters)
+        val planned = ComicNative::class.java.getDeclaredMethod("plannedRanges", *parameters)
+
+        assertTrue(Modifier.isNative(viewport.modifiers))
+        assertTrue(Modifier.isNative(planned.modifiers))
+        assertEquals(Integer.TYPE, viewport.returnType)
+        assertEquals(String::class.java, planned.returnType)
+    }
+
+    @Test
     fun nativeRangeBundleMethodsKeepVersionedInstanceJniDescriptors() {
         val open = ComicNative::class.java.getDeclaredMethod(
             "openRemoteCachedV1",
@@ -87,6 +124,7 @@ class NativePrefetchAbiContractTest {
 
         listOf(
             "\"reconcilePrefetchPlanV1\"",
+            "\"reconcilePrefetchPlanV2\"",
             "\"openRemoteCachedV1\"",
             "\"prefetchRemoteRangeV1\"",
             "\"cancelRemoteIoV1\"",
@@ -95,6 +133,9 @@ class NativePrefetchAbiContractTest {
         }
         assertFalse(source.contains("Java_org_mubox_reader_nativebridge_ComicNative_"))
         assertFalse(source.contains("\"openRemote\""))
+        assertTrue(source.contains("\"(JIIII)I\""))
+        assertTrue(source.contains("\"(JIIII)Ljava/lang/String;\""))
+        assertTrue(source.contains("\"(JIIIIJ[J[J)[J\""))
     }
 
     private val repositoryRoot: File by lazy {

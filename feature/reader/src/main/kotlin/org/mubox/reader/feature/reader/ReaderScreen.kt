@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,15 +92,20 @@ import coil3.request.ImageRequest
 import org.mubox.reader.core.model.settings.ReadingDirection
 import org.mubox.reader.ui.MuBoxCopy
 import org.mubox.reader.ui.rememberMuBoxColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 @Composable
 fun ReaderScreen(
     uiState: ReaderUiState,
     onPageChanged: (Int) -> Unit,
     onPageDemanded: (Int, String) -> Unit,
+    onContinuousViewport: (List<Int>, Int) -> Unit = { _, _ -> },
+    onPageImageError: (Int) -> Unit = {},
     loadingProgress: ReaderLoadingProgress? = null,
     onCancelLoading: (() -> Unit)? = null,
     onClose: () -> Unit,
@@ -199,6 +205,57 @@ fun ReaderScreen(
                     )
                 }
                 val isContinuousVertical = readingDirection == ReadingDirection.VERTICAL_CONTINUOUS
+                val pageDimensions = remember(readerStateKey) {
+                    mutableStateMapOf<Int, ReaderPageDimensions>()
+                }
+                val probedPageFiles = remember(readerStateKey) { mutableMapOf<Int, java.io.File>() }
+                val reportedPageImageErrors = remember(readerStateKey) {
+                    mutableMapOf<Int, String>()
+                }
+                val reportPageImageError: (Int, ReaderPageFileVersion) -> Unit = { page, fileVersion ->
+                    if (pageDimensions[page]?.fileVersion == fileVersion &&
+                        reportedPageImageErrors[page] != fileVersion.memoryCacheKey
+                    ) {
+                        reportedPageImageErrors[page] = fileVersion.memoryCacheKey
+                        onPageImageError(page)
+                    }
+                }
+                LaunchedEffect(readerStateKey, isContinuousVertical, uiState.pageFilesRevision) {
+                    probedPageFiles.keys.retainAll(uiState.pageFiles.keys)
+                    pageDimensions.keys.toList()
+                        .filterNot { it in uiState.pageFiles }
+                        .forEach(pageDimensions::remove)
+                    val firstVisiblePage = continuousListState.firstVisibleItemIndex
+                    uiState.pageFiles.entries
+                        .filter { (page, pageFile) ->
+                            probedPageFiles[page] !== pageFile || pageDimensions[page] == null
+                        }
+                        .sortedBy { abs(it.key - firstVisiblePage) }
+                        .forEach { (page, pageFile) ->
+                            val previous = pageDimensions[page]
+                            val fileInfo = withContext(Dispatchers.IO) {
+                                val version = readerPageFileVersion(pageFile)
+                                val dimensions = if (isContinuousVertical &&
+                                    previous?.fileVersion != version
+                                ) {
+                                    readReaderPageDimensions(pageFile)
+                                } else {
+                                    previous?.size
+                                }
+                                ReaderPageDimensions(version, dimensions)
+                                    .takeIf { readerPageFileVersion(pageFile) == version }
+                            } ?: return@forEach
+                            probedPageFiles[page] = pageFile
+                            // Coil may have supplied dimensions while the bounds probe was running.
+                            val current = pageDimensions[page]
+                            if (current?.fileVersion != fileInfo.fileVersion || current.size == null) {
+                                pageDimensions[page] = fileInfo.copy(
+                                    size = current?.size?.takeIf { current.fileVersion == fileInfo.fileVersion }
+                                        ?: fileInfo.size,
+                                )
+                            }
+                        }
+                }
                 var readerViewportSize by remember { mutableStateOf(IntSize.Zero) }
                 var readerZoomState by remember(readerStateKey, readingDirection) {
                     mutableStateOf(ReaderZoomState())
@@ -268,28 +325,47 @@ fun ReaderScreen(
                 }
                 LaunchedEffect(continuousListState, isContinuousVertical) {
                     if (!isContinuousVertical) return@LaunchedEffect
+                    var previousPosition: ReaderContinuousViewportPosition? = null
+                    var reportedPages = emptyList<Int>()
+                    var reportedDirection = 0
+                    var reportedSelectedPage: Int? = null
                     snapshotFlow {
-                        reportableContinuousPageChange(
-                            firstVisiblePage = continuousListState.firstVisibleItemIndex,
-                            isScrollInProgress = continuousListState.isScrollInProgress,
-                            pageCount = uiState.pageCount,
+                        Triple(
+                            continuousListState.layoutInfo.visibleItemsInfo.map { it.index }.distinct(),
+                            ReaderContinuousViewportPosition(
+                                firstVisiblePage = continuousListState.firstVisibleItemIndex,
+                                firstVisibleOffset = continuousListState.firstVisibleItemScrollOffset,
+                            ),
+                            continuousListState.isScrollInProgress,
                         )
                     }
                         .distinctUntilChanged()
-                        .collect { page ->
-                            if (page == null) return@collect
-                            onPageChanged(page)
-                        }
-                }
-                LaunchedEffect(continuousListState, isContinuousVertical) {
-                    if (!isContinuousVertical) return@LaunchedEffect
-                    snapshotFlow {
-                        continuousListState.layoutInfo.visibleItemsInfo.map { it.index }.distinct()
-                    }
-                        .distinctUntilChanged()
-                        .collect { visiblePages ->
-                            visiblePages.forEach { page ->
-                                onPageDemanded(page, "continuous_visible")
+                        .collect { (visiblePages, position, isScrolling) ->
+                            val direction = readerContinuousScrollDirection(
+                                previous = previousPosition,
+                                current = position,
+                                isScrollInProgress = isScrolling,
+                            )
+                            previousPosition = position
+                            val selectedPage = reportableContinuousPageChange(
+                                firstVisiblePage = position.firstVisiblePage,
+                                isScrollInProgress = isScrolling,
+                                pageCount = uiState.pageCount,
+                            )
+                            val selectionChanged = selectedPage != null && selectedPage != reportedSelectedPage
+                            if (visiblePages.isNotEmpty() && (
+                                    visiblePages != reportedPages ||
+                                        (direction != 0 && direction != reportedDirection) ||
+                                        selectionChanged
+                                )
+                            ) {
+                                onContinuousViewport(visiblePages, direction)
+                                reportedPages = visiblePages
+                                reportedDirection = direction
+                            }
+                            if (selectionChanged) {
+                                reportedSelectedPage = selectedPage
+                                onPageChanged(selectedPage)
                             }
                         }
                 }
@@ -392,9 +468,28 @@ fun ReaderScreen(
                                         ReaderImagePage(
                                             page = page,
                                             pageFile = uiState.pageFiles[page],
+                                            fileVersion = pageDimensions[page]?.fileVersion
+                                                ?.takeIf { it.path == uiState.pageFiles[page]?.absolutePath },
                                             fillWidth = true,
                                             readerViewportSize = readerViewportSize,
                                             landscapeScaleMode = readerLandscapeScaleMode,
+                                            knownImageSize = pageDimensions[page]
+                                                ?.takeIf { it.fileVersion.path == uiState.pageFiles[page]?.absolutePath }
+                                                ?.size,
+                                            onImageSizeKnown = { fileVersion, size ->
+                                                val current = pageDimensions[page]
+                                                if (
+                                                    current?.fileVersion == fileVersion &&
+                                                    (current.size == null ||
+                                                        readerImageAspectRatioDiffers(current.size, size))
+                                                ) {
+                                                    pageDimensions[page] = ReaderPageDimensions(
+                                                        fileVersion = fileVersion,
+                                                        size = size,
+                                                    )
+                                                }
+                                            },
+                                            onImageError = { fileVersion -> reportPageImageError(page, fileVersion) },
                                         )
                                     }
                                 }
@@ -408,6 +503,9 @@ fun ReaderScreen(
                                     ReaderImagePage(
                                         page = page,
                                         pageFile = uiState.pageFiles[page],
+                                        fileVersion = pageDimensions[page]?.fileVersion
+                                            ?.takeIf { it.path == uiState.pageFiles[page]?.absolutePath },
+                                        onImageError = { fileVersion -> reportPageImageError(page, fileVersion) },
                                     )
                                 }
                             } else {
@@ -421,6 +519,9 @@ fun ReaderScreen(
                                     ReaderImagePage(
                                         page = page,
                                         pageFile = uiState.pageFiles[page],
+                                        fileVersion = pageDimensions[page]?.fileVersion
+                                            ?.takeIf { it.path == uiState.pageFiles[page]?.absolutePath },
+                                        onImageError = { fileVersion -> reportPageImageError(page, fileVersion) },
                                     )
                                 }
                             }
@@ -491,10 +592,15 @@ internal fun volumeKeyTargetPage(
 internal fun readerScrollStateKey(uiState: ReaderUiState): String =
     uiState.readerKey ?: "unkeyed-${uiState.pageCount}"
 
-internal fun readerImageRequest(context: Context, pageFile: java.io.File): ImageRequest =
+internal fun readerImageRequest(
+    context: Context,
+    pageFile: java.io.File,
+    fileVersion: ReaderPageFileVersion = readerPageFileVersion(pageFile),
+): ImageRequest =
     ImageRequest.Builder(context)
         .data(pageFile)
-        .memoryCachePolicy(CachePolicy.DISABLED)
+        .memoryCacheKey(fileVersion.memoryCacheKey)
+        .memoryCachePolicy(CachePolicy.ENABLED)
         .diskCachePolicy(CachePolicy.DISABLED)
         .build()
 
@@ -645,17 +751,16 @@ private fun Modifier.readerZoomTransform(
 private fun ReaderImagePage(
     page: Int,
     pageFile: java.io.File?,
+    fileVersion: ReaderPageFileVersion? = null,
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
     readerViewportSize: IntSize = IntSize.Zero,
     landscapeScaleMode: ReaderLandscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
+    knownImageSize: IntSize? = null,
+    onImageSizeKnown: (ReaderPageFileVersion, IntSize) -> Unit = { _, _ -> },
+    onImageError: (ReaderPageFileVersion) -> Unit = {},
 ) {
-    var continuousImageReady by remember(pageFile?.absolutePath, fillWidth) {
-        mutableStateOf(!fillWidth || pageFile == null)
-    }
-    var imageSize by remember(page, pageFile?.absolutePath) {
-        mutableStateOf<IntSize?>(null)
-    }
+    val imageSize = knownImageSize
     val scalePolicy = readerPageScalePolicy(
         fillWidth = fillWidth,
         viewportSize = readerViewportSize,
@@ -663,20 +768,24 @@ private fun ReaderImagePage(
         landscapeScaleMode = landscapeScaleMode,
     )
     val density = LocalDensity.current
-    val fitViewportHeightModifier = if (
-        fillWidth &&
-        scalePolicy == ReaderPageScalePolicy.FitViewport &&
-        readerViewportSize.height > 0
-    ) {
-        Modifier.height(with(density) { readerViewportSize.height.toDp() })
+    val continuousHeightPx = if (fillWidth) {
+        readerContinuousPageHeightPx(
+            viewportSize = readerViewportSize,
+            imageSize = imageSize,
+            landscapeScaleMode = landscapeScaleMode,
+        )
     } else {
-        Modifier
+        null
     }
     Box(
         modifier = if (fillWidth) {
             modifier
                 .fillMaxWidth()
-                .then(fitViewportHeightModifier)
+                .height(
+                    continuousHeightPx?.let { with(density) { it.toDp() } }
+                        ?: readerViewportSize.height.takeIf { it > 0 }?.let { with(density) { it.toDp() } }
+                        ?: ContinuousPageLoadingHeight,
+                )
                 .background(Color.Black)
                 .clipToBounds()
         } else {
@@ -686,57 +795,35 @@ private fun ReaderImagePage(
         },
         contentAlignment = Alignment.Center,
     ) {
-        if (pageFile == null) {
+        if (pageFile == null || fileVersion == null) {
             Box(
-                modifier = if (fillWidth) {
-                    Modifier
-                        .fillMaxWidth()
-                        .height(320.dp)
-                } else {
-                    Modifier.fillMaxSize()
-                },
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(color = ReaderOnDark)
             }
         } else {
             val context = LocalContext.current
-            val imageRequest = remember(pageFile.absolutePath) {
-                readerImageRequest(context, pageFile)
+            val imageRequest = remember(fileVersion) {
+                readerImageRequest(context, pageFile, fileVersion)
             }
             AsyncImage(
                 model = imageRequest,
                 contentDescription = "第 ${page + 1} 页",
-                modifier = (if (fillWidth) {
-                    if (scalePolicy == ReaderPageScalePolicy.FitViewport) {
-                        Modifier.fillMaxSize()
-                    } else {
-                        Modifier
-                            .fillMaxWidth()
-                            .then(if (continuousImageReady) Modifier else Modifier.height(ContinuousPageLoadingHeight))
-                    }
-                } else {
-                    Modifier.fillMaxSize()
-                }),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = if (fillWidth && scalePolicy == ReaderPageScalePolicy.FillWidth) {
                     ContentScale.FillWidth
                 } else {
                     ContentScale.Fit
                 },
-                onLoading = {
-                    continuousImageReady = false
-                    imageSize = null
-                },
                 onSuccess = { success ->
-                    continuousImageReady = true
-                    imageSize = readerImageSizeOrNull(
+                    readerImageSizeOrNull(
                         width = success.result.image.width,
                         height = success.result.image.height,
-                    )
+                    )?.let { onImageSizeKnown(fileVersion, it) }
                 },
                 onError = {
-                    continuousImageReady = false
-                    imageSize = null
+                    onImageError(fileVersion)
                 },
             )
         }

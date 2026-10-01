@@ -10,6 +10,22 @@ import org.junit.Test
 
 class ReaderPrefetchCoordinatorTest {
     @Test
+    fun reverseContinuousViewportKeepsVisiblePagesAndPrefetchesSmallerIndicesFirst() {
+        val plan = ReaderPrefetchPlanner.continuousViewportPlan(
+            visiblePages = listOf(12, 10, 11, 12),
+            pageCount = 20,
+            forwardPages = 4,
+            backwardPages = 3,
+            direction = -1,
+        )!!
+
+        assertEquals(10, plan.focusPage)
+        assertEquals(listOf(10, 11, 12), plan.visiblePages)
+        assertEquals((7..16).toSet(), plan.retentionWindow)
+        assertEquals(listOf(10, 9, 8, 7), plan.desiredPages.take(4))
+    }
+
+    @Test
     fun regularPagePrefetchUsesExactDesiredWindow() {
         val desired = setOf(4, 5, 6, 7, 8, 9)
 

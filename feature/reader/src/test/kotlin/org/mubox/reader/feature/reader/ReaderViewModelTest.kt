@@ -73,6 +73,110 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun visibleContinuousCacheMissLoadsBeforeItBecomesSelected() = runTest {
+        val session = RecordingComicSession(pageCount = 4, forwardPrefetchPageCount = 0)
+        val viewModel = createTestViewModel()
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        viewModel.reportContinuousViewport(listOf(0, 1), direction = 1)
+        viewModel.reportContinuousViewport(listOf(0, 1), direction = 1)
+        runCurrent()
+
+        assertEquals(listOf(0, 1), session.loadedPages)
+        assertEquals(0, viewModel.uiState.currentPage)
+        assertTrue(viewModel.uiState.pageFiles[1]?.isFile == true)
+    }
+
+    @Test
+    fun visibleDemandCancelsQueuedPrefetchWithoutDuplicateExtractionWhenCacheDisabled() = runTest {
+        val session = RecordingComicSession(pageCount = 3, forwardPrefetchPageCount = 1)
+        val viewModel = createTestViewModel()
+        viewModel.updatePageImageCacheEnabled(false)
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        viewModel.reportContinuousViewport(listOf(0, 1), direction = 1)
+        runCurrent()
+        advanceTimeBy(200)
+        runCurrent()
+
+        assertEquals(listOf(0, 1, 2), session.loadedPages)
+    }
+
+    @Test
+    fun reverseMultiVisibleViewportReconcilesOnceAtLeadingPage() = runTest {
+        val session = RecordingComicSession(
+            pageCount = 20,
+            forwardPrefetchPageCount = 0,
+            advancePrefetchOnPageDemand = true,
+        )
+        val viewModel = createTestViewModel()
+        viewModel.openExistingSession(session, temp.root, 12, "comic")
+        runCurrent()
+        session.reconciledPlanPages.clear()
+
+        viewModel.reportContinuousViewport(listOf(10, 11, 12), direction = -1)
+        runCurrent()
+
+        assertEquals(listOf(10), session.reconciledPlanPages)
+        assertTrue(session.loadedPages.containsAll(listOf(10, 11, 12)))
+    }
+
+    @Test
+    fun staleSelectedPageFileIsInvalidatedAndExtractedAgain() = runTest {
+        val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
+        val viewModel = createTestViewModel()
+        openDefaultSession(viewModel, session)
+        runCurrent()
+        val previous = viewModel.uiState.pageFiles.getValue(0)
+        assertTrue(previous.delete())
+
+        viewModel.selectPage(0)
+        runCurrent()
+
+        assertEquals(listOf(0, 0), session.loadedPages)
+        assertTrue(viewModel.uiState.pageFiles[0]?.isFile == true)
+        assertFalse(viewModel.uiState.isLoading)
+    }
+
+    @Test
+    fun staleVisiblePageFileIsReloadedBeforeSelectionChanges() = runTest {
+        val session = RecordingComicSession(pageCount = 3, forwardPrefetchPageCount = 0)
+        val viewModel = createTestViewModel()
+        openDefaultSession(viewModel, session)
+        runCurrent()
+        viewModel.selectPage(1)
+        runCurrent()
+        viewModel.selectPage(0)
+        runCurrent()
+        assertTrue(viewModel.uiState.pageFiles.getValue(1).delete())
+
+        viewModel.reportContinuousViewport(listOf(0, 1), direction = 1)
+        runCurrent()
+
+        assertEquals(listOf(0, 1, 1), session.loadedPages)
+        assertEquals(0, viewModel.uiState.currentPage)
+        assertTrue(viewModel.uiState.pageFiles[1]?.isFile == true)
+    }
+
+    @Test
+    fun imageReadFailureRetriesExtractionOnlyOncePerSession() = runTest {
+        val session = RecordingComicSession(pageCount = 2, forwardPrefetchPageCount = 0)
+        val viewModel = createTestViewModel()
+        openDefaultSession(viewModel, session)
+        runCurrent()
+
+        viewModel.reportPageFileFailed(0)
+        runCurrent()
+        viewModel.reportPageFileFailed(0)
+        runCurrent()
+
+        assertEquals(listOf(0, 0), session.loadedPages)
+        assertTrue(viewModel.uiState.pageFiles[0]?.isFile == true)
+    }
+
+    @Test
     fun openSessionExtractPrefetchUsesConfiguredForwardWindow() = runTest {
         val session = RecordingComicSession(pageCount = 20, forwardPrefetchPageCount = 12)
         val viewModel = createTestViewModel()

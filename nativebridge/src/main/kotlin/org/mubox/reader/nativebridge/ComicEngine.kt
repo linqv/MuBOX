@@ -34,6 +34,7 @@ class ComicEngine(
         comicKey: String,
         validator: String,
         webDavPrefetchPageCount: Int = 4,
+        webDavBackwardPrefetchPageCount: Int = 3,
     ): ComicReaderSession {
         val handle = native.openRemoteCachedV1(
             fileId,
@@ -47,6 +48,7 @@ class ComicEngine(
             rangeProviderFileId = fileId,
             onClose = { RangeProviderRegistry.unregister(fileId) },
             forwardPrefetchPageCount = webDavPrefetchPageCount,
+            backwardPrefetchPageCount = webDavBackwardPrefetchPageCount,
         )
     }
 
@@ -55,6 +57,7 @@ class ComicEngine(
         rangeProviderFileId: Long? = null,
         onClose: () -> Unit = {},
         forwardPrefetchPageCount: Int = 4,
+        backwardPrefetchPageCount: Int = 3,
     ) : ComicReaderSession {
         if (handle == 0L) {
             onClose()
@@ -75,6 +78,7 @@ class ComicEngine(
             rangeProviderFileId = rangeProviderFileId,
             onClose = onClose,
             forwardPrefetchPageCount = forwardPrefetchPageCount,
+            backwardPrefetchPageCount = backwardPrefetchPageCount,
         )
     }
 
@@ -90,6 +94,7 @@ class ComicSession internal constructor(
     private val rangeProviderFileId: Long? = null,
     private val onClose: () -> Unit = {},
     override val forwardPrefetchPageCount: Int = 4,
+    override val backwardPrefetchPageCount: Int = 3,
 ) : ComicReaderSession {
     override val advancePrefetchOnPageDemand: Boolean = rangeProviderFileId != null
     private val isClosed = AtomicBoolean(false)
@@ -104,7 +109,9 @@ class ComicSession internal constructor(
 
     @WorkerThread
     override fun updateViewport(pageIndex: Int, networkClass: Int) {
-        val result = native.updateViewport(handle, pageIndex, networkClass, forwardPrefetchPageCount)
+        val result = native.updateViewport(
+            handle, pageIndex, networkClass, forwardPrefetchPageCount, backwardPrefetchPageCount,
+        )
         if (result < 0) {
             throw ComicNativeException(native.lastErrorMessage().ifBlank { "Failed to update viewport" })
         }
@@ -120,7 +127,9 @@ class ComicSession internal constructor(
 
     @WorkerThread
     override fun plannedRanges(pageIndex: Int, networkClass: Int): List<PlannedRemoteRange> {
-        val encoded = native.plannedRanges(handle, pageIndex, networkClass, forwardPrefetchPageCount)
+        val encoded = native.plannedRanges(
+            handle, pageIndex, networkClass, forwardPrefetchPageCount, backwardPrefetchPageCount,
+        )
         return when (val result = decodePlannedRanges(encoded)) {
             is PlannedRangesDecodeResult.Success -> result.ranges
             PlannedRangesDecodeResult.NativeError -> throw ComicNativeException(
@@ -137,11 +146,12 @@ class ComicSession internal constructor(
         completedRanges: List<PlannedRemoteRange>,
         byteBudget: Long,
     ): ReconciledPrefetchPlan {
-        val encoded = native.reconcilePrefetchPlanV1(
+        val encoded = native.reconcilePrefetchPlanV2(
             handle = handle,
             pageIndex = pageIndex,
             networkClass = networkClass,
             forwardPrefetchPageCount = forwardPrefetchPageCount,
+            backwardPrefetchPageCount = backwardPrefetchPageCount,
             byteBudget = byteBudget,
             activeRanges = PrefetchPlanWireV1.encodeRanges(activeRanges),
             completedRanges = PrefetchPlanWireV1.encodeRanges(completedRanges),

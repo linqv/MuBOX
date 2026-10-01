@@ -15,7 +15,7 @@ use crate::cbz::{CbzIndex, CbzPageEntry, open_cbz};
 use crate::error::ComicCoreError;
 use crate::remote::jni_range_transport::JniRangeTransport;
 use crate::remote::range_session::RemoteRangeSession;
-use crate::scheduler::prefetch::{NetworkClass, plan_prefetch_with_forward_window};
+use crate::scheduler::prefetch::{NetworkClass, plan_prefetch_with_windows};
 use crate::scheduler::range_planner::{
     ByteRange, PageByteRange, PlannedPageRange, plan_page_ranges,
 };
@@ -329,6 +329,7 @@ pub(crate) fn update_viewport(
     page_index: usize,
     network_class: NetworkClass,
     forward_prefetch_window: usize,
+    backward_prefetch_window: usize,
 ) -> Result<()> {
     let session = session_for_handle(handle)?;
     let mut session = session
@@ -349,6 +350,7 @@ pub(crate) fn update_viewport(
         page_index,
         network_class,
         forward_prefetch_window,
+        backward_prefetch_window,
     );
     if let SessionReader::RemoteRange(reader) = reader {
         reader.set_read_ahead_bytes(demand_read_ahead_bytes(network_class));
@@ -366,6 +368,7 @@ pub(crate) fn planned_ranges_for_viewport(
     page_index: usize,
     network_class: NetworkClass,
     forward_prefetch_window: usize,
+    backward_prefetch_window: usize,
 ) -> Result<Vec<PlannedRangeDto>> {
     let session = session_for_handle(handle)?;
     let session = session
@@ -385,6 +388,7 @@ pub(crate) fn planned_ranges_for_viewport(
         page_index,
         network_class,
         forward_prefetch_window,
+        backward_prefetch_window,
     ))
 }
 
@@ -393,6 +397,7 @@ pub(crate) fn reconcile_prefetch_plan_for_viewport(
     page_index: usize,
     network_class: NetworkClass,
     forward_prefetch_window: usize,
+    backward_prefetch_window: usize,
     active_ranges: Vec<PlannedPageRange>,
     completed_ranges: Vec<PlannedPageRange>,
     byte_budget: u64,
@@ -418,6 +423,7 @@ pub(crate) fn reconcile_prefetch_plan_for_viewport(
         page_index,
         network_class,
         forward_prefetch_window,
+        backward_prefetch_window,
     )
     .into_iter()
     .map(planned_page_range_from_dto)
@@ -451,14 +457,15 @@ fn build_planned_ranges(
     index: &CbzIndex,
     file_size: u64,
     page_index: usize,
-    network_class: NetworkClass,
+    _network_class: NetworkClass,
     forward_prefetch_window: usize,
+    backward_prefetch_window: usize,
 ) -> Vec<PlannedRangeDto> {
-    let plan = plan_prefetch_with_forward_window(
+    let plan = plan_prefetch_with_windows(
         index.pages.len(),
         page_index,
-        network_class,
         forward_prefetch_window,
+        backward_prefetch_window,
     );
     let page_ranges = plan
         .tasks
@@ -562,16 +569,24 @@ pub(crate) fn forward_prefetch_window_from_i32(value: i32) -> usize {
     }
 }
 
+pub(crate) fn backward_prefetch_window_from_i32(value: i32) -> usize {
+    if value <= 0 {
+        3
+    } else {
+        (value as usize).min(16)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::demand_read_ahead_bytes;
     use super::{
         CbzIndex, CbzPageEntry, CbzSession, SessionIndexCache, SessionKind, SessionReader,
     };
     use super::{
-        close_session, insert_session, load_page_to_file, page_count,
+        build_planned_ranges, close_session, insert_session, load_page_to_file, page_count,
         reconcile_prefetch_plan_for_viewport,
     };
-    use super::demand_read_ahead_bytes;
     use crate::cache::index_cache::{IndexCacheKey, load_index_cache};
     use crate::scheduler::prefetch::NetworkClass;
     use crate::zip::RangeReader;
@@ -609,6 +624,7 @@ mod tests {
             0,
             NetworkClass::Wifi,
             4,
+            3,
             Vec::new(),
             Vec::new(),
             48 * 1024 * 1024,
@@ -622,6 +638,38 @@ mod tests {
         assert_eq!(2, plan.tasks[0].range.range.end_inclusive);
         assert_eq!(vec![0], plan.tasks[0].range.pages);
         assert!(plan.tasks[0].protected_ranges.is_empty());
+    }
+
+    #[test]
+    fn session_plan_uses_explicit_backward_window() {
+        let index = CbzIndex {
+            pages: (0..10)
+                .map(|page| CbzPageEntry {
+                    name: format!("{page}.jpg"),
+                    filename_len: 5,
+                    local_header_offset: page * 10,
+                    data_offset: Some(page * 10),
+                    compressed_size: 3,
+                    uncompressed_size: 3,
+                    compression_method: 0,
+                    crc32: 0,
+                })
+                .collect(),
+        };
+        let legacy = build_planned_ranges(&index, 100, 5, NetworkClass::Wifi, 4, 1);
+        let current = build_planned_ranges(&index, 100, 5, NetworkClass::Wifi, 4, 3);
+        let legacy_pages = legacy
+            .iter()
+            .flat_map(|range| &range.pages)
+            .copied()
+            .collect::<Vec<_>>();
+        let current_pages = current
+            .iter()
+            .flat_map(|range| &range.pages)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(vec![4, 5, 6, 7, 8, 9], legacy_pages);
+        assert_eq!(vec![2, 3, 4, 5, 6, 7, 8, 9], current_pages);
     }
 
     #[test]

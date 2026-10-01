@@ -465,7 +465,7 @@ class WebDavViewModelTest {
     }
 
     @Test
-    fun openingDirectoryKeepsConnectedStatusWhileLoading() = runTest(dispatcher) {
+    fun openingDirectoryNavigatesImmediatelyWhileKeepingConnectedStatus() = runTest(dispatcher) {
         val directory = WebDavItem("Series", "/Series/", isDirectory = true, size = null, etag = null, lastModified = null)
         val client = FakeWebDavClient(items = listOf(directory))
         val viewModel = testViewModel { _, _, _ -> client }
@@ -478,6 +478,155 @@ class WebDavViewModelTest {
 
         assertEquals(WEB_DAV_STATUS_CONNECTED, viewModel.uiState.status)
         assertTrue(viewModel.uiState.isLoading)
+        assertEquals("/Series/", viewModel.uiState.currentPath)
+        assertTrue(viewModel.uiState.items.isEmpty())
+        assertTrue(viewModel.playbackDirectoryItems().isEmpty())
+    }
+
+    @Test
+    fun repeatedClickOnLoadingDirectoryKeepsOriginalRequest() = runTest(dispatcher) {
+        val client = BlockingDirectoryWebDavClient()
+        val viewModel = testViewModel { _, _, _ -> client }
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        val directory = directoryItem("Series", "/Series/")
+
+        viewModel.openDirectory(directory)
+        runCurrent()
+        viewModel.openDirectory(directory)
+        runCurrent()
+
+        assertEquals(listOf("/Series/"), client.listedPaths)
+        assertTrue(client.cancelledPaths.isEmpty())
+
+        client.complete("/Series/", listOf(directoryItem("Volume", "/Series/Volume/")))
+        runCurrent()
+        assertEquals(listOf("Volume"), viewModel.uiState.items.map { it.name })
+        assertFalse(viewModel.uiState.isLoading)
+    }
+
+    @Test
+    fun expiredDirectoryAppearsBeforeNetworkRefreshAndUsesLatestSearchAndSort() = runTest(dispatcher) {
+        var nowMillis = 0L
+        val client = BlockingDirectoryWebDavClient()
+        val viewModel = WebDavViewModel(
+            clientFactory = { _, _, _ -> client },
+            directoryComputationDispatcher = dispatcher,
+            directoryCacheClock = { nowMillis },
+        )
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        client.complete("/Comics/", listOf(directoryItem("Volume", "/Comics/Volume/")))
+        runCurrent()
+
+        nowMillis += 120_000L
+        viewModel.openPath("/Comics/")
+        runCurrent()
+
+        assertEquals(listOf("Volume"), viewModel.uiState.items.map { it.name })
+        assertFalse(viewModel.uiState.isLoading)
+        assertTrue(viewModel.uiState.isRefreshing)
+        assertEquals(listOf("/Comics/", "/Comics/"), client.listedPaths)
+
+        viewModel.updateSearchQuery("Volume")
+        viewModel.toggleSortDirection()
+        runCurrent()
+        client.complete("/Comics/", listOf(
+            directoryItem("Volume 1", "/Comics/Volume 1/"),
+            directoryItem("Other", "/Comics/Other/"),
+            directoryItem("Volume 2", "/Comics/Volume 2/"),
+        ))
+        runCurrent()
+
+        assertEquals(listOf("Volume 2", "Volume 1"), viewModel.uiState.items.map { it.name })
+        assertFalse(viewModel.uiState.isRefreshing)
+
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        assertEquals(listOf("/Comics/", "/Comics/"), client.listedPaths)
+    }
+
+    @Test
+    fun failedBackgroundRefreshKeepsCachedDirectoryAndAllowsRetry() = runTest(dispatcher) {
+        var nowMillis = 0L
+        val client = BlockingDirectoryWebDavClient()
+        val viewModel = WebDavViewModel(
+            clientFactory = { _, _, _ -> client },
+            directoryComputationDispatcher = dispatcher,
+            directoryCacheClock = { nowMillis },
+        )
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        client.complete("/Comics/", listOf(directoryItem("Volume", "/Comics/Volume/")))
+        runCurrent()
+
+        nowMillis += 120_000L
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        client.fail("/Comics/", IllegalStateException("网络不可用"))
+        runCurrent()
+
+        assertEquals("/Comics/", viewModel.uiState.currentPath)
+        assertEquals(listOf("Volume"), viewModel.uiState.items.map { it.name })
+        assertEquals("网络不可用", viewModel.uiState.message)
+        assertFalse(viewModel.uiState.isRefreshing)
+        assertFalse(viewModel.uiState.isLoading)
+
+        viewModel.refreshCurrentDirectory()
+        runCurrent()
+        client.complete("/Comics/", emptyList())
+        runCurrent()
+        assertTrue(viewModel.uiState.items.isEmpty())
+        assertTrue(viewModel.uiState.message.isEmpty())
+    }
+
+    @Test
+    fun leavingExpiredDirectoryCancelsRefreshAndIgnoresItsLateResult() = runTest(dispatcher) {
+        var nowMillis = 0L
+        val client = NonCancellableDirectoryWebDavClient()
+        val viewModel = WebDavViewModel(
+            clientFactory = { _, _, _ -> client },
+            directoryComputationDispatcher = dispatcher,
+            directoryCacheClock = { nowMillis },
+        )
+        viewModel.updateBaseUrl("https://example.test/dav/")
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        client.complete("/Comics/", listOf(directoryItem("Volume", "/Comics/Volume/")))
+        runCurrent()
+
+        nowMillis += 120_000L
+        viewModel.openPath("/Comics/")
+        runCurrent()
+        viewModel.openDirectory(directoryItem("Volume", "/Comics/Volume/"))
+        runCurrent()
+        client.complete("/Comics/Volume/", listOf(directoryItem("Chapter", "/Comics/Volume/Chapter/")))
+        runCurrent()
+        client.complete("/Comics/", listOf(directoryItem("Late", "/Comics/Late/")))
+        runCurrent()
+
+        assertEquals("/Comics/Volume/", viewModel.uiState.currentPath)
+        assertEquals(listOf("Chapter"), viewModel.uiState.items.map { it.name })
+        assertFalse(viewModel.uiState.isRefreshing)
+    }
+
+    @Test
+    fun changingAccountDuringSamePathLoadStartsNewRequest() = runTest(dispatcher) {
+        val firstClient = BlockingDirectoryWebDavClient()
+        val secondClient = FakeWebDavClient(items = listOf(directoryItem("Second", "/Second/")))
+        val viewModel = testViewModel { _, username, _ ->
+            if (username == "first") firstClient else secondClient
+        }
+
+        viewModel.connectToSavedSource("https://example.test/dav/", "first", "secret", "/Comics/")
+        runCurrent()
+        viewModel.connectToSavedSource("https://example.test/dav/", "second", "secret", "/Comics/")
+        runCurrent()
+
+        assertEquals(listOf("/Comics/"), firstClient.cancelledPaths)
+        assertEquals(listOf("/Comics/"), secondClient.listedPaths)
+        assertEquals(listOf("Second"), viewModel.uiState.items.map { it.name })
     }
 
     @Test
@@ -519,7 +668,7 @@ class WebDavViewModelTest {
     }
 
     @Test
-    fun backDuringChildLoadTargetsDisplayedParentDirectory() = runTest(dispatcher) {
+    fun backDuringChildLoadReturnsToCachedParentDirectory() = runTest(dispatcher) {
         val child = directoryItem("Series", "/Comics/Series/")
         val client = BlockingDirectoryWebDavClient()
         val viewModel = testViewModel { _, _, _ -> client }
@@ -540,7 +689,7 @@ class WebDavViewModelTest {
     }
 
     @Test
-    fun directoryLoadFailureKeepsConnectedBrowserState() = runTest(dispatcher) {
+    fun directoryLoadFailureStaysAtRequestedPathAndCanBeRetried() = runTest(dispatcher) {
         val directory = WebDavItem("Broken", "/Broken/", isDirectory = true, size = null, etag = null, lastModified = null)
         val client = FakeWebDavClient(
             itemsByPath = mapOf("/" to listOf(directory)),
@@ -556,10 +705,14 @@ class WebDavViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(WEB_DAV_STATUS_CONNECTED, viewModel.uiState.status)
-        assertEquals("/", viewModel.uiState.currentPath)
-        assertEquals(listOf("Broken"), viewModel.uiState.items.map { it.name })
+        assertEquals("/Broken/", viewModel.uiState.currentPath)
+        assertTrue(viewModel.uiState.items.isEmpty())
         assertEquals("目录不可用", viewModel.uiState.message)
         assertFalse(viewModel.uiState.isLoading)
+
+        viewModel.refreshCurrentDirectory()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf("/", "/Broken/", "/Broken/"), client.listedPaths)
     }
 
     @Test
@@ -806,6 +959,10 @@ class WebDavViewModelTest {
 
         fun complete(path: String, items: List<WebDavItem> = emptyList()) {
             responses.getValue(path).complete(items)
+        }
+
+        fun fail(path: String, error: Throwable) {
+            responses.getValue(path).completeExceptionally(error)
         }
 
         override suspend fun head(path: String): RemoteFileInfo =

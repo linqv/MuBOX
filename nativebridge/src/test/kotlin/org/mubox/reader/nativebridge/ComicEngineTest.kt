@@ -96,12 +96,14 @@ class ComicEngineTest {
             comicKey = "comic-key",
             validator = "etag-1",
             webDavPrefetchPageCount = 6,
+            webDavBackwardPrefetchPageCount = 5,
         )
 
         session.updateViewport(pageIndex = 3, networkClass = 2)
 
-        assertEquals(ViewportCall(5, 3, 2, 6), native.viewportCalls.single())
+        assertEquals(ViewportCall(5, 3, 2, 6, 5), native.viewportCalls.single())
         assertEquals(6, session.forwardPrefetchPageCount)
+        assertEquals(5, session.backwardPrefetchPageCount)
     }
 
     @Test
@@ -190,7 +192,7 @@ class ComicEngineTest {
             ),
             session.plannedRanges(pageIndex = 2, networkClass = 2),
         )
-        assertEquals(PlannedRangeCall(5, 2, 2, 8), native.plannedRangeCalls.single())
+        assertEquals(PlannedRangeCall(5, 2, 2, 8, 3), native.plannedRangeCalls.single())
     }
 
     @Test
@@ -290,6 +292,7 @@ class ComicEngineTest {
                 pageIndex = 2,
                 networkClass = 2,
                 forwardPrefetchPageCount = 8,
+                backwardPrefetchPageCount = 3,
                 byteBudget = 48,
                 activeRanges = listOf(1L, 1L, 0L, 9L, 0L, 1L, 1L),
                 completedRanges = listOf(1L, 1L, 20L, 29L, 2L, 1L, 4L),
@@ -497,8 +500,9 @@ class ComicEngineTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
         ): Int {
-            viewportCalls += ViewportCall(handle, pageIndex, networkClass, forwardPrefetchPageCount)
+            viewportCalls += ViewportCall(handle, pageIndex, networkClass, forwardPrefetchPageCount, backwardPrefetchPageCount)
             return 0
         }
 
@@ -509,8 +513,9 @@ class ComicEngineTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
         ): String {
-            plannedRangeCalls += PlannedRangeCall(handle, pageIndex, networkClass, forwardPrefetchPageCount)
+            plannedRangeCalls += PlannedRangeCall(handle, pageIndex, networkClass, forwardPrefetchPageCount, backwardPrefetchPageCount)
             return plannedRanges
         }
 
@@ -522,12 +527,27 @@ class ComicEngineTest {
             byteBudget: Long,
             activeRanges: LongArray,
             completedRanges: LongArray,
+        ): LongArray? = reconcilePrefetchPlanV2(
+            handle, pageIndex, networkClass, forwardPrefetchPageCount, 1,
+            byteBudget, activeRanges, completedRanges,
+        )
+
+        override fun reconcilePrefetchPlanV2(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
+            byteBudget: Long,
+            activeRanges: LongArray,
+            completedRanges: LongArray,
         ): LongArray? {
             reconcileCalls += ReconcileCall(
                 handle = handle,
                 pageIndex = pageIndex,
                 networkClass = networkClass,
                 forwardPrefetchPageCount = forwardPrefetchPageCount,
+                backwardPrefetchPageCount = backwardPrefetchPageCount,
                 byteBudget = byteBudget,
                 activeRanges = activeRanges.toList(),
                 completedRanges = completedRanges.toList(),
@@ -603,6 +623,7 @@ class ComicEngineTest {
         val pageIndex: Int,
         val networkClass: Int,
         val forwardPrefetchPageCount: Int,
+        val backwardPrefetchPageCount: Int,
     )
 
     private data class PlannedRangeCall(
@@ -610,6 +631,7 @@ class ComicEngineTest {
         val pageIndex: Int,
         val networkClass: Int,
         val forwardPrefetchPageCount: Int,
+        val backwardPrefetchPageCount: Int,
     )
 
     private data class ReconcileCall(
@@ -617,6 +639,7 @@ class ComicEngineTest {
         val pageIndex: Int,
         val networkClass: Int,
         val forwardPrefetchPageCount: Int,
+        val backwardPrefetchPageCount: Int,
         val byteBudget: Long,
         val activeRanges: List<Long>,
         val completedRanges: List<Long>,

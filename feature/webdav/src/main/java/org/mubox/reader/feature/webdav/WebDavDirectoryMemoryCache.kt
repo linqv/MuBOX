@@ -8,15 +8,11 @@ internal class WebDavDirectoryMemoryCache(
     private val entries = LinkedHashMap<String, CacheEntry>(DEFAULT_MAX_DIRECTORIES, 0.75f, true)
     private var totalItems: Int = 0
 
-    fun get(path: String): List<WebDavItem>? {
+    fun get(path: String): Snapshot? {
         val entry = entries[path] ?: return null
         val ageMillis = nowMillis() - entry.cachedAtMillis
-        if (ageMillis >= DEFAULT_TTL_MILLIS) {
-            entries.remove(path)
-            totalItems -= entry.items.size
-            return null
-        }
-        return entry.items
+        // Keep bounded stale entries available while the network refresh is in flight.
+        return Snapshot(entry.items, isStale = ageMillis >= DEFAULT_TTL_MILLIS)
     }
 
     fun put(path: String, items: List<WebDavItem>) {
@@ -41,6 +37,8 @@ internal class WebDavDirectoryMemoryCache(
         val items: List<WebDavItem>,
         val cachedAtMillis: Long,
     )
+
+    data class Snapshot(val items: List<WebDavItem>, val isStale: Boolean)
 
     private companion object {
         const val DEFAULT_MAX_DIRECTORIES = 20

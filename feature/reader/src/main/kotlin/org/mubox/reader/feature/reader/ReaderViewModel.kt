@@ -27,6 +27,7 @@ data class ReaderUiState(
     val pageCount: Int = 0,
     val currentPage: Int = 0,
     val pageFiles: Map<Int, File> = emptyMap(),
+    val pageFilesRevision: Long = 0L,
     val isLoading: Boolean = false,
     val error: String? = null,
     val readerKey: String? = null,
@@ -57,6 +58,9 @@ class ReaderViewModel(
         sessionGate = sessionCoordinator,
         prunePageCache = prunePageCache,
     )
+    private val demandPageJobs = mutableMapOf<Int, Job>()
+    private val imageFailureRetries = mutableMapOf<Int, Int>()
+    private var pageFileValidationJob: Job? = null
     private val prefetchCoordinator = ReaderPrefetchCoordinator(
         scope = viewModelScope,
         ioDispatcher = ioDispatcher,
@@ -65,7 +69,7 @@ class ReaderViewModel(
         diagnosticLog = diagnosticLog,
         pageFiles = { uiState.pageFiles },
         onPageFilesLoaded = { files ->
-            uiState = uiState.copy(pageFiles = uiState.pageFiles + files)
+            publishPageFiles(files)
         },
         networkClass = networkClassProvider,
     )
@@ -117,6 +121,7 @@ class ReaderViewModel(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
+                        pageFilesRevision = 1L,
                         readerKey = opening.readerKey,
                     )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, opening.generation)
@@ -188,6 +193,7 @@ class ReaderViewModel(
                         pageCount = opened.session.pageCount,
                         currentPage = opened.currentPage,
                         pageFiles = opened.files,
+                        pageFilesRevision = 1L,
                         readerKey = opening.readerKey,
                     )
                     prefetchCoordinator.updateViewport(opened.session, opened.currentPage, openGeneration)
@@ -265,40 +271,11 @@ class ReaderViewModel(
             prefetchCoordinator.updateViewport(activeSession, pageIndex, opening.generation)
             saveProgress(pageIndex)
             prefetchCoordinator.prefetchNeighbors(pageIndex, reason = "select_page")
+            demandPage(pageIndex)
             return
         }
-        val loadGeneration = opening.generation
         prefetchCoordinator.prioritizeSelectedPageLoad(pageIndex)
-        viewModelScope.launch {
-            runCatching {
-                pageLoadCoordinator.loadPages(
-                    session = activeSession,
-                    context = opening.pageLoadContext(),
-                    pageIndexes = listOf(pageIndex),
-                    reason = LOAD_REASON_SELECT,
-                )
-            }.fold(
-                onSuccess = { files ->
-                    if (!sessionCoordinator.isCurrent(loadGeneration)) return@fold
-                    uiState = uiState.copy(
-                        currentPage = pageIndex,
-                        pageFiles = uiState.pageFiles + files,
-                        isLoading = false,
-                    )
-                    prefetchCoordinator.updateViewport(activeSession, pageIndex, loadGeneration)
-                    saveProgress(pageIndex)
-                    prefetchCoordinator.prefetchNeighbors(pageIndex)
-                },
-                onFailure = { error ->
-                    if (!sessionCoordinator.isCurrent(loadGeneration)) return@fold
-                    diagnosticLog.error("select_page_load_failed page=$pageIndex", error)
-                    uiState = uiState.copy(
-                        isLoading = false,
-                        error = error.message ?: "加载页面失败",
-                    )
-                },
-            )
-        }
+        demandPage(pageIndex)
     }
 
     fun closeReader() {
@@ -312,6 +289,11 @@ class ReaderViewModel(
     }
 
     private fun closeCurrentSession() {
+        demandPageJobs.values.forEach(Job::cancel)
+        demandPageJobs.clear()
+        imageFailureRetries.clear()
+        pageFileValidationJob?.cancel()
+        pageFileValidationJob = null
         sessionCoordinator.closeCurrentSession(
             cancelDependentWork = {
                 prefetchCoordinator.cancelSessionWork(uiState.currentPage)
@@ -320,9 +302,14 @@ class ReaderViewModel(
     }
 
     fun reportPageDemand(pageIndex: Int, source: String) {
-        val ready = uiState.pageFiles[pageIndex] != null
+        if (source == "continuous_visible") {
+            reportContinuousViewport(listOf(pageIndex), 0)
+            return
+        }
         if (pageIndex !in 0 until uiState.pageCount) return
+        val ready = uiState.pageFiles[pageIndex] != null
         if (ready) {
+            if (source != "select_page") demandPage(pageIndex)
             val activeReader = sessionCoordinator.activeSession
             if (activeReader?.session?.advancePrefetchOnPageDemand == true && source.shouldAdvancePrefetchOnDemand()) {
                 prefetchCoordinator.updateViewport(activeReader.session, pageIndex, activeReader.descriptor.generation)
@@ -332,6 +319,128 @@ class ReaderViewModel(
         }
         if (source == "pager_target") {
             prefetchCoordinator.prefetchDemandRanges(pageIndex, source)
+        }
+    }
+
+    /** Reports all visible continuous items as one viewport, with -1 for smaller indices. */
+    fun reportContinuousViewport(visiblePages: List<Int>, direction: Int) {
+        val activeReader = sessionCoordinator.activeSession ?: return
+        val session = activeReader.session
+        val plan = ReaderPrefetchPlanner.continuousViewportPlan(
+            visiblePages = visiblePages,
+            pageCount = session.pageCount,
+            forwardPages = session.forwardPrefetchPageCount,
+            backwardPages = session.backwardPrefetchPageCount,
+            direction = direction,
+        ) ?: return
+        if (session.advancePrefetchOnPageDemand) {
+            prefetchCoordinator.updateViewport(session, plan.focusPage, activeReader.descriptor.generation)
+        }
+        prefetchCoordinator.prefetchContinuousViewport(plan)
+        val orderedVisible = if (direction < 0) plan.visiblePages else plan.visiblePages.asReversed()
+        orderedVisible.forEach(::demandPage)
+    }
+
+    /** Retries a failed image file once, then leaves a persistent decoder failure visible. */
+    fun reportPageFileFailed(pageIndex: Int) {
+        val activeReader = sessionCoordinator.activeSession ?: return
+        if (pageIndex !in 0 until activeReader.session.pageCount) return
+        val failedFile = uiState.pageFiles[pageIndex] ?: return
+        val retries = imageFailureRetries[pageIndex] ?: 0
+        if (retries >= MAX_IMAGE_FAILURE_RETRIES) return
+        imageFailureRetries[pageIndex] = retries + 1
+        val generation = activeReader.descriptor.generation
+        viewModelScope.launch {
+            withContext(ioDispatcher) {
+                sessionCoordinator.withSessionLock { failedFile.delete() }
+            }
+            if (!sessionCoordinator.isCurrent(generation)) return@launch
+            if (uiState.pageFiles[pageIndex] == failedFile) {
+                uiState = uiState.copy(
+                    pageFiles = uiState.pageFiles - pageIndex,
+                    pageFilesRevision = uiState.pageFilesRevision + 1,
+                )
+            }
+            demandPage(pageIndex)
+        }
+    }
+
+    private fun demandPage(pageIndex: Int) {
+        if (demandPageJobs[pageIndex]?.isActive == true) return
+        val activeReader = sessionCoordinator.activeSession ?: return
+        val generation = activeReader.descriptor.generation
+        val inFlightPrefetch = prefetchCoordinator.promoteVisiblePage(pageIndex)
+        val job = viewModelScope.launch {
+            try {
+                inFlightPrefetch?.join()
+                val cached = uiState.pageFiles[pageIndex]
+                val valid = cached != null && withContext(ioDispatcher) {
+                    cached.isFile && cached.length() > 0L
+                }
+                if (valid || !sessionCoordinator.isCurrent(generation)) return@launch
+                if (cached != null && uiState.pageFiles[pageIndex] == cached) {
+                    uiState = uiState.copy(
+                        pageFiles = uiState.pageFiles - pageIndex,
+                        pageFilesRevision = uiState.pageFilesRevision + 1,
+                    )
+                }
+                if (uiState.currentPage == pageIndex) {
+                    uiState = uiState.copy(isLoading = true)
+                }
+                val files = pageLoadCoordinator.loadPages(
+                    session = activeReader.session,
+                    context = activeReader.descriptor.pageLoadContext(),
+                    pageIndexes = listOf(pageIndex),
+                    reason = LOAD_REASON_SELECT,
+                )
+                if (!sessionCoordinator.isCurrent(generation)) return@launch
+                publishPageFiles(files)
+                if (uiState.currentPage == pageIndex) {
+                    uiState = uiState.copy(isLoading = false, error = null)
+                    prefetchCoordinator.updateViewport(activeReader.session, pageIndex, generation)
+                    saveProgress(pageIndex)
+                    prefetchCoordinator.prefetchNeighbors(pageIndex, reason = "select_page")
+                }
+            } catch (_: CancellationException) {
+                // Session changes cancel visible page work.
+            } catch (error: Throwable) {
+                if (sessionCoordinator.isCurrent(generation)) {
+                    diagnosticLog.error("demand_page_load_failed page=$pageIndex", error)
+                    if (uiState.currentPage == pageIndex) {
+                        uiState = uiState.copy(
+                            isLoading = false,
+                            error = error.message ?: "加载页面失败",
+                        )
+                    }
+                }
+            } finally {
+                val currentJob = currentCoroutineContext()[Job]
+                if (demandPageJobs[pageIndex] === currentJob) demandPageJobs.remove(pageIndex)
+            }
+        }
+        demandPageJobs[pageIndex] = job
+    }
+
+    private fun publishPageFiles(files: Map<Int, File>) {
+        if (files.isEmpty()) return
+        uiState = uiState.copy(
+            pageFiles = uiState.pageFiles + files,
+            pageFilesRevision = uiState.pageFilesRevision + 1,
+        )
+        pageFileValidationJob?.cancel()
+        val snapshot = uiState.pageFiles
+        val generation = sessionCoordinator.generation
+        pageFileValidationJob = viewModelScope.launch {
+            val stale = withContext(ioDispatcher) {
+                snapshot.filterValues { !it.isFile || it.length() <= 0L }
+            }
+            if (!sessionCoordinator.isCurrent(generation) || stale.isEmpty()) return@launch
+            val retained = uiState.pageFiles.filter { (page, file) -> stale[page] != file }
+            uiState = uiState.copy(
+                pageFiles = retained,
+                pageFilesRevision = uiState.pageFilesRevision + 1,
+            )
+            if (uiState.currentPage in stale) demandPage(uiState.currentPage)
         }
     }
 
@@ -370,5 +479,6 @@ class ReaderViewModel(
     private companion object {
         const val LOAD_REASON_INITIAL = "initial"
         const val LOAD_REASON_SELECT = "select"
+        const val MAX_IMAGE_FAILURE_RETRIES = 1
     }
 }

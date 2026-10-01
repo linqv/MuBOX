@@ -15,15 +15,41 @@ interface ComicNativeFacade {
     ): Long
     fun pageCount(handle: Long): Int
     @WorkerThread fun loadPageToFile(handle: Long, pageIndex: Int, outputPath: String): Int
-    @WorkerThread fun updateViewport(handle: Long, pageIndex: Int, networkClass: Int, forwardPrefetchPageCount: Int): Int
+    @WorkerThread
+    fun updateViewport(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
+    ): Int
     fun diagnostics(handle: Long): String
-    @WorkerThread fun plannedRanges(handle: Long, pageIndex: Int, networkClass: Int, forwardPrefetchPageCount: Int): String
+    @WorkerThread
+    fun plannedRanges(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
+    ): String
     @WorkerThread
     fun reconcilePrefetchPlanV1(
         handle: Long,
         pageIndex: Int,
         networkClass: Int,
         forwardPrefetchPageCount: Int,
+        byteBudget: Long,
+        activeRanges: LongArray,
+        completedRanges: LongArray,
+    ): LongArray?
+
+    @WorkerThread
+    fun reconcilePrefetchPlanV2(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
         byteBudget: Long,
         activeRanges: LongArray,
         completedRanges: LongArray,
@@ -72,6 +98,7 @@ object ComicNative : ComicNativeFacade {
         pageIndex: Int,
         networkClass: Int,
         forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
     ): Int
 
     external override fun diagnostics(handle: Long): String
@@ -82,6 +109,7 @@ object ComicNative : ComicNativeFacade {
         pageIndex: Int,
         networkClass: Int,
         forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
     ): String
 
     @WorkerThread
@@ -90,6 +118,18 @@ object ComicNative : ComicNativeFacade {
         pageIndex: Int,
         networkClass: Int,
         forwardPrefetchPageCount: Int,
+        byteBudget: Long,
+        activeRanges: LongArray,
+        completedRanges: LongArray,
+    ): LongArray?
+
+    @WorkerThread
+    external override fun reconcilePrefetchPlanV2(
+        handle: Long,
+        pageIndex: Int,
+        networkClass: Int,
+        forwardPrefetchPageCount: Int,
+        backwardPrefetchPageCount: Int,
         byteBudget: Long,
         activeRanges: LongArray,
         completedRanges: LongArray,

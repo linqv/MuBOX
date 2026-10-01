@@ -19,10 +19,11 @@ use crate::error::ComicCoreError;
 use crate::remote::jni_range_transport::JniRangeTransport;
 use crate::remote::range_session::RangeSessionError;
 use crate::session_registry::{
-    ComicHandle, cancel_remote_io, close_session, forward_prefetch_window_from_i32,
-    load_page_to_file, network_class_from_i32, open_local_fd, open_local_path,
-    open_remote_range_session, page_count, planned_ranges_for_viewport, prefetch_remote_range,
-    reconcile_prefetch_plan_for_viewport, session_diagnostics, update_viewport,
+    ComicHandle, backward_prefetch_window_from_i32, cancel_remote_io, close_session,
+    forward_prefetch_window_from_i32, load_page_to_file, network_class_from_i32, open_local_fd,
+    open_local_path, open_remote_range_session, page_count, planned_ranges_for_viewport,
+    prefetch_remote_range, reconcile_prefetch_plan_for_viewport, session_diagnostics,
+    update_viewport,
 };
 
 /// Called by the JVM when the dynamic library is loaded.
@@ -87,7 +88,7 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "updateViewport",
-            "(JIII)I",
+            "(JIIII)I",
             native_update_viewport as *const () as *mut c_void,
         ),
         native_method(
@@ -97,13 +98,18 @@ fn register_natives(env: &mut JNIEnv<'_>) -> Result<()> {
         ),
         native_method(
             "plannedRanges",
-            "(JIII)Ljava/lang/String;",
+            "(JIIII)Ljava/lang/String;",
             native_planned_ranges as *const () as *mut c_void,
         ),
         native_method(
             "reconcilePrefetchPlanV1",
             "(JIIIJ[J[J)[J",
             native_reconcile_prefetch_plan_v1 as *const () as *mut c_void,
+        ),
+        native_method(
+            "reconcilePrefetchPlanV2",
+            "(JIIIIJ[J[J)[J",
+            native_reconcile_prefetch_plan_v2 as *const () as *mut c_void,
         ),
         native_method(
             "prefetchRemoteRangeV1",
@@ -171,6 +177,7 @@ extern "system" fn native_update_viewport(
     page_index: jint,
     network_class: jint,
     forward_prefetch_page_count: jint,
+    backward_prefetch_page_count: jint,
 ) -> jint {
     if page_index < 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -183,6 +190,7 @@ extern "system" fn native_update_viewport(
         page_index as usize,
         network_class_from_i32(network_class),
         forward_prefetch_window_from_i32(forward_prefetch_page_count),
+        backward_prefetch_window_from_i32(backward_prefetch_page_count),
     ) {
         Ok(()) => 0,
         Err(error) => {
@@ -255,6 +263,7 @@ extern "system" fn native_planned_ranges(
     page_index: jint,
     network_class: jint,
     forward_prefetch_page_count: jint,
+    backward_prefetch_page_count: jint,
 ) -> jstring {
     let message = if page_index < 0 {
         set_last_error(ComicCoreError::InvalidZip(
@@ -267,6 +276,7 @@ extern "system" fn native_planned_ranges(
             page_index as usize,
             network_class_from_i32(network_class),
             forward_prefetch_window_from_i32(forward_prefetch_page_count),
+            backward_prefetch_window_from_i32(backward_prefetch_page_count),
         ) {
             Ok(ranges) => encode_planned_ranges(PlannedRangesWire::Success(&ranges)),
             Err(error) => {
@@ -388,12 +398,61 @@ extern "system" fn native_cancel_remote_io_v1(
 }
 
 extern "system" fn native_reconcile_prefetch_plan_v1(
-    mut env: JNIEnv<'_>,
+    env: JNIEnv<'_>,
     _instance: JObject<'_>,
     handle: jlong,
     page_index: jint,
     network_class: jint,
     forward_prefetch_page_count: jint,
+    byte_budget: jlong,
+    active_ranges: JLongArray<'_>,
+    completed_ranges: JLongArray<'_>,
+) -> jlongArray {
+    reconcile_prefetch_plan_jni(
+        env,
+        handle,
+        page_index,
+        network_class,
+        forward_prefetch_page_count,
+        1,
+        byte_budget,
+        active_ranges,
+        completed_ranges,
+    )
+}
+
+extern "system" fn native_reconcile_prefetch_plan_v2(
+    env: JNIEnv<'_>,
+    _instance: JObject<'_>,
+    handle: jlong,
+    page_index: jint,
+    network_class: jint,
+    forward_prefetch_page_count: jint,
+    backward_prefetch_page_count: jint,
+    byte_budget: jlong,
+    active_ranges: JLongArray<'_>,
+    completed_ranges: JLongArray<'_>,
+) -> jlongArray {
+    reconcile_prefetch_plan_jni(
+        env,
+        handle,
+        page_index,
+        network_class,
+        forward_prefetch_page_count,
+        backward_prefetch_window_from_i32(backward_prefetch_page_count),
+        byte_budget,
+        active_ranges,
+        completed_ranges,
+    )
+}
+
+fn reconcile_prefetch_plan_jni(
+    mut env: JNIEnv<'_>,
+    handle: jlong,
+    page_index: jint,
+    network_class: jint,
+    forward_prefetch_page_count: jint,
+    backward_prefetch_window: usize,
     byte_budget: jlong,
     active_ranges: JLongArray<'_>,
     completed_ranges: JLongArray<'_>,
@@ -420,6 +479,7 @@ extern "system" fn native_reconcile_prefetch_plan_v1(
             page_index as usize,
             network_class_from_i32(network_class),
             forward_prefetch_window_from_i32(forward_prefetch_page_count),
+            backward_prefetch_window,
             active_ranges,
             completed_ranges,
             byte_budget as u64,

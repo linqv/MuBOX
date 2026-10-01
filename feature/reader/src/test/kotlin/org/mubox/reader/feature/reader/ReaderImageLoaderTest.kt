@@ -1,10 +1,12 @@
 package org.mubox.reader.feature.reader
 
+import android.graphics.Bitmap
 import androidx.compose.ui.unit.IntSize
 import androidx.test.core.app.ApplicationProvider
 import coil3.request.CachePolicy
 import org.mubox.reader.ui.MuBoxCopy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -88,7 +90,7 @@ class ReaderImageLoaderTest {
     }
 
     @Test
-    fun readerImageRequestsDoNotKeepDecodedPagesInCoilCaches() {
+    fun readerImageRequestsUseVersionedMemoryCacheButNoDiskCache() {
         val pageFile = temp.newFile("page-1.img")
 
         val request = readerImageRequest(
@@ -97,7 +99,60 @@ class ReaderImageLoaderTest {
         )
 
         assertEquals(pageFile, request.data)
-        assertEquals(CachePolicy.DISABLED, request.memoryCachePolicy)
+        assertEquals(CachePolicy.ENABLED, request.memoryCachePolicy)
         assertEquals(CachePolicy.DISABLED, request.diskCachePolicy)
+        assertEquals(readerPageFileVersion(pageFile).memoryCacheKey, request.memoryCacheKey)
+
+        pageFile.writeText("new content")
+        pageFile.setLastModified(pageFile.lastModified() + 2_000L)
+        val nextRequest = readerImageRequest(
+            context = ApplicationProvider.getApplicationContext(),
+            pageFile = pageFile,
+        )
+        assertNotEquals(request.memoryCacheKey, nextRequest.memoryCacheKey)
+    }
+
+    @Test
+    fun bitmapBoundsAreReadWithoutDecodingAndMissingFilesReturnNull() {
+        val pageFile = temp.newFile("page.png")
+        val bitmap = Bitmap.createBitmap(40, 90, Bitmap.Config.ARGB_8888)
+        pageFile.outputStream().use { output -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, output) }
+        bitmap.recycle()
+
+        assertEquals(IntSize(40, 90), readReaderPageDimensions(pageFile))
+        assertNull(readReaderPageDimensions(temp.root.resolve("missing.png")))
+    }
+
+    @Test
+    fun continuousPageHeightMatchesFullWidthAspectRatioBeforeImageDecode() {
+        assertEquals(
+            1_000,
+            readerContinuousPageHeightPx(
+                viewportSize = IntSize(500, 900),
+                imageSize = IntSize(1_000, 2_000),
+                landscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
+            ),
+        )
+        assertEquals(
+            900,
+            readerContinuousPageHeightPx(
+                viewportSize = IntSize(1_600, 900),
+                imageSize = IntSize(1_000, 800),
+                landscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
+            ),
+        )
+        assertNull(
+            readerContinuousPageHeightPx(
+                viewportSize = IntSize(500, 900),
+                imageSize = null,
+                landscapeScaleMode = ReaderLandscapeScaleMode.FIT_VIEWPORT,
+            ),
+        )
+    }
+
+    @Test
+    fun decodedDownsamplingKeepsGeometryButRotationChangesIt() {
+        assertEquals(false, readerImageAspectRatioDiffers(IntSize(1_000, 1_500), IntSize(333, 500)))
+        assertEquals(true, readerImageAspectRatioDiffers(IntSize(1_000, 1_500), IntSize(1_500, 1_000)))
     }
 }

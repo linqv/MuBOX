@@ -74,6 +74,7 @@ internal fun webDavConnectionFailureMessage(error: Throwable): String = when (er
 class WebDavViewModel(
     private val clientFactory: WebDavClientFactory,
     private val directoryComputationDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    directoryCacheClock: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : ViewModel() {
     var uiState by mutableStateOf(WebDavUiState())
         private set
@@ -83,9 +84,10 @@ class WebDavViewModel(
     private var connectedCredentials: WebDavConnectionCredentials? = null
     private var currentDirectoryItems: List<WebDavItem> = emptyList()
     private var directoryLoadJob: Job? = null
+    private var directoryLoadClient: WebDavClient? = null
     private var directoryLoadGeneration: Long = 0L
     private var requestedDirectoryPath: String = "/"
-    private val directoryCache = WebDavDirectoryMemoryCache()
+    private val directoryCache = WebDavDirectoryMemoryCache(nowMillis = directoryCacheClock)
     private var directoryPresentationJob: Job? = null
     private var directoryPresentationGeneration: Long = 0L
 
@@ -157,6 +159,7 @@ class WebDavViewModel(
         directoryLoadGeneration += 1
         directoryLoadJob?.cancel()
         directoryLoadJob = null
+        directoryLoadClient = null
         cancelDirectoryPresentation()
         client = null
         connectedAccountId = null
@@ -180,6 +183,7 @@ class WebDavViewModel(
         directoryLoadGeneration += 1
         directoryLoadJob?.cancel()
         directoryLoadJob = null
+        directoryLoadClient = null
         cancelDirectoryPresentation()
         client = null
         connectedAccountId = null
@@ -220,7 +224,6 @@ class WebDavViewModel(
         loadPath(
             path = path,
             keepConnectedStatus = shouldReuseClient,
-            replaceVisibleDirectory = true,
         )
     }
 
@@ -233,7 +236,6 @@ class WebDavViewModel(
         loadPath(
             path = path,
             keepConnectedStatus = true,
-            replaceVisibleDirectory = true,
         )
     }
 
@@ -311,16 +313,20 @@ class WebDavViewModel(
         path: String,
         keepConnectedStatus: Boolean = false,
         forceRefresh: Boolean = false,
-        replaceVisibleDirectory: Boolean = false,
     ) {
+        if (
+            !forceRefresh && directoryLoadJob?.isActive == true &&
+            requestedDirectoryPath == path && directoryLoadClient === client
+        ) return
         directoryLoadJob?.cancel()
         cancelDirectoryPresentation()
         val loadGeneration = ++directoryLoadGeneration
         requestedDirectoryPath = path
-        val cachedItems = if (forceRefresh) null else directoryCache.get(path)
+        val cachedDirectory = if (forceRefresh) null else directoryCache.get(path)
         val hadConnectedSession = client != null && connectedAccountId != null
         val activeClient = client ?: clientFactory(uiState.baseUrl.trim(), uiState.username, uiState.password)
         client = activeClient
+        directoryLoadClient = activeClient
         if (connectedAccountId == null) {
             connectedAccountId = accountId()
         }
@@ -330,7 +336,9 @@ class WebDavViewModel(
         } else {
             WEB_DAV_STATUS_CONNECTING
         }
-        if (replaceVisibleDirectory) {
+        if (!forceRefresh) {
+            // Navigate before waiting for the server; disposing the old rows also releases
+            // their thumbnail requests instead of keeping them active during the next listing.
             currentDirectoryItems = emptyList()
         }
         uiState = if (forceRefresh) {
@@ -342,8 +350,8 @@ class WebDavViewModel(
             )
         } else {
             uiState.copy(
-                currentPath = if (replaceVisibleDirectory) path else uiState.currentPath,
-                items = if (replaceVisibleDirectory) emptyList() else uiState.items,
+                currentPath = path,
+                items = emptyList(),
                 isLoading = true,
                 isRefreshing = false,
                 searchQuery = "",
@@ -352,14 +360,17 @@ class WebDavViewModel(
             )
         }
         directoryLoadJob = viewModelScope.launch {
-            try {
-                val listedItems = cachedItems ?: activeClient.list(path)
+            suspend fun presentDirectory(
+                listedItems: List<WebDavItem>,
+                fromCache: Boolean,
+                refreshing: Boolean,
+            ): Boolean {
                 var appliedPresentationGeneration = directoryPresentationGeneration
                 val query = uiState.searchQuery
                 val sortField = uiState.sortField
                 val sortDirection = uiState.sortDirection
                 val (items, initialVisibleItems) = withContext(directoryComputationDispatcher) {
-                    val browsableItems = if (cachedItems == null) {
+                    val browsableItems = if (!fromCache) {
                         filterBrowsableWebDavItems(listedItems)
                     } else {
                         listedItems
@@ -371,8 +382,8 @@ class WebDavViewModel(
                         sortDirection = sortDirection,
                     )
                 }
-                if (loadGeneration != directoryLoadGeneration) return@launch
-                if (cachedItems == null) {
+                if (loadGeneration != directoryLoadGeneration) return false
+                if (!fromCache) {
                     directoryCache.put(path, items)
                 }
                 currentDirectoryItems = items
@@ -390,16 +401,26 @@ class WebDavViewModel(
                             sortDirection = latestSortDirection,
                         )
                     }
-                    if (loadGeneration != directoryLoadGeneration) return@launch
+                    if (loadGeneration != directoryLoadGeneration) return false
                 }
                 uiState = uiState.copy(
                     currentPath = path,
                     items = visibleItems,
                     status = WEB_DAV_STATUS_CONNECTED,
                     isLoading = false,
-                    isRefreshing = false,
+                    isRefreshing = refreshing,
                     thumbnailRequestRevision = uiState.thumbnailRequestRevision + 1,
                 )
+                return true
+            }
+            try {
+                if (cachedDirectory != null) {
+                    if (!presentDirectory(cachedDirectory.items, fromCache = true, refreshing = cachedDirectory.isStale)) {
+                        return@launch
+                    }
+                    if (!cachedDirectory.isStale) return@launch
+                }
+                presentDirectory(activeClient.list(path), fromCache = false, refreshing = false)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {

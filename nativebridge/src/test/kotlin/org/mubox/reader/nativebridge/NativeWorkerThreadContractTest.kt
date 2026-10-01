@@ -152,6 +152,7 @@ class NativeWorkerThreadContractTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
         ): Int = 0
 
         override fun diagnostics(handle: Long): String = ""
@@ -161,6 +162,7 @@ class NativeWorkerThreadContractTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
         ): String = "v2;ok"
 
         override fun reconcilePrefetchPlanV1(
@@ -168,6 +170,17 @@ class NativeWorkerThreadContractTest {
             pageIndex: Int,
             networkClass: Int,
             forwardPrefetchPageCount: Int,
+            byteBudget: Long,
+            activeRanges: LongArray,
+            completedRanges: LongArray,
+        ): LongArray = longArrayOf(1, 0, 0, 0)
+
+        override fun reconcilePrefetchPlanV2(
+            handle: Long,
+            pageIndex: Int,
+            networkClass: Int,
+            forwardPrefetchPageCount: Int,
+            backwardPrefetchPageCount: Int,
             byteBudget: Long,
             activeRanges: LongArray,
             completedRanges: LongArray,

@@ -9,7 +9,7 @@ interface ComicReaderSession : Closeable {
     val forwardPrefetchPageCount: Int
         get() = 4
     val backwardPrefetchPageCount: Int
-        get() = 1
+        get() = 3
     val advancePrefetchOnPageDemand: Boolean
         get() = false
 

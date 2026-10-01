@@ -242,6 +242,8 @@ internal fun MuBoxApp(container: AppContainer) {
                                     readerActions::changeLandscapeOrientationLocked,
                                 onPageChanged = readerViewModel::selectPage,
                                 onPageDemanded = readerViewModel::reportPageDemand,
+                                onContinuousViewport = readerViewModel::reportContinuousViewport,
+                                onPageImageError = readerViewModel::reportPageFileFailed,
                                 onCancelLoading = readerActions::cancelLoading,
                                 onClose = readerActions::close,
                                 onAutoPageEnabledChange = readerActions::updateAutoPageEnabled,

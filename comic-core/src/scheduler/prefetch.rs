@@ -23,11 +23,11 @@ pub fn plan_prefetch(
     current_page: usize,
     network_class: NetworkClass,
 ) -> PrefetchPlan {
-    plan_prefetch_with_forward_window(
+    plan_prefetch_with_windows(
         page_count,
         current_page,
-        network_class,
         default_forward_window(network_class),
+        3,
     )
 }
 
@@ -37,11 +37,19 @@ pub fn plan_prefetch_with_forward_window(
     _network_class: NetworkClass,
     forward_window: usize,
 ) -> PrefetchPlan {
+    plan_prefetch_with_windows(page_count, current_page, forward_window, 1)
+}
+
+pub fn plan_prefetch_with_windows(
+    page_count: usize,
+    current_page: usize,
+    forward_window: usize,
+    backward_window: usize,
+) -> PrefetchPlan {
     if page_count == 0 || current_page >= page_count {
         return PrefetchPlan { tasks: Vec::new() };
     }
 
-    let backward_window = 1usize;
     let mut tasks = Vec::new();
     let mut seen = HashSet::new();
     push_unique(&mut tasks, &mut seen, current_page, 0);
@@ -51,20 +59,22 @@ pub fn plan_prefetch_with_forward_window(
     if current_page > 0 {
         push_unique(&mut tasks, &mut seen, current_page - 1, 2);
     }
-    for offset in 2..=forward_window {
-        let page = current_page + offset;
-        if page < page_count {
-            push_unique(&mut tasks, &mut seen, page, 3 + offset as u8);
+    // Nearby reverse pages must be scheduled before distant speculative forward
+    // work so a quick change of reading direction does not wait behind it.
+    for offset in 2..=backward_window.min(16) {
+        if current_page >= offset {
+            // Kotlin treats priority <= 2 as high priority. Keep the first
+            // three reverse pages in that lane while preserving their order.
+            let priority = 2 + offset.saturating_sub(3) as u8;
+            push_unique(&mut tasks, &mut seen, current_page - offset, priority);
         }
     }
-    for offset in 2..=backward_window {
-        if current_page >= offset {
-            push_unique(
-                &mut tasks,
-                &mut seen,
-                current_page - offset,
-                16 + offset as u8,
-            );
+    for offset in 2..=forward_window.min(16) {
+        let Some(page) = current_page.checked_add(offset) else {
+            break;
+        };
+        if page < page_count {
+            push_unique(&mut tasks, &mut seen, page, 3 + offset as u8);
         }
     }
     tasks.sort_by_key(|task| task.priority);
@@ -157,5 +167,40 @@ mod tests {
         assert!(indices.contains(&7));
         // +3 should NOT be included
         assert!(!indices.contains(&8));
+    }
+
+    #[test]
+    fn backward_window_includes_nearby_pages_before_distant_forward_work() {
+        let plan = plan_prefetch_with_windows(20, 8, 4, 3);
+        let pages = plan
+            .tasks
+            .iter()
+            .map(|task| task.page_index)
+            .collect::<Vec<_>>();
+        assert_eq!(vec![8, 9, 7, 6, 5, 10, 11, 12], pages);
+        assert!(plan.tasks.iter().take(5).all(|task| task.priority <= 2));
+        assert!(plan.tasks.iter().skip(5).all(|task| task.priority > 2));
+    }
+
+    #[test]
+    fn legacy_forward_only_entry_point_keeps_one_backward_page() {
+        let plan = plan_prefetch_with_forward_window(20, 8, NetworkClass::Wifi, 4);
+        let pages = plan
+            .tasks
+            .iter()
+            .map(|task| task.page_index)
+            .collect::<Vec<_>>();
+        assert_eq!(vec![8, 9, 7, 10, 11, 12], pages);
+    }
+
+    #[test]
+    fn backward_window_clamps_at_first_page_without_duplicates() {
+        let plan = plan_prefetch_with_windows(20, 1, 4, 3);
+        let pages = plan
+            .tasks
+            .iter()
+            .map(|task| task.page_index)
+            .collect::<Vec<_>>();
+        assert_eq!(vec![1, 2, 0, 3, 4, 5], pages);
     }
 }

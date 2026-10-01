@@ -57,9 +57,15 @@ internal class ReaderPrefetchCoordinator(
         pagePrefetch.prefetchNeighbors(pageIndex, reason)
     }
 
+    fun prefetchContinuousViewport(plan: ContinuousViewportPlan) {
+        pagePrefetch.prefetchContinuousViewport(plan)
+    }
+
     fun prioritizeSelectedPageLoad(pageIndex: Int) {
         pagePrefetch.prioritizeSelectedPageLoad(pageIndex)
     }
+
+    fun promoteVisiblePage(pageIndex: Int): Job? = pagePrefetch.promoteVisiblePage(pageIndex)
 
     fun updateViewport(
         session: ComicReaderSession,
@@ -92,6 +98,8 @@ private class ReaderPagePrefetchCoordinator(
     private val onPageFilesLoaded: (Map<Int, File>) -> Unit,
 ) {
     private val jobs = mutableMapOf<Int, Job>()
+    private val extractingPages = mutableMapOf<Int, Job>()
+    private var continuousRetentionWindow: Set<Int> = emptySet()
 
     fun prefetchNeighbors(pageIndex: Int, reason: String) {
         val activeReader = sessionCoordinator.activeSession ?: return
@@ -114,7 +122,8 @@ private class ReaderPagePrefetchCoordinator(
             forwardPages = forwardPrefetchPages,
             desiredWindow = desiredWindow,
             reason = reason,
-        )
+        ) + continuousRetentionWindow.takeIf { pageIndex in it }.orEmpty()
+        if (pageIndex !in continuousRetentionWindow) continuousRetentionWindow = emptySet()
         reconcile(
             selectedPage = pageIndex,
             retentionWindow = retentionWindow,
@@ -126,6 +135,32 @@ private class ReaderPagePrefetchCoordinator(
             forwardPages = forwardPrefetchPages,
             backwardPages = backwardPrefetchPages,
         )
+        schedulePages(missingNeighbors, pageIndex, activeSession, opening)
+    }
+
+    fun prefetchContinuousViewport(plan: ContinuousViewportPlan) {
+        val activeReader = sessionCoordinator.activeSession ?: return
+        continuousRetentionWindow = plan.retentionWindow
+        reconcile(
+            selectedPage = plan.focusPage,
+            retentionWindow = plan.retentionWindow,
+            reason = "continuous_viewport",
+        )
+        schedulePages(
+            pages = plan.desiredPages.filterNot { it in plan.visiblePages },
+            pageIndex = plan.focusPage,
+            activeSession = activeReader.session,
+            opening = activeReader.descriptor,
+        )
+    }
+
+    private fun schedulePages(
+        pages: List<Int>,
+        pageIndex: Int,
+        activeSession: ComicReaderSession,
+        opening: ReaderSessionDescriptor,
+    ) {
+        val missingNeighbors = pages
             .filterNot { pageFiles().containsKey(it) }
             .filterNot { jobs[it]?.isActive == true }
         if (missingNeighbors.isEmpty()) return
@@ -136,6 +171,7 @@ private class ReaderPagePrefetchCoordinator(
                 try {
                     delay(PREFETCH_START_DELAY_MS + order * PREFETCH_STAGGER_MS)
                     currentCoroutineContext().ensureActive()
+                    currentCoroutineContext()[Job]?.let { extractingPages[page] = it }
                     val files = pageLoadCoordinator.loadPages(
                         session = activeSession,
                         context = opening.pageLoadContext(),
@@ -158,6 +194,7 @@ private class ReaderPagePrefetchCoordinator(
                     diagnosticLog.error("prefetch_failed page=$page", error)
                 } finally {
                     val currentJob = currentCoroutineContext()[Job]
+                    if (extractingPages[page] === currentJob) extractingPages.remove(page)
                     if (currentJob != null && jobs[page] === currentJob) {
                         jobs.remove(page)
                     }
@@ -168,7 +205,9 @@ private class ReaderPagePrefetchCoordinator(
     }
 
     fun prioritizeSelectedPageLoad(pageIndex: Int) {
-        val activePages = jobs.keys.toList()
+        val activePages = jobs.keys.filter {
+            it != pageIndex && (pageIndex !in continuousRetentionWindow || it !in continuousRetentionWindow)
+        }
         if (activePages.isEmpty()) return
         cancel(
             reason = "selected_page_priority",
@@ -177,12 +216,21 @@ private class ReaderPagePrefetchCoordinator(
         )
     }
 
+    fun promoteVisiblePage(pageIndex: Int): Job? {
+        val job = jobs[pageIndex] ?: return null
+        if (job.isActive && extractingPages[pageIndex] === job) return job
+        jobs.remove(pageIndex)?.cancel(CancellationException("prefetch promoted to visible demand"))
+        return null
+    }
+
     fun cancelAll(selectedPage: Int) {
         cancel(
             reason = "stale_generation",
             pages = jobs.keys.toList(),
             selectedPage = selectedPage,
         )
+        continuousRetentionWindow = emptySet()
+        extractingPages.clear()
     }
 
     private fun reconcile(
