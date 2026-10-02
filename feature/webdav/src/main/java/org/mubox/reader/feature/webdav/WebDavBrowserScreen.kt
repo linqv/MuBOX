@@ -167,8 +167,7 @@ fun WebDavBrowserScreen(
                         modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                         border = BorderStroke(1.dp, if (uiState.isLoading) colors.border else colors.mediaAccent.copy(alpha = 0.65f)),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = colors.mediaAccent,
-                            disabledContentColor = colors.muted.copy(alpha = 0.55f),
+                            contentColor = colors.accentText,
                         ),
                     ) {
                         Text(MuBoxCopy.saveCurrentDirectory)
@@ -389,7 +388,7 @@ private fun WebDavTransferPanel(
                 TextButton(
                     onClick = onCancelDownload,
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.mediaAccent),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
                 ) {
                     Text("取消下载")
                 }

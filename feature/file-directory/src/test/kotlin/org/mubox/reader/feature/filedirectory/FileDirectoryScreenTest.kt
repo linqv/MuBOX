@@ -41,22 +41,22 @@ class FileDirectoryScreenTest {
 
     @Test
     fun screenColorsUseThemePaletteRoles() {
-        val highContrast = muBoxColorSchemeFor(AppColorPalette.HIGH_CONTRAST, darkTheme = false)
-        val colors = muBoxColorsFor(highContrast)
+        val lightScheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT)
+        val colors = muBoxColorsFor(lightScheme)
 
-        assertEquals(highContrast.background, colors.background)
-        assertEquals(highContrast.surfaceContainer, colors.panel)
-        assertEquals(highContrast.surfaceContainerHigh, colors.panelHigh)
-        assertEquals(highContrast.primary, colors.mediaAccent)
-        assertEquals(highContrast.onPrimary, colors.onMediaAccent)
-        assertEquals(highContrast.onBackground, colors.text)
-        assertEquals(highContrast.onSurfaceVariant, colors.muted)
+        assertEquals(lightScheme.background, colors.background)
+        assertEquals(lightScheme.surfaceContainer, colors.panel)
+        assertEquals(lightScheme.surfaceContainerHigh, colors.panelHigh)
+        assertEquals(lightScheme.primary, colors.mediaAccent)
+        assertEquals(lightScheme.onPrimary, colors.onMediaAccent)
+        assertEquals(lightScheme.onBackground, colors.text)
+        assertEquals(lightScheme.onSurfaceVariant, colors.muted)
     }
 
     @Test
     fun sourceRowIconColorsUseAccessibleContrast() {
-        val lightColors = muBoxColorsFor(muBoxColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = false))
-        val darkColors = muBoxColorsFor(muBoxColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = true))
+        val lightColors = muBoxColorsFor(muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT))
+        val darkColors = muBoxColorsFor(muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK))
 
         listOf(lightColors, darkColors).forEach { colors ->
             assertTrue(

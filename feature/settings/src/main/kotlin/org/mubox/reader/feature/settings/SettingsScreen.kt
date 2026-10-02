@@ -28,12 +28,15 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -107,7 +110,7 @@ internal fun rootSettingsGroupLayout(): List<SettingsGroupLayout> =
     listOf(
         SettingsGroupLayout(
             title = "通用",
-            rows = listOf("配色方案", "屏幕旋转锁定", "异常日志等级"),
+            rows = listOf("外观", "屏幕旋转锁定", "异常日志等级"),
         ),
         SettingsGroupLayout(
             title = "内容设置",
@@ -311,7 +314,7 @@ fun SettingsScreen(
             modifier = Modifier.padding(horizontal = MuBoxMetrics.PageHorizontalPaddingDp),
         ) {
             DropdownRow(
-                title = "配色方案",
+                title = "外观",
                 selected = settings.appearance.colorPalette,
                 options = AppColorPalette.entries,
                 label = AppColorPalette::settingsLabel,
@@ -519,12 +522,16 @@ fun SettingsScreen(
                         confirmingHistoryClear = false
                         onAction(SettingsAction.ClearHistory)
                     },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
                     Text("清空")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmingHistoryClear = false }) {
+                TextButton(
+                    onClick = { confirmingHistoryClear = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+                ) {
                     Text("取消")
                 }
             },
@@ -579,6 +586,7 @@ private fun HistorySettingsPage(
                     TextButton(
                         onClick = { selectedKeys = availableKeys },
                         enabled = selectedKeys.size < availableKeys.size,
+                        colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
                     ) {
                         Icon(Icons.Filled.SelectAll, contentDescription = null)
                         Text("全选")
@@ -656,7 +664,10 @@ private fun HistorySettingsPage(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDeleteKeys = null }) {
+                TextButton(
+                    onClick = { pendingDeleteKeys = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+                ) {
                     Text("取消")
                 }
             },
@@ -933,16 +944,8 @@ internal fun ReadingDirection.label(): String =
     }
 
 internal fun AppColorPalette.settingsLabel(): String = when (this) {
-    AppColorPalette.DEFAULT -> "跟随系统"
-    AppColorPalette.MU_BOX_LIGHT -> "MuBOX 浅色"
-    AppColorPalette.MU_BOX_DARK -> "MuBOX 深色"
-    AppColorPalette.ADWAITA_LIGHT -> "Adwaita 浅色"
-    AppColorPalette.ADWAITA_BLUE_GRAY -> "Adwaita 蓝灰"
-    AppColorPalette.ADWAITA_PURPLE -> "Adwaita 紫色"
-    AppColorPalette.CINEMA_DARK -> "影院深色（旧）"
-    AppColorPalette.SEPIA -> "纸张护眼"
-    AppColorPalette.NIGHT -> "夜间深色"
-    AppColorPalette.HIGH_CONTRAST -> "高对比"
+    AppColorPalette.MU_BOX_LIGHT -> "浅色"
+    AppColorPalette.MU_BOX_DARK -> "深色"
 }
 
 private fun VideoForwardPrefetchMode.label(): String =
@@ -1002,6 +1005,7 @@ private fun CacheActionRow(
         OutlinedButton(
             onClick = onClear,
             enabled = enabled,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentText),
         ) {
             Text("清理")
         }
@@ -1017,6 +1021,7 @@ private fun <T> ChoiceRow(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1040,6 +1045,7 @@ private fun <T> ChoiceRow(
                     RadioButton(
                         selected = option == selected,
                         onClick = { onSelected(option) },
+                        colors = RadioButtonDefaults.colors(selectedColor = colors.accentText),
                     )
                     Text(
                         text = label(option),
@@ -1061,6 +1067,7 @@ private fun <T> DropdownRow(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     var expanded by remember { mutableStateOf(false) }
 
     Row(
@@ -1078,7 +1085,10 @@ private fun <T> DropdownRow(
             fontWeight = FontWeight.Medium,
         )
         Box {
-            OutlinedButton(onClick = { expanded = true }) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentText),
+            ) {
                 Text(label(selected))
             }
             DropdownMenu(
@@ -1105,6 +1115,7 @@ private fun AutoPageSpeedRow(
     onSpeedChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val coercedSpeed = coerceAutoPageSpeed(speedMillis / 1_000)
 
     Column(
@@ -1136,6 +1147,10 @@ private fun AutoPageSpeedRow(
             },
             valueRange = MinAutoPageSpeedSeconds.toFloat()..MaxAutoPageSpeedSeconds.toFloat(),
             steps = MaxAutoPageSpeedSeconds - MinAutoPageSpeedSeconds - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accentText,
+                activeTrackColor = colors.accentText,
+            ),
         )
     }
 }
@@ -1146,6 +1161,7 @@ private fun DiskCacheLimitRow(
     onLimitChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val coercedLimit = coerceDiskCacheLimitMb(limitMb)
     var expanded by remember { mutableStateOf(false) }
 
@@ -1178,7 +1194,10 @@ private fun DiskCacheLimitRow(
                 )
             }
             Box {
-                OutlinedButton(onClick = { expanded = true }) {
+                OutlinedButton(
+                    onClick = { expanded = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentText),
+                ) {
                     Text(diskCacheLimitLabel(coercedLimit))
                 }
                 DropdownMenu(

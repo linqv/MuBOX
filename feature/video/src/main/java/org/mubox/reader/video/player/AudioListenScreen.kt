@@ -47,6 +47,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -260,7 +261,7 @@ private fun ListenMediaArtwork(
             .semantics { contentDescription = LISTEN_COVER_CONTENT_DESCRIPTION },
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.panel,
-        contentColor = colors.mediaAccent,
+        contentColor = colors.muted,
         border = BorderStroke(1.dp, colors.border),
     ) {
         if (artworkPath != null) {
@@ -301,6 +302,7 @@ private fun ListenSeekSection(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val durationMillis = progress.durationMillis.coerceAtLeast(0L)
     val progressFraction = if (durationMillis > 0L) {
         (progress.positionMillis.toFloat() / durationMillis).coerceIn(0f, 1f)
@@ -310,6 +312,10 @@ private fun ListenSeekSection(
     Column(modifier = modifier) {
         Slider(
             value = progressFraction,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.accentText,
+                activeTrackColor = colors.accentText,
+            ),
             onValueChange = { fraction ->
                 if (durationMillis > 0L) {
                     onSeek((durationMillis * fraction).roundToLong())
@@ -461,7 +467,7 @@ private fun ListenMenuIconButton(
             contentDescription = contentDescription,
             tint = when {
                 !enabled -> colors.textDisabled
-                selected -> colors.mediaAccent
+                selected -> colors.accentText
                 else -> colors.text
             },
             modifier = Modifier.size(LISTEN_MENU_ICON_SIZE_DP.dp),

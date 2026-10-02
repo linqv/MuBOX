@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.ImageSearch
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import org.mubox.reader.core.model.history.WatchHistoryEntry
@@ -72,10 +72,9 @@ import java.io.File
 private const val HomePreviewItemCount = 10
 private const val HomeExpandedColumnCount = 3
 // 面板内卡片列的内边距与卡片间距：折叠预览行与展开网格共用同一套几何，
-// 保证两种状态下卡片大小一致（展开不被压缩）；内边距刻意缩小，
-// 让容器恰好完整放下 columns 张卡片。
-private val HomeGridHorizontalPadding = 4.dp
-private val HomeCardSpacing = 6.dp
+// 保证两种状态下卡片大小一致（展开不被压缩）。
+private val HomeGridHorizontalPadding = 8.dp
+private val HomeCardSpacing = 8.dp
 
 private val HomeFullSpan: LazyGridItemSpanScope.() -> GridItemSpan = {
     GridItemSpan(maxLineSpan)
@@ -144,8 +143,9 @@ internal fun HomeRootContent(
             columns = GridCells.Fixed(HomeExpandedColumnCount),
             state = gridState,
             modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(HomeCardSpacing),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             item(span = HomeFullSpan, key = "topbar") {
                 HomeTopBar(
@@ -256,40 +256,47 @@ private fun HomeTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .padding(start = 18.dp, end = 8.dp),
+            .heightIn(min = 64.dp)
+            .padding(
+                horizontal = MuBoxMetrics.PageHorizontalPaddingDp + HomeGridHorizontalPadding,
+                vertical = 8.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "MuBOX",
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.headlineSmall,
             color = colors.text,
             maxLines = 1,
         )
         TextButton(
             onClick = onExtractThumbnails,
             enabled = !isExtractingThumbnails,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = colors.accentText,
+                disabledContentColor = colors.accentText.copy(alpha = 0.5f),
+            ),
         ) {
             if (isExtractingThumbnails) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 1.5.dp,
                     color = colors.accentText,
                 )
             } else {
                 Icon(
                     imageVector = Icons.Outlined.ImageSearch,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.accentText,
                 )
             }
             Spacer(modifier = Modifier.size(6.dp))
             Text(
                 text = if (isExtractingThumbnails) "正在提取" else "一键提取缩略图",
                 style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
         }
@@ -690,7 +697,7 @@ private fun HomePreviewCardRow(
     }
 }
 
-// 展开态仍收在原面板矩形框内：整组卡片在 MuBoxPanelSection 面板内部按列等宽排布，
+// 展开态沿用预览行的编辑式分区：整组卡片按列等宽排布，
 // 末行不足 columns 张时用占位补齐，保证各行卡片宽度一致。
 @Composable
 private fun <T> HomeExpandedCardGrid(
@@ -733,7 +740,7 @@ private fun HomeSectionEmpty(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = MuBoxMetrics.MinTouchTargetDp)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -744,7 +751,10 @@ private fun HomeSectionEmpty(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        TextButton(onClick = onAction) {
+        TextButton(
+            onClick = onAction,
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+        ) {
             Text(text = actionText, maxLines = 1)
         }
     }

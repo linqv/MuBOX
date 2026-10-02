@@ -25,19 +25,11 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.Settings
+import org.mubox.reader.ui.icons.MuBoxEditorialIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -286,7 +278,7 @@ internal fun appShellNavigationBarContainerColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).panel
 
 internal fun appShellNavigationBarIndicatorColor(colorScheme: ColorScheme) =
-    muBoxColorsFor(colorScheme).panelHigh
+    muBoxColorsFor(colorScheme).accentSoft
 
 internal fun selectionNavigationBarContainerColor(colorScheme: ColorScheme) =
     muBoxColorsFor(colorScheme).panelHigh
@@ -307,18 +299,18 @@ internal enum class AppTab {
 
     val iconVector: ImageVector
         get() = when (this) {
-            HOME -> Icons.Filled.Home
-            SOURCES -> Icons.Filled.Layers
-            DOWNLOADS -> Icons.Filled.FileDownload
-            SETTINGS -> Icons.Filled.Settings
+            HOME -> MuBoxEditorialIcons.HomeFilled
+            SOURCES -> MuBoxEditorialIcons.SourcesFilled
+            DOWNLOADS -> MuBoxEditorialIcons.DownloadsFilled
+            SETTINGS -> MuBoxEditorialIcons.SettingsFilled
         }
 
     val outlinedIconVector: ImageVector
         get() = when (this) {
-            HOME -> Icons.Outlined.Home
-            SOURCES -> Icons.Outlined.Layers
-            DOWNLOADS -> Icons.Outlined.FileDownload
-            SETTINGS -> Icons.Outlined.Settings
+            HOME -> MuBoxEditorialIcons.HomeOutlined
+            SOURCES -> MuBoxEditorialIcons.SourcesOutlined
+            DOWNLOADS -> MuBoxEditorialIcons.DownloadsOutlined
+            SETTINGS -> MuBoxEditorialIcons.SettingsOutlined
         }
 
     val navDestination: MuBoxNavDestination
@@ -465,10 +457,10 @@ internal fun SelectionNavigationBar(actions: List<SelectionAction>) {
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = muBoxColors.mediaAccent,
-                    selectedTextColor = muBoxColors.mediaAccent,
+                    selectedIconColor = muBoxColors.accentText,
+                    selectedTextColor = muBoxColors.accentText,
                     indicatorColor = muBoxColors.accentSoft,
-                    unselectedIconColor = muBoxColors.accentText,
+                    unselectedIconColor = muBoxColors.muted,
                     unselectedTextColor = muBoxColors.muted,
                     disabledIconColor = muBoxColors.muted.copy(alpha = 0.38f),
                     disabledTextColor = muBoxColors.muted.copy(alpha = 0.38f),
@@ -495,13 +487,13 @@ internal fun DataFolderGateScreen(
             modifier = Modifier
                 .padding(bottom = 24.dp)
                 .size(72.dp)
-                .background(colors.accentSoft, androidx.compose.foundation.shape.RoundedCornerShape(22.dp)),
+                .background(colors.surfaceSecondary, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Filled.Folder,
                 contentDescription = null,
-                tint = colors.onAccentSoft,
+                tint = colors.muted,
                 modifier = Modifier.size(36.dp),
             )
         }

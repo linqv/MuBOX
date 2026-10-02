@@ -2,6 +2,7 @@ package org.mubox.reader.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import org.mubox.reader.core.model.settings.AppColorPalette
 import org.mubox.reader.core.model.media.MediaKind
@@ -11,44 +12,24 @@ import org.junit.Test
 
 class MuBoxDesignSystemTest {
     @Test
-    fun defaultPaletteFollowsSystemDarkAndLight() {
-        val dark = muBoxColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = true)
-        val light = muBoxColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = false)
+    fun lightAndDarkUseAnthropicBrandFoundation() {
+        val light = muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT)
+        val dark = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK)
 
-        assertEquals(Color(0xFF000626), dark.background)
-        assertEquals(Color(0xFF7567FF), dark.primary)
-        assertEquals(Color(0xFFF5F7FB), light.background)
-        assertEquals(Color(0xFF176BDE), light.primary)
-    }
-
-    @Test
-    fun explicitMuBoxPalettesIgnoreSystemFlag() {
-        assertEquals(
-            Color(0xFFF5F7FB),
-            muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT, darkTheme = true).background,
-        )
-        assertEquals(
-            Color(0xFF000626),
-            muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = false).background,
-        )
-    }
-
-    @Test
-    fun legacyPalettesKeepTheirExistingSchemes() {
-        val cinemaDark = muBoxColorSchemeFor(AppColorPalette.CINEMA_DARK, darkTheme = false)
-        val adwaitaLight = muBoxColorSchemeFor(AppColorPalette.ADWAITA_LIGHT, darkTheme = true)
-        val sepia = muBoxColorSchemeFor(AppColorPalette.SEPIA, darkTheme = true)
-        val highContrast = muBoxColorSchemeFor(AppColorPalette.HIGH_CONTRAST, darkTheme = true)
-
-        assertEquals(Color(0xFF050A14), cinemaDark.background)
-        assertEquals(Color.White, adwaitaLight.surface)
-        assertEquals(Color(0xFFFAF3E0), sepia.background)
-        assertEquals(Color.Black, highContrast.onSurface)
+        assertEquals(Color(0xFFFAF9F5), light.background)
+        assertEquals(Color(0xFF141413), light.onBackground)
+        assertEquals(Color(0xFF141413), dark.background)
+        assertEquals(Color(0xFFFAF9F5), dark.onBackground)
+        assertEquals(Color(0xFFD97757), light.primary)
+        assertEquals(light.primary, dark.primary)
+        assertEquals(Color(0xFF141413), light.onPrimary)
+        assertEquals(light.onPrimary, dark.onPrimary)
+        assertEquals(Color(0xFFE8E6DC), light.surfaceContainerHighest)
     }
 
     @Test
     fun muBoxLightDerivesFoundationColorRoles() {
-        val colorScheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT, darkTheme = false)
+        val colorScheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT)
         val colors = muBoxColorsFor(colorScheme)
 
         assertEquals(colorScheme.background, colors.background)
@@ -57,17 +38,17 @@ class MuBoxDesignSystemTest {
         assertEquals(colorScheme.primary, colors.mediaAccent)
         assertEquals(colorScheme.secondary, colors.comicAccent)
         assertEquals(colorScheme.tertiary, colors.statusAccent)
-        assertEquals(Color(0xFF287A4B), colors.success)
+        assertEquals(Color(0xFF546641), colors.success)
 
         assertTrue("light background should stay bright", colors.background.luminance() > 0.85f)
-        assertTrue("panel should layer above background", colors.panel.luminance() > colors.background.luminance())
+        assertTrue("panel should be warm tinted container", colors.panel.luminance() < colors.background.luminance())
         assertTrue("panelHigh should layer below panel", colors.panelHigh.luminance() < colors.panel.luminance())
         assertTrue("text should stay dark on light surfaces", colors.text.luminance() < 0.20f)
     }
 
     @Test
     fun muBoxDarkDerivesFoundationColorRoles() {
-        val colorScheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = true)
+        val colorScheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK)
         val colors = muBoxColorsFor(colorScheme)
 
         assertTrue(colors.isMuBoxDark)
@@ -78,67 +59,75 @@ class MuBoxDesignSystemTest {
         assertEquals(colorScheme.primary, colors.mediaAccent)
         assertEquals(colorScheme.secondary, colors.comicAccent)
         assertEquals(colorScheme.tertiary, colors.statusAccent)
-        assertEquals(Color(0xFF44D7A8), colors.success)
+        assertEquals(Color(0xFF94A97C), colors.success)
 
         assertTrue("background should stay dark", colors.background.luminance() < 0.05f)
         assertTrue("panel should layer above background", colors.panel.luminance() > colors.background.luminance())
         assertTrue("panelHigh should layer above panel", colors.panelHigh.luminance() > colors.panel.luminance())
-        assertTrue("text should be readable on dark surfaces", colors.text.luminance() > 0.85f)
+        assertTrue("text should be readable on dark surfaces", colors.text.luminance() > 0.80f)
     }
 
     @Test
-    fun muBoxDarkUsesReferencePaletteWithoutAdHocDarkColors() {
-        val scheme = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = false)
-        val colors = muBoxColorsFor(scheme)
+    fun mediaControlsStayReadableAcrossBothThemes() {
+        AppColorPalette.entries.forEach { palette ->
+            val colors = muBoxColorsFor(muBoxColorSchemeFor(palette))
 
-        assertEquals(Color(0xFF000217), colors.backgroundDeep)
-        assertEquals(Color(0xFF000626), colors.background)
-        assertEquals(Color(0xFF030D2B), colors.backgroundSecondary)
-        assertEquals(Color(0xFF081037), colors.backgroundElevated)
-        assertEquals(Color(0xFF0B1236), colors.panel)
-        assertEquals(Color(0xFF101B41), colors.surfaceSecondary)
-        assertEquals(Color(0xFF192147), colors.surfaceHover)
-        assertEquals(Color(0xFF202B58), colors.surfaceActive)
-        assertEquals(Color(0xFF1E2B52), colors.border)
-        assertEquals(Color(0xFF33436F), colors.borderDefault)
-        assertEquals(Color(0xFF8178FF), colors.selectedBorder)
-        assertEquals(Color(0xFF7567FF), colors.mediaAccent)
-        assertEquals(Color(0xFF000217), colors.onMediaAccent)
-        assertEquals(Color(0xFF9C5CFF), colors.comicAccent)
-        assertEquals(Color(0xFF4D8DFF), colors.accentBlue)
-        assertEquals(Color(0xFF58D6FF), colors.accentCyan)
-        assertEquals(Color(0xFFF4F5FF), colors.text)
-        assertEquals(Color(0xFFADAFC4), colors.muted)
-        assertEquals(Color(0xFF79769A), colors.textTertiary)
-        assertEquals(Color(0xFF59517E), colors.textDisabled)
-        assertEquals(Color(0xFF44D7A8), colors.success)
-        assertEquals(Color(0xFFF5B95E), colors.warning)
-        assertEquals(Color(0xFFFF6685), scheme.error)
-        assertEquals(Color(0xFF58A6FF), colors.info)
-        assertEquals(Color(0xB8000217), colors.overlay)
-        assertEquals(Color(0xD0150C32), colors.glassSurface)
-        assertEquals(Color(0x5258D6FF), colors.glassBorder)
-        assertTrue(
-            "glass surface should lean violet",
-            colors.glassSurface.blue > colors.glassSurface.green &&
-                colors.glassSurface.red > colors.glassSurface.green,
-        )
+            assertEquals(MuBoxDarkTokens.SurfacePrimary, colors.playerSheet)
+            assertEquals(MuBoxDarkTokens.SurfacePrimary, colors.playerHud)
+            assertTrue("media sheets stay dark", colors.playerSheet.luminance() < 0.05f)
+            assertTrue("media controls meet AA", contrastRatio(colors.playerOsdText, colors.playerSheet) >= 4.5f)
+            assertTrue("media chips meet AA", contrastRatio(colors.playerOsdText, colors.playerChip) >= 4.5f)
+            assertTrue("selected media chips meet AA", contrastRatio(colors.onMediaAccent, colors.playerChipSelected) >= 4.5f)
+        }
+    }
+
+    @Test
+    fun themesUseSolidSurfacesWithoutDecorativeGlows() {
+        AppColorPalette.entries.forEach { palette ->
+            val colors = muBoxColorsFor(muBoxColorSchemeFor(palette))
+
+            assertEquals(1f, colors.glassSurface.alpha, 0f)
+            assertEquals(colors.glassStart, colors.glassEnd)
+            assertEquals(Color.Transparent, colors.pageAmbientGlow)
+            assertEquals(Color.Transparent, colors.neonGlow)
+            assertEquals(Color.Transparent, colors.neonAmbient)
+        }
     }
 
     @Test
     fun muBoxLightAndDarkMeetBodyContrastAA() {
-        listOf(
-            muBoxColorSchemeFor(AppColorPalette.MU_BOX_LIGHT, darkTheme = false),
-            muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = true),
-        ).forEach { scheme ->
+        AppColorPalette.entries.forEach { palette ->
+            val scheme = muBoxColorSchemeFor(palette)
             val colors = muBoxColorsFor(scheme)
+            val surfaces = listOf(colors.background, colors.panel, colors.panelHigh, colors.surfaceActive)
 
-            assertTrue("body text on background should meet AA", contrastRatio(colors.text, colors.background) >= 4.5f)
-            assertTrue("secondary text on panel should meet AA", contrastRatio(colors.muted, colors.panel) >= 4.5f)
+            surfaces.forEach { surface ->
+                assertTrue("body text on $palette surfaces should meet AA", contrastRatio(colors.text, surface) >= 4.5f)
+                assertTrue("secondary text on $palette surfaces should meet AA", contrastRatio(colors.muted, surface) >= 4.5f)
+                assertTrue("tertiary text on $palette surfaces should meet AA", contrastRatio(colors.textTertiary, surface) >= 4.5f)
+                assertTrue("small accent text on $palette surfaces should meet AA", contrastRatio(colors.accentText, surface) >= 4.5f)
+                assertTrue("selected outlines on $palette surfaces should meet graphical contrast", contrastRatio(colors.selectedBorder, surface) >= 3f)
+                assertTrue("success text on $palette surfaces should meet AA", contrastRatio(colors.success, surface) >= 4.5f)
+                assertTrue("info text on $palette surfaces should meet AA", contrastRatio(colors.info, surface) >= 4.5f)
+                assertTrue("warning text on $palette surfaces should meet AA", contrastRatio(colors.warning, surface) >= 4.5f)
+            }
             assertTrue("soft accent pair should meet AA", contrastRatio(colors.onAccentSoft, colors.accentSoft) >= 4.5f)
-            assertTrue("small accent text should meet AA", contrastRatio(colors.accentText, colors.panel) >= 4.5f)
             assertTrue("primary action text should meet AA", contrastRatio(colors.onMediaAccent, colors.mediaAccent) >= 4.5f)
+            assertTrue("poster chip text should meet AA", contrastRatio(colors.onPosterChip, colors.posterChip) >= 4.5f)
+            assertTrue("error text should meet AA", contrastRatio(colors.errorText, colors.errorSurface) >= 4.5f)
+            assertTrue("secondary action text should meet AA", contrastRatio(scheme.onSecondary, scheme.secondary) >= 4.5f)
+            assertTrue("tertiary action text should meet AA", contrastRatio(scheme.onTertiary, scheme.tertiary) >= 4.5f)
         }
+    }
+
+    @Test
+    fun editorialTypographyKeepsReadableBodyText() {
+        val typography = muBoxTypography()
+
+        assertEquals(FontFamily.Serif, typography.headlineLarge.fontFamily)
+        assertEquals(FontFamily.SansSerif, typography.bodyLarge.fontFamily)
+        assertEquals(FontFamily.SansSerif, typography.labelLarge.fontFamily)
+        assertTrue("body copy needs comfortable line spacing", typography.bodyLarge.lineHeight.value >= typography.bodyLarge.fontSize.value * 1.4f)
     }
 
     @Test
@@ -164,21 +153,22 @@ class MuBoxDesignSystemTest {
 
     @Test
     fun metricsExposeFoundationSizingTokens() {
-        assertEquals(8.dp, MuBoxMetrics.PageHorizontalPaddingDp)
+        assertEquals(12.dp, MuBoxMetrics.PageHorizontalPaddingDp)
         assertEquals(48.dp, MuBoxMetrics.MinTouchTargetDp)
-        assertEquals(10.dp, MuBoxMetrics.DenseRowCornerDp)
-        assertEquals(16.dp, MuBoxMetrics.PlayerPanelCornerDp)
+        assertEquals(6.dp, MuBoxMetrics.DenseRowCornerDp)
+        assertEquals(8.dp, MuBoxMetrics.PanelCornerDp)
+        assertEquals(8.dp, MuBoxMetrics.PlayerPanelCornerDp)
         assertEquals(64.dp, MuBoxMetrics.PlayerCenterControlVisualDp)
         assertEquals(80.dp, MuBoxMetrics.PlayerCenterControlTouchDp)
     }
 
     @Test
     fun metricsExposeRadiusScaleTokens() {
-        assertEquals(6.dp, MuBoxMetrics.RadiusXsDp)
-        assertEquals(10.dp, MuBoxMetrics.RadiusSDp)
-        assertEquals(12.dp, MuBoxMetrics.RadiusMDp)
-        assertEquals(16.dp, MuBoxMetrics.RadiusLDp)
-        assertEquals(20.dp, MuBoxMetrics.RadiusXlDp)
+        assertEquals(4.dp, MuBoxMetrics.RadiusXsDp)
+        assertEquals(6.dp, MuBoxMetrics.RadiusSDp)
+        assertEquals(8.dp, MuBoxMetrics.RadiusMDp)
+        assertEquals(10.dp, MuBoxMetrics.RadiusLDp)
+        assertEquals(12.dp, MuBoxMetrics.RadiusXlDp)
     }
 
     private fun contrastRatio(foreground: Color, background: Color): Float {

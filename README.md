@@ -24,7 +24,7 @@ Android 包名：`org.mubox.reader`
 - 下载记录管理与缓存清理
 
 ### 其他
-- Material You 动态主题（Jetpack Compose Material 3）
+- Anthropic 风格浅色 / 深色界面：暖白与炭黑底色、陶土橙强调色（Jetpack Compose Material 3），新安装默认浅色；旧配色设置自动映射至对应的浅色或深色模式
 - 阅读方向、缩放模式等个性化设置
 - 最低支持 Android 8.0（API 26）
 

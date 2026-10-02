@@ -50,7 +50,7 @@ class SettingsActionHandlerTest {
             readerPinchZoomEnabled = true,
         )
         val appearance = AppearanceSettings(
-            colorPalette = AppColorPalette.SEPIA,
+            colorPalette = AppColorPalette.MU_BOX_LIGHT,
             screenRotationLockEnabled = true,
             libraryCoversEnabled = false,
         )

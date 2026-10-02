@@ -42,6 +42,7 @@ class AppSettingsStoreTest {
 
         val settings = store.settings.first()
 
+        assertEquals(AppColorPalette.MU_BOX_LIGHT, settings.appearance.colorPalette)
         assertTrue(settings.video.videoSeekOptimizationEnabled)
         assertEquals(VideoForwardPrefetchMode.STANDARD, settings.video.videoForwardPrefetchMode)
         assertFalse(settings.video.videoPlayerProxyDebugInfoEnabled)
@@ -169,7 +170,7 @@ class AppSettingsStoreTest {
         )
         dataStore.edit { preferences ->
             preferences[stringPreferencesKey("reading_direction")] = ReadingDirection.RIGHT_TO_LEFT.name
-            preferences[stringPreferencesKey("color_palette")] = AppColorPalette.SEPIA.name
+            preferences[stringPreferencesKey("color_palette")] = "SEPIA"
             preferences[intPreferencesKey("disk_cache_limit_gb")] = 2048
             preferences[booleanPreferencesKey("video_resume_enabled")] = false
             preferences[intPreferencesKey("history_retention_days")] = 180
@@ -178,10 +179,95 @@ class AppSettingsStoreTest {
         val settings = AppSettingsStore(dataStore).settings.first()
 
         assertEquals(ReadingDirection.RIGHT_TO_LEFT, settings.reader.readingDirection)
-        assertEquals(AppColorPalette.SEPIA, settings.appearance.colorPalette)
+        assertEquals(AppColorPalette.MU_BOX_LIGHT, settings.appearance.colorPalette)
         assertEquals(2048, settings.storage.diskCacheLimitMb)
         assertFalse(settings.video.videoResumeEnabled)
         assertEquals(180, settings.history.historyRetentionDays)
+    }
+
+    @Test
+    fun legacyPalettesMigrateWithoutResettingOtherSettings() = runTest {
+        val palettes = mapOf(
+            "DEFAULT" to AppColorPalette.MU_BOX_LIGHT,
+            "ADWAITA_LIGHT" to AppColorPalette.MU_BOX_LIGHT,
+            "SEPIA" to AppColorPalette.MU_BOX_LIGHT,
+            "HIGH_CONTRAST" to AppColorPalette.MU_BOX_LIGHT,
+            "ADWAITA_BLUE_GRAY" to AppColorPalette.MU_BOX_DARK,
+            "ADWAITA_PURPLE" to AppColorPalette.MU_BOX_DARK,
+            "CINEMA_DARK" to AppColorPalette.MU_BOX_DARK,
+            "NIGHT" to AppColorPalette.MU_BOX_DARK,
+        )
+        palettes.forEach { (name, expected) ->
+            val preferencesFile = temporaryFolder.newFile("palette_$name.preferences_pb")
+            val dataStore = PreferenceDataStoreFactory.create(
+                scope = backgroundScope,
+                produceFile = { preferencesFile },
+            )
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("color_palette")] = name
+                preferences[booleanPreferencesKey("screen_rotation_lock_enabled")] = true
+                preferences[booleanPreferencesKey("library_covers_enabled")] = false
+                preferences[booleanPreferencesKey("reader_pinch_zoom_enabled")] = true
+                preferences[booleanPreferencesKey("video_resume_enabled")] = false
+            }
+            val store = AppSettingsStore(dataStore)
+            val settings = store.settings.first()
+
+            assertEquals(name, expected, settings.appearance.colorPalette)
+            assertTrue(settings.appearance.screenRotationLockEnabled)
+            assertFalse(settings.appearance.libraryCoversEnabled)
+            assertTrue(settings.reader.readerPinchZoomEnabled)
+            assertFalse(settings.video.videoResumeEnabled)
+
+            store.updateAppearanceSettings { it.copy(libraryCoversEnabled = true) }
+
+            assertEquals(expected.name, dataStore.data.first()[stringPreferencesKey("color_palette")])
+            val updated = store.settings.first()
+            assertTrue(updated.appearance.screenRotationLockEnabled)
+            assertTrue(updated.appearance.libraryCoversEnabled)
+            assertEquals(settings.reader, updated.reader)
+            assertEquals(settings.video, updated.video)
+        }
+    }
+
+    @Test
+    fun lightAndDarkChoicesArePersistedAndReadBack() = runTest {
+        val preferencesFile = temporaryFolder.newFile("appearance_choices.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        val store = AppSettingsStore(dataStore)
+
+        AppColorPalette.entries.forEach { palette ->
+            store.updateAppearanceSettings { it.copy(colorPalette = palette) }
+
+            assertEquals(palette.name, dataStore.data.first()[stringPreferencesKey("color_palette")])
+            assertEquals(palette, store.settings.first().appearance.colorPalette)
+        }
+    }
+
+    @Test
+    fun unknownPaletteDefaultsToLightWithoutResettingAppearance() = runTest {
+        val preferencesFile = temporaryFolder.newFile("unknown_palette.preferences_pb")
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { preferencesFile },
+        )
+        dataStore.edit { preferences ->
+            preferences[stringPreferencesKey("color_palette")] = "REMOVED_PALETTE"
+            preferences[booleanPreferencesKey("screen_rotation_lock_enabled")] = true
+            preferences[booleanPreferencesKey("library_covers_enabled")] = false
+        }
+
+        assertEquals(
+            AppearanceSettings(
+                colorPalette = AppColorPalette.MU_BOX_LIGHT,
+                screenRotationLockEnabled = true,
+                libraryCoversEnabled = false,
+            ),
+            AppSettingsStore(dataStore).settings.first().appearance,
+        )
     }
 
     @Test
@@ -194,7 +280,7 @@ class AppSettingsStoreTest {
         val store = AppSettingsStore(dataStore)
 
         store.updateReaderSettings { ReaderSettings(readingDirection = ReadingDirection.VERTICAL) }
-        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.NIGHT) }
+        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.MU_BOX_DARK) }
         store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 3072) }
         store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
         store.updateHistorySettings { HistorySettings(historyMaxRecords = 500) }
@@ -205,7 +291,7 @@ class AppSettingsStoreTest {
             ReadingDirection.VERTICAL.name,
             preferences[stringPreferencesKey("reading_direction")],
         )
-        assertEquals(AppColorPalette.NIGHT.name, preferences[stringPreferencesKey("color_palette")])
+        assertEquals(AppColorPalette.MU_BOX_DARK.name, preferences[stringPreferencesKey("color_palette")])
         assertEquals(3072, preferences[intPreferencesKey("disk_cache_limit_gb")])
         assertEquals(false, preferences[booleanPreferencesKey("video_resume_enabled")])
         assertEquals(500, preferences[intPreferencesKey("history_max_records")])
@@ -297,7 +383,7 @@ class AppSettingsStoreTest {
     fun appearanceSettingsArePersistedAsOneGroup() = runTest {
         val store = createStore("appearance_group.preferences_pb")
         val appearance = AppearanceSettings(
-            colorPalette = AppColorPalette.NIGHT,
+            colorPalette = AppColorPalette.MU_BOX_DARK,
             screenRotationLockEnabled = true,
             libraryCoversEnabled = false,
         )
@@ -373,7 +459,7 @@ class AppSettingsStoreTest {
     fun updatingOneGroupDoesNotOverwriteOtherGroups() = runTest {
         val store = createStore("group_isolation.preferences_pb")
         store.updateReaderSettings { ReaderSettings(autoPageEnabled = true) }
-        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.SEPIA) }
+        store.updateAppearanceSettings { AppearanceSettings(colorPalette = AppColorPalette.MU_BOX_LIGHT) }
         store.updateStorageSettings { StorageSettings(diskCacheLimitMb = 2048) }
         store.updateVideoSettings { VideoSettings(videoResumeEnabled = false) }
         store.updateHistorySettings { HistorySettings(historyRetentionDays = 180) }

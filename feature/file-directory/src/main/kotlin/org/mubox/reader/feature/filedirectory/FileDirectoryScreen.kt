@@ -670,11 +670,13 @@ private fun SourceSheetAction(
     tint: Color,
     onClick: () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = MuBoxMetrics.MinTouchTargetDp),
+        colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
     ) {
         Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
             Icon(
@@ -694,6 +696,7 @@ private fun SourceDeleteConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     val title: String
     val body: String
     val confirmLabel: String
@@ -719,12 +722,18 @@ private fun SourceDeleteConfirmDialog(
         title = { Text(title) },
         text = { Text(body) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(confirmLabel, color = rememberMuBoxColors().errorText)
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+            ) {
+                Text(confirmLabel, color = colors.errorText)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+            ) { Text("取消") }
         },
     )
 }

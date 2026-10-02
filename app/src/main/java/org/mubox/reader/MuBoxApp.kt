@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,6 +39,7 @@ import org.mubox.reader.feature.downloads.DownloadsScreen
 import org.mubox.reader.feature.downloads.activeProgress
 import org.mubox.reader.feature.webdav.WEB_DAV_STATUS_CONNECTED
 import org.mubox.reader.ui.MuBoxTheme
+import org.mubox.reader.ui.rememberMuBoxColors
 import java.io.File
 
 @Composable
@@ -462,6 +464,7 @@ private fun HomeDeleteConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     val description = buildList {
         if (selection.historyKeys.isNotEmpty()) {
             add("${selection.historyKeys.size} 条观看记录（含关联缓存）")
@@ -483,7 +486,10 @@ private fun HomeDeleteConfirmDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+            ) { Text("取消") }
         },
     )
 }

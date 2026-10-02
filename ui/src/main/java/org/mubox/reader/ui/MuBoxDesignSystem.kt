@@ -5,65 +5,68 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.mubox.reader.core.model.media.MediaKind
-import kotlin.math.max
 
-/**
- * MuBOX 深色模式的单一色值来源。
- *
- * 这些值直接来自 2026-07-24 的视觉参考，不在组件中临时混入新的深色十六进制值。
- */
+/** Anthropic's published brand palette; semantic text colors are adjusted for contrast below. */
+internal object MuBoxBrandColors {
+    val Dark = Color(0xFF141413)
+    val Light = Color(0xFFFAF9F5)
+    val MidGray = Color(0xFFB0AEA5)
+    val LightGray = Color(0xFFE8E6DC)
+    val Orange = Color(0xFFD97757)
+    val Blue = Color(0xFF6A9BCC)
+    val Green = Color(0xFF788C5D)
+}
+
+/** 暖炭黑表面与克制陶土橙，作为深色界面和媒体播放控件的单一色值来源。 */
 object MuBoxDarkTokens {
-    val BackgroundDeep = Color(0xFF000217)
-    val BackgroundPrimary = Color(0xFF000626)
-    val BackgroundSecondary = Color(0xFF030D2B)
-    val BackgroundElevated = Color(0xFF081037)
+    val BackgroundDeep = Color(0xFF10100F)
+    val BackgroundPrimary = MuBoxBrandColors.Dark
+    val BackgroundSecondary = Color(0xFF1B1B19)
+    val BackgroundElevated = Color(0xFF232320)
 
-    val SurfacePrimary = Color(0xFF0B1236)
-    val SurfaceSecondary = Color(0xFF101B41)
-    val SurfaceHover = Color(0xFF192147)
-    val SurfaceActive = Color(0xFF202B58)
+    val SurfacePrimary = Color(0xFF20201D)
+    val SurfaceSecondary = Color(0xFF282825)
+    val SurfaceHover = Color(0xFF31312D)
+    val SurfaceActive = Color(0xFF393934)
 
-    val BorderSubtle = Color(0xFF1E2B52)
-    val BorderDefault = Color(0xFF33436F)
-    val BorderHighlight = Color(0xFF8178FF)
+    val BorderSubtle = Color(0xFF343430)
+    val BorderDefault = Color(0xFF4C4B45)
+    val BorderHighlight = MuBoxBrandColors.Orange
 
-    val AccentPrimary = Color(0xFF7567FF)
-    val AccentSecondary = Color(0xFF9C5CFF)
-    val AccentBlue = Color(0xFF4D8DFF)
-    val AccentCyan = Color(0xFF58D6FF)
+    val AccentPrimary = MuBoxBrandColors.Orange
+    val AccentSecondary = MuBoxBrandColors.MidGray
+    // Legacy media role names share the single brand accent to keep decoration restrained.
+    val AccentBlue = AccentPrimary
+    val AccentCyan = AccentPrimary
 
-    val TextPrimary = Color(0xFFF4F5FF)
-    val TextSecondary = Color(0xFFADAFC4)
-    val TextTertiary = Color(0xFF79769A)
-    val TextDisabled = Color(0xFF59517E)
+    val TextPrimary = MuBoxBrandColors.Light
+    val TextSecondary = MuBoxBrandColors.MidGray
+    val TextTertiary = Color(0xFFAAA89F)
+    val TextDisabled = Color(0xFF66665F)
 
-    val Success = Color(0xFF44D7A8)
-    val Warning = Color(0xFFF5B95E)
-    val Error = Color(0xFFFF6685)
-    val Info = Color(0xFF58A6FF)
+    // Lighter green retains the brand hue while remaining readable on raised dark surfaces.
+    val Success = Color(0xFF94A97C)
+    val Warning = Color(0xFFE9B09A)
+    val Error = Color(0xFFE99A8A)
+    val Info = Color(0xFF81ACD3)
 
-    val Overlay = Color(0xB8000217)
-    val SurfaceGlass = Color(0xD0150C32)
-    val BorderGlass = Color(0x5258D6FF)
-    val GlassStart = Color(0xE51A103B)
-    val GlassEnd = Color(0xD0090625)
+    val Overlay = MuBoxBrandColors.Dark.copy(alpha = 0.80f)
+    val SurfaceGlass = SurfacePrimary
+    val BorderGlass = BorderSubtle
+    val GlassStart = SurfacePrimary
+    val GlassEnd = SurfacePrimary
 
-    val PageAmbientGlow = Color(0x246048B8)
-    val NeonOutline = Color(0x8058D6FF)
-    val NeonGlow = Color(0x527567FF)
-    val NeonAmbient = Color(0x389C5CFF)
+    val PageAmbientGlow = Color.Transparent
+    val NeonOutline = BorderDefault
+    val NeonGlow = Color.Transparent
+    val NeonAmbient = Color.Transparent
 }
 
 data class MuBoxColors(
@@ -148,47 +151,47 @@ fun muBoxColorsFor(colorScheme: ColorScheme): MuBoxColors {
         rowSelected = colorScheme.primaryContainer,
         border = colorScheme.outlineVariant,
         borderDefault = colorScheme.outline,
-        selectedBorder = if (isMuBoxDark) MuBoxDarkTokens.BorderHighlight else colorScheme.primary,
+        selectedBorder = if (isMuBoxDark) MuBoxDarkTokens.BorderHighlight else Color(0xFF9C432A),
         mediaAccent = colorScheme.primary,
         onMediaAccent = colorScheme.onPrimary,
         accentBlue = if (isMuBoxDark) MuBoxDarkTokens.AccentBlue else colorScheme.primary,
         accentCyan = if (isMuBoxDark) MuBoxDarkTokens.AccentCyan else colorScheme.primary,
         accentSoft = colorScheme.primaryContainer,
         onAccentSoft = colorScheme.onPrimaryContainer,
-        // 封面角标：浅色沿用实心强调底（对齐参考图蓝底白字），深色收敛为柔和底色防止过亮
-        posterChip = if (isDark) colorScheme.primaryContainer else colorScheme.primary,
-        onPosterChip = if (isDark) colorScheme.onPrimaryContainer else colorScheme.onPrimary,
+        // 封面角标使用柔和强调容器，在封面上保持文字清晰。
+        posterChip = colorScheme.primaryContainer,
+        onPosterChip = colorScheme.onPrimaryContainer,
         comicAccent = colorScheme.secondary,
         statusAccent = colorScheme.tertiary,
-        // 成功语义色固定取自 UI 重构 §11 调色板，按底色明暗选取，保证所有主题下语义一致
-        success = if (isMuBoxDark) MuBoxDarkTokens.Success else if (isDark) Color(0xFF44D7A8) else Color(0xFF287A4B),
-        warning = if (isMuBoxDark) MuBoxDarkTokens.Warning else colorScheme.tertiary,
-        info = if (isMuBoxDark) MuBoxDarkTokens.Info else colorScheme.primary,
+        // 少量语义色根据表面明暗调整对比度，不用于大面积装饰。
+        success = if (isDark) MuBoxDarkTokens.Success else Color(0xFF546641),
+        warning = if (isDark) MuBoxDarkTokens.Warning else Color(0xFF9C432A),
+        info = if (isDark) MuBoxDarkTokens.Info else Color(0xFF3F678B),
         text = colorScheme.onBackground,
         muted = colorScheme.onSurfaceVariant,
-        textTertiary = if (isMuBoxDark) MuBoxDarkTokens.TextTertiary else colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+        textTertiary = if (isDark) MuBoxDarkTokens.TextTertiary else Color(0xFF69675F),
         textDisabled = if (isMuBoxDark) MuBoxDarkTokens.TextDisabled else colorScheme.onSurface.copy(alpha = 0.38f),
-        overlayText = Color.White,
-        overlay = if (isMuBoxDark) MuBoxDarkTokens.Overlay else Color.Black.copy(alpha = 0.56f),
+        overlayText = MuBoxDarkTokens.TextPrimary,
+        overlay = MuBoxDarkTokens.Overlay,
         glassSurface = if (isMuBoxDark) MuBoxDarkTokens.SurfaceGlass else colorScheme.surfaceContainer,
         glassBorder = if (isMuBoxDark) MuBoxDarkTokens.BorderGlass else colorScheme.outlineVariant,
         glassStart = if (isMuBoxDark) MuBoxDarkTokens.GlassStart else colorScheme.surfaceContainer,
         glassEnd = if (isMuBoxDark) MuBoxDarkTokens.GlassEnd else colorScheme.surfaceContainer,
         pageAmbientGlow = if (isMuBoxDark) MuBoxDarkTokens.PageAmbientGlow else Color.Transparent,
-        neonOutline = if (isMuBoxDark) MuBoxDarkTokens.NeonOutline else colorScheme.primary.copy(alpha = 0.20f),
+        neonOutline = colorScheme.outline,
         neonGlow = if (isMuBoxDark) MuBoxDarkTokens.NeonGlow else Color.Transparent,
         neonAmbient = if (isMuBoxDark) MuBoxDarkTokens.NeonAmbient else Color.Transparent,
-        playerOverlay = Color(0x80000000),
-        playerSheet = Color(0xE6242424),
-        playerChip = Color(0x33FFFFFF),
+        playerOverlay = MuBoxDarkTokens.BackgroundPrimary.copy(alpha = 0.64f),
+        playerSheet = MuBoxDarkTokens.SurfacePrimary,
+        playerChip = MuBoxDarkTokens.SurfaceHover,
         playerChipSelected = colorScheme.primary,
-        playerProgressTrack = Color(0x4DFFFFFF),
+        playerProgressTrack = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.30f),
         playerProgress = colorScheme.primary,
-        playerHud = Color(0xE6242424),
-        playerOsdBorder = Color(0x33FFFFFF),
-        playerOsdPressed = Color(0x1AFFFFFF),
-        playerOsdSelected = colorScheme.primary.copy(alpha = 0.25f),
-        playerOsdText = Color.White,
+        playerHud = MuBoxDarkTokens.SurfacePrimary,
+        playerOsdBorder = MuBoxDarkTokens.BorderDefault,
+        playerOsdPressed = MuBoxDarkTokens.SurfaceHover,
+        playerOsdSelected = Color(0xFF3E2A22),
+        playerOsdText = MuBoxDarkTokens.TextPrimary,
         errorSurface = colorScheme.errorContainer,
         errorText = colorScheme.onErrorContainer,
         headerBar = colorScheme.surfaceContainerLow,
@@ -196,62 +199,28 @@ fun muBoxColorsFor(colorScheme: ColorScheme): MuBoxColors {
         boxedListBorder = colorScheme.outlineVariant,
         raisedSurface = if (isMuBoxDark) MuBoxDarkTokens.SurfaceSecondary else colorScheme.surfaceContainerHigh,
         separator = if (isMuBoxDark) MuBoxDarkTokens.BorderGlass else colorScheme.outlineVariant.copy(alpha = 0.5f),
-        // 小字号操作文字使用更亮的蓝色，避免 #7567FF 在面板上略低于 AA 4.5:1。
-        accentText = if (isMuBoxDark) MuBoxDarkTokens.AccentBlue else colorScheme.primary,
+        accentText = if (isDark) colorScheme.onPrimaryContainer else Color(0xFF9C432A),
     )
 }
 
 fun muBoxAccentGradient(colors: MuBoxColors): Brush =
-    if (colors.isMuBoxDark) {
-        Brush.linearGradient(
-            colorStops = arrayOf(
-                0f to colors.accentBlue,
-                0.48f to colors.mediaAccent,
-                1f to colors.comicAccent,
-            ),
-        )
-    } else {
-        Brush.linearGradient(listOf(colors.mediaAccent, colors.mediaAccent))
-    }
+    Brush.linearGradient(listOf(colors.mediaAccent, colors.mediaAccent))
 
 /**
- * 页面背景：深色模式按参考图叠加底部环境光与午夜蓝纵向渐变；其他主题保持原有纯色。
+ * 页面背景：温暖克制的纯色表面。
  */
 fun Modifier.muBoxAppBackground(colors: MuBoxColors): Modifier =
-    if (!colors.isMuBoxDark) {
-        background(colors.background)
-    } else {
-        drawWithCache {
-            val base = Brush.verticalGradient(
-                colorStops = arrayOf(
-                    0f to colors.backgroundDeep,
-                    0.45f to colors.background,
-                    1f to colors.backgroundSecondary,
-                ),
-            )
-            val ambient = Brush.radialGradient(
-                colors = listOf(colors.pageAmbientGlow, Color.Transparent),
-                center = Offset(size.width * 0.5f, size.height),
-                radius = max(size.width, size.height) * 0.62f,
-            )
-            onDrawBehind {
-                drawRect(base)
-                drawRect(ambient)
-            }
-        }
-    }
+    background(colors.background)
 
 /**
- * 磨砂玻璃容器：用半透明紫色玻璃、低频青紫漫反射和顶部霜化高光叠加在页面环境光上。
- *
- * Compose 没有跨版本稳定的 backdrop-filter，因此不直接模糊容器内容；低频径向渐变负责
- * 模拟背景经过大半径模糊后的色彩扩散，文字和图标仍保持锐利。
+ * 面板表面：采用克制实体表面与极细微边框，去除弥散光与霜化特效。
  */
 fun Modifier.muBoxGlassSurface(
     colors: MuBoxColors,
     shape: Shape,
     highlighted: Boolean = false,
 ): Modifier {
+    val surfaceColor = if (colors.isMuBoxDark) colors.surfaceSecondary else colors.panel
     return muBoxGradientBorder(
         colors = colors,
         shape = shape,
@@ -259,161 +228,49 @@ fun Modifier.muBoxGlassSurface(
         width = if (highlighted) 1.5.dp else 1.dp,
     )
         .clip(shape)
-        .drawWithCache {
-            val fill = if (colors.isMuBoxDark) {
-                Brush.linearGradient(
-                    colorStops = arrayOf(
-                        0f to colors.glassStart,
-                        0.52f to colors.glassSurface,
-                        1f to colors.glassEnd,
-                    ),
-                    start = Offset.Zero,
-                    end = Offset(size.width, size.height),
-                )
-            } else {
-                Brush.linearGradient(listOf(colors.panel, colors.panel))
-            }
-            val violetFrost = Brush.radialGradient(
-                colors = listOf(
-                    colors.comicAccent.copy(alpha = 0.10f),
-                    Color.Transparent,
-                ),
-                center = Offset(size.width * 0.82f, size.height * 0.12f),
-                radius = max(size.width, size.height) * 0.78f,
-            )
-            val cyanFrost = Brush.radialGradient(
-                colors = listOf(
-                    colors.accentCyan.copy(alpha = 0.04f),
-                    Color.Transparent,
-                ),
-                center = Offset(size.width * 0.08f, size.height * 0.94f),
-                radius = max(size.width, size.height) * 0.56f,
-            )
-            val frostedHighlight = Brush.verticalGradient(
-                colorStops = arrayOf(
-                    0f to Color.White.copy(alpha = if (colors.isMuBoxDark) 0.035f else 0f),
-                    0.28f to Color.Transparent,
-                    1f to Color.Transparent,
-                ),
-            )
-            onDrawBehind {
-                drawRect(fill)
-                if (colors.isMuBoxDark) {
-                    drawRect(violetFrost)
-                    drawRect(cyanFrost)
-                    drawRect(frostedHighlight)
-                }
-            }
-        }
+        .background(surfaceColor)
 }
 
 /**
- * 沿真实 Shape 轮廓绘制渐变描边，而不是用单色 BorderStroke 模拟。
- *
- * 外缘用两层低透明度宽描边模拟柔光，中间是青→蓝→紫主轮廓，最内层保留冷色高光。
- * 所有层都通过 drawWithCache 缓存，不引入持续动画或额外布局。
+ * 沿真实 Shape 轮廓绘制干净的单层微细描边，去除霓虹外发光与多层模糊通道。
  */
 fun Modifier.muBoxGradientBorder(
     colors: MuBoxColors,
     shape: Shape,
     highlighted: Boolean = false,
     width: Dp = 1.dp,
-): Modifier {
-    if (!colors.isMuBoxDark) {
-        return border(
-            width = width,
-            color = if (highlighted) colors.selectedBorder else colors.border,
-            shape = shape,
-        )
-    }
-    return drawWithCache {
-        val outline = shape.createOutline(size, layoutDirection, this)
-        val outlinePath = when (outline) {
-            is Outline.Rectangle -> Path().apply { addRect(outline.rect) }
-            is Outline.Rounded -> Path().apply { addRoundRect(outline.roundRect) }
-            is Outline.Generic -> outline.path
-        }
-        val widthPx = width.toPx() * 0.68f
-        val intensity = if (highlighted) 0.68f else 0.38f
-        val edgeBrush = Brush.linearGradient(
-            colorStops = arrayOf(
-                0f to colors.accentCyan.copy(alpha = 0.82f * intensity),
-                0.34f to colors.accentBlue.copy(alpha = 0.88f * intensity),
-                0.68f to colors.selectedBorder.copy(alpha = 0.94f * intensity),
-                1f to colors.comicAccent.copy(alpha = 0.84f * intensity),
-            ),
-            start = Offset.Zero,
-            end = Offset(size.width, size.height),
-        )
-        val outerGlowBrush = Brush.linearGradient(
-            colors = listOf(
-                colors.accentCyan.copy(alpha = 0.10f * intensity),
-                colors.neonGlow.copy(alpha = 0.18f * intensity),
-                colors.neonAmbient.copy(alpha = 0.16f * intensity),
-            ),
-            start = Offset.Zero,
-            end = Offset(size.width, size.height),
-        )
-        val innerHighlightBrush = Brush.linearGradient(
-            colors = listOf(
-                colors.accentCyan.copy(alpha = 0.22f * intensity),
-                colors.selectedBorder.copy(alpha = 0.18f * intensity),
-                colors.comicAccent.copy(alpha = 0.12f * intensity),
-            ),
-            start = Offset.Zero,
-            end = Offset(size.width, size.height),
-        )
-        onDrawWithContent {
-            drawContent()
-            drawPath(
-                path = outlinePath,
-                brush = outerGlowBrush,
-                style = Stroke(width = widthPx * 4f),
-            )
-            drawPath(
-                path = outlinePath,
-                brush = outerGlowBrush,
-                style = Stroke(width = widthPx * 2.2f),
-            )
-            drawPath(
-                path = outlinePath,
-                brush = edgeBrush,
-                style = Stroke(width = widthPx),
-            )
-            drawPath(
-                path = outlinePath,
-                brush = innerHighlightBrush,
-                style = Stroke(width = widthPx * 0.3f),
-            )
-        }
-    }
-}
+): Modifier =
+    border(
+        width = width,
+        color = if (highlighted) colors.selectedBorder else colors.border,
+        shape = shape,
+    )
 
 object MuBoxMetrics {
     // 页面级容器保持紧凑边距；组件内部仍各自保留可读性所需的留白。
-    val PageHorizontalPaddingDp = 8.dp
+    val PageHorizontalPaddingDp = 12.dp
     val MinTouchTargetDp = 48.dp
-    val DenseRowCornerDp = 10.dp
-    val PanelCornerDp = 12.dp
-    val PlayerPanelCornerDp = 16.dp
+    val DenseRowCornerDp = 6.dp
+    val PanelCornerDp = 8.dp
+    val PlayerPanelCornerDp = 8.dp
     val PlayerPanelContentPaddingDp = 0.dp
     val PlayerCenterControlVisualDp = 64.dp
     val PlayerCenterControlTouchDp = 80.dp
     val HeaderBarHeightDp = 48.dp
-    val BoxedListCornerDp = 12.dp
+    val BoxedListCornerDp = 8.dp
     val BoxedListRowMinHeightDp = 48.dp
     val SeparatorThicknessDp = 1.dp
 
-    // UI 重构 §11.5 圆角刻度
-    val RadiusXsDp = 6.dp
-    val RadiusSDp = 10.dp
-    val RadiusMDp = 12.dp
-    val RadiusLDp = 16.dp
-    val RadiusXlDp = 20.dp
+    // UI 重构圆角刻度 (对齐 Anthropic 克制圆角)
+    val RadiusXsDp = 4.dp
+    val RadiusSDp = 6.dp
+    val RadiusMDp = 8.dp
+    val RadiusLDp = 10.dp
+    val RadiusXlDp = 12.dp
 }
 
 object PlayerOsdDefaults {
-    val OsdCornerDp = 12.dp
+    val OsdCornerDp = 8.dp
     val OsdButtonSize = 44.dp
     val OsdIconSize = 22.dp
     val CenterButtonVisualDp = 64.dp

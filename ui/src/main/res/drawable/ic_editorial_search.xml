@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Editorial Loupe lens (circle: center 10.5, 10.5, radius 6) -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M10.5,4.5 C13.81,4.5 16.5,7.19 16.5,10.5 C16.5,13.81 13.81,16.5 10.5,16.5 C7.19,16.5 4.5,13.81 4.5,10.5 C4.5,7.19 7.19,4.5 10.5,4.5 Z" />
+    <!-- 45-degree handle -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M14.74,14.74 L19.5,19.5" />
+</vector>

@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.luminance
 import org.mubox.reader.core.model.settings.AppColorPalette
 import org.mubox.reader.ui.muBoxColorSchemeFor
 import org.mubox.reader.ui.muBoxTypography
+import org.mubox.reader.ui.icons.MuBoxEditorialIcons
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -105,18 +106,17 @@ class MainActivityUiLogicTest {
     }
 
     @Test
-    fun muBoxDarkThemeUsesDeepNavyShellRoles() {
-        val colors = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK, darkTheme = false)
+    fun muBoxDarkThemeUsesWarmEditorialRoles() {
+        val colors = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK)
 
-        assertTrue("dark background should be a deep navy shell", colors.background.luminance() < 0.10f)
+        assertTrue("dark background should be a warm carbon shell", colors.background.luminance() < 0.10f)
         assertTrue("surface should layer above background", colors.surface.luminance() >= colors.background.luminance())
         assertTrue(
             "high surface containers should layer above low containers",
             colors.surfaceContainerHigh.luminance() > colors.surfaceContainerLow.luminance(),
         )
         assertTrue("text on background should stay readable", colors.onBackground.luminance() > 0.70f)
-        assertTrue("primary should read as a blue accent", colors.primary.blue > colors.primary.red)
-        assertTrue("secondary should read as a purple accent", colors.secondary.blue > colors.secondary.green)
+        assertTrue("primary should read as a warm terracotta accent", colors.primary.red > colors.primary.blue)
         assertTrue("tertiary should read as a green success accent", colors.tertiary.green > colors.tertiary.blue)
         assertTrue("error pair should have sufficient contrast", colors.error.luminance() != colors.onError.luminance())
         assertTrue(
@@ -146,12 +146,12 @@ class MainActivityUiLogicTest {
 
     @Test
     fun appShellUsesMuBoxMediaSurfaceRoles() {
-        val colors = muBoxColorSchemeFor(AppColorPalette.DEFAULT, darkTheme = true)
+        val colors = muBoxColorSchemeFor(AppColorPalette.MU_BOX_DARK)
         val muBoxColors = org.mubox.reader.ui.muBoxColorsFor(colors)
 
         assertEquals(muBoxColors.background, appShellBackgroundColor(colors))
         assertEquals(muBoxColors.panel, appShellNavigationBarContainerColor(colors))
-        assertEquals(muBoxColors.panelHigh, appShellNavigationBarIndicatorColor(colors))
+        assertEquals(muBoxColors.accentSoft, appShellNavigationBarIndicatorColor(colors))
         assertEquals(muBoxColors.panelHigh, selectionNavigationBarContainerColor(colors))
     }
 
@@ -358,6 +358,21 @@ class MainActivityUiLogicTest {
     fun webDavParentDirectoryKeepsEncodedPathForRemoteRequests() {
         assertEquals("/", parentWebDavDirectoryPath("/movie.mp4"))
         assertEquals("/%E8%A7%86%E9%A2%91/", parentWebDavDirectoryPath("/%E8%A7%86%E9%A2%91/movie.mp4"))
+    }
+
+    @Test
+    fun appTabsUseMuBoxEditorialIcons() {
+        assertEquals(MuBoxEditorialIcons.HomeFilled, AppTab.HOME.iconVector)
+        assertEquals(MuBoxEditorialIcons.HomeOutlined, AppTab.HOME.outlinedIconVector)
+
+        assertEquals(MuBoxEditorialIcons.SourcesFilled, AppTab.SOURCES.iconVector)
+        assertEquals(MuBoxEditorialIcons.SourcesOutlined, AppTab.SOURCES.outlinedIconVector)
+
+        assertEquals(MuBoxEditorialIcons.DownloadsFilled, AppTab.DOWNLOADS.iconVector)
+        assertEquals(MuBoxEditorialIcons.DownloadsOutlined, AppTab.DOWNLOADS.outlinedIconVector)
+
+        assertEquals(MuBoxEditorialIcons.SettingsFilled, AppTab.SETTINGS.iconVector)
+        assertEquals(MuBoxEditorialIcons.SettingsOutlined, AppTab.SETTINGS.outlinedIconVector)
     }
 
 }

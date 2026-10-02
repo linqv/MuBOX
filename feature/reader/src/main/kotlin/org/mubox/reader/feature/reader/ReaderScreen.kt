@@ -61,7 +61,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -91,6 +90,7 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import org.mubox.reader.core.model.settings.ReadingDirection
 import org.mubox.reader.ui.MuBoxCopy
+import org.mubox.reader.ui.MuBoxDarkTokens
 import org.mubox.reader.ui.rememberMuBoxColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -831,10 +831,9 @@ private fun ReaderImagePage(
 }
 
 private val ContinuousPageLoadingHeight = 320.dp
-private val ReaderOnDark = Color.White
-private val ReaderMutedOnDark = Color.White.copy(alpha = 0.74f)
-private val ReaderDividerOnDark = Color.White.copy(alpha = 0.18f)
-private val ReaderPanelOnDark = Color.Black.copy(alpha = 0.62f)
+private val ReaderOnDark = MuBoxDarkTokens.TextPrimary
+private val ReaderMutedOnDark = MuBoxDarkTokens.TextSecondary
+private val ReaderDividerOnDark = MuBoxDarkTokens.BorderDefault
 
 internal fun readerLandscapeModeButtonLabel(readerLandscapeModeEnabled: Boolean): String =
     if (readerLandscapeModeEnabled) "退出横屏" else "横屏"
@@ -976,7 +975,7 @@ private fun ReaderChromeIconButton(
         modifier = modifier
             .size(40.dp)
             .background(
-                color = Color.White.copy(alpha = 0.14f),
+                color = MuBoxDarkTokens.SurfaceSecondary,
                 shape = MaterialTheme.shapes.small,
             ),
     ) {
@@ -1001,7 +1000,7 @@ private fun ReaderChromeButton(
         shape = MaterialTheme.shapes.small,
         colors = ButtonDefaults.textButtonColors(
             contentColor = ReaderOnDark,
-            containerColor = Color.White.copy(alpha = 0.14f),
+            containerColor = MuBoxDarkTokens.SurfaceSecondary,
         ),
     ) {
         Text(
@@ -1091,7 +1090,7 @@ private fun ReaderBottomOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp),
-            color = ReaderOnDark,
+            color = colors.playerProgress,
             trackColor = ReaderDividerOnDark,
         )
     }
@@ -1130,24 +1129,19 @@ private fun ReaderEmptyOrLoadingState(
                         modifier = Modifier
                             .size(72.dp)
                             .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary,
-                                    ),
-                                ),
+                                color = colors.accentSoft,
                                 shape = CircleShape,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(
-                            color = ReaderOnDark,
+                            color = colors.onAccentSoft,
                             strokeWidth = 3.dp,
                         )
                     }
                     Text(
                         text = MuBoxCopy.readerLoading,
-                        color = ReaderOnDark,
+                        color = colors.text,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
@@ -1156,21 +1150,21 @@ private fun ReaderEmptyOrLoadingState(
                     val percent = (loadingProgress.fraction * 100f).toInt()
                     Text(
                         text = "$percent%",
-                        color = ReaderOnDark,
+                        color = colors.text,
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     )
                     Text(
                         text = MuBoxCopy.readerDownloading,
-                        color = ReaderOnDark,
+                        color = colors.text,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     )
                     Text(
                         text = loadingProgress.label,
-                        color = ReaderMutedOnDark,
+                        color = colors.muted,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
@@ -1182,8 +1176,8 @@ private fun ReaderEmptyOrLoadingState(
                             .widthIn(max = 360.dp)
                             .fillMaxWidth()
                             .height(8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = ReaderDividerOnDark,
+                        color = colors.mediaAccent,
+                        trackColor = colors.border,
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
                     )
                 }
@@ -1194,8 +1188,8 @@ private fun ReaderEmptyOrLoadingState(
                         modifier = Modifier.heightIn(min = 48.dp),
                         shape = MaterialTheme.shapes.large,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = ReaderOnDark,
-                            contentColor = Color.Black,
+                            containerColor = colors.mediaAccent,
+                            contentColor = colors.onMediaAccent,
                         ),
                     ) {
                         Text("取消")
@@ -1215,12 +1209,7 @@ private fun ReaderEmptyOrLoadingState(
                     modifier = Modifier
                         .size(64.dp)
                         .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
-                                ),
-                            ),
+                            color = colors.accentSoft,
                             shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
@@ -1228,13 +1217,13 @@ private fun ReaderEmptyOrLoadingState(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.MenuBook,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = colors.onAccentSoft,
                         modifier = Modifier.size(32.dp),
                     )
                 }
                 Text(
                     text = "从来源或书架打开漫画",
-                    color = ReaderMutedOnDark,
+                    color = colors.muted,
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
                 )
@@ -1285,14 +1274,14 @@ private fun ReaderErrorState(
             }
             Text(
                 text = MuBoxCopy.readerError,
-                color = ReaderOnDark,
+                color = colors.text,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )
             Text(
                 text = message,
-                color = ReaderMutedOnDark,
+                color = colors.muted,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 maxLines = 8,

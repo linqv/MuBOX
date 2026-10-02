@@ -3,6 +3,7 @@ package org.mubox.reader.video.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -63,7 +64,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import org.mubox.reader.ui.settings.videoDecoderModeLabel
 import kotlin.math.roundToLong
 import org.mubox.reader.ui.PlayerOsdDefaults
+import org.mubox.reader.ui.MuBoxDarkTokens
 import org.mubox.reader.ui.rememberMuBoxColors
 
 // ─── Top bar: orientation toggle (left), menu + close (right) ───
@@ -98,7 +99,7 @@ internal fun PlayerTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onOrientationToggle, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
-            Icon(Icons.Filled.ScreenRotation, "切换横竖屏", tint = Color.White, modifier = Modifier.size(22.dp))
+            Icon(Icons.Filled.ScreenRotation, "切换横竖屏", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(22.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(
@@ -108,7 +109,7 @@ internal fun PlayerTopBar(
                 Icon(
                     Icons.Filled.Headphones,
                     contentDescription = "听视频",
-                    tint = Color.White,
+                    tint = MuBoxDarkTokens.TextPrimary,
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -120,16 +121,16 @@ internal fun PlayerTopBar(
                     Icon(
                         Icons.Filled.FormatListNumbered,
                         contentDescription = "选集",
-                        tint = Color.White,
+                        tint = MuBoxDarkTokens.TextPrimary,
                         modifier = Modifier.size(24.dp),
                     )
                 }
             }
             IconButton(onClick = onMenuClick, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
-                Icon(Icons.Filled.Menu, "菜单", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(Icons.Filled.Menu, "菜单", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(22.dp))
             }
             IconButton(onClick = onClose, modifier = Modifier.size(PLAYER_OVERLAY_BUTTON_SIZE_DP.dp)) {
-                Icon(Icons.Filled.Close, "关闭", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(Icons.Filled.Close, "关闭", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(22.dp))
             }
         }
     }
@@ -163,7 +164,7 @@ internal fun PlayerCenterControls(
             Icon(
                 Icons.Filled.SkipPrevious,
                 "上一集",
-                tint = if (hasPreviousEpisode && !isEpisodeSwitching) Color.White else Color.White.copy(alpha = 0.32f),
+                tint = if (hasPreviousEpisode && !isEpisodeSwitching) MuBoxDarkTokens.TextPrimary else MuBoxDarkTokens.TextPrimary.copy(alpha = 0.32f),
                 modifier = Modifier.size(28.dp),
             )
         }
@@ -172,7 +173,7 @@ internal fun PlayerCenterControls(
             enabled = !isEpisodeSwitching,
             modifier = Modifier.size(48.dp),
         ) {
-            Icon(Icons.Filled.Replay10, "后退10秒", tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(Icons.Filled.Replay10, "后退10秒", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(32.dp))
         }
         IconButton(
             onClick = onPlayPause,
@@ -183,13 +184,13 @@ internal fun PlayerCenterControls(
                 CircularProgressIndicator(
                     modifier = Modifier.size(30.dp),
                     strokeWidth = 3.dp,
-                    color = Color.White,
+                    color = MuBoxDarkTokens.TextPrimary,
                 )
             } else {
                 Icon(
                     if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                     if (isPaused) "播放" else "暂停",
-                    tint = Color.White,
+                    tint = MuBoxDarkTokens.TextPrimary,
                     modifier = Modifier.size(42.dp),
                 )
             }
@@ -199,7 +200,7 @@ internal fun PlayerCenterControls(
             enabled = !isEpisodeSwitching,
             modifier = Modifier.size(48.dp),
         ) {
-            Icon(Icons.Filled.Forward10, "前进10秒", tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(Icons.Filled.Forward10, "前进10秒", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(32.dp))
         }
         IconButton(
             onClick = onNextEpisode,
@@ -209,7 +210,7 @@ internal fun PlayerCenterControls(
             Icon(
                 Icons.Filled.SkipNext,
                 "下一集",
-                tint = if (hasNextEpisode && !isEpisodeSwitching) Color.White else Color.White.copy(alpha = 0.32f),
+                tint = if (hasNextEpisode && !isEpisodeSwitching) MuBoxDarkTokens.TextPrimary else MuBoxDarkTokens.TextPrimary.copy(alpha = 0.32f),
                 modifier = Modifier.size(28.dp),
             )
         }
@@ -245,7 +246,7 @@ internal fun EpisodeSelectionPage(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .background(Color.Black.copy(alpha = 0.58f))
+                        .background(colors.playerOverlay)
                         .clickable(onClick = onDismiss),
                 )
             }
@@ -254,7 +255,7 @@ internal fun EpisodeSelectionPage(
                     .fillMaxHeight()
                     .fillMaxWidth(sheetWidthFraction),
                 color = colors.playerSheet,
-                contentColor = Color.White,
+                contentColor = MuBoxDarkTokens.TextPrimary,
                 border = BorderStroke(1.dp, colors.playerOsdBorder),
             ) {
                 Column(
@@ -270,12 +271,12 @@ internal fun EpisodeSelectionPage(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("选集", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                            Text("选集", style = MaterialTheme.typography.titleLarge, color = MuBoxDarkTokens.TextPrimary)
                             if (parentDirectoryName != null) {
                                 Text(
                                     text = parentDirectoryName,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.86f),
+                                    color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.86f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -283,7 +284,7 @@ internal fun EpisodeSelectionPage(
                             Text(
                                 "第 ${(currentEpisodeIndex + 1).coerceAtMost(queue.episodes.size)} / ${queue.episodes.size} 集",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.7f),
                             )
                         }
                         if (isSwitching) {
@@ -295,7 +296,7 @@ internal fun EpisodeSelectionPage(
                             Spacer(Modifier.width(8.dp))
                         }
                         IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Filled.Close, "关闭选集", tint = Color.White)
+                            Icon(Icons.Filled.Close, "关闭选集", tint = MuBoxDarkTokens.TextPrimary)
                         }
                     }
                     HorizontalDivider(color = colors.playerOsdBorder)
@@ -312,7 +313,7 @@ internal fun EpisodeSelectionPage(
                             val isCurrent = index == currentEpisodeIndex
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isCurrent) colors.playerOsdSelected else Color.White.copy(alpha = 0.06f),
+                                color = if (isCurrent) colors.playerOsdSelected else MuBoxDarkTokens.TextPrimary.copy(alpha = 0.06f),
                                 border = BorderStroke(
                                     width = 1.dp,
                                     color = if (isCurrent) colors.playerProgress else colors.playerOsdBorder,
@@ -333,14 +334,14 @@ internal fun EpisodeSelectionPage(
                                     Text(
                                         text = (index + 1).toString().padStart(2, '0'),
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = if (isCurrent) colors.playerProgress else Color.White.copy(alpha = 0.58f),
+                                        color = if (isCurrent) colors.playerOsdText else MuBoxDarkTokens.TextPrimary.copy(alpha = 0.58f),
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
                                         text = episode.displayName,
                                         modifier = Modifier.weight(1f),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White,
+                                        color = MuBoxDarkTokens.TextPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -375,7 +376,7 @@ internal fun PlayerLockButton(
         Icon(
             if (controlsLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
             if (controlsLocked) "解锁控制" else "锁定控制",
-            tint = Color.White,
+            tint = MuBoxDarkTokens.TextPrimary,
             modifier = Modifier.size(22.dp),
         )
     }
@@ -401,8 +402,8 @@ internal fun PlayerBottomControls(
             val colors = rememberMuBoxColors()
             val isError = !state.errorMessage.isNullOrBlank()
             Surface(
-                color = if (isError) colors.errorSurface else Color(0xCC242424),
-                contentColor = if (isError) colors.errorText else Color.White,
+                color = if (isError) colors.errorSurface else colors.playerHud,
+                contentColor = if (isError) colors.errorText else MuBoxDarkTokens.TextPrimary,
                 shape = RoundedCornerShape(8.dp),
             ) {
                 Text(
@@ -417,7 +418,7 @@ internal fun PlayerBottomControls(
         Text(
             text = state.displayName,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White,
+            color = MuBoxDarkTokens.TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -428,8 +429,8 @@ internal fun PlayerBottomControls(
             modifier = Modifier.fillMaxWidth(),
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatVideoTime(progress.positionMillis), style = MaterialTheme.typography.labelMedium, color = Color.White)
-            Text(formatVideoTime(progress.durationMillis), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+            Text(formatVideoTime(progress.positionMillis), style = MaterialTheme.typography.labelMedium, color = MuBoxDarkTokens.TextPrimary)
+            Text(formatVideoTime(progress.durationMillis), style = MaterialTheme.typography.labelMedium, color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.7f))
         }
     }
 }
@@ -443,6 +444,7 @@ internal fun ThinSeekBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     val duration = durationMillis.coerceAtLeast(1L)
     val progress = (positionMillis.toFloat() / duration).coerceIn(0f, 1f)
     Canvas(
@@ -462,9 +464,9 @@ internal fun ThinSeekBar(
         val trackY = size.height / 2f
         val strokeWidth = 2.dp.toPx()
         val progressX = size.width * progress
-        drawLine(Color.White.copy(alpha = 0.3f), Offset(0f, trackY), Offset(size.width, trackY), strokeWidth, cap = StrokeCap.Round)
-        drawLine(Color.White, Offset(0f, trackY), Offset(progressX, trackY), strokeWidth, cap = StrokeCap.Round)
-        drawCircle(Color.White, 6.dp.toPx(), Offset(progressX, trackY))
+        drawLine(colors.playerProgressTrack, Offset(0f, trackY), Offset(size.width, trackY), strokeWidth, cap = StrokeCap.Round)
+        drawLine(colors.playerProgress, Offset(0f, trackY), Offset(progressX, trackY), strokeWidth, cap = StrokeCap.Round)
+        drawCircle(colors.playerProgress, 6.dp.toPx(), Offset(progressX, trackY))
     }
 }
 
@@ -486,12 +488,13 @@ internal fun PlayerMenuPanel(
     onSubtitlesDisabled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberMuBoxColors()
     Surface(
         modifier = modifier.widthIn(min = 260.dp, max = 360.dp).heightIn(max = 480.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xE6242424),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = colors.playerSheet,
+        contentColor = colors.playerOsdText,
+        border = BorderStroke(1.dp, colors.playerOsdBorder),
     ) {
         Column(
             modifier = Modifier
@@ -500,9 +503,9 @@ internal fun PlayerMenuPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("设置", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("设置", style = MaterialTheme.typography.titleMedium, color = MuBoxDarkTokens.TextPrimary)
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Close, "收起", tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Close, "收起", tint = MuBoxDarkTokens.TextPrimary, modifier = Modifier.size(18.dp))
                 }
             }
             ControlGroup("倍速") {
@@ -532,7 +535,7 @@ internal fun PlayerMenuPanel(
                     CompactTextButton(track.shortLabel(), state.selectedAudioTrackId == track.id) { onAudioTrackSelected(track.id) }
                 }
                 if (state.audioTracks.isEmpty()) {
-                    Text("自动", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                    Text("自动", style = MaterialTheme.typography.labelSmall, color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.7f))
                 }
             }
             ControlGroup("字幕") {
@@ -562,9 +565,9 @@ internal fun StatisticsControls(
     includeProxyDebugInfo: Boolean = true,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("信息", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+        Text("信息", style = MaterialTheme.typography.labelMedium, color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.7f))
         snapshot.redacted().debugLines(includeProxyDebugInfo = includeProxyDebugInfo).forEach { line ->
-            Text(line, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(line, style = MaterialTheme.typography.labelSmall, color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.6f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -582,11 +585,12 @@ internal fun GestureHud(
         kotlinx.coroutines.delay(GESTURE_HUD_TIMEOUT_MILLIS)
         onTimeout()
     }
+    val colors = rememberMuBoxColors()
     Surface(
         modifier = modifier,
-        color = Color(0xCC000000),
-        contentColor = Color.White,
-        shape = RoundedCornerShape(12.dp),
+        color = colors.playerHud,
+        contentColor = colors.playerOsdText,
+        shape = MaterialTheme.shapes.large,
     ) {
         Text(message, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -601,7 +605,7 @@ private fun ControlGroup(label: String, content: @Composable () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.weight(0.22f), maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MuBoxDarkTokens.TextPrimary.copy(alpha = 0.7f), modifier = Modifier.weight(0.22f), maxLines = 1)
         FlowRow(
             modifier = Modifier.weight(0.78f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -613,16 +617,18 @@ private fun ControlGroup(label: String, content: @Composable () -> Unit) {
 
 @Composable
 internal fun CompactTextButton(text: String, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.1f)
-    val shape = RoundedCornerShape(8.dp)
+    val colors = rememberMuBoxColors()
+    val bg = if (selected) colors.playerOsdSelected else colors.playerChip
+    val shape = MaterialTheme.shapes.large
     TextButton(
         onClick = onClick,
         modifier = Modifier
             .heightIn(min = 34.dp)
             .background(bg, shape)
+            .border(1.dp, if (selected) colors.playerProgress else colors.playerOsdBorder, shape)
             .padding(horizontal = 2.dp),
     ) {
-        Text(text, maxLines = 1, style = MaterialTheme.typography.labelMedium, color = Color.White)
+        Text(text, maxLines = 1, style = MaterialTheme.typography.labelMedium, color = colors.playerOsdText)
     }
 }
 

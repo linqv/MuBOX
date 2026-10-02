@@ -285,7 +285,7 @@ private fun DirectoryPathOrSearchField(
         shape = RoundedCornerShape(16.dp),
         color = colors.panelHigh,
         contentColor = colors.text,
-        border = BorderStroke(1.dp, colors.mediaAccent.copy(alpha = 0.32f)),
+        border = BorderStroke(1.dp, colors.borderDefault),
     ) {
         if (isSearchActive) {
             BasicTextField(
@@ -297,7 +297,7 @@ private fun DirectoryPathOrSearchField(
                     .padding(horizontal = 12.dp),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
-                cursorBrush = SolidColor(colors.mediaAccent),
+                cursorBrush = SolidColor(colors.accentText),
                 decorationBox = { innerTextField ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -340,7 +340,7 @@ private fun DirectoryPathOrSearchField(
                     imageVector = Icons.Filled.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = colors.mediaAccent,
+                    tint = colors.muted,
                 )
                 Text(
                     text = breadcrumb,

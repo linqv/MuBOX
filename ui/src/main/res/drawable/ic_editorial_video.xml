@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Slender film frame -->
+    <path
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M6.5,5 H17.5 C19.16,5 20.5,6.34 20.5,8 V16 C20.5,17.66 19.16,19 17.5,19 H6.5 C4.84,19 3.5,17.66 3.5,16 V8 C3.5,6.34 4.84,5 6.5,5 Z" />
+    <!-- Centered geometric play triangle -->
+    <path
+        android:fillColor="#FF000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M10,9 L15.5,12 L10,15 Z" />
+</vector>

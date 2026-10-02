@@ -1,11 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" role="img" aria-labelledby="title desc">
-  <title id="title">MuBOX app icon</title>
-  <desc id="desc">A compact book-shaped MuBOX icon with an M mark.</desc>
-  <rect x="10" y="10" width="88" height="88" rx="10" fill="#103B34"/>
-  <path d="M29 26h35a13 13 0 0 1 13 13v43H41a12 12 0 0 1-12-12z" fill="#E6F4EE"/>
-  <path d="M42 26h26a11 11 0 0 1 11 11v45H52a10 10 0 0 1-10-10z" fill="#6DC6A4"/>
-  <path d="M29 26h15v56H29z" fill="#F4C95D"/>
-  <path d="M53 44h7l7 16 7-16h7v31h-7V58l-5 12h-4l-5-12v17h-7z" fill="#103B34"/>
-  <path d="M31 82h48a6 6 0 0 1 6 6H37a6 6 0 0 1-6-6z" fill="#103B34"/>
-  <path d="M31 74h38a7 7 0 0 1 7 7v1H38a7 7 0 0 1-7-7z" fill="#E6F4EE"/>
+  <title id="title">MuBOX — open pages</title>
+  <desc id="desc">Two warm charcoal pages form an abstract M on a terracotta tile, a quiet symbol for reading and a personal media library.</desc>
+  <rect width="108" height="108" rx="24" fill="#D97757"/>
+  <path fill="#141413" d="M32 32 C40 32 46 36 52 41 L52 75 C46 70.5 39.8 67 32 67 Q30 67 30 65 L30 34 Q30 32 32 32 Z M56 41 C62 36 68 32 76 32 Q78 32 78 34 L78 65 Q78 67 76 67 C68.2 67 62 70.5 56 75 L56 41 Z"/>
 </svg>

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -201,6 +202,7 @@ fun WebDavAccountScreen(
                         TextButton(
                             onClick = onBackToLibrary,
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
                         ) {
                             Text("取消")
                         }
@@ -208,6 +210,7 @@ fun WebDavAccountScreen(
                             onClick = onSave,
                             enabled = !uiState.isLoading && uiState.host.isNotBlank(),
                             modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentText),
                         ) {
                             Text("保存")
                         }

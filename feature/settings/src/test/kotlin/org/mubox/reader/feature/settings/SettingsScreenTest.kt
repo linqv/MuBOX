@@ -69,14 +69,8 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun defaultPaletteLabelMeansFollowSystem() {
-        assertEquals("跟随系统", AppColorPalette.DEFAULT.settingsLabel())
-    }
-
-    @Test
-    fun muBoxPaletteLabelsAreExplicit() {
-        assertEquals("MuBOX 浅色", AppColorPalette.MU_BOX_LIGHT.settingsLabel())
-        assertEquals("MuBOX 深色", AppColorPalette.MU_BOX_DARK.settingsLabel())
+    fun appearanceOffersOnlyLightAndDarkLabels() {
+        assertEquals(listOf("浅色", "深色"), AppColorPalette.entries.map { it.settingsLabel() })
     }
 
     @Test
@@ -122,7 +116,7 @@ class SettingsScreenTest {
         assertFalse(rootRows.contains("阅读方向"))
         assertFalse(rootRows.contains("恢复播放位置"))
         assertFalse(rootRows.contains("MPV Profile"))
-        assertTrue(rootRows.contains("配色方案"))
+        assertTrue(rootRows.contains("外观"))
         assertTrue(rootRows.contains("屏幕旋转锁定"))
         assertTrue(rootRows.contains("异常日志等级"))
     }

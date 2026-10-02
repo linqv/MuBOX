@@ -99,15 +99,60 @@ class VideoPlayerActivityIntentTest {
 
     @Test
     fun playerOptionsRoundTripThroughParcelableWireFormat() {
-        val options = customPlayerOptions()
-        val parcel = Parcel.obtain()
-        try {
-            options.writeToParcel(parcel, 0)
-            parcel.setDataPosition(0)
+        AppColorPalette.entries.forEach { palette ->
+            val options = customPlayerOptions().copy(colorPalette = palette)
+            val parcel = Parcel.obtain()
+            try {
+                options.writeToParcel(parcel, 0)
+                parcel.setDataPosition(0)
 
-            assertEquals(options, VideoPlayerOptions.CREATOR.createFromParcel(parcel))
-        } finally {
-            parcel.recycle()
+                assertEquals(options, VideoPlayerOptions.CREATOR.createFromParcel(parcel))
+            } finally {
+                parcel.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun legacyParcelablePalettesMigrateWithoutResettingPlayerOptions() {
+        val options = customPlayerOptions()
+        migratedPaletteNames().forEach { (storedName, expected) ->
+            val parcel = Parcel.obtain()
+            try {
+                parcel.writeInt(if (options.resumeEnabled) 1 else 0)
+                parcel.writeString(options.videoOutputMode.name)
+                parcel.writeString(options.gpuApiMode.name)
+                parcel.writeString(options.videoDecoderMode.name)
+                parcel.writeString(options.mpvProfileMode.name)
+                parcel.writeInt(options.controlsAutoHideMillis)
+                parcel.writeString(options.playerOrientationMode.name)
+                parcel.writeInt(if (options.proxyDebugInfoEnabled) 1 else 0)
+                parcel.writeString(options.videoBackgroundMode.name)
+                parcel.writeString(options.anime4kProfile.name)
+                parcel.writeString(storedName)
+                parcel.setDataPosition(0)
+
+                assertEquals(
+                    storedName,
+                    options.copy(colorPalette = expected),
+                    VideoPlayerOptions.CREATOR.createFromParcel(parcel),
+                )
+            } finally {
+                parcel.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun legacyScalarPalettesMigrateWithoutResettingPlayerOptions() {
+        val options = customPlayerOptions()
+        migratedPaletteNames().forEach { (storedName, expected) ->
+            val intent = Intent()
+                .putVideoPlayerOptions(options)
+                .putExtra(VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE, storedName)
+            intent.removeExtra(VideoPlayerLaunchContract.EXTRA_PLAYER_OPTIONS)
+
+            assertEquals(storedName, options.copy(colorPalette = expected), intent.videoPlayerOptions())
         }
     }
 
@@ -319,7 +364,21 @@ class VideoPlayerActivityIntentTest {
             proxyDebugInfoEnabled = true,
             videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
             anime4kProfile = Anime4KProfile.EXTREME,
-            colorPalette = AppColorPalette.SEPIA,
+            colorPalette = AppColorPalette.MU_BOX_DARK,
         )
+
+    private fun migratedPaletteNames(): Map<String?, AppColorPalette> = mapOf(
+        "DEFAULT" to AppColorPalette.MU_BOX_LIGHT,
+        "ADWAITA_LIGHT" to AppColorPalette.MU_BOX_LIGHT,
+        "SEPIA" to AppColorPalette.MU_BOX_LIGHT,
+        "HIGH_CONTRAST" to AppColorPalette.MU_BOX_LIGHT,
+        "ADWAITA_BLUE_GRAY" to AppColorPalette.MU_BOX_DARK,
+        "ADWAITA_PURPLE" to AppColorPalette.MU_BOX_DARK,
+        "CINEMA_DARK" to AppColorPalette.MU_BOX_DARK,
+        "NIGHT" to AppColorPalette.MU_BOX_DARK,
+        "REMOVED_PALETTE" to AppColorPalette.MU_BOX_LIGHT,
+        "" to AppColorPalette.MU_BOX_LIGHT,
+        null to AppColorPalette.MU_BOX_LIGHT,
+    )
 
 }

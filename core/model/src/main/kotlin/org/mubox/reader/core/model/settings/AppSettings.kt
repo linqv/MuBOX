@@ -8,16 +8,19 @@ enum class ReadingDirection {
 }
 
 enum class AppColorPalette {
-    DEFAULT,
     MU_BOX_LIGHT,
-    MU_BOX_DARK,
-    ADWAITA_LIGHT,
-    ADWAITA_BLUE_GRAY,
-    ADWAITA_PURPLE,
-    CINEMA_DARK,
-    SEPIA,
-    NIGHT,
-    HIGH_CONTRAST,
+    MU_BOX_DARK;
+
+    companion object {
+        fun fromPersistedName(
+            value: String?,
+            fallback: AppColorPalette = MU_BOX_LIGHT,
+        ): AppColorPalette = when (value) {
+            "MU_BOX_LIGHT", "DEFAULT", "ADWAITA_LIGHT", "SEPIA", "HIGH_CONTRAST" -> MU_BOX_LIGHT
+            "MU_BOX_DARK", "ADWAITA_BLUE_GRAY", "ADWAITA_PURPLE", "CINEMA_DARK", "NIGHT" -> MU_BOX_DARK
+            else -> fallback
+        }
+    }
 }
 
 enum class DiagnosticLogLevel {
@@ -34,7 +37,7 @@ data class ReaderSettings(
 )
 
 data class AppearanceSettings(
-    val colorPalette: AppColorPalette = AppColorPalette.DEFAULT,
+    val colorPalette: AppColorPalette = AppColorPalette.MU_BOX_LIGHT,
     val screenRotationLockEnabled: Boolean = false,
     val libraryCoversEnabled: Boolean = true,
 )

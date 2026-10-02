@@ -33,7 +33,7 @@ class VideoPlayerOptionsFactoryTest {
     @Test
     fun appSettingsMapEveryPlaybackOptionIntoOneValue() {
         val options = AppSettings(
-            appearance = AppearanceSettings(colorPalette = AppColorPalette.SEPIA),
+            appearance = AppearanceSettings(colorPalette = AppColorPalette.MU_BOX_LIGHT),
             video = VideoSettings(
                 videoResumeEnabled = false,
                 videoOutputMode = VideoOutputMode.GPU_NEXT,
@@ -60,7 +60,7 @@ class VideoPlayerOptionsFactoryTest {
                 proxyDebugInfoEnabled = true,
                 videoBackgroundMode = VideoBackgroundMode.BACKGROUND_PLAY,
                 anime4kProfile = Anime4KProfile.EXTREME,
-                colorPalette = AppColorPalette.SEPIA,
+                colorPalette = AppColorPalette.MU_BOX_LIGHT,
             ),
             options,
         )

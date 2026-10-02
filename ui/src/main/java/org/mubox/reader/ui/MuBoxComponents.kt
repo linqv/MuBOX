@@ -24,9 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Subtitles
+import org.mubox.reader.ui.icons.MuBoxEditorialIcons
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,13 +37,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -69,19 +68,14 @@ fun MuBoxMessagePanel(
     val contentColor = if (isError) colors.errorText else colors.text
     val shape = RoundedCornerShape(MuBoxMetrics.PanelCornerDp)
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (isError) {
-                    Modifier
-                } else {
-                    Modifier.muBoxGradientBorder(colors = colors, shape = shape)
-                },
-            ),
+        modifier = modifier.fillMaxWidth(),
         shape = shape,
         color = containerColor,
         contentColor = contentColor,
-        border = if (isError) BorderStroke(1.dp, colors.errorText.copy(alpha = 0.28f)) else null,
+        border = BorderStroke(
+            0.5.dp,
+            if (isError) colors.errorText.copy(alpha = 0.28f) else colors.border.copy(alpha = 0.7f),
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -97,7 +91,7 @@ fun MuBoxMessagePanel(
             if (onDismiss != null) {
                 TextButton(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
                 ) {
                     Text(dismissLabel)
                 }
@@ -126,14 +120,14 @@ fun MuBoxEmptyState(
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .background(colors.accentSoft, RoundedCornerShape(18.dp)),
+                .background(colors.surfaceSecondary, RoundedCornerShape(MuBoxMetrics.RadiusMDp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = colors.onAccentSoft,
-                modifier = Modifier.size(30.dp),
+                tint = colors.muted,
+                modifier = Modifier.size(28.dp),
             )
         }
         Text(
@@ -141,12 +135,14 @@ fun MuBoxEmptyState(
             style = MaterialTheme.typography.titleMedium,
             color = colors.text,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
         )
         if (!body.isNullOrBlank()) {
             Text(
                 text = body,
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.muted,
+                textAlign = TextAlign.Center,
             )
         }
         if (actionLabel != null && onAction != null) {
@@ -175,11 +171,10 @@ fun MuBoxDenseMediaRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = MuBoxMetrics.MinTouchTargetDp)
-            .muBoxGradientBorder(
-                colors = colors,
+            .border(
+                width = if (selected) 2.dp else 0.5.dp,
+                color = if (selected) colors.selectedBorder else colors.border.copy(alpha = 0.7f),
                 shape = shape,
-                highlighted = selected,
-                width = if (selected) 1.5.dp else 1.dp,
             )
             .clip(shape)
             .background(containerColor)
@@ -203,6 +198,7 @@ fun MuBoxDenseMediaRow(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = colors.text,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -233,7 +229,7 @@ fun MuBoxMediaGridTile(
     onLongClickLabel: String? = null,
 ) {
     val colors = rememberMuBoxColors()
-    val shape = RoundedCornerShape(MuBoxMetrics.RadiusMDp)
+    val shape = RoundedCornerShape(MuBoxMetrics.RadiusSDp)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -256,11 +252,10 @@ fun MuBoxMediaGridTile(
                         16f / 10f
                     },
                 )
-                .muBoxGradientBorder(
-                    colors = colors,
+                .border(
+                    width = if (selected) 2.dp else 0.5.dp,
+                    color = if (selected) colors.selectedBorder else colors.border.copy(alpha = 0.7f),
                     shape = shape,
-                    highlighted = selected,
-                    width = if (selected) 1.5.dp else 1.dp,
                 )
                 .clip(shape)
                 .background(colors.panelHigh),
@@ -286,6 +281,7 @@ fun MuBoxMediaGridTile(
             text = title,
             style = MaterialTheme.typography.titleSmall,
             color = colors.text,
+            fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -301,42 +297,26 @@ fun MuBoxMediaTypeIcon(
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberMuBoxColors()
-    val iconColors = muBoxMediaTypeIconColors(mediaKind, colors)
     Box(
         modifier = modifier
             .size(36.dp)
-            .background(iconColors.container, RoundedCornerShape(12.dp)),
+            .background(colors.surfaceSecondary, RoundedCornerShape(MuBoxMetrics.RadiusSDp)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = muBoxMediaKindIcon(mediaKind),
             contentDescription = muBoxMediaKindLabel(mediaKind),
-            tint = iconColors.content,
-            modifier = Modifier.size(21.dp),
+            tint = colors.muted,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
 
-private data class MuBoxIconColors(
-    val container: Color,
-    val content: Color,
-)
-
-private fun muBoxMediaTypeIconColors(mediaKind: MediaKind, colors: MuBoxColors): MuBoxIconColors =
-    when (mediaKind) {
-        MediaKind.Directory -> MuBoxIconColors(colors.accentSoft, colors.onAccentSoft)
-        MediaKind.Comic -> MuBoxIconColors(colors.comicAccent.copy(alpha = 0.22f), colors.comicAccent)
-        MediaKind.Video -> MuBoxIconColors(colors.mediaAccent.copy(alpha = 0.22f), colors.mediaAccent)
-        MediaKind.Subtitle -> MuBoxIconColors(colors.statusAccent.copy(alpha = 0.20f), colors.statusAccent)
-        MediaKind.Audio -> MuBoxIconColors(colors.playerChip, colors.playerProgress)
-        MediaKind.Unknown -> MuBoxIconColors(colors.panelHigh, colors.muted)
-    }
-
 private fun muBoxMediaKindIcon(mediaKind: MediaKind): ImageVector =
     when (mediaKind) {
         MediaKind.Directory -> Icons.Filled.Folder
-        MediaKind.Comic -> Icons.Filled.PhotoLibrary
-        MediaKind.Video -> Icons.Filled.Movie
+        MediaKind.Comic -> MuBoxEditorialIcons.ComicBook
+        MediaKind.Video -> MuBoxEditorialIcons.CinemaVideo
         MediaKind.Subtitle -> Icons.Filled.Subtitles
         MediaKind.Audio -> Icons.Filled.AudioFile
         MediaKind.Unknown -> Icons.AutoMirrored.Filled.InsertDriveFile
@@ -367,7 +347,7 @@ fun MuBoxHeaderBar(
             Text(
                 text = title,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -397,7 +377,9 @@ fun MuBoxBoxedList(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .muBoxGlassSurface(colors = colors, shape = shape),
+                .border(0.5.dp, colors.border.copy(alpha = 0.7f), shape)
+                .clip(shape)
+                .background(colors.panel),
         ) {
             Column(content = content)
         }
@@ -418,7 +400,7 @@ fun MuBoxActionRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = MuBoxMetrics.BoxedListRowMinHeightDp)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

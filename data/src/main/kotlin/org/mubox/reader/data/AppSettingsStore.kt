@@ -57,7 +57,7 @@ class AppSettingsStore(
 
     private fun appearanceSettingsFrom(preferences: Preferences): AppearanceSettings =
         AppearanceSettings(
-            colorPalette = preferences[COLOR_PALETTE].toEnumOrDefault(AppColorPalette.DEFAULT),
+            colorPalette = AppColorPalette.fromPersistedName(preferences[COLOR_PALETTE]),
             screenRotationLockEnabled = preferences[SCREEN_ROTATION_LOCK_ENABLED] ?: false,
             libraryCoversEnabled = preferences[LIBRARY_COVERS_ENABLED] ?: true,
         )

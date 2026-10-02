@@ -246,6 +246,7 @@ private fun ActionsBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp),
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
         ) {
             Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = colors.text)
@@ -258,6 +259,7 @@ private fun ActionsBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp),
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
         ) {
             Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.RemoveCircleOutline, contentDescription = null, tint = colors.text)
@@ -270,6 +272,7 @@ private fun ActionsBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp),
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
         ) {
             Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.DeleteForever, contentDescription = null, tint = colors.errorText)
@@ -285,17 +288,24 @@ private fun DeleteFileConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colors = rememberMuBoxColors()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("删除本地文件？") },
         text = { Text("将永久删除该文件，无法恢复。") },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("删除", color = rememberMuBoxColors().errorText)
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+            ) {
+                Text("删除", color = colors.errorText)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.accentText),
+            ) { Text("取消") }
         },
     )
 }

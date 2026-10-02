@@ -25,7 +25,7 @@ data class VideoPlayerOptions(
     val proxyDebugInfoEnabled: Boolean = false,
     val videoBackgroundMode: VideoBackgroundMode = VideoBackgroundMode.NONE,
     val anime4kProfile: Anime4KProfile = Anime4KProfile.OFF,
-    val colorPalette: AppColorPalette = AppColorPalette.DEFAULT,
+    val colorPalette: AppColorPalette = AppColorPalette.MU_BOX_LIGHT,
 ) : Parcelable {
     private constructor(parcel: Parcel) : this(
         resumeEnabled = parcel.readInt() != 0,
@@ -38,7 +38,7 @@ data class VideoPlayerOptions(
         proxyDebugInfoEnabled = parcel.readInt() != 0,
         videoBackgroundMode = parcel.readEnumOrDefault(VideoBackgroundMode.NONE),
         anime4kProfile = parcel.readEnumOrDefault(Anime4KProfile.OFF),
-        colorPalette = parcel.readEnumOrDefault(AppColorPalette.DEFAULT),
+        colorPalette = AppColorPalette.fromPersistedName(parcel.readString()),
     )
 
     override fun writeToParcel(parcel: Parcel, flags: Int) {
@@ -129,8 +129,10 @@ private fun Intent.legacyVideoPlayerOptions(): VideoPlayerOptions {
                 mode = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_MODE),
                 quality = getStringExtra(VideoPlayerLaunchContract.EXTRA_ANIME4K_QUALITY),
             ),
-        colorPalette = getStringExtra(VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE)
-            .toEnumOrDefault(defaults.colorPalette),
+        colorPalette = AppColorPalette.fromPersistedName(
+            getStringExtra(VideoPlayerLaunchContract.EXTRA_COLOR_PALETTE),
+            defaults.colorPalette,
+        ),
     )
 }
 
